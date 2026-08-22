@@ -6,30 +6,40 @@
  * (.claude/rules/bulk-test-rule.md).
  *
  * ═══════════════════════════════════════════════════════════════════════════════════════════
- * 🔴 DEFERRED COVERAGE — `BOV_Score__c` ORDERING IS NOT PROVABLE IN APEX RIGHT NOW (2026-08-21)
+ * 🔴 DEFERRED COVERAGE — `BOV_Score__c` ORDERING IS STILL NOT PROVABLE IN APEX (RETRACTED IN
+ *    PART 2026-08-22, manifest/bov-score-formula-conversion/, Step 3)
  * ═══════════════════════════════════════════════════════════════════════════════════════════
  * This class used to prove `ORDER BY BOV_Score__c DESC NULLS LAST` by ASSIGNING scores of 90 / 80
- * / null to three fixtures. `BOV_Score__c` is being recreated as a FORMULA, and a formula field
- * cannot be assigned in Apex, so those assignments are gone — and with them the only mechanism
- * this repo had for producing two submissions with DIFFERENT scores.
+ * / null to three fixtures. `BOV_Score__c` is now a live FORMULA field (conversion completed
+ * 2026-08-22) and a formula field cannot be assigned in Apex, so those assignments are gone for
+ * good — and with them the only mechanism this repo had for producing two submissions with
+ * DIFFERENT scores.
  *
- * There is no substitute available yet, and that is worth stating plainly rather than papering
- * over: the formula's value dimension is gated on `Disposition__r.Asking_Price__c`, which returns
- * null for the whole score when the parent has no asking price. `Asking_Price__c` DOES NOT EXIST
- * ON `Disposition__c` YET (it ships in the same sequenced wave as the formula). Until it does,
- * every submission in every test — and every submission in the org — scores null, so no fixture
- * can make the DESC leg of that ORDER BY do anything observable.
+ * ⚠ RETRACTED: "`Asking_Price__c` DOES NOT EXIST ON `Disposition__c` YET." It exists now
+ * (`objects/Disposition__c/fields/Asking_Price__c.field-meta.xml`, deployed by a concurrent wave).
+ * What is STILL true, and is why deferred items 1/2/3 below remain owed rather than closed: this
+ * class's own `@testSetup` (and every `TestDataFactory.createDisposition`/`createDispositions`
+ * call site) still does not SET `Asking_Price__c`, so the formula's guard clause still returns
+ * null for every fixture in this file and no test here exercises the DESC leg of the ORDER BY —
+ * see the restored premise assertions in `selectByDispositionId_populatesEverySelectedField` and
+ * `selectByDispositionId_tiedScores_ordersOldestFirstDeterministically` for where this is now
+ * asserted explicitly rather than assumed.
  *
- * ⚠ WHAT IS OWED WHEN `Asking_Price__c` AND THE FORMULA LAND, and must not be quietly dropped:
+ * ⚠ WHAT IS OWED, and must not be quietly dropped:
  *   1. a test that gives ONE disposition an asking price and two submissions with different
  *      `BOV_Amount__c`, asserting the higher-valuing broker sorts FIRST (the DESC leg);
  *   2. a test mixing a scored disposition's submissions with an unscored one's, asserting the
- *      nulls fall to the BOTTOM (the `NULLS LAST` leg, which is currently dead syntax because
- *      everything is null);
- *   3. the derived VALUE itself asserted at least once against the published band table, so the
- *      formula is pinned by a test rather than only by its own `<description>`;
- *   4. `BovController`'s `s.BOV_Score__c.intValue()` branch (BovController.cls:87), whose non-null
- *      leg becomes UNREACHABLE from any test in the meantime — see `BovControllerTest`'s header.
+ *      nulls fall to the BOTTOM (the `NULLS LAST` leg, still untested);
+ *   3. the derived VALUE itself asserted at least once against the published band table — e.g.
+ *      the hand-verified BOV-0015 (68.81) / BOV-0017 (82.95) values in
+ *      `manifest/bov-score-formula-conversion/step3-package.xml` — so the formula is pinned by a
+ *      test rather than only by its own `<description>`.
+ *   4. RESOLVED, NOT DEFERRED (2026-08-22): this item used to name `BovController`'s
+ *      `s.BOV_Score__c.intValue()` branch as unreachable. That ternary no longer exists —
+ *      `BovController.cls` now reads `r.bovScore = s.BOV_Score__c;` unconditionally, and
+ *      `BovRow.bovScore` was widened `Integer` -> `Decimal` in the same change (a truncating
+ *      `.intValue()` would have silently dropped BOV_Score__c's 2 decimal places). See
+ *      `BovControllerTest`'s header for the corresponding retraction.
  * The tie-break test below covers the half that IS provable today, and is the half that was
  * actually broken.
  * ═══════════════════════════════════════════════════════════════════════════════════════════
@@ -86,18 +96,18 @@ private class BovSubmissionSelectorTest {
         Assert.areEqual(30, s.Days_To_Market__c, 'Days_To_Market__c should be selected');
         Assert.areEqual(75, s.Hist_Success_Rate__c, 'Hist_Success_Rate__c should be selected');
         Assert.areEqual(6.25, s.Cap_Rate__c, 'Cap_Rate__c should be selected');
-        // 🔴 THE VALUE CHANGED, THE CLAIM DID NOT. This line used to read
-        // `Assert.areEqual(80, s.BOV_Score__c, ...)`, where the 80 came from a hard-coded
-        // TestDataFactory assignment that has been removed (a formula field cannot be assigned in
-        // Apex). Asserting NULL is NOT a weaker test of the same claim, because the claim this line
-        // makes is "BOV_Score__c is in the SELECT list" — and what falsifies THAT is the read
-        // itself: touching a field omitted from a SOQL SELECT throws
-        // `System.SObjectException: SObject row was retrieved via SOQL without querying the
-        // requested field`, whatever value is asserted afterwards. Drop the field from the query
-        // and this line still fails.
+        // 🔴 RESTORED 2026-08-22 (manifest/bov-score-formula-conversion/, Step 3). BOV_Score__c is
+        // now a live FORMULA field again and is back in the SELECT list. It still asserts NULL —
+        // not because "nothing writes it" (a formula field is never written, that reasoning no
+        // longer applies) but because this test's @testSetup Disposition
+        // (TestDataFactory.createDisposition) does not set Asking_Price__c, so the formula's own
+        // guard clause returns null regardless of BOV_Amount__c/Commission_Rate__c/
+        // Days_To_Market__c (confirmed against TestDataFactory.createBovSubmissions's own header,
+        // 2026-08-22). A test that needs a NON-null score must give its own Disposition fixture a
+        // real Asking_Price__c — see this class's header, deferred item 3.
         Assert.isNull(s.BOV_Score__c,
-            'BOV_Score__c should be selected — and null, because nothing writes it and the '
-            + 'formula that will replace it returns null with no asking price on the parent');
+            'BOV_Score__c should be selected — and null, because this fixture\'s Disposition has '
+            + 'no Asking_Price__c, so the formula\'s guard clause returns null');
         Assert.areEqual('Backup', s.Submission_Status__c, 'Submission_Status__c should be selected');
         // 🔴 `Name` (added 2026-08-21). Compared against a fresh read rather than a literal because
         // it is an AUTO-NUMBER (measured in usman-dpeg: type string, autoNumber true, nillable
@@ -145,7 +155,12 @@ private class BovSubmissionSelectorTest {
         Test.stopTest();
 
         Assert.areEqual(3, result.size(), 'All three submissions should return');
-        // The premise: with nothing writing a score, the primary key decides nothing at all.
+        // 🔴 RESTORED 2026-08-22 (manifest/bov-score-formula-conversion/, Step 3). Same fixture
+        // fact as selectByDispositionId_populatesEverySelectedField above: this test's @testSetup
+        // Disposition has no Asking_Price__c, so BOV_Score__c's formula guard returns null for all
+        // three fixtures regardless of their BOV_Amount__c/Commission_Rate__c/Days_To_Market__c —
+        // which is exactly the premise this tie-break test needs (every score ties at null, so
+        // CreatedDate ASC / Id ASC is the ONLY key left).
         Assert.isNull(result[0].BOV_Score__c, 'PREMISE — every fixture score ties at null');
         Assert.isNull(result[1].BOV_Score__c, 'PREMISE — every fixture score ties at null');
         Assert.isNull(result[2].BOV_Score__c, 'PREMISE — every fixture score ties at null');

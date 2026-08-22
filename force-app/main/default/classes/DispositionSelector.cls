@@ -567,11 +567,22 @@ public with sharing class DispositionSelector {
      * provisioning gap that a two-line permission-set edit closes properly. Deploy order is
      * load-bearing: field -> permission sets -> this Apex, and NEVER Apex first.
      *
+     * ⚠ `Asking_Price__c` JOINED THIS LIST 2026-08-22 (the Disposition-Readiness asking-price gate).
+     * It adds a SIXTH FLS gate to the method that backs all four approval branches, so the
+     * paragraph above applies to it in full — and it was checked rather than assumed. Measured
+     * against `usman-dpeg` on 2026-08-22, `FieldPermissions` for `Asking_Price__c` names exactly
+     * the same five parents as `Broker__c` (DPEG_Disposition_Edit, DPEG_Disposition_View,
+     * DPEG_Principal_PSG, DPEG_Junior_Analyst_PSG, sfdc_slack). `Broker__c` is already in this
+     * SELECT and already works for every disposition persona, so this field widens the failure
+     * surface by NOTHING: any principal who can run this query today can read the new column too.
+     * 🔴 THE SAME BAN APPLIES — if this ever throws `No such column 'Asking_Price__c'`, the fix is
+     * the permission set, never `WITH SYSTEM_MODE`.
+     *
      * FETCH-FOR-USE: a miss is an error (the caller was handed an Id by a record page), so this is
      * a single-row assignment that throws.
      *
      * @param dispositionId Disposition__c Id; must reference an existing, visible row.
-     * @return The Disposition with the five decision/display fields populated.
+     * @return The Disposition with the six decision/display fields populated.
      * @throws System.QueryException when no visible Disposition__c matches the Id, OR when the
      *         running user lacks FLS read on any selected field — see the Broker__c note above.
      * @example
@@ -580,7 +591,8 @@ public with sharing class DispositionSelector {
     public static Disposition__c selectApprovalContextById(Id dispositionId) {
         return [
             SELECT Id, Disposition_Stage__c, RecordTypeId,
-                   Broker__c, Selected_Broker__c, Wire_Verification_Completed__c
+                   Broker__c, Selected_Broker__c, Wire_Verification_Completed__c,
+                   Asking_Price__c
             FROM Disposition__c
             WHERE Id = :dispositionId
             WITH USER_MODE

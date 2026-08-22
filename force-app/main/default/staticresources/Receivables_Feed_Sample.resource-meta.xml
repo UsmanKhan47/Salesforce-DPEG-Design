@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<StaticResource xmlns="http://soap.sforce.com/2006/04/metadata">
+    <cacheControl>Private</cacheControl>
+    <contentType>application/json</contentType>
+    <description>FSD 5.9 receivables feed fixture consumed by StubReceivablesFeedProvider. NOTE: feedAsOf is deliberately OMITTED so the stub rebases the clock onto the run start; a baked-in timestamp would make every run halt as stale the day after this file was written.</description>
+</StaticResource>

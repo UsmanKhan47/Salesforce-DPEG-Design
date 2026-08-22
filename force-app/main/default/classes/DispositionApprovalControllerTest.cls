@@ -29,9 +29,20 @@ private class DispositionApprovalControllerTest {
         return d;
     }
 
+    /**
+     * ⚠ THE ASKING PRICE IS SET EXPLICITLY (2026-08-22) AND IS NOT DECORATION. Since the
+     * Disposition-Readiness gate landed in DispositionApprovalService, an unpriced fixture at
+     * this stage is REFUSED — so this test would stop proving "the happy path returns the
+     * confirmation" and start proving "the refusal is masked", silently, while still being
+     * named for the former. The other two Readiness fixtures in this class stay unpriced
+     * deliberately: the bare-user walk is denied before the read, and the deleted-Id walk
+     * throws in the selector — both BEFORE the gate — so pricing them would weaken them.
+     */
     @isTest
     static void submitForApproval_positiveScenario_returnsTheConfirmationMessage() {
         Disposition__c d = dispositionAt(TestDataFactory.DISPOSITION_RT_ON_MARKET, 'Disposition Readiness');
+        d.Asking_Price__c = 2500000;
+        update d;
 
         Test.startTest();
         String msg = DispositionApprovalController.submitForApproval(d.Id);

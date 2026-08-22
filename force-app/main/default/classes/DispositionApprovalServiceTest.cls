@@ -60,18 +60,47 @@ private class DispositionApprovalServiceTest {
         return [SELECT Id FROM Property_Asset__c LIMIT 1].Id;
     }
 
+    /**
+     * A satisfying asking price for the 2026-08-22 Disposition-Readiness gate. Any positive
+     * number passes; this one is a plausible sale price so a failure message reads like data.
+     */
+    private static final Decimal ASKING_PRICE = 2500000;
+
+    /**
+     * ══════════════════════════════════════════════════════════════════════════════
+     * 🔴 THE ASKING PRICE DEFAULTS TO **BLANK** AND MUST KEEP DEFAULTING TO BLANK.
+     * ══════════════════════════════════════════════════════════════════════════════
+     * `TestDataFactory.createDispositions` does not populate `Asking_Price__c`, which mirrors
+     * production (measured 2026-08-22: 1 of the 3 live dispositions has it, and the one sitting
+     * at Disposition Readiness does NOT). The obvious "fix" when the 2026-08-22 gate turned two
+     * existing tests red was to teach the FACTORY to set a price — do not do that. Every fixture
+     * in the repo would then satisfy the gate by construction, the gate would be unfalsifiable
+     * from any other test class, and the three refusal tests below would be the only thing left
+     * proving it exists. Instead the price is passed EXPLICITLY at the call sites that need one,
+     * so a reader can see at each site whether the gate is being satisfied or exercised.
+     */
     private static Disposition__c onMarketAt(String stage) {
+        return onMarketAt(stage, null);
+    }
+
+    private static Disposition__c onMarketAt(String stage, Decimal askingPrice) {
         Disposition__c d = TestDataFactory.createDisposition(
             assetId(), TestDataFactory.DISPOSITION_RT_ON_MARKET, false);
         d.Disposition_Stage__c = stage;
+        d.Asking_Price__c = askingPrice;
         insert d;
         return d;
     }
 
     private static Disposition__c offMarketAt(String stage) {
+        return offMarketAt(stage, null);
+    }
+
+    private static Disposition__c offMarketAt(String stage, Decimal askingPrice) {
         Disposition__c d = TestDataFactory.createDisposition(
             assetId(), TestDataFactory.DISPOSITION_RT_OFF_MARKET, false);
         d.Disposition_Stage__c = stage;
+        d.Asking_Price__c = askingPrice;
         insert d;
         return d;
     }
@@ -91,9 +120,16 @@ private class DispositionApprovalServiceTest {
     // submitForApproval — TARGET DERIVATION
     // ═══════════════════════════════════════════════════════════════════════════
 
+    /**
+     * ⚠ THIS FIXTURE GAINED AN EXPLICIT ASKING PRICE ON 2026-08-22 AND THE ARGUMENT IS THE TEST.
+     * Before the Disposition-Readiness gate this test passed with `Asking_Price__c` blank. It now
+     * REQUIRES a price, which is the cheapest available proof that the gate is wired into the
+     * production path rather than only into the three refusal tests below: delete the second
+     * argument and this test goes red.
+     */
     @isTest
-    static void submitAtReadiness_submitsTheDispositionItself() {
-        Disposition__c d = onMarketAt(STAGE_READINESS);
+    static void submitAtReadiness_withAskingPrice_submitsTheDispositionItself() {
+        Disposition__c d = onMarketAt(STAGE_READINESS, ASKING_PRICE);
 
         Test.startTest();
         String msg = DispositionApprovalService.submitForApproval(d.Id);
@@ -101,6 +137,120 @@ private class DispositionApprovalServiceTest {
 
         Assert.areEqual(1, pendingApprovalsFor(d.Id),
             'The Disposition itself must be submitted into Sale_Decision_Approval');
+        Assert.isTrue(msg.contains('Sale Decision'), 'The confirmation must name the Sale Decision approval');
+    }
+
+    /**
+     * ══════════════════════════════════════════════════════════════════════════════
+     * 🔴 THE ASKING-PRICE GATE, AND WHY IT IS TESTED **HERE** AND NOT AS A RULE.
+     * ══════════════════════════════════════════════════════════════════════════════
+     * User requirement, 2026-08-22: "asking price should be mandatory before moving to BOV
+     * Outreach". The hop off `Disposition Readiness` is written by
+     * `DispositionApprovalAdvanceQueueable` in SYSTEM_MODE with `allOrNone = false`, where a
+     * validation rule's refusal is DISCARDED — so the gate lives at submission time, which is the
+     * last moment a human is present to be told. The sibling proof that no rule was shipped, and
+     * that the machine advance is therefore NOT blocked, is
+     * `DispositionApprovalProcessesTest.saleDecisionApproved_blankAskingPrice_stillAdvances`;
+     * these two suites are complements and neither is sufficient alone.
+     */
+    @isTest
+    static void submitAtReadiness_blankAskingPrice_isRefusedWithTheAuthoredMessage() {
+        Disposition__c d = onMarketAt(STAGE_READINESS); // no price — the production default
+        Assert.isNull(
+            [SELECT Asking_Price__c FROM Disposition__c WHERE Id = :d.Id].Asking_Price__c,
+            'PRECONDITION: the fixture must have NO asking price, or this test proves nothing');
+
+        Test.startTest();
+        Boolean refused = false;
+        try {
+            DispositionApprovalService.submitForApproval(d.Id);
+            Assert.fail('A blank asking price must refuse the Sale Decision submission');
+        } catch (DispositionApprovalService.ApprovalException e) {
+            refused = true;
+            Assert.isTrue(e.getMessage().contains('asking price is required'),
+                'The refusal must be the AUTHORED message, not the platform\'s: ' + e.getMessage());
+            Assert.isTrue(e.getMessage().contains('Asking Price'),
+                'The refusal must name the ON-SCREEN LABEL so the user knows what to fill in: '
+                + e.getMessage());
+        }
+        Test.stopTest();
+
+        Assert.isTrue(refused, 'The gate must refuse, not silently submit');
+        Assert.areEqual(0, pendingApprovalsFor(d.Id),
+            'Nothing may enter Sale_Decision_Approval — a refusal that still submits would put an '
+            + 'unpriced sale in front of an approver and then advance it');
+    }
+
+    /**
+     * 🔴 THE OFF-MARKET HALF, AND IT IS NOT A COPY OF THE TEST ABOVE. An Off_Market disposition
+     * has NO `BOV Outreach` stage — the same approval sends it straight to `Broker Selection`. The
+     * user asked for the gate "before moving to BOV Outreach"; scoping it to that stage NAME would
+     * have exempted an entire record type permanently, since no later off-market stage asks for
+     * this field either. The gate is on LEAVING Disposition Readiness, which is record-type
+     * independent, and this test is the only thing that would catch a future record-type guard
+     * being added to that branch.
+     */
+    @isTest
+    static void submitAtReadiness_offMarket_blankAskingPrice_isRefusedToo() {
+        Disposition__c d = offMarketAt(STAGE_READINESS);
+
+        Test.startTest();
+        Boolean refused = false;
+        try {
+            DispositionApprovalService.submitForApproval(d.Id);
+            Assert.fail('An off-market sale must not leave Disposition Readiness unpriced either');
+        } catch (DispositionApprovalService.ApprovalException e) {
+            refused = true;
+            Assert.isTrue(e.getMessage().contains('asking price is required'),
+                'Same authored message on both record types: ' + e.getMessage());
+        }
+        Test.stopTest();
+
+        Assert.isTrue(refused, 'The gate must be record-type independent');
+        Assert.areEqual(0, pendingApprovalsFor(d.Id), 'Nothing may be submitted');
+    }
+
+    /**
+     * ⚠ ZERO IS NOT A PRICE, AND THIS IS THE ONLY TEST THAT SAYS SO. `Asking_Price__c`'s own
+     * `description` records that "a blank OR ZERO value makes every BOV score on this sale blank"
+     * — so a gate that only checked `!= null` would let through the exact state the field exists
+     * to prevent, while LOOKING satisfied on screen. Narrowing the guard to `== null` leaves every
+     * other test in this class green.
+     */
+    @isTest
+    static void submitAtReadiness_zeroAskingPrice_isRefusedLikeABlankOne() {
+        Disposition__c d = onMarketAt(STAGE_READINESS, 0);
+        Assert.areEqual(0, [SELECT Asking_Price__c FROM Disposition__c WHERE Id = :d.Id].Asking_Price__c,
+            'PRECONDITION: the fixture must hold a stored ZERO, not a null');
+
+        Test.startTest();
+        Boolean refused = false;
+        try {
+            DispositionApprovalService.submitForApproval(d.Id);
+            Assert.fail('A zero asking price must be refused exactly like a blank one');
+        } catch (DispositionApprovalService.ApprovalException e) {
+            refused = true;
+            Assert.isTrue(e.getMessage().contains('asking price is required'),
+                'Zero must produce the SAME authored message, not a different one: ' + e.getMessage());
+        }
+        Test.stopTest();
+
+        Assert.isTrue(refused, '`<= 0` must be refused, not only `== null`');
+        Assert.areEqual(0, pendingApprovalsFor(d.Id), 'Nothing may be submitted');
+    }
+
+    /** The off-market positive: a priced Off_Market sale submits into the same approval. */
+    @isTest
+    static void submitAtReadiness_offMarket_withAskingPrice_submitsTheDisposition() {
+        Disposition__c d = offMarketAt(STAGE_READINESS, ASKING_PRICE);
+
+        Test.startTest();
+        String msg = DispositionApprovalService.submitForApproval(d.Id);
+        Test.stopTest();
+
+        Assert.areEqual(1, pendingApprovalsFor(d.Id),
+            'A priced Off_Market disposition must enter Sale_Decision_Approval — the gate is on the '
+            + 'PRICE, not on the record type');
         Assert.isTrue(msg.contains('Sale Decision'), 'The confirmation must name the Sale Decision approval');
     }
 
@@ -376,7 +526,10 @@ private class DispositionApprovalServiceTest {
 
     @isTest
     static void submitAlreadyPending_refusesADuplicateSubmission() {
-        Disposition__c d = onMarketAt(STAGE_READINESS);
+        // Priced, because the asking-price gate now runs BEFORE the pending gate — an unpriced
+        // fixture would be refused for the wrong reason and this test would assert on a message
+        // it never reached.
+        Disposition__c d = onMarketAt(STAGE_READINESS, ASKING_PRICE);
         DispositionApprovalService.submitForApproval(d.Id); // first submit succeeds
 
         Test.startTest();
@@ -450,6 +603,10 @@ private class DispositionApprovalServiceTest {
      */
     @isTest
     static void submitForApproval_bareUser_isDeniedBeforeAnyRead() {
+        // 🔴 DELIBERATELY UNPRICED. The permission assert is the FIRST statement in
+        // submitForApproval, before the selector read and therefore before the asking-price gate,
+        // so a bare user must fail with AccessDeniedException and NOT with the price refusal.
+        // Pricing this fixture would make the ordering claim untestable.
         Disposition__c d = onMarketAt(STAGE_READINESS);
         User bareUser = buildStandardUser('dast1');
         insert bareUser;

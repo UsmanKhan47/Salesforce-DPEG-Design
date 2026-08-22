@@ -7,22 +7,34 @@
  * data-volume read test per .claude/rules/bulk-test-rule.md.
  *
  * ─────────────────────────────────────────────────────────────────────────────────────
- * 🔴 `BOV_Score__c` BECOMES A FORMULA — WHAT THIS CLASS CAN NO LONGER PROVE (2026-08-21)
+ * 🔴 `BOV_Score__c` IS NOW A FORMULA — RETRACTED 2026-08-22 (conversion completed)
  * ─────────────────────────────────────────────────────────────────────────────────────
- * Two tests here used to assign `BOV_Score__c` directly (91/84 and 70/null). A formula field
- * cannot be assigned in Apex, so those assignments are removed AHEAD of the conversion and both
- * tests are re-authored below with the reasoning kept at each one.
- *
- * ⚠ ONE LINE OF PRODUCTION CODE LOSES ITS COVERAGE AS A RESULT, AND IT IS NAMED HERE RATHER THAN
- * LEFT TO SHOW UP AS AN UNEXPLAINED PERCENTAGE DROP. `BovController.cls:87` is
- * `r.bovScore = s.BOV_Score__c != null ? s.BOV_Score__c.intValue() : null;`. The null leg stays
- * covered; the `.intValue()` leg is now UNREACHABLE FROM ANY TEST, because nothing can write a
- * score and the formula that will derive one returns null until `Disposition__c.Asking_Price__c`
- * exists — and that field ships in a later wave. This is a genuine, temporary gap, not a branch
- * that "cannot be covered": it becomes coverable the moment the asking price does, and
- * `BovSubmissionSelectorTest`'s header lists it as item 4 of what is owed then.
- * 🔴 Do NOT close it by adding a @TestVisible seam or by making `bovScore` writable — the whole
- * point of the conversion is that the score is derived and nothing can write it.
+ * This paragraph used to describe a FUTURE conversion and named a specific coverage gap at
+ * `BovController.cls:87` (`r.bovScore = s.BOV_Score__c != null ? s.BOV_Score__c.intValue() :
+ * null;`). Both are stale now that the conversion has happened
+ * (manifest/bov-score-formula-conversion/) and are quoted rather than deleted so a reader who
+ * remembers the old shape isn't left guessing what changed:
+ *   1. `BovRow.bovScore` was `Integer` and is now `Decimal` — the formula is Number(5,2) and
+ *      carries up to 2 decimal places (e.g. 68.81); `.intValue()` would have silently truncated
+ *      every score.
+ *   2. The ternary is GONE. `BovController.cls` now reads `r.bovScore = s.BOV_Score__c;` —
+ *      unconditional, no null-guard, no truncation, no branch. The "unreachable `.intValue()`
+ *      leg" coverage gap this header used to name is therefore not just covered, it no longer
+ *      EXISTS as a branch to cover.
+ * Two tests below (`testGetSubmissions_mapsEveryRowFieldToTheRightRecord` and
+ * `testGetSubmissions_tiedScores_orderIsDeterministicOldestFirst`) still assert `bovScore` is
+ * null — that is NOT the same stale claim. It is still true today because
+ * `TestDataFactory.createDisposition`/`createDispositions` do not set `Asking_Price__c` on the
+ * Dispositions they build (confirmed in `TestDataFactory.cls`'s own `createBovSubmissions`
+ * header), so the formula's guard clause returns null for every fixture in this file regardless
+ * of the conversion being complete. What is genuinely owed and NOT yet added here: a test that
+ * gives its OWN Disposition fixture a real `Asking_Price__c` and asserts a non-null, non-
+ * truncated score (e.g. against the hand-verified BOV-0015 / BOV-0017 values in
+ * `manifest/bov-score-formula-conversion/step3-package.xml`) — see
+ * `BovSubmissionSelectorTest`'s header for the same deferred-coverage list, item 3.
+ * 🔴 Do NOT close the null-fixture gap by adding a @TestVisible seam or by making `bovScore`
+ * writable — the whole point of the conversion is that the score is derived and nothing can
+ * write it. Give the fixture a real Asking_Price__c instead.
  *
  * ─────────────────────────────────────────────────────────────────────────────────────
  * DISPOSITION FOUNDATIONS: OutreachSummary.ndaStatus
@@ -119,11 +131,11 @@ private class BovControllerTest {
         Assert.areEqual(45, winnerRow.daysToMarket, 'Days_To_Market__c maps through as an Integer');
         Assert.areEqual(true, winnerRow.isSelected, 'Selected status should map to isSelected = true');
         Assert.areEqual(false, backupRow.isSelected, 'Backup status should map to isSelected = false');
-        // 🔴 NULL IS THE ONLY REACHABLE ANSWER AND THIS IS NOT A WEAKENED ASSERTION — it pins the
-        // ternary's null leg at BovController.cls:87. The NON-null leg (`.intValue()`) is currently
-        // unreachable from any test, because nothing can produce a non-null score until the formula
-        // and its asking-price input exist. That gap is named in this class's header; it is a
-        // consequence of the field conversion, not something this test chose to stop checking.
+        // 🔴 RETRACTED 2026-08-22 (conversion completed). This used to pin a now-deleted ternary's
+        // null leg and name a coverage gap on its `.intValue()` leg — both gone, see this class's
+        // header. Null is still the only reachable answer HERE because this fixture's Disposition
+        // (@testSetup) has no Asking_Price__c, which is a property of the FIXTURE, not of the
+        // production code path.
         Assert.isNull(winnerRow.bovScore,
             'bovScore passes through as null while nothing can write or derive a score');
         Assert.isNull(backupRow.bovScore, 'and likewise for the other row');

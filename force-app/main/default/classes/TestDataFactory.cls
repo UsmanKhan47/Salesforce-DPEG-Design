@@ -386,6 +386,7 @@ public with sharing class TestDataFactory {
     private static Lease_Inquiry__c cachedLeaseInquiry;
     private static Lease_Renewal__c cachedLeaseRenewal;
     private static Unit__c cachedUnit;
+    private static Meter__c cachedMeter;
     private static Work_Order__c cachedWorkOrder;
     private static Contract_Review__c cachedContractReview;
     private static LOI__c cachedLoi;
@@ -414,6 +415,14 @@ public with sharing class TestDataFactory {
             cachedUnit = createUnits(1, defaultPropertyAsset().Id, true)[0];
         }
         return cachedUnit;
+    }
+
+    /** Shared inserted Meter__c (under defaultPropertyAsset, whole-building, 5-dial). */
+    public static Meter__c defaultMeter() {
+        if (cachedMeter == null) {
+            cachedMeter = createMeters(1, defaultPropertyAsset().Id, true)[0];
+        }
+        return cachedMeter;
     }
 
     /** Shared inserted Opportunity at stage 'New'. Note: this also creates an NDA__c. */
@@ -3825,5 +3834,259 @@ public with sharing class TestDataFactory {
         Property_Claim_Lock__c lockRow = new Property_Claim_Lock__c(Cluster_Key__c = clusterKey);
         insertIf(doInsert, new List<Property_Claim_Lock__c>{ lockRow });
         return lockRow;
+    }
+
+    // ===========================================================================
+    // FSD 5.10 - UTILITY & METER TRACKING
+    //
+    // 1. `createUtilityBills` LEAVES `Consumption__c` NULL ON PURPOSE, AND THAT IS THE
+    //   SINGLE MOST IMPORTANT LINE IN THIS BLOCK. `UtilityBillService.isManualOverride`
+    //   treats ANY non-null consumption on insert as a human override and refuses to
+    //   recompute it. A factory that helpfully populated the field would therefore switch
+    //   off the rollover / meter-swap engine for every test that uses it - every consumption
+    //   assertion would be asserting the factory's own literal back at itself and the whole
+    //   suite would be green by construction. Overrides are set explicitly by the one test
+    //   that is actually testing overrides.
+    //
+    // 2. `Register_Size__c = 5` MEANS `Register_Modulus__c = 100000`. Modulus is a FORMULA
+    //   derived from register size (a value of 12 or less is read as a DIAL COUNT, more as a
+    //   modulus), so it cannot be set directly and is null on an un-inserted record. A test
+    //   asserting rollover arithmetic must re-query the meter, or hard-code 100000 knowing
+    //   where it came from.
+    //
+    // 3. THREE OF THESE FIVE OBJECTS ARE MASTER-DETAIL CHILDREN and their parent is
+    //   mandatory: Utility_Bill__c -> Meter__c, Charge_Line__c -> Utility_Bill__c,
+    //   Meter_Allocation__c -> Meter__c. Meter__c -> Property_Asset__c is a LOOKUP and is
+    //   technically optional, but a meter with no property is invisible on every register
+    //   list in the app, so it is required here too.
+    //
+    // 4. Meter -> Utility Bill -> Charge Line is a THREE-LEVEL master-detail chain, which is
+    //   the platform maximum. Nothing can be added below Charge_Line__c as a detail.
+    // ===========================================================================
+
+    /**
+     * Meters on the register. Whole-building by default (Unit__c left null - FSD 5.10.4
+     * makes a blank space meaningful data, not missing data).
+     *
+     * Meter_Number__c and Service_Identifier__c are counter-backed so two calls in one
+     * transaction cannot collide. Service_Identifier__c in particular is what
+     * `MeterCaptureService` uses to detect service-point reuse, so a repeated value would
+     * make that warning fire in unrelated tests.
+     *
+     * @param count           Number of meters.
+     * @param propertyAssetId Property_Asset__c the meters are installed at (required).
+     * @param doInsert        Insert when true.
+     * @return Meters.
+     */
+    public static List<Meter__c> createMeters(Integer count, Id propertyAssetId, Boolean doInsert) {
+        requirePositive(count);
+        requireId(propertyAssetId, 'propertyAssetId (Meter__c.Property_Asset__c)');
+        List<Meter__c> meters = new List<Meter__c>();
+        for (Integer i = 0; i < count; i++) {
+            Integer u = nextUnique();
+            meters.add(new Meter__c(
+                Property_Asset__c = propertyAssetId,
+                Meter_Number__c = 'MTR-' + String.valueOf(u).leftPad(8, '0'),
+                Utility_Type__c = 'Electricity',
+                Utility_Account_Number__c = 'ACCT-' + String.valueOf(u).leftPad(8, '0'),
+                Service_Identifier__c = 'ESID-' + String.valueOf(u).leftPad(10, '0'),
+                Provider_Name__c = 'Test Utility Provider',
+                Paid_By__c = 'Management',
+                Register_Size__c = 5,
+                Service_Status__c = 'Active'
+            ));
+        }
+        insertIf(doInsert, meters);
+        return meters;
+    }
+
+    /** Meters under the shared scaffold asset. @param count Number. @param doInsert Insert when true. @return Meters. */
+    public static List<Meter__c> createMeters(Integer count, Boolean doInsert) {
+        return createMeters(count, defaultPropertyAsset().Id, doInsert);
+    }
+
+    /** Single Meter. @param propertyAssetId Property asset. @param doInsert Insert when true. @return The meter. */
+    public static Meter__c createMeter(Id propertyAssetId, Boolean doInsert) {
+        return createMeters(1, propertyAssetId, doInsert)[0];
+    }
+
+    /**
+     * Utility bills forming a CONSECUTIVE MONTHLY SEQUENCE on one meter, oldest first.
+     *
+     * Bill i is read on the 1st of the month (i - count) months from today, so index 0 is
+     * the oldest and index count-1 is the newest - which is the order the prior-bill chain
+     * links them in. Readings ascend by 100 per bill starting at 1000, so no bill in the
+     * default sequence ever reads downwards and none of them exercise the rollover branch by
+     * accident. Bill_Date__c is deliberately 5 days AFTER Read_Date__c: FSD 5.10.5 requires
+     * the two to be captured separately and the chain is ordered by the READ date, so a
+     * fixture where they coincide could not catch a class that sorted by the wrong one.
+     *
+     * `Consumption__c` IS LEFT NULL. See note 1 in the block comment above.
+     *
+     * @param count    Number of bills.
+     * @param meterId  Master Meter__c (required).
+     * @param doInsert Insert when true.
+     * @return Bills, oldest read date first.
+     */
+    public static List<Utility_Bill__c> createUtilityBills(Integer count, Id meterId, Boolean doInsert) {
+        requirePositive(count);
+        requireId(meterId, 'meterId (Utility_Bill__c.Meter__c is Master-Detail)');
+        List<Utility_Bill__c> bills = new List<Utility_Bill__c>();
+        for (Integer i = 0; i < count; i++) {
+            Date readDate = Date.today().toStartOfMonth().addMonths(i - count);
+            bills.add(new Utility_Bill__c(
+                Meter__c = meterId,
+                Read_Date__c = readDate,
+                Bill_Date__c = readDate.addDays(5),
+                Previous_Reading__c = 1000 + (i * 100),
+                Current_Reading__c = 1100 + (i * 100)
+            ));
+        }
+        insertIf(doInsert, bills);
+        return bills;
+    }
+
+    /** Bills under the shared scaffold Meter. @param count Number. @param doInsert Insert when true. @return Bills. */
+    public static List<Utility_Bill__c> createUtilityBills(Integer count, Boolean doInsert) {
+        return createUtilityBills(count, defaultMeter().Id, doInsert);
+    }
+
+    /** Single Utility Bill. @param meterId Master meter. @param doInsert Insert when true. @return The bill. */
+    public static Utility_Bill__c createUtilityBill(Id meterId, Boolean doInsert) {
+        return createUtilityBills(1, meterId, doInsert)[0];
+    }
+
+    /**
+     * Charge components on one bill. The amounts are DISTINCT per index (100, 110, 120, ...)
+     * so a test asserting the roll-up total or a component's share cannot pass on a
+     * coincidence of equal values.
+     *
+     * @param count    Number of charge lines.
+     * @param billId   Master Utility_Bill__c (required).
+     * @param doInsert Insert when true.
+     * @return Charge lines.
+     */
+    public static List<Charge_Line__c> createChargeLines(Integer count, Id billId, Boolean doInsert) {
+        requirePositive(count);
+        requireId(billId, 'billId (Charge_Line__c.Utility_Bill__c is Master-Detail)');
+        List<String> types = new List<String>{ 'Energy', 'Pass-Through', 'Taxes', 'Base Charge', 'Other' };
+        List<Charge_Line__c> lines = new List<Charge_Line__c>();
+        for (Integer i = 0; i < count; i++) {
+            lines.add(new Charge_Line__c(
+                Utility_Bill__c = billId,
+                Charge_Type__c = types[Math.mod(i, types.size())],
+                Charge_Amount__c = 100 + (i * 10)
+            ));
+        }
+        insertIf(doInsert, lines);
+        return lines;
+    }
+
+    /** Single Charge Line. @param billId Master bill. @param doInsert Insert when true. @return The charge line. */
+    public static Charge_Line__c createChargeLine(Id billId, Boolean doInsert) {
+        return createChargeLines(1, billId, doInsert)[0];
+    }
+
+    /**
+     * One charge line carrying an EXACT amount - for tests that need the bill total, and
+     * therefore Rate_Per_Unit__c and every variance figure downstream of it, to be a known
+     * number rather than whatever the indexed default produced.
+     *
+     * @param billId   Master bill.
+     * @param amount   Exact Charge_Amount__c.
+     * @param doInsert Insert when true.
+     * @return The charge line.
+     */
+    public static Charge_Line__c createChargeLine(Id billId, Decimal amount, Boolean doInsert) {
+        requireId(billId, 'billId (Charge_Line__c.Utility_Bill__c is Master-Detail)');
+        Charge_Line__c line = new Charge_Line__c(
+            Utility_Bill__c = billId,
+            Charge_Type__c = 'Energy',
+            Charge_Amount__c = amount
+        );
+        insertIf(doInsert, new List<Charge_Line__c>{ line });
+        return line;
+    }
+
+    /**
+     * Meter allocations - the split of one shared meter across several spaces (FSD 5.10.3).
+     *
+     * Allocation_Pct__c is `100 / count` so a full set sums to 100 and the meter's
+     * Total_Allocated_Pct__c roll-up reads as fully allocated. For a count that does not
+     * divide 100 exactly the sum will NOT be 100 (3 gives 99.99 at scale 2) - a test
+     * asserting the roll-up must either use a divisor of 100 or assert the value it
+     * computes, never the literal 100.
+     *
+     * @param count    Number of allocations.
+     * @param meterId  Master Meter__c (required).
+     * @param unitId   Unit__c each allocation points at; may be null.
+     * @param doInsert Insert when true.
+     * @return Allocations.
+     */
+    public static List<Meter_Allocation__c> createMeterAllocations(
+            Integer count, Id meterId, Id unitId, Boolean doInsert) {
+        requirePositive(count);
+        requireId(meterId, 'meterId (Meter_Allocation__c.Meter__c is Master-Detail)');
+        Decimal share = (Decimal.valueOf(100) / count).setScale(2, System.RoundingMode.DOWN);
+        List<Meter_Allocation__c> allocations = new List<Meter_Allocation__c>();
+        for (Integer i = 0; i < count; i++) {
+            allocations.add(new Meter_Allocation__c(
+                Meter__c = meterId,
+                Unit__c = unitId,
+                Allocation_Basis__c = 'Square Footage',
+                Allocation_Pct__c = share
+            ));
+        }
+        insertIf(doInsert, allocations);
+        return allocations;
+    }
+
+    /** Single Meter Allocation. @param meterId Master meter. @param unitId Unit. @param doInsert Insert when true. @return The allocation. */
+    public static Meter_Allocation__c createMeterAllocation(Id meterId, Id unitId, Boolean doInsert) {
+        return createMeterAllocations(1, meterId, unitId, doInsert)[0];
+    }
+
+    /**
+     * Vendor contracts - the fixed-monthly arrangements with no meter and no consumption
+     * (FSD 5.10.3: trash and maintenance). Deliberately OUTSIDE the utility bill pipeline;
+     * nothing in the consumption or variance path reads these.
+     *
+     * End_Date__c is a year out, so the default fixture is ACTIVE and the `activeOnly = true`
+     * branch of VendorContractSelector returns it. A test for the expired branch must set
+     * End_Date__c into the past explicitly.
+     *
+     * @param count           Number of contracts.
+     * @param propertyAssetId Property_Asset__c (required).
+     * @param doInsert        Insert when true.
+     * @return Vendor contracts.
+     */
+    public static List<Vendor_Contract__c> createVendorContracts(
+            Integer count, Id propertyAssetId, Boolean doInsert) {
+        requirePositive(count);
+        requireId(propertyAssetId, 'propertyAssetId (Vendor_Contract__c.Property_Asset__c)');
+        List<String> serviceTypes = new List<String>{ 'Trash', 'Maintenance' };
+        List<Vendor_Contract__c> contracts = new List<Vendor_Contract__c>();
+        for (Integer i = 0; i < count; i++) {
+            contracts.add(new Vendor_Contract__c(
+                Property_Asset__c = propertyAssetId,
+                Provider_Name__c = 'Test Vendor ' + nextUnique(),
+                Service_Type__c = serviceTypes[Math.mod(i, serviceTypes.size())],
+                Monthly_Amount__c = 250 + (i * 5),
+                Start_Date__c = Date.today().addMonths(-6),
+                End_Date__c = Date.today().addMonths(12)
+            ));
+        }
+        insertIf(doInsert, contracts);
+        return contracts;
+    }
+
+    /** Vendor contracts under the shared scaffold asset. @param count Number. @param doInsert Insert when true. @return Contracts. */
+    public static List<Vendor_Contract__c> createVendorContracts(Integer count, Boolean doInsert) {
+        return createVendorContracts(count, defaultPropertyAsset().Id, doInsert);
+    }
+
+    /** Single Vendor Contract. @param propertyAssetId Property asset. @param doInsert Insert when true. @return The contract. */
+    public static Vendor_Contract__c createVendorContract(Id propertyAssetId, Boolean doInsert) {
+        return createVendorContracts(1, propertyAssetId, doInsert)[0];
     }
 }

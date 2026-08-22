@@ -127,6 +127,93 @@ private class DispositionApprovalProcessesTest {
             'finalRejectionActions is not configured on this process, so the semaphore must never '
             + 'have been set at all');
     }
+    /**
+     * ══════════════════════════════════════════════════════════════════════════════
+     * 🔴 THE ASKING-PRICE GATE MUST NOT REACH THIS PATH. THIS TEST IS THE PROOF.
+     * ══════════════════════════════════════════════════════════════════════════════
+     * Added 2026-08-22 with the Disposition-Readiness asking-price requirement.
+     *
+     * The gate is a PRE-CHECK in `DispositionApprovalService.submitForApproval` and
+     * deliberately NOT a validation rule (design F-4). This test pins the consequence, and it
+     * is written to fail LOUDLY the day somebody adds the rule anyway:
+     *
+     *   a disposition that is ALREADY INSIDE `Sale_Decision_Approval` with a BLANK asking
+     *   price must still advance on approval.
+     *
+     * WHY THAT STATE IS REACHABLE AND NOT A STRAW MAN: every disposition that predates the
+     * gate is in exactly this shape (measured 2026-08-22 — DISP-0020 sits at Disposition
+     * Readiness with `Asking_Price__c` null), and `Sale_Decision_Approval`'s `entryCriteria`
+     * tests the STAGE only, so the platform's own Submit button and any direct
+     * `Approval.process` call still accept an unpriced record. The submit here is a RAW
+     * `Approval.process`, bypassing the service pre-check on purpose — that is the point, not
+     * a shortcut.
+     *
+     * 🔴 WHAT FAILURE LOOKS LIKE, AND WHY IT WOULD OTHERWISE BE INVISIBLE. If a validation
+     * rule requiring `Asking_Price__c` is ever added, `DispositionApprovalAdvanceService.advance`
+     * — `Database.update(rows, false, AccessLevel.SYSTEM_MODE)`, where SYSTEM_MODE lifts CRUD
+     * and FLS but NEVER a validation rule — would be refused, `allOrNone = false` would DISCARD
+     * the error, and the disposition would sit APPROVED at Disposition Readiness with
+     * `Approval_Advance_Pending__c` stuck true and nothing shown to the approver. So this test
+     * asserts all three: the stage moved, the semaphore cleared, and
+     * `lastRunAdvanceFailures` is EMPTY. The third assertion is the one that names the cause;
+     * without it a future reader gets "expected BOV Outreach, got Disposition Readiness" and no
+     * hint as to why.
+     */
+    @isTest
+    static void saleDecisionApproved_blankAskingPrice_stillAdvances() {
+        Disposition__c d = dispositionAt(TestDataFactory.DISPOSITION_RT_ON_MARKET, 'Disposition Readiness');
+        Assert.isNull(
+            [SELECT Asking_Price__c FROM Disposition__c WHERE Id = :d.Id].Asking_Price__c,
+            'PRECONDITION: the fixture must be UNPRICED. A priced one would satisfy any future '
+            + 'validation rule and this test would pass without testing anything.');
+        submit(d.Id);
+
+        Test.startTest();
+        decide(d.Id, 'Approve');
+        Test.stopTest();
+
+        // WITH SYSTEM_MODE — Approval_Advance_Pending__c carries no FLS for anyone by design.
+        Disposition__c after = [
+            SELECT Disposition_Stage__c, Approval_Advance_Pending__c FROM Disposition__c
+            WHERE Id = :d.Id WITH SYSTEM_MODE
+        ];
+        Assert.areEqual('BOV Outreach', after.Disposition_Stage__c,
+            'A blank asking price must NOT block the D-1 auto-advance. Still reading '
+            + '"Disposition Readiness" means a validation rule (or an approval entry criterion) '
+            + 'now requires Asking_Price__c and the Queueable\'s allOrNone = false swallowed the '
+            + 'refusal — read ASKING_PRICE_REQUIRED_MESSAGE in DispositionApprovalService.');
+        Assert.isFalse(after.Approval_Advance_Pending__c,
+            'The semaphore must be CLEARED. A stuck true is the signature of a swallowed '
+            + 'validation-rule refusal inside DispositionApprovalAdvanceQueueable.');
+        Assert.areEqual(0, DispositionApprovalAdvanceService.lastRunAdvanceFailures.size(),
+            'The advance must record no failures. Contents name the exact refusal: '
+            + DispositionApprovalAdvanceService.lastRunAdvanceFailures);
+    }
+
+    /**
+     * The off-market twin of the test above — same claim, the OTHER advance target. Kept
+     * separate rather than parameterised because a record-type-scoped validation rule would
+     * break exactly one of the two, and a single combined test could not say which.
+     */
+    @isTest
+    static void saleDecisionApproved_offMarket_blankAskingPrice_stillAdvances() {
+        Disposition__c d = dispositionAt(TestDataFactory.DISPOSITION_RT_OFF_MARKET, 'Disposition Readiness');
+        submit(d.Id);
+
+        Test.startTest();
+        decide(d.Id, 'Approve');
+        Test.stopTest();
+
+        Disposition__c after = [
+            SELECT Disposition_Stage__c, Approval_Advance_Pending__c FROM Disposition__c
+            WHERE Id = :d.Id WITH SYSTEM_MODE
+        ];
+        Assert.areEqual('Broker Selection', after.Disposition_Stage__c,
+            'An unpriced Off_Market sale must still advance to Broker Selection on approval');
+        Assert.isFalse(after.Approval_Advance_Pending__c, 'The semaphore must be cleared');
+        Assert.areEqual(0, DispositionApprovalAdvanceService.lastRunAdvanceFailures.size(),
+            'No advance failures: ' + DispositionApprovalAdvanceService.lastRunAdvanceFailures);
+    }
 
     // ═══════════════════════════════════════════════════════════════════════════
     // Broker_Finalize_Approval (BOV_Submission__c) — CHILD APPROVAL, SYNCHRONOUS PARENT WRITE

@@ -26,13 +26,27 @@
  * An approval whose entry criteria the record does not meet fails with the platform's
  * "no applicable approval process was found" — a sentence that is true, useless, and
  * indistinguishable from "an administrator deactivated the process". Two of the four branches have
- * a criterion a user can actually satisfy, and both are checked here with AUTHORED wording:
+ * a criterion a user can actually satisfy, and both are checked here with AUTHORED wording —
+ * joined 2026-08-22 by a THIRD pre-check that is NOT an entry-criterion mitigation (read the ⚠
+ * under the table):
  *
+ *   `Disposition Readiness`          `Asking_Price__c` must be non-null and greater than zero
  *   `Broker Selection` (off-market)  `Broker__c` must be non-null
  *   `Closing`                        `Wire_Verification_Completed__c` must be true
  *
- * ⚠ THE FIRST ROW CHANGED ON 2026-08-20 (off-market broker lookup) AND THE OLD FORM MUST NOT COME
- * BACK. It used to read `String.isBlank(Selected_Broker__c)` — a non-blank TEXT field. The gate now
+ * ⚠ THE FIRST ROW IS NEW ON 2026-08-22 AND IS THE ODD ONE OUT — IT IS NOT MITIGATING AN APPROVAL
+ * ENTRY CRITERION. `Sale_Decision_Approval` enters on the STAGE alone, so a blank asking price
+ * would submit and approve perfectly happily and the platform would never say a word. That
+ * pre-check exists because the STAGE ADVANCE the approval triggers is written by a Queueable in
+ * SYSTEM_MODE with `allOrNone = false`, where a refusal is SILENT — so submission time is the only
+ * place a refusal can still reach a person. Full argument at ASKING_PRICE_REQUIRED_MESSAGE. Do not
+ * "harmonise" it by adding an entry criterion or a validation rule without reading design F-4
+ * (`objects/Disposition__c/fields/Asking_Price__c.field-meta.xml`) first.
+ *
+ * ⚠ THE `Broker Selection` ROW CHANGED ON 2026-08-20 (off-market broker lookup) AND THE OLD FORM
+ * MUST NOT COME BACK. (It read "THE FIRST ROW" until 2026-08-22, when the asking-price row was
+ * inserted above it and silently made that ordinal name the wrong gate — the rows are addressed by
+ * NAME from here on, so the next insertion cannot repeat it.) It used to read `String.isBlank(Selected_Broker__c)` — a non-blank TEXT field. The gate now
  * requires the Contact LOOKUP, so the broker on an off-market disposition is a real record in the
  * system rather than a string naming nobody. **`Selected_Broker__c` is NOT retained as an `||`
  * fallback, and adding one would invert the purpose of the change twice over:** it would let a
@@ -42,7 +56,7 @@
  * There is also no population to protect: the off-market path was rebuilt from scratch on
  * 2026-08-19 and the org sweep found zero Off_Market rows.
  *
- * 🔴 THE SECOND ONE IS A DELIBERATE SUPERSESSION AND MUST NOT BE READ AS DUPLICATION. Until this
+ * 🔴 THE `Closing` ROW IS A DELIBERATE SUPERSESSION AND MUST NOT BE READ AS DUPLICATION. Until this
  * redesign, `Wire_Complete_Before_Completed`'s XML comment recorded a design decision (Q4) that
  * the wire flag must NOT be an approval `entryCriteria` — reasoning, correctly, that an unmet
  * entry criterion surfaces as that opaque platform error. The redesign ADDS the criterion anyway,
@@ -58,8 +72,8 @@
  * ── EXCEPTION CONTRACT (copied from OpportunityApprovalService, which is the point) ──
  *   - A user-actionable rule violation throws a TYPED {@link ApprovalException} whose message is
  *     authored here and safe to surface VERBATIM (no record, no Selected BOV, MORE THAN ONE
- *     Selected BOV, blank broker, wire incomplete, already pending, wrong stage, offer not on this
- *     disposition).
+ *     Selected BOV, blank broker, MISSING ASKING PRICE, wire incomplete, already pending, wrong
+ *     stage, offer not on this disposition).
  *   - A DML BLOCK on the stage advance surfaces the platform's own message verbatim inside an
  *     ApprovalException — that is deliberate and is the same choice `RecordStageAdvanceService
  *     .setStage` makes: a validation rule's text is the ONLY thing that tells the user which gate
@@ -188,6 +202,69 @@ public with sharing class DispositionApprovalService {
         + 'field, then submit for approval.';
 
     /**
+     * The `Disposition Readiness` branch's ONLY refusal, added 2026-08-22 to the user requirement
+     * "asking price should be mandatory before moving to BOV Outreach".
+     *
+     * ═════════════════════════════════════════════════════════════════════════════
+     * 🔴 THIS PRE-CHECK IS THE WHOLE CONTROL. THERE IS NO VALIDATION RULE BEHIND IT,
+     *    AND THAT ABSENCE IS A DECISION, NOT AN OMISSION.
+     * ═════════════════════════════════════════════════════════════════════════════
+     * A reader who notices that `Wire_Verification_Completed__c` is guarded in THREE places
+     * (approval `entryCriteria` + this class's pre-check + `Wire_Complete_Before_Sale_Closes`)
+     * and that this one is guarded in ONE will assume the other two were forgotten. They were not.
+     *
+     * WHY NO VALIDATION RULE (design F-4, recorded in
+     * `objects/Disposition__c/fields/Asking_Price__c.field-meta.xml` — read it before adding one):
+     * the `Disposition Readiness` -> `BOV Outreach` / `Broker Selection` hop IS NOT A USER ACTION.
+     * It is written by `DispositionApprovalAdvanceService.advance`, inside
+     * `DispositionApprovalAdvanceQueueable`, as
+     * `Database.update(rows, false, AccessLevel.SYSTEM_MODE)`. **SYSTEM_MODE lifts CRUD and FLS and
+     * NEVER a validation rule**, and `allOrNone = false` DISCARDS the failure. So a rule of the
+     * obvious shape — `ISCHANGED(Disposition_Stage__c) AND PRIORVALUE = 'Disposition Readiness'
+     * AND ISBLANK(Asking_Price__c)` — would fire on the machine's write, be swallowed, and leave
+     * an APPROVED disposition parked at Readiness with `Approval_Advance_Pending__c` stuck true and
+     * nothing shown to the approver. That is strictly worse than no backstop.
+     *
+     * ⚠ AND THIS IS WHY THE GUARD MUST STAY AT **SUBMISSION** TIME RATHER THAN MOVING TO THE
+     * WRITE: refusing here is the last moment a human is still holding the click. One statement
+     * later the decision belongs to an approval process and an async job, neither of which has a
+     * user to tell.
+     *
+     * 🔴 IF A BACKSTOP RULE IS EVER WANTED ANYWAY, THE SAFE SHAPE IS NOT A CLEVERER FORMULA —
+     * it is `Asking_Price__c != null` added to `Sale_Decision_Approval`'s `entryCriteria`, which
+     * makes the blank-price state unreachable BY the approval and therefore unreachable by the
+     * advance — exactly the argument `Wire_Complete_Before_Sale_Closes`'s own XML comment makes
+     * for the wire gate ("it should never trip on that path, because Closing_Approval cannot be
+     * entered unless the flag is already true"). That PAIR overturns F-4 and needs sign-off; do
+     * not add the rule on its own, and do not reach for PRIORVALUE to dodge the Queueable.
+     *
+     * ── WHY IT COVERS BOTH RECORD TYPES, DELIBERATELY ─────────────────────────
+     * This branch is not record-type-guarded (`Sale_Decision_Approval` enters at this stage on BOTH
+     * types), so the gate applies to the off-market `Broker Selection` hop as well as the on-market
+     * `BOV Outreach` one. The user asked for "before moving to BOV Outreach"; the business reason —
+     * an asset cannot be taken to market with no asking price — is record-type independent, and an
+     * off-market sale has no BOV Outreach stage to be stopped at, so scoping the gate to that stage
+     * name would exempt an entire record type for good. No later stage asks for this field.
+     *
+     * ── WHY ZERO IS REFUSED TOO, AND WHERE THAT COMES FROM ───────────────────
+     * Not an invented rule: the field's own `description` states that "a blank OR ZERO value makes
+     * every BOV score on this sale blank", because `BOV_Submission__c.BOV_Score__c`'s value
+     * dimension is computed against it. A zero asking price satisfies "populated" and still breaks
+     * every downstream score, so `<= 0` is refused with the same message. A currency of 0 is not a
+     * price.
+     *
+     * ⚠ IT NAMES THE ON-SCREEN LABEL `Asking Price`, NOT the API name, per this class's stated
+     * convention. Verified 2026-08-22: the field is on the Details fieldSection of
+     * `Disposition_Record_Page`, on `Disposition__c-Disposition Layout`, and editable for
+     * `DPEG_Disposition_Edit` — so the label the message names is the label the user is looking at
+     * while they read it. A gate demanding a field the user cannot see is the LOI
+     * `Final_Agreed_Price__c` dead end, and it was checked rather than assumed.
+     */
+    private static final String ASKING_PRICE_REQUIRED_MESSAGE =
+        'An asking price is required before this sale can leave Disposition Readiness. '
+        + 'Enter the Asking Price on this disposition, then submit for approval.';
+
+    /**
      * 🔴 THE AUTHORED REPLACEMENT FOR "no applicable approval process was found". See the class
      * header — this string is the entire mitigation for adding the wire flag to
      * `Closing_Approval`'s entry criteria.
@@ -282,6 +359,24 @@ public with sharing class DispositionApprovalService {
         String successMessage;
 
         if (STAGE_READINESS.equals(stage)) {
+            // 🔴 THE ASKING-PRICE GATE (2026-08-22). Same shape as the `Closing` branch's wire
+            // pre-check below, and the last point in the flow where a human is still present to
+            // be told: everything after this line is an approval process and an async Queueable
+            // whose refusals are silent. See ASKING_PRICE_REQUIRED_MESSAGE for why there is
+            // deliberately NO validation rule behind it (design F-4).
+            // `<= 0` as well as null: the field's own description records that a ZERO asking
+            // price blanks every BOV score exactly as a null one does. Mutation-tested
+            // 2026-08-22 — narrowing this to `== null` reds exactly one test
+            // (submitAtReadiness_zeroAskingPrice_isRefusedLikeABlankOne) and nothing else, so
+            // that test is the ONLY thing holding the zero half of the rule.
+            // ⚠ `Asking_Price__c` MUST STAY IN `DispositionSelector.selectApprovalContextById`.
+            // Dropping it does NOT degrade to null — measured 2026-08-22, Apex throws
+            // `System.SObjectException: SObject row was retrieved via SOQL without querying the
+            // requested field`, the controller masks it as the generic "could not be submitted",
+            // and Submit for Approval breaks at Readiness for every user on both record types.
+            if (disposition.Asking_Price__c == null || disposition.Asking_Price__c <= 0) {
+                throw new ApprovalException(ASKING_PRICE_REQUIRED_MESSAGE);
+            }
             targetId = disposition.Id;
             successMessage = SUBMITTED_SALE_DECISION_MESSAGE;
         } else if (STAGE_BOV_OUTREACH.equals(stage)) {

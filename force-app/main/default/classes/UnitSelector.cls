@@ -67,4 +67,34 @@ public with sharing class UnitSelector {
             ORDER BY Suite_Number__c ASC NULLS LAST
         ];
     }
+
+    /**
+     * Suite identity only - Id, suite number and occupancy - for one Property Asset.
+     *
+     * ADDED for FSD 5.10 Utility and Meter Tracking. The meter capture screen needs one row
+     * per space and nothing else about that space; it must NOT use
+     * {@link #selectByPropertyAssetId}, which drags 16 rent columns and a nested
+     * `Rent_Steps__r` subquery per unit behind it. On a 60-suite property with five rent
+     * steps each that is 360 extra rows and 16 extra FLS checks to render a list of suite
+     * numbers.
+     *
+     * USER_MODE: the capture screen is a user-requested read, and a user who cannot see a
+     * property's units must not be handed them by a modal.
+     *
+     * @param propertyAssetId Property_Asset__c Id; null returns an empty list.
+     * @return Units under the asset ordered by Suite_Number__c ASC NULLS LAST, carrying only
+     *         Id, Suite_Number__c and Status__c. Never null.
+     */
+    public static List<Unit__c> selectSuitesByPropertyAssetId(Id propertyAssetId) {
+        if (propertyAssetId == null) {
+            return new List<Unit__c>();
+        }
+        return [
+            SELECT Id, Suite_Number__c, Status__c
+            FROM Unit__c
+            WHERE Property_Asset__c = :propertyAssetId
+            WITH USER_MODE
+            ORDER BY Suite_Number__c ASC NULLS LAST
+        ];
+    }
 }

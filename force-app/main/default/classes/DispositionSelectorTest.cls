@@ -262,9 +262,12 @@ private class DispositionSelectorTest {
     // ═══════════════════════════════════════════════════════════════════════════
 
     /**
-     * RENAMED from "...populatesTheFourDecisionFields" (unit-testing agent pass, 2026-08-20,
-     * off-market broker lookup). The SELECT gained `Broker__c` — the field the
-     * `Broker Selection` gate now actually reads — so the inventory is five fields, not four.
+     * RENAMED TWICE, and the name is load-bearing rather than cosmetic — it is the count of what
+     * this test is claiming to inventory, so a stale one is a silently under-tested SELECT:
+     *   - "...FourDecisionFields" -> "...Five" on 2026-08-20 when the SELECT gained `Broker__c`,
+     *     the field the `Broker Selection` gate actually reads;
+     *   - "...Five" -> "...Six" on 2026-08-22 when it gained `Asking_Price__c`, the field the new
+     *     `Disposition Readiness` gate reads (DispositionApprovalService.submitForApproval).
      *
      * ⚠ `Selected_Broker__c` is NOT hand-set to a literal here on purpose. Setting `Broker__c` on
      * this same `update` fires `DispositionBrokerStampService` (before-update, same trigger), which
@@ -275,7 +278,7 @@ private class DispositionSelectorTest {
      * it now is.
      */
     @isTest
-    static void selectApprovalContextById_populatesTheFiveDecisionFields() {
+    static void selectApprovalContextById_populatesTheSixDecisionFields() {
         Contact broker = TestDataFactory.createBrokerContact(null, true);
         String expectedLabel = broker.FirstName + ' ' + broker.LastName
             + DispositionBrokerStampService.SEPARATOR + broker.Broker_Firm__c;
@@ -288,6 +291,7 @@ private class DispositionSelectorTest {
             assetId(), TestDataFactory.DISPOSITION_RT_OFF_MARKET, true);
         d.Broker__c = broker.Id;
         d.Wire_Verification_Completed__c = false;
+        d.Asking_Price__c = 3750000;
         update d;
 
         Test.startTest();
@@ -301,6 +305,13 @@ private class DispositionSelectorTest {
             'Selected_Broker__c is still in the SELECT as the display-only carry, now DERIVED '
             + 'from Broker__c by DispositionBrokerStampService rather than hand-typed');
         Assert.areEqual(false, result.Wire_Verification_Completed__c);
+        Assert.areEqual(3750000, result.Asking_Price__c,
+            'Asking_Price__c must be in the SELECT — it is what the Disposition Readiness gate in '
+            + 'DispositionApprovalService reads. MEASURED 2026-08-22 by deleting it from the query: '
+            + '8 tests across 3 classes go red with System.SObjectException "SObject row was '
+            + 'retrieved via SOQL without querying the requested field", and the user-facing '
+            + 'symptom is that Submit for Approval at Disposition Readiness fails for EVERYONE '
+            + 'behind the controller\'s generic "could not be submitted" mask.');
         Id rt = result.RecordTypeId; // readable without throwing — proves it is in the SELECT
     }
 

@@ -33,7 +33,19 @@ public with sharing class BovController {
         @AuraEnabled public Integer daysToMarket;
         @AuraEnabled public Decimal histSuccessRate;
         @AuraEnabled public Decimal capRate;
-        @AuraEnabled public Integer bovScore;
+        /**
+         * `BOV_Submission__c.BOV_Score__c` — a Number(5,2) FORMULA field (recreated
+         * 2026-08-22, manifest/bov-score-formula-conversion/), so it carries up to 2
+         * decimal places (e.g. 68.81). 🔴 THIS FIELD WAS `Integer` UNTIL THIS SAME
+         * CHANGE — a plain `Integer` here would have silently truncated every score
+         * (82.95 rendering as 82 in the matrix), which is a real display defect, not a
+         * rounding nicety: the whole point of carrying 2 decimal places in the formula's
+         * `precision`/`scale` is to distinguish two brokers a whole point apart from two
+         * a hundredth of a point apart. Widened to `Decimal` so `getSubmissions` can pass
+         * the formula's value straight through without truncating it. `c/bovComparisonMatrix`
+         * was updated in the same change to stop assuming an integer.
+         */
+        @AuraEnabled public Decimal bovScore;
         @AuraEnabled public String status;
         @AuraEnabled public Boolean isSelected;
     }
@@ -95,7 +107,10 @@ public with sharing class BovController {
                 r.daysToMarket = s.Days_To_Market__c != null ? s.Days_To_Market__c.intValue() : null;
                 r.histSuccessRate = s.Hist_Success_Rate__c;
                 r.capRate = s.Cap_Rate__c;
-                r.bovScore = s.BOV_Score__c != null ? s.BOV_Score__c.intValue() : null;
+                // BOV_Score__c is a Number(5,2) formula (see BovRow.bovScore's own comment) —
+                // passed straight through, not truncated with .intValue() as the old Integer-typed
+                // field required.
+                r.bovScore = s.BOV_Score__c;
                 r.status = s.Submission_Status__c;
                 r.isSelected = 'Selected'.equals(s.Submission_Status__c);
                 rows.add(r);
