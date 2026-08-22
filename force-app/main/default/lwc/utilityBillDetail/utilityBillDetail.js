@@ -10,17 +10,15 @@ import getBillDetail from '@salesforce/apex/UtilityBillController.getBillDetail'
  * "Imperative Apex only when LDS cannot express the query (complex joins, aggregates)". One
  * render needs THREE objects at once - the bill, its PRIOR bill's totals (a self-lookup
  * traversal), and every Charge_Line__c child - plus two derived figures. `getRecord` would
- * be three wires and a client-side join; GraphQL cannot express the derived percentage that
- * this feature must NOT read from the stored field (see below). One cacheable Apex call is
- * both fewer round-trips and the only place the percentage can be computed once.
+ * be three wires and a client-side join, and the per-line share of the bill total still has
+ * to be aggregated somewhere. One cacheable Apex call is both fewer round-trips and a single
+ * assembly point for the panel.
  *
- * ── 🔴 THE PERCENTAGE COMES FROM APEX, NOT FROM THE FIELD ───────────────────
- * `Utility_Bill__c.Total_Variance_Pct__c` is currently 100x its true value: its formula ends
- * in `* 100` and the platform ALSO scales a Percent formula result, so the multiplication
- * happens twice (measured on `usman-dpeg` 2026-08-22: a rise from $100 to $200 returns
- * 10000). `UtilityBillController.variancePct` derives the honest figure from the two totals.
- * DO NOT swap this component onto `getRecord` for that field until the formula is corrected
- * AND re-measured.
+ * ── THE PERCENTAGE ──────────────────────────────────────────────────────────
+ * `totalVariancePct` is `Utility_Bill__c.Total_Variance_Pct__c`, passed through the Apex
+ * DTO rather than fetched separately so the panel, the meter register and the variance
+ * alert batch all show one value for one bill. It is on the human scale (100 means +100%)
+ * and is null when there is no prior bill - render that as "no comparison", never as 0%.
  */
 export default class UtilityBillDetail extends LightningElement {
     @api recordId;

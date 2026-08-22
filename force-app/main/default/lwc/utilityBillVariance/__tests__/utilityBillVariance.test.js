@@ -62,8 +62,8 @@ describe('c-utility-bill-variance', () => {
         expect(
             element.shadowRoot.querySelector('.ubv-total-amount').value
         ).toBe(145);
-        // +72.5%, NOT +7250%. The stored Total_Variance_Pct__c field would supply 7250 here;
-        // the value bound to this component must be the Apex-derived one.
+        // +72.5%, on the human scale Total_Variance_Pct__c carries. The component must not
+        // rescale it: it renders the number it is handed.
         expect(element.shadowRoot.querySelector('.ubv-pct').textContent).toBe('+72.5%');
     });
 

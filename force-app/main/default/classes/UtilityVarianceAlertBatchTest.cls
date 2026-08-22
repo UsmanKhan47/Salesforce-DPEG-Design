@@ -142,7 +142,7 @@ private class UtilityVarianceAlertBatchTest {
 
         Assert.areEqual(1, job.scanned, 'The bill is in scope.');
         Assert.areEqual(0, job.flagged,
-            'A percentage change FROM zero is undefined. `variancePct` returns null and '
+            'A percentage change FROM zero is undefined. `Total_Variance_Pct__c` is null and '
             + '`qualifies` fails closed on it - the alternative is a fabricated number that '
             + 'clears every threshold and pages somebody for nothing.');
     }

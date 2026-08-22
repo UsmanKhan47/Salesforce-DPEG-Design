@@ -62,9 +62,9 @@ private class UtilityMeterControllerTest {
         Assert.areEqual(200, withBills.latestTotalCharges, 'Newest bill total.');
         Assert.areEqual(100, withBills.latestVarianceAmount, '$200 - $100.');
         Assert.areEqual(100, withBills.latestVariancePct,
-            'A doubling is +100%, on the scale a human reads. The stored '
-            + 'Total_Variance_Pct__c field would say 10000 here - see '
-            + 'UtilityBillController\'s class header. The register must not show that.');
+            'A doubling is +100%, on the scale a human reads. Read straight from '
+            + 'Total_Variance_Pct__c, the same field the record page and the alert batch '
+            + 'read, so the three cannot disagree about one bill.');
 
         Assert.isNotNull(subMeter, 'The sub-meter is identified as one.');
         Assert.isNotNull(subMeter.masterMeterNumber,

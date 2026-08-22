@@ -1,6 +1,6 @@
 /**
- * Tests for `UtilityBillController` - the bill record-page panel and, most importantly, the
- * derived percentage that this feature uses INSTEAD of `Utility_Bill__c.Total_Variance_Pct__c`.
+ * Tests for `UtilityBillController` - the bill record-page panel and the variance figures
+ * it surfaces from `Utility_Bill__c`.
  *
  * Read-only controller, so `.claude/rules/bulk-test-rule.md`'s 251 mandate does not apply
  * (it exists to force a second trigger batch firing). The volume proofs live in
@@ -46,34 +46,6 @@ private class UtilityBillControllerTest {
         return [SELECT Id FROM Utility_Bill__c ORDER BY Read_Date__c ASC LIMIT 1];
     }
 
-    // ==================== the derived percentage ====================
-
-    @isTest
-    static void variancePct_returnsTheHumanScale_notTheHundredfoldStoredField() {
-        Test.startTest();
-        Decimal doubled = UtilityBillController.variancePct(200, 100);
-        Decimal halved = UtilityBillController.variancePct(50, 100);
-        Decimal flat = UtilityBillController.variancePct(100, 100);
-        Test.stopTest();
-
-        Assert.areEqual(100, doubled, 'A doubling is +100%, not +1 and not +10000.');
-        Assert.areEqual(-50, halved, 'A halving is -50%. The sign carries.');
-        Assert.areEqual(0, flat, 'No change is 0%, and 0 is a real answer, not a null.');
-    }
-
-    @isTest
-    static void variancePct_undefinedInputs_returnNullRatherThanAFabricatedNumber() {
-        Test.startTest();
-        Assert.isNull(UtilityBillController.variancePct(500, null),
-            'No prior figure: there is nothing to be a percentage OF.');
-        Assert.isNull(UtilityBillController.variancePct(500, 0),
-            'A percentage change FROM zero has no meaning. Returning a number here would put '
-            + 'a fabricated figure in front of the monthly review and, worse, past an alert '
-            + 'threshold - which is why the batch fails closed on a null.');
-        Assert.isNull(UtilityBillController.variancePct(null, 100),
-            'No current figure either.');
-        Test.stopTest();
-    }
 
     // ==================== bill detail ====================
 
@@ -102,7 +74,7 @@ private class UtilityBillControllerTest {
             + 'figure that do not sum to the total it displays beside them, the whole '
             + 'decomposition is worthless to the reviewer.');
         Assert.areEqual(72.5, d.totalVariancePct,
-            '$200 -> $345 is +72.5%. The STORED field would say 7250 here.');
+            '$200 -> $345 is +72.5%, read straight from Total_Variance_Pct__c.');
         Assert.areEqual(2, d.chargeLines.size(), 'Both components.');
         Assert.areEqual('Energy', d.chargeLines[0].chargeType,
             'Largest amount first, so the driver of the variance leads.');

@@ -136,8 +136,8 @@ describe('c-meter-register', () => {
         const element = await mount();
         const rows = datatableRows(element);
 
-        // +72.5%, NOT +7250%. The value must be the Apex-derived percentage; the stored
-        // Total_Variance_Pct__c field is currently 100x its true value.
+        // +72.5%, on the human scale Total_Variance_Pct__c carries - the same figure the
+        // bill record page shows, so the register and the panel cannot disagree.
         expect(rows[0].varianceText).toBe('+$145 (+72.5%)');
     });
 

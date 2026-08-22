@@ -31,9 +31,8 @@ export default class UtilityBillVariance extends LightningElement {
     /**
      * Percentage change against the prior bill, on the human scale (100 means +100%).
      *
-     * ⚠ This must be the value derived in Apex by `UtilityBillController.variancePct`, NOT
-     * `Utility_Bill__c.Total_Variance_Pct__c`. The stored formula field is currently 100x its
-     * true value - see that controller's class header for the measurements.
+     * Sourced from `Utility_Bill__c.Total_Variance_Pct__c` via the Apex DTO. Null when there
+     * is no prior bill or its total was zero - render "no comparison", never 0%.
      */
     @api totalVariancePct;
     /** Label for the bill being compared against, e.g. "UB-00012 (1 Jan 2026)". */

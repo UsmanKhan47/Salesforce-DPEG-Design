@@ -102,7 +102,7 @@ public with sharing class UtilityBillSelector {
                    Prior_Utility_Bill__r.Consumption__c,
                    Prior_Utility_Bill__r.Total_Charges_Amount__c,
                    Usage_Variance_Amount__c, Rate_Variance_Amount__c,
-                   Total_Variance_Amount__c
+                   Total_Variance_Amount__c, Total_Variance_Pct__c
             FROM Utility_Bill__c
             WHERE Id = :billId
             WITH USER_MODE
@@ -130,7 +130,8 @@ public with sharing class UtilityBillSelector {
                    Bill_Date__c, Read_Date__c, Consumption__c, Total_Charges_Amount__c,
                    Rate_Per_Unit__c, Prior_Utility_Bill__c,
                    Prior_Utility_Bill__r.Total_Charges_Amount__c,
-                   Usage_Variance_Amount__c, Rate_Variance_Amount__c, Total_Variance_Amount__c
+                   Usage_Variance_Amount__c, Rate_Variance_Amount__c, Total_Variance_Amount__c,
+                   Total_Variance_Pct__c
             FROM Utility_Bill__c
             WHERE Meter__c IN :meterIds
             WITH USER_MODE
@@ -183,7 +184,7 @@ public with sharing class UtilityBillSelector {
                        Bill_Date__c, Read_Date__c, Consumption__c, Total_Charges_Amount__c,
                        Prior_Utility_Bill__c, Prior_Utility_Bill__r.Total_Charges_Amount__c,
                        Usage_Variance_Amount__c, Rate_Variance_Amount__c,
-                       Total_Variance_Amount__c
+                       Total_Variance_Amount__c, Total_Variance_Pct__c
                 FROM Utility_Bill__c
                 WHERE Prior_Utility_Bill__c != NULL
                   AND LastModifiedDate >= :since

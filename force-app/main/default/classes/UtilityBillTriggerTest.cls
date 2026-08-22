@@ -239,12 +239,14 @@ private class UtilityBillTriggerTest {
     }
 
     @isTest
-    static void variancePct_deployedFormulaFieldIsOneHundredTimesTooLarge() {
-        // PINNED DEFECT, not a passing feature. Measured on usman-dpeg 2026-08-22 and
-        // reproduced here so that FIXING the formula (dropping its trailing `* 100`) makes
-        // this test fail loudly instead of the defect being re-introduced silently.
-        //
-        // A rise from $100 to $200 is +100%. The field returns 10000.
+    static void totalVariancePct_returnsTheHumanScale_notAHundredfoldOfIt() {
+        // REGRESSION PIN for a defect that WAS live (fixed 2026-08-22). The formula ended in
+        // `* 100` while the platform also scales a Percent formula result, so a doubling read
+        // 10000 instead of 100. Three production readers now take this field directly -
+        // `UtilityBillController.getBillDetail`, `UtilityMeterController.getRegister` and
+        // `UtilityVarianceAlertBatch.execute` - so its SCALE is load-bearing, not cosmetic:
+        // at 100x, the batch's ">= 20%" threshold fires at 0.2% and alerts on nearly every
+        // bill in the org. Re-appending `* 100` must fail HERE and not in production.
         Meter__c meter = theMeter();
         Utility_Bill__c prior = newBill(meter.Id, Date.newInstance(2026, 1, 1), 1000, 1100);
         Utility_Bill__c current = newBill(meter.Id, Date.newInstance(2026, 2, 1), 1100, 1200);
@@ -254,18 +256,16 @@ private class UtilityBillTriggerTest {
 
         Test.startTest();
         Utility_Bill__c b = reload(current.Id);
+        Utility_Bill__c first = reload(prior.Id);
         Test.stopTest();
 
-        Assert.areEqual(100, UtilityBillController.variancePct(200, 100),
-            'The Apex derivation this feature actually uses returns the human figure, 100.');
-        Assert.areEqual(10000, b.Total_Variance_Pct__c,
-            'AND THE STORED FORMULA FIELD DOES NOT. Total_Variance_Pct__c ends in `* 100`, '
-            + 'and the platform ALSO scales a Percent formula result, so the multiplication '
-            + 'happens twice. This is why no Apex in this feature reads that field: a 20% '
-            + 'alert threshold tested against it would fire at 0.2% and alert on almost every '
-            + 'bill in the org. WHEN THE FORMULA IS FIXED, THIS ASSERTION SHOULD FAIL - '
-            + 'change it to 100 and delete UtilityBillController.variancePct\'s workaround '
-            + 'note at the same time.');
+        Assert.areEqual(100, b.Total_Variance_Pct__c,
+            'A rise from $100 to $200 is +100%. 10000 here means the trailing `* 100` is '
+            + 'back on the formula and every reader of this field is overstating by 100x.');
+        Assert.isNull(first.Total_Variance_Pct__c,
+            'A FIRST bill has nothing to be a percentage of. Zero would be a claim that '
+            + 'nothing changed, which is a different statement and a false one - and zero '
+            + 'would also read as a real measurement to the alert batch.');
     }
 
     // ==================== bulk: 251 ====================

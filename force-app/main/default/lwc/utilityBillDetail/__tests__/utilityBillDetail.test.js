@@ -112,8 +112,8 @@ describe('c-utility-bill-detail', () => {
         expect(panel.usageVariance).toBe(100);
         expect(panel.rateVariance).toBe(45);
         expect(panel.totalVariance).toBe(145);
-        // 72.5, NOT 7250: the value must come from UtilityBillController.variancePct, never
-        // from the stored Total_Variance_Pct__c field, which is 100x its true value.
+        // 72.5 is the human scale that Total_Variance_Pct__c carries. 7250 here would mean
+        // the formula's trailing `* 100` is back and every reader overstates by 100x.
         expect(panel.totalVariancePct).toBe(72.5);
         expect(panel.hasPrior).toBe(true);
         expect(panel.priorBillLabel).toBe('UB-00001 (read 2026-01-01)');

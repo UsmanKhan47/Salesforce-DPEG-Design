@@ -159,22 +159,17 @@ public with sharing class UtilityVarianceAlertBatch
      * for a 200-record chunk. Building the request list and calling once is the difference
      * between 3 queries and 600.
      *
-     * The percentage is derived through `UtilityBillController.variancePct` rather than read
-     * from `Total_Variance_Pct__c`. That is load-bearing here, not stylistic: the deployed
-     * formula returns 100x its true value (measured), so a `>= 20` test against the field
-     * would fire on a 0.2% change and alert on almost every bill in the org. See
-     * `UtilityBillController`'s class header for the measurements.
+     * The percentage is read from `Total_Variance_Pct__c`, the same field the record page
+     * and the register show, so a bill that reads +25% on screen is the one this threshold
+     * fires on. The field is null when the prior total is zero, and `qualifies` fails
+     * closed on that null rather than treating an undefined change as a large one.
      */
     public void execute(Database.BatchableContext ctx, List<Utility_Bill__c> scope) {
         List<GroupNotifier.Request> requests = new List<GroupNotifier.Request>();
         for (Utility_Bill__c bill : scope) {
             scanned++;
             Decimal amount = bill.Total_Variance_Amount__c;
-            Decimal pct = UtilityBillController.variancePct(
-                bill.Total_Charges_Amount__c,
-                bill.Prior_Utility_Bill__r == null
-                    ? null
-                    : bill.Prior_Utility_Bill__r.Total_Charges_Amount__c);
+            Decimal pct = bill.Total_Variance_Pct__c;
             if (!qualifies(amount, pct)) {
                 continue;
             }

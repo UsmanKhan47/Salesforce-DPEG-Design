@@ -2,40 +2,22 @@
  * Backs `c/utilityBillDetail` - the Utility Bill record-page panel that shows the charge
  * components and the FSD 5.10.5 variance decomposition.
  *
- * THIN by contract (`.claude/rules/apex-layering-rule.md`): no SOQL, no DML, no arithmetic
- * beyond the one derived percentage explained below. Reads go to `UtilityBillSelector` and
- * `ChargeLineSelector`.
+ * THIN by contract (`.claude/rules/apex-layering-rule.md`): no SOQL, no DML, no business
+ * logic. Reads go to `UtilityBillSelector` and `ChargeLineSelector`.
  *
  * ERROR BOUNDARY (ARCHITECTURE.md section 5): failures become an `AuraHandledException` with
  * a fixed generic message; platform detail goes to the admin-only debug log. Same shape as
  * `WorkOrderController` lines 16-23.
  *
- * ============================================================================
- * WHY THE PERCENTAGE IS COMPUTED HERE INSTEAD OF READ FROM THE FIELD
- * ============================================================================
- * `Utility_Bill__c.Total_Variance_Pct__c` exists, and this class deliberately does not use
- * it, because the deployed formula is WRONG BY A FACTOR OF 100.
+ * THE VARIANCE PERCENTAGE IS READ FROM THE FIELD.
+ * `Utility_Bill__c.Total_Variance_Pct__c` is the single source for the percentage change,
+ * here, in `UtilityMeterController`'s register and in `UtilityVarianceAlertBatch`'s
+ * threshold - one value, so the record page, the list and the alert cannot disagree about
+ * the same bill.
  *
- * Measured against `usman-dpeg` on 2026-08-22, twice, in isolation:
- *   prior total 100.00, current total 200.00  -> a 100% rise
- *   Total_Variance_Pct__c returned            -> 10000.00
- *   prior total 200.00, current total 345.00  -> a 72.5% rise
- *   Total_Variance_Pct__c returned            -> 7250.00
- *
- * The formula ends in `* 100`, and its own field comment asserts that "a Percent FORMULA
- * field displays the raw result with a percent sign; it does not multiply by 100... removing
- * it would silently render every variance as a hundredth of its real value." The measurement
- * says the opposite: the platform scales a Percent formula result for display, so the `* 100`
- * is applied twice. THE FIELD COMMENT IS THE DEFECT - it argues convincingly for the bug.
- *
- * This build cannot fix it: field metadata is out of scope here. So this controller derives
- * the figure from the two totals it is already holding, which costs nothing and cannot be
- * wrong. When the formula is corrected (drop the `* 100`), `variancePct` and the field will
- * agree and either may be used.
- *
- * DO NOT "simplify" this method away to a field read until that deploy has happened AND been
- * re-measured. A 20% threshold read against the current field fires at 0.2%.
- * ============================================================================
+ * It is null, not zero, when there is no prior bill or the prior total is zero: a percentage
+ * change FROM zero has no meaning, and a fabricated number there would clear an alert
+ * threshold. Callers must preserve that null rather than defaulting it.
  */
 public with sharing class UtilityBillController {
 
@@ -167,7 +149,7 @@ public with sharing class UtilityBillController {
                 d.usageVariance = bill.Usage_Variance_Amount__c;
                 d.rateVariance = bill.Rate_Variance_Amount__c;
                 d.totalVariance = bill.Total_Variance_Amount__c;
-                d.totalVariancePct = variancePct(d.totalCharges, d.priorTotalCharges);
+                d.totalVariancePct = bill.Total_Variance_Pct__c;
             }
 
             if (isConsumptionUnresolved(bill)) {
@@ -191,30 +173,6 @@ public with sharing class UtilityBillController {
                 + billId + ': ' + e.getMessage() + ' | ' + e.getStackTraceString());
             throw ahe(READ_FAILURE_MESSAGE);
         }
-    }
-
-    /**
-     * Percentage change of `current` against `prior`, on the scale a human reads: a rise
-     * from 100 to 200 returns 100, not 1 and not 10000.
-     *
-     * Null when there is no prior figure or it is zero - a percentage change FROM zero has
-     * no meaning, and returning 100 (or infinity, or 0) for it would put a fabricated number
-     * in front of the monthly review and, worse, past an alert threshold.
-     *
-     * Public and static because `UtilityMeterController` needs the identical arithmetic for
-     * the register list and `UtilityVarianceAlertBatch` for its threshold - one
-     * implementation, so the list, the record page and the alert can never disagree about
-     * the same bill. See the class header for why this exists at all.
-     *
-     * @param current Current total charges.
-     * @param prior   Prior total charges.
-     * @return The percentage change, or null when it is undefined.
-     */
-    public static Decimal variancePct(Decimal current, Decimal prior) {
-        if (prior == null || prior == 0 || current == null) {
-            return null;
-        }
-        return ((current - prior) / prior * 100).setScale(2, System.RoundingMode.HALF_UP);
     }
 
     /** Blended unit rate, or null when consumption is zero/absent (the rate is undefined). */

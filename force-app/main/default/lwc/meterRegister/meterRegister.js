@@ -160,9 +160,9 @@ export default class MeterRegister extends NavigationMixin(LightningElement) {
     /**
      * The variance pill.
      *
-     * `latestVariancePct` is the APEX-DERIVED percentage, not the stored
-     * `Total_Variance_Pct__c` field - that formula is currently 100x its true value and would
-     * render "+10000%" for a doubling. See `UtilityBillController`'s class header.
+     * `latestVariancePct` is `Utility_Bill__c.Total_Variance_Pct__c`, the same field the
+     * bill record page and the variance alert batch read, so a meter that reads +25% here
+     * is the one the alert fires on.
      *
      * A meter with no prior bill shows an em dash and no dot: "no comparison yet" is a
      * different statement from "no change", and colouring it green would say the second.

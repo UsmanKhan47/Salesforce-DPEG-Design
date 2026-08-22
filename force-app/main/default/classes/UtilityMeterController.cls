@@ -60,10 +60,9 @@ public with sharing class UtilityMeterController {
         /** The newest bill's dollar variance against its own prior bill. */
         @AuraEnabled public Decimal latestVarianceAmount;
         /**
-         * The newest bill's percentage variance, COMPUTED HERE from the two totals rather
-         * than read from `Utility_Bill__c.Total_Variance_Pct__c`. See
-         * `UtilityBillController.variancePct` for why - that stored field is currently 100x
-         * its true value and this feature must not propagate the defect.
+         * The newest bill's percentage variance, read from
+         * `Utility_Bill__c.Total_Variance_Pct__c`. Null when the bill has no prior, which
+         * the register renders as a blank rather than as a 0% "no change".
          */
         @AuraEnabled public Decimal latestVariancePct;
         @AuraEnabled public Id latestBillId;
@@ -119,11 +118,7 @@ public with sharing class UtilityMeterController {
                     r.latestReadDate = latest.Read_Date__c;
                     r.latestTotalCharges = latest.Total_Charges_Amount__c;
                     r.latestVarianceAmount = latest.Total_Variance_Amount__c;
-                    r.latestVariancePct = UtilityBillController.variancePct(
-                        latest.Total_Charges_Amount__c,
-                        latest.Prior_Utility_Bill__c == null
-                            ? null
-                            : latest.Prior_Utility_Bill__r.Total_Charges_Amount__c);
+                    r.latestVariancePct = latest.Total_Variance_Pct__c;
                 }
                 rows.add(r);
             }
