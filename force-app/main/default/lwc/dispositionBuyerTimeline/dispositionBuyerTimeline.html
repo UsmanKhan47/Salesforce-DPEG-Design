@@ -11,6 +11,50 @@
     <lightning-card icon-name="standard:contract">
         <span slot="title">{cardTitle}</span>
 
+        <!-- ═══════════════════════════════════════════════════════════════════
+             ONE CARD, THREE SECTIONS (2026-08-25). SEE THE JS HEADER.
+             ═══════════════════════════════════════════════════════════════════
+             1. PREFERRED BROKER — the green hero panel, mounted from
+                `c/bovPreferredBroker`. Absent when no broker is flagged.
+             2. TIMELINE — the merged NDA + Release Materials feed. UNCHANGED.
+             3. BOV RESPONSES — broker contact + status. Absent when no rows.
+
+             🔴 `.dbt-sections` HAS NO `gap` AND THAT IS DELIBERATE. Section 2's
+             own children already carry the card's 1rem inset (`.dbt-list`,
+             `.dbt-empty`, the error banner's SLDS padding), so a stack gap on top
+             of them would double the space above the timeline and nowhere else.
+             The sections space themselves — see the CSS.
+
+             🔴 EACH SECTION GATES ITSELF INDEPENDENTLY. A failed `getSubmissions`
+             must not blank the timeline, and a failed `getTimeline` must not hide
+             the broker: they are two wires answering two different questions. Do
+             not hoist these three branches into one shared `lwc:if`. -->
+        <div class="dbt-sections">
+            <!-- ── SECTION 1 ───────────────────────────────────────────────────
+                 🔴 THE GATE IS HERE, NOT INSIDE THE CHILD. `c/bovPreferredBroker`
+                 documents that it does not self-gate: an unrendered tag is not a
+                 flex item, but a child that renders nothing STILL occupies its
+                 slot in a parent stack. Same contract as `c/bovBrokerPanel`'s
+                 mount of the same bundle.
+                 ⚠ NO `<h3>` HERE. The panel carries its own "Preferred Broker"
+                 eyebrow label; a heading above it would say the same words twice,
+                 six pixels apart. Section 3's heading exists because its table
+                 has nothing else to name it. -->
+            <template lwc:if={hasPreferredBroker}>
+                <div class="dbt-section dbt-section--preferred">
+                    <c-bov-preferred-broker
+                        contact-name={preferredBrokerContact}
+                        firm-name={preferredBrokerFirm}
+                    ></c-bov-preferred-broker>
+                </div>
+            </template>
+
+            <!-- ── SECTION 2 — THE TIMELINE, BYTE-FOR-BYTE WHAT IT WAS ──────────
+                 Only this wrapper div is new. Every branch, class, badge, rail and
+                 comment below it is unchanged, by instruction: the user asked for
+                 the feed "exactly as it is now". -->
+            <div class="dbt-section dbt-section--timeline">
+
         <!-- ERROR: visible and loud. The controller throws rather than returning an empty
              list precisely so this branch exists — a silent blank card would be a confident
              wrong answer. `lv-error` is the ONE genuinely cross-bundle class in this repo
@@ -360,5 +404,121 @@
                 </div>
             </template>
         </template>
+            </div>
+
+            <!-- ── SECTION 3 — BOV RESPONSES ───────────────────────────────────
+                 🔴 EXACTLY TWO COLUMNS, AND THAT IS THE REQUIREMENT. This is not
+                 `c/bovComparisonMatrix` and must not grow back into one. The
+                 matrix compares SEVEN columns because it exists at BOV Outreach to
+                 help somebody CHOOSE; this section sits on the record page for the
+                 rest of the sale's life, by which time the choice is made — so it
+                 is the RECORD of that decision, and a valuation or a cap rate here
+                 invites a reader to re-litigate it on numbers that are by then
+                 months old. Broker contact and status, nothing else.
+                 🔴 A TABLE AT ~340px IS ONLY SAFE BECAUSE THERE ARE TWO COLUMNS —
+                 see the CSS. ADD A THIRD AND THAT REASONING NO LONGER HOLDS.
+
+                 ⚠ A REAL `<table>`, HAND-ROLLED, WITH REAL `<th scope="col">`.
+                 Two reasons. (1) `lightning-datatable`'s Jest stub renders an EMPTY
+                 template, which makes every text assertion vacuous and blinds
+                 `@sa11y/jest` to the headers. (2) A datatable does not resolve a
+                 `fieldName` reference inside a row action, a trap this repo has
+                 shipped twice; there are no actions here and a hand-rolled row
+                 cannot acquire that indirection later.
+
+                 🔴 PREFERRED ROWS ARE INCLUDED, NOT FILTERED OUT. The preferred
+                 broker is one of the sale's BOV submissions like any other, and
+                 section 1 above naming them is not a reason to omit their row.
+                 `c/bovComparisonMatrix` EXCLUDES the preferred row — that is a
+                 fact about the matrix (it is a chooser, and the preferred row is
+                 not a candidate), not a house rule. Do not copy its filter here.
+
+                 🔴 ONLY ONE ROW EVER READS "Selected". The stored
+                 `Submission_Status__c` can legitimately say it on TWO rows; the
+                 status rendered here is DERIVED — see `bovRows` in the JS for the
+                 rule and why it is display-only. Nothing here writes. -->
+            <template lwc:if={hasBovRows}>
+                <div class="dbt-section dbt-section--bov">
+                    <!-- 🔴 THE `id` IS LOAD-BEARING: the table is NAMED by this
+                         heading via `aria-labelledby`, and an unnamed grid never
+                         reaches a screen reader. The IDREF resolves because both
+                         nodes are in THIS component's shadow tree, which is the
+                         tree an IDREF is resolved in. A `<caption>` was the
+                         alternative and was rejected — it would render the same
+                         words a second time directly under the heading. -->
+                    <h3 class="dbt-section-title" id="dbt-bov-title">
+                        BOV Responses
+                    </h3>
+
+                    <table class="dbt-bov-table" aria-labelledby="dbt-bov-title">
+                        <thead>
+                            <tr>
+                                <th class="dbt-bov-th" scope="col">Broker Name</th>
+                                <th
+                                    class="dbt-bov-th dbt-bov-th--status"
+                                    scope="col"
+                                >
+                                    Status
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <template for:each={bovRows} for:item="broker">
+                                <tr key={broker.id} class="dbt-bov-row">
+                                    <!-- ⚠ THE PERSON LEADS, THE FIRM IS A MUTED
+                                         SUB-LINE, AND THE SUB-LINE IS CONDITIONAL.
+                                         With no contact name the firm has already
+                                         been promoted into the name slot, and
+                                         repeating it underneath itself would read
+                                         as two different brokers on one row. -->
+                                    <td class="dbt-bov-td dbt-bov-broker">
+                                        <span class="dbt-bov-name"
+                                            >{broker.name}</span
+                                        >
+                                        <template lwc:if={broker.hasFirm}>
+                                            <span class="dbt-bov-firm"
+                                                >{broker.firm}</span
+                                            >
+                                        </template>
+                                    </td>
+                                    <!-- ⚠ THE STATE IS READABLE TEXT INSIDE THE
+                                         PILL, never the pill's colour. This repo
+                                         has a measured incident of a text->badge
+                                         swap deleting accessible content a test
+                                         had pinned, and axe's colour-contrast rule
+                                         is INERT in jsdom, so a colour-only signal
+                                         would be checked by nothing here. -->
+                                    <td class="dbt-bov-td">
+                                        <span class={broker.statusClass}
+                                            >{broker.status}</span
+                                        >
+                                    </td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+            </template>
+
+            <!-- 🔴 `lwc:elseif={bovUnavailable}`, NOT A BARE `lwc:else`. A read
+                 that returned NOTHING and a read that FAILED are different facts:
+                 the first is a statement about the sale (say nothing) and the
+                 second is a statement about this section (say so). A bare else
+                 would put a failure message on every sale that simply has no BOV
+                 submissions yet.
+                 ⚠ `role="status"`, NOT `alert`. Nothing the user did caused it and
+                 the rest of the card is still useful; an alert interrupts, a
+                 status is announced when the user gets there. Same treatment as
+                 `c/bovBrokerChangeHistory`'s unavailable state — and deliberately
+                 QUIETER than the timeline's own `role="alert"` banner above, which
+                 reports the card's primary content failing. -->
+            <template lwc:elseif={bovUnavailable}>
+                <div class="dbt-section dbt-section--bov">
+                    <p class="dbt-bov-unavailable" role="status">
+                        Broker responses could not be loaded.
+                    </p>
+                </div>
+            </template>
+        </div>
     </lightning-card>
 </template>

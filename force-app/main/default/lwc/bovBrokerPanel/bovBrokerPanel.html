@@ -103,12 +103,20 @@
 
         <div class="panel-stack">
             <template lwc:if={hasPreferredBroker}>
-                <!-- ⚠ `firm-name` IS ALWAYS A STRING, NEVER `undefined`. The
-                     getter returns `''` when the flagged row carries no firm
-                     name, and `c/bovPreferredBroker` turns `''` into "Unnamed
-                     broker". `Broker_Firm__c` is legitimately nullable and was
-                     null on live data this week. -->
+                <!-- ⚠ BOTH ATTRIBUTES ARE ALWAYS STRINGS, NEVER `undefined`.
+                     Each getter returns `''` when the flagged row carries that
+                     value as null, and `c/bovPreferredBroker` turns an empty
+                     pair into "Unnamed broker". `Broker_Firm__c` is legitimately
+                     nullable and was null on live data this week, and the broker
+                     Contact lookup is nullable too.
+                     🔴 `contact-name` ADDED 2026-08-25 — the panel now leads with
+                     the PERSON and demotes the firm to a muted second line (user
+                     instruction: "show broker contacts, not accounts"). Both
+                     values come off the SAME `BovController.BovRow`, so this
+                     panel and the matrix below it cannot name two different
+                     brokers. -->
                 <c-bov-preferred-broker
+                    contact-name={preferredBrokerContact}
                     firm-name={preferredBrokerFirm}
                 ></c-bov-preferred-broker>
 

@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+    ONE CARD, THREE SECTIONS. 2026-08-25. POST-destructive deletions.
+
+    STATUS: PREPARED, NOT AUTHORISED FOR DEPLOY. This file only DESCRIBES
+    deletions; it performs nothing on its own.
+
+    DELETES EXACTLY TWO COMPONENTS, both LightningComponentBundles that shipped
+    this morning and lived for a few hours:
+
+    1. bovPreferredBrokerCard
+       The standalone "Preferred Broker" sidebar card. Its content is now SECTION
+       1 of c/dispositionBuyerTimeline, which mounts the same c/bovPreferredBroker
+       hero panel this card mounted. Nothing was rewritten; the lightning-card
+       chrome around it was dropped.
+
+    2. bovResponsesCard
+       The standalone "BOV (n)" sidebar card. Its table markup, its CSS and its
+       three-state visibility rule (rows / nothing / failed read) are now SECTION
+       3 of the same bundle, under the dbt-bov-* class prefix. Its one behavioural
+       change on the way across is the user's: the Broker Name column names the
+       CONTACT rather than the firm, and only ONE row may read "Selected".
+
+    WHY POST AND NOT PRE
+    ====================
+    package.xml in this same directory removes both componentInstances from
+    flexipages/Disposition_Record_Page. That page edit must be LIVE BEFORE these
+    bundles go: a FlexiPage referencing a deleted LightningComponentBundle does
+    not deploy, and a bundle still referenced by a live page cannot be deleted.
+    POST ordering satisfies both in one transaction. Validating this file in
+    isolation gives a FALSE "still referenced" failure, because a destructive-only
+    payload diffs against live org state where the page still names them - the
+    ordering claim is only provable by a combined manifest + post destructive run.
+
+    NOT IN SCOPE, AND THAT IS DELIBERATE
+    ====================================
+      * bovPreferredBroker  SURVIVES. It is the hero PANEL, not the card, and it
+        is mounted by both c/bovBrokerPanel (BOV Outreach) and now
+        c/dispositionBuyerTimeline. Deleting it breaks two surfaces. The bundle
+        names are one word apart; read them twice.
+      * bovBrokerChangeHistory  SURVIVES, unchanged and unmoved. It was never part
+        of this merge.
+      * No Apex is deleted. BovController.getSubmissions is still read by
+        c/bovBrokerPanel, c/bovComparisonMatrix and now the timeline.
+
+    HOW TO RUN IT (only once authorised, and only alongside this folder's
+    package.xml in the SAME command)
+    ================================
+      sf project deploy start
+        with the manifest flag                 pointing at package.xml here
+        with the post destructive changes flag pointing at this file
+        with the target org flag               set to usman&#45;dpeg
+    The flag prefixes are spelled out in words on purpose: an XML comment body
+    cannot contain two consecutive hyphens.
+
+    Do NOT pass the purge on delete flag; the bundles are recoverable from git
+    history in any case.
+    -->
+    <types>
+        <members>bovPreferredBrokerCard</members>
+        <members>bovResponsesCard</members>
+        <name>LightningComponentBundle</name>
+    </types>
+    <version>67.0</version>
+</Package>

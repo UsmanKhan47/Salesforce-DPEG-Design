@@ -412,3 +412,216 @@
 .lv-error {
     font-size: var(--slds-g-font-scale-base, 0.8125rem);
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════════════════════
+   THE THREE SECTIONS (2026-08-25) — PREFERRED BROKER / TIMELINE / BOV RESPONSES.
+   ═══════════════════════════════════════════════════════════════════════════════════════════
+   🔴 THE STACK HAS NO `gap`, AND THAT IS A DECISION RATHER THAN AN OMISSION. Everywhere else in
+   this repo the answer to "space these siblings" is `gap`, because the LWC template compiler
+   discards whitespace-only text nodes and there is nothing between two elements to collapse. It
+   is the wrong tool HERE: section 2's own children already carry the card's 1rem inset
+   (`.dbt-list`, `.dbt-empty`, and the error banner's `slds-p-around_medium`), so a stack-level
+   gap would land ON TOP of that padding for the timeline and beside a bare edge for the other
+   two — spacing that varies by which section rendered. Each section therefore owns its own
+   inset, and the numbers below are chosen so any pair of adjacent sections reads as one step.
+   ⚠ THAT IS ALSO WHY SECTION 2 GOT A WRAPPER WITH NO PADDING OF ITS OWN: its content had to
+   stay byte-for-byte what it was, which includes where its padding lives. */
+.dbt-sections {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.dbt-section {
+    min-width: 0;
+}
+
+/* SECTION 1 — the green hero panel.
+   🔴 NO BOTTOM PADDING. `.dbt-list` (and `.dbt-empty`, and the error banner) already open with
+   1rem of their own, so a bottom inset here would double to 2rem between the panel and the first
+   timeline entry and nowhere else on the card. The three-sided inset is what makes the seam
+   between sections 1 and 2 the same single step as everywhere else. */
+.dbt-section--preferred {
+    padding: var(--slds-g-spacing-4, 1rem) var(--slds-g-spacing-4, 1rem) 0;
+}
+
+/* SECTION 3 — the BOV responses table.
+   🔴 THE HAIRLINE IS THE SECTION BOUNDARY AND IT IS DRAWN ON THE SECTION THAT MAY BE ABSENT,
+   NEVER BETWEEN THE TWO. A rule on the bottom of section 2 would still be drawn when section 3
+   does not render — a line under the last timeline entry with nothing beneath it. Keyed to the
+   optional section, the stray case is structurally unreachable. Same reasoning as the divider
+   inside `c/bovBrokerPanel`'s preferred-broker `lwc:if`.
+   ⚠ THE SAME RULE SERVES THE FAILED-READ LINE, because that branch reuses this class: a
+   one-line failure message floating against the timeline with no boundary reads as part of the
+   feed. */
+.dbt-section--bov {
+    padding: var(--slds-g-spacing-4, 1rem);
+    border-top: var(--slds-g-sizing-border-1, 1px) solid
+        var(--slds-g-color-border-1, #e5e5e5);
+}
+
+/* ⚠ AN `<h3>`, RESET TO THE CARD'S SECONDARY-LABEL SCALE. The heading level is for the document
+   outline (`lightning-card`'s title is the h2 above it); the SIZE is a visual decision and the
+   two are independent. It exists at all because the table has nothing else to name it — section
+   1 carries its own eyebrow label and needs no heading. */
+.dbt-section-title {
+    min-width: 0;
+    margin: 0 0 var(--slds-g-spacing-2, 0.5rem);
+    font-size: var(--slds-g-font-scale-neg-1, 0.75rem);
+    font-weight: var(--slds-g-font-weight-7, 700);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--slds-g-color-on-surface-1, #757575);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════════════════
+   SECTION 3'S TABLE. SALVAGED VERBATIM FROM THE DELETED `c/bovResponsesCard`.
+   ═══════════════════════════════════════════════════════════════════════════════════════════
+   🔴 A TABLE AT ~340px IS ONLY SAFE BECAUSE THERE ARE TWO COLUMNS. This card retired a SIX-column
+   grid for exactly this reason: five value columns sharing ~35px each in a ~276px sidebar is
+   unusable. Two columns of short text is a different shape — `table-layout: fixed` hands out the
+   width up front instead of letting the longest name set it, and `overflow-wrap: anywhere` (on
+   `:host`, at the top of this file) then wraps INSIDE the cell. Nothing scrolls sideways, which
+   is the property the "no tables in the sidebar" rule actually protects. ADD A THIRD COLUMN AND
+   THAT REASONING NO LONGER HOLDS.
+   ⚠ NO MEDIA QUERIES AND NO `@container`. A media query measures the VIEWPORT; the constraint
+   here is CONTAINER width. And `@container` is measured in this repo to make jsdom DISCARD THE
+   WHOLE STYLESHEET, silently disabling every source-text pin in the suite.
+
+   🔴 `width: 100%` IS LOAD-BEARING AND IS AN UNAVOIDABLE LINTER WARNING. There is no SLDS 2
+   styling hook for it — the linter says so in its own message — and without it a
+   `table-layout: fixed` table collapses to its content, so the two columns stop lining up down
+   the card. Gate on the linter's ERROR count, not its warning count. */
+.dbt-bov-table {
+    width: 100%;
+    min-width: 0;
+    table-layout: fixed;
+    border-collapse: collapse;
+}
+
+/* The column headers ARE the labels — a two-column table is the one shape where a shared heading
+   row stays readable, because the header sits a few pixels above the value rather than a
+   card-length away.
+   ⚠ `text-align: start`, NOT `left`: `start` follows the reader's writing direction. */
+.dbt-bov-th {
+    min-width: 0;
+    text-align: start;
+    padding-bottom: var(--slds-g-spacing-1, 0.25rem);
+    border-bottom: var(--slds-g-sizing-border-1, 1px) solid
+        var(--slds-g-color-border-1, #e5e5e5);
+    font-size: var(--slds-g-font-scale-neg-2, 0.625rem);
+    font-weight: var(--slds-g-font-weight-7, 700);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--slds-g-color-on-surface-1, #757575);
+}
+
+/* 🔴 A `rem` WIDTH ON THE STATUS COLUMN, NOT A PERCENTAGE. The status cell holds ONE short pill
+   whose longest possible text is "SELECTED" at 0.625rem — its width is a property of the PILL,
+   not of the container — so a percentage would hand it ~130px in a wide region and starve the
+   broker's name in a narrow one. The name is the long free text and takes whatever is left, at
+   both widths.
+   ⚠ THE `rem` DOES NOT ESCAPE THE LINTER — measured, `slds/no-hardcoded-values-slds2` flags
+   `width: 6.5rem` exactly as it flags `width: 38%`. Both spellings cost one warning, so the
+   choice was made on sizing alone. The two token escapes were considered and rejected:
+   `--slds-g-sizing-12` is 5rem, the measured width of "SELECTED" plus its padding with nothing
+   to spare, and `--slds-g-sizing-13` jumps to 10rem, leaving ~116px for a name in a 276px
+   sidebar. */
+.dbt-bov-th--status {
+    width: 6.5rem;
+}
+
+.dbt-bov-td {
+    min-width: 0;
+    padding-top: var(--slds-g-spacing-2, 0.5rem);
+    vertical-align: top;
+    text-align: start;
+    font-size: var(--slds-g-font-scale-base, 0.8125rem);
+    color: var(--slds-g-color-on-surface-2, #2e2e2e);
+}
+
+/* THE BROKER CELL IS A TWO-LINE STACK: the contact, then the firm.
+   🔴 `gap` IS MARKUP HERE, exactly as it is everywhere else in this file. The two spans are
+   siblings with only a whitespace text node between them in the source, and the LWC template
+   compiler discards it — with the gap gone the firm renders hard against the name and no
+   rendered text changes to show it. `display: flex` on a `<td>` is fine: the cell still
+   participates in the table's column layout, only its own children are laid out as a flex
+   column. */
+.dbt-bov-broker {
+    display: flex;
+    flex-direction: column;
+    gap: var(--slds-g-spacing-1, 0.25rem);
+}
+
+.dbt-bov-name {
+    min-width: 0;
+}
+
+/* ⚠ `on-surface-1` IS THE GREY ONE (#757575); -2 and -3 are progressively DARKER. The numbering
+   reads like an ascending emphasis scale and is the reverse. Do not reach for
+   `neutral-base-60` for muted text either: #939393 is roughly 3.5:1 on white and fails AA. */
+.dbt-bov-firm {
+    min-width: 0;
+    font-size: var(--slds-g-font-scale-neg-1, 0.75rem);
+    color: var(--slds-g-color-on-surface-1, #757575);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════════════════
+   THE STATUS PILLS.
+   ═══════════════════════════════════════════════════════════════════════════════════════════
+   🔴 THE WORD IS THE STATE; THE COLOUR IS REINFORCEMENT. "Selected" and "Backup" are rendered as
+   readable text INSIDE the pill — this repo has a measured incident of a text->badge swap
+   deleting accessible content a test had pinned, and axe's colour-contrast rule is INERT in
+   jsdom, so a colour-only signal would be checked by nothing in this pipeline.
+
+   🔴 THE GREEN IS `success-base-95` + `success-base-30`, **NOT** `success-container-1`. Measured
+   2026-08-24 against `globalStylingHooks.metadata.json`, the file the repo's own `slds-linter`
+   reads: `--slds-g-color-success-container-1` is #2e844a, a SOLID MID-GREEN, so the
+   natural-reading "pale container + dark text" pairing is dark-on-dark wherever the SLDS 2 base
+   theme is active. `base-30` on `base-80` measures 5.84:1 (slds) / 5.83 (cosmos light) / 6.13
+   (dark).
+   ⚠ TOKEN FOR TOKEN THE SAME GREEN AS `c/bovPreferredBroker`'s panel, which is SECTION 1 OF THIS
+   SAME CARD and can be naming the same broker at the same moment. Two greens for one idea read
+   as two different meanings. */
+.dbt-bov-badge {
+    display: inline-flex;
+    align-items: center;
+    min-width: 0;
+    padding: var(--slds-g-spacing-1, 0.25rem) var(--slds-g-spacing-2, 0.5rem);
+    border-radius: var(--slds-g-radius-border-pill, 15rem);
+    font-size: var(--slds-g-font-scale-neg-2, 0.625rem);
+    font-weight: var(--slds-g-font-weight-7, 700);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.dbt-bov-badge--selected {
+    color: var(--slds-g-color-success-base-30, #194e31);
+    background: var(--slds-g-color-success-base-95, #ebf7e6);
+    border: var(--slds-g-sizing-border-1, 1px) solid
+        var(--slds-g-color-success-base-80, #91db8b);
+}
+
+/* Neutral chrome: "Backup" names a POSITION IN A RANKING, not a problem, and a red or amber pill
+   would invent a severity the data does not have. Same treatment as this card's other neutral
+   badges above.
+   ⚠ NOT `--slds-g-color-disabled-container-1` / `--slds-g-color-on-disabled-1`: measured, that
+   pair is WHITE on PALE GREY and is near-invisible on a white card. */
+.dbt-bov-badge--backup {
+    color: var(--slds-g-color-on-surface-1, #757575);
+    background: var(--slds-g-color-surface-container-1, #fff);
+    border: var(--slds-g-sizing-border-1, 1px) solid
+        var(--slds-g-color-border-1, #e5e5e5);
+}
+
+/* The failed-read line for section 3. Muted body text, never an alert: dressing one section of a
+   secondary card up as an incident is how a page the user did not ask to interact with starts
+   shouting — and the timeline's own `role="alert"` banner above it is the loud one, reserved for
+   the card's primary content failing. `margin: 0` because the inset is `.dbt-section--bov`'s job
+   and a default paragraph margin would double it unevenly. */
+.dbt-bov-unavailable {
+    min-width: 0;
+    margin: 0;
+    font-size: var(--slds-g-font-scale-neg-1, 0.75rem);
+    color: var(--slds-g-color-on-surface-1, #757575);
+}

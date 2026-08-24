@@ -1,37 +1,63 @@
 <!--
   ══════════════════════════════════════════════════════════════════════════════
-  c-bov-preferred-broker — the highlighted preferred-broker panel (2026-08-24).
+  c-bov-preferred-broker — the highlighted preferred-broker panel (2026-08-24,
+  amended 2026-08-25).
   ══════════════════════════════════════════════════════════════════════════════
-  🔴 THIS REPLACED A SECOND COPY OF `c/bovComparisonMatrix`. Until today the
+  🔴 THIS REPLACED A SECOND COPY OF `c/bovComparisonMatrix`. Until 2026-08-24 the
   "Preferred Broker" card was the SAME bundle as the BOV Comparison Matrix,
   mounted with a bare `preferred-only` attribute and filtered down to one row.
-  The user's design turns that card into a hero panel — an icon, a label, a firm
-  name and a pill — which shares NO rendering with a datatable, so the flag was
+  The user's design turns that card into a hero panel — an icon, a label and the
+  broker's name — which shares NO rendering with a datatable, so the flag was
   retired rather than widened. See this bundle's `.js` header for what came out
   of `c/bovComparisonMatrix` in the same change.
 
-  ⚠ THERE IS NO `lightning-card` HERE, DELIBERATELY. `c/bovBrokerPanel` already
-  renders the "Brokers" card and its three buttons; this panel is a filled block
-  INSIDE that card's body, above the divider. A card inside a card inside a card
-  is what the old arrangement did, and the design explicitly asks for a filled
-  panel rather than a second titled card.
+  ══════════════════════════════════════════════════════════════════════════════
+  🔴 2026-08-25 — THE PANEL NAMES A PERSON, AND THE "YES" PILL IS GONE.
+  ══════════════════════════════════════════════════════════════════════════════
+  Two user instructions, both applied here and both visible in the markup below:
+
+  1. THE PRIMARY LINE IS THE BROKER **CONTACT**, NOT THE FIRM. "Show broker
+     contacts, not accounts" — a firm cannot answer a phone. The firm survives as
+     a MUTED SECONDARY LINE, because the same person can be reached at two firms
+     over the life of a sale and the firm is what the commission agreement names.
+     ⚠ THE FIRM LINE IS CONDITIONAL, AND `hasFirm` IS NOT MERELY "IS IT NON-EMPTY".
+     When no contact name exists the firm is PROMOTED to the primary line by
+     `displayName`, and repeating it underneath itself in grey would read as two
+     different brokers. See the getter.
+
+  2. THE "YES" PILL IS DELETED. It answered a question nobody asked: the panel
+     only renders when a preferred broker exists, so a badge saying YES beside
+     the label "Preferred Broker" restated the panel's own precondition.
+     🔴 THE VISUALLY-HIDDEN SUBJECT SURVIVED THE PILL AND THAT IS DELIBERATE —
+     it moved onto the name line rather than being deleted with it. It is what
+     makes the announced text a SENTENCE ("Preferred broker: Jane Okafor")
+     instead of a bare name floating after an eyebrow label, and it is the one
+     part of the pill that was carrying information rather than decoration.
+     ⚠ ITS `.pref-pill` CSS RULE WENT WITH THE PILL. Do not re-add a badge here
+     without re-reading the CSS header first — its green was measured, and the
+     obvious `--slds-g-color-success-container-1` pairing is dark-on-dark.
+
+  ⚠ THERE IS NO `lightning-card` HERE, DELIBERATELY. This is a filled block
+  INSIDE a card body: at BOV Outreach that card is `c/bovBrokerPanel`'s
+  ("Brokers"), and on the Disposition record page it is
+  `c/dispositionBuyerTimeline`'s first SECTION. A card inside a card inside a
+  card is what both arrangements replaced.
 
   ⚠ NO WIRE AND NO APEX. This is a presentational component per ARCHITECTURE.md
-  §5 — props in, nothing out. `c/bovBrokerPanel` already holds the BOV rows (its
-  buttons' visibility rules need them) and already gates this tag with
-  `lwc:if={hasPreferredBroker}`, so a wire here would be a third consumer of the
-  same LDS cache entry for a value the parent has already computed.
+  §5 — props in, nothing out. Both parents already hold the BOV rows (their own
+  rules need them) and both gate this tag with `lwc:if`, so a wire here would be
+  a third consumer of the same LDS cache entry for a value the parent computed.
 
   🔴 THE PANEL RENDERS ONLY WHEN A PREFERRED BROKER EXISTS, AND THAT GATE IS THE
   PARENT'S `lwc:if`, NOT A GETTER HERE. It has to be: an unrendered tag is not a
   flex item, and a self-gating child that renders nothing STILL takes one step of
-  `.panel-stack`'s `gap`. That is the accepted defect `dispositionMain.css` used
-  to document, and the reason the gate lives one level up.
+  a parent stack's `gap`. That is the accepted defect `dispositionMain.css` used
+  to document, and the reason the gate lives one level up — in BOTH parents.
 -->
 <template>
     <div class="pref-panel">
         <!-- ⚠ DECORATIVE, SO `aria-hidden` AND NO `alternative-text`. The shield
-             says nothing the "Preferred Broker" label and the pill do not
+             says nothing the "Preferred Broker" label and the name do not
              already say; announced, it is noise on every visit. Passing an
              `alternative-text` would make `lightning-icon` announce it. -->
         <lightning-icon
@@ -41,36 +67,41 @@
             aria-hidden="true"
         ></lightning-icon>
 
-        <!-- ⚠ THE THREE TEXT LINES ARE SPACED BY `.pref-detail`'s `gap`, WHICH IS
-             MARKUP, NOT POLISH. The LWC template compiler discards whitespace-only
-             text nodes between sibling elements, and `.pref-eyebrow` /
-             `.pref-firm` carry `margin: 0` to stop the default paragraph margins
-             fighting it — so with the gap gone the three lines butt together. -->
+        <!-- ⚠ THE LINES ARE SPACED BY `.pref-detail`'s `gap`, WHICH IS MARKUP,
+             NOT POLISH. The LWC template compiler discards whitespace-only text
+             nodes between sibling elements, and the paragraphs carry `margin: 0`
+             to stop the default paragraph margins fighting it — so with the gap
+             gone the lines butt together. -->
         <div class="pref-detail">
             <p class="pref-eyebrow">Preferred Broker</p>
-            <p class="pref-firm">{displayName}</p>
 
             <!--
-                🔴 "YES" ALONE NAMES NOTHING. Read out of context a screen reader
-                announces the word "YES" with no subject, so the pill carries its
-                own subject in a visually-hidden span and its accessible name
-                reads "Preferred broker: YES".
+                🔴 THE HIDDEN SUBJECT IS ON ONE LINE WITH THE NAME, ON PURPOSE.
+                Split across source lines the compiler keeps the indentation
+                inside the text node and the announced name gains stray
+                whitespace; and a `<strong>`-style inline element starting its
+                own line loses the space BEFORE it entirely (measured in this
+                repo). One line avoids both.
 
                 ⚠ A LOCAL `.pref-sr-only`, **NOT** THE GLOBAL `slds-assistive-text`.
-                That class lives in a document-level SLDS stylesheet; under native
-                shadow DOM it does not reach into this component, and the subject
-                would then render VISIBLY beside the pill. Same call, same reason,
-                as `c/bovBrokerChangeHistory`'s `.bbc-sr-only`.
+                That class lives in a document-level SLDS stylesheet; under
+                native shadow DOM it does not reach into this component, and the
+                subject would then render VISIBLY beside the name. Same call,
+                same reason, as `c/bovBrokerChangeHistory`'s `.bbc-sr-only`.
 
-                ⚠ ALSO NOT `aria-label`. A bare <span> is `role="generic"`, which
-                prohibits an accessible name — the label would be silently dropped
-                by conforming assistive technology. Hidden text always works.
-
-                ⚠ ONE LINE ON PURPOSE. Split across lines the compiler leaves the
-                indentation inside the text node and the rendered name gains stray
-                whitespace, which the Jest pin then has to normalise away.
+                ⚠ ALSO NOT `aria-label`. A bare <p> is `role="generic"`, which
+                prohibits an accessible name — the label would be silently
+                dropped by conforming assistive technology. Hidden text always
+                works.
             -->
-            <span class="pref-pill"><span class="pref-sr-only">Preferred broker: </span>YES</span>
+            <p class="pref-name"><span class="pref-sr-only">Preferred broker: </span>{displayName}</p>
+
+            <!-- ⚠ CONDITIONAL — see the header. When the contact name is missing
+                 the firm becomes the PRIMARY line, and this line would then
+                 repeat it in grey directly underneath itself. -->
+            <template lwc:if={hasFirm}>
+                <p class="pref-firm">{displayFirm}</p>
+            </template>
         </div>
     </div>
 </template>

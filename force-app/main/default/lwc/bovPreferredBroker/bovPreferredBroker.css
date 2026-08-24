@@ -17,35 +17,43 @@
   base theme is active. The pale literal beside it in a `var()` fallback
   describes only the hook-UNDEFINED case, so a file shipping that pairing reads
   as correct. `c/callForOffersPanel` still ships it; `c/brokerListing` fixed it
-  earlier today, and this file follows `c/brokerListing`.
+  on 2026-08-24 and this file follows `c/brokerListing`.
 
   ⚠ NOTHING ELSE IN THIS PIPELINE CATCHES IT. The SLDS linter only checks that a
-  hook was USED, Jest asserts class names, and axe's colour-contrast rule is
-  INERT in jsdom. The Jest suite therefore pins these rules as SOURCE TEXT, with
-  the comments stripped first — otherwise this very paragraph, which names the
-  forbidden token, satisfies the absence search and the pin is vacuously green.
+  hook was USED, and axe's colour-contrast rule is INERT in jsdom.
 
   -- CONTRAST, COMPUTED FROM THE VALUES ABOVE --------------------------------
-      firm name  base-30 on base-95          8.72 (slds) · 8.74 (cosmos light) · 9.24 (dark)
-      pill       base-30 on base-80          5.84        · 5.83                · 6.13
-      eyebrow    neutral-base-30 on base-95  8.80        · ~8.8                · 9.24
+      name (contact)  base-30 on base-95          8.72 (slds) · 8.74 (cosmos light) · 9.24 (dark)
+      firm (muted)    neutral-base-30 on base-95  8.80        · ~8.8                · 9.24
+      eyebrow         neutral-base-30 on base-95  8.80        · ~8.8                · 9.24
   🔴 `--slds-g-color-on-surface-1` — this repo's usual "secondary text" hook — was
-  REJECTED for the eyebrow after measuring it: #757575 on #ebf7e6 is 4.16:1,
+  REJECTED for the muted lines after measuring it: #757575 on #ebf7e6 is 4.16:1,
   under AA for text this small, and it passes every gate we have. `neutral-base-30`
   is the muted grey that also inverts (#444 light / #aeaeae dark).
+
+  ═════════════════════════════════════════════════════════════════════════════
+  🔴 2026-08-25 — `.pref-pill` WAS DELETED, AND `.pref-firm` CHANGED MEANING.
+  ═════════════════════════════════════════════════════════════════════════════
+  The "YES" pill is gone by user instruction (see the template header), and with
+  it its rule — the `base-80` pill green now appears nowhere in this file.
+  `.pref-firm` USED TO BE THE BOLD GREEN PRIMARY LINE and is now the MUTED
+  SECONDARY one; the bold primary treatment moved to `.pref-name`, which is the
+  broker CONTACT. Reading the two rules by name alone will mislead anyone who
+  remembers the old file — the class name was kept because it still names the
+  firm, and only its role changed.
 */
 
 /*
   -- THE PANEL ---------------------------------------------------------------
   🔴 `gap` IS MARKUP HERE. The LWC template compiler discards whitespace-only
   text nodes between sibling elements, so without it the shield sits flush
-  against the firm name with literally nothing between them, and no rendered
+  against the broker's name with literally nothing between them, and no rendered
   text changes to show it. jsdom performs no layout, so a DOM-only test is
-  completely blind to this file — the pins are on its source.
+  completely blind to this file.
 
   ⚠ THE RING IS AN INSET `box-shadow`, NOT A `border`. A border adds to the
-  panel's box and would push it out of alignment with the divider and the matrix
-  card below it, neither of which has a border of its own. Same recipe as
+  panel's box and would push it out of alignment with the divider and the content
+  below it, neither of which has a border of its own. Same recipe as
   `c/brokerListing`'s pills.
 */
 .pref-panel {
@@ -61,9 +69,9 @@
 
 /*
   🔴 `flex: none` IS LOAD-BEARING. Flex items shrink, and this panel sits beside
-  an unbounded free-text firm name — without it a long name squashes the shield
-  to a sliver instead of wrapping, which is the exact overflow behaviour the
-  layout rules below exist to prevent.
+  an unbounded free-text name — without it a long name squashes the shield to a
+  sliver instead of wrapping, which is the exact overflow behaviour the layout
+  rules below exist to prevent.
 
   ⚠ THE ICON IS COLOURED FROM THIS STYLESHEET, NOT WITH AN INLINE `style=`.
   `--slds-c-icon-color-foreground-default` is `lightning-icon`'s own component
@@ -81,11 +89,11 @@
 }
 
 /*
-  🔴 `min-width: 0` IS WHAT LETS A LONG FIRM NAME WRAP INSTEAD OF OVERFLOWING.
+  🔴 `min-width: 0` IS WHAT LETS A LONG NAME WRAP INSTEAD OF OVERFLOWING.
   A flex item defaults to `min-width: auto` and REFUSES to shrink below its
   longest unbreakable token, so one long firm name would force this panel wider
   than its container and the card would scroll sideways. Paired with
-  `overflow-wrap: anywhere` on `.pref-firm` below — `anywhere`, not
+  `overflow-wrap: anywhere` on the text rules below — `anywhere`, not
   `break-word`, because only `anywhere` affects min-content sizing, which is
   what makes this line take effect. Same pair, same reasoning, as
   `c/bovBrokerChangeHistory`'s layout rules.
@@ -100,9 +108,9 @@
 }
 
 /*
-  ⚠ `margin: 0` ON BOTH PARAGRAPHS IS A RESET, NOT SPACING. A paragraph carries a
+  ⚠ `margin: 0` ON EVERY PARAGRAPH IS A RESET, NOT SPACING. A paragraph carries a
   default block margin that would stack ON TOP of `.pref-detail`'s `gap` and
-  space the three lines unevenly. All spacing in this panel comes from `gap`.
+  space the lines unevenly. All spacing in this panel comes from `gap`.
 */
 .pref-eyebrow {
     margin: 0;
@@ -110,7 +118,12 @@
     color: var(--slds-g-color-neutral-base-30, #444);
 }
 
-.pref-firm {
+/*
+  THE PRIMARY LINE: THE BROKER CONTACT (2026-08-25). This is the treatment
+  `.pref-firm` used to carry, moved rather than duplicated — the panel still has
+  exactly one bold green line, it just names a person now.
+*/
+.pref-name {
     margin: 0;
     font-size: var(--slds-g-font-scale-2, 1rem);
     font-weight: var(--slds-g-font-weight-7, 700);
@@ -119,34 +132,29 @@
 }
 
 /*
-  ⚠ `align-self: flex-start` KEEPS THE PILL THE WIDTH OF ITS TEXT. Flex items
-  stretch across the cross axis by default, so without it the pill spans the
-  whole detail column and reads as a green bar rather than a badge.
-  ⚠ `inline-block`, NOT `inline-flex`: an `inline-flex` badge turns its own text
-  into an anonymous flex item, which defeats any future ellipsis and is
-  unverifiable from jsdom either way.
+  THE MUTED SECONDARY LINE: THE FIRM (2026-08-25).
+  ⚠ IT IS THE SAME GREY AS THE EYEBROW, DELIBERATELY. Both are context for the
+  name between them; a third weight or colour here would imply a third level of
+  importance the panel does not have. `neutral-base-30`, not `on-surface-1` — see
+  the contrast table in the header for why the usual hook fails AA on this fill.
 */
-.pref-pill {
-    align-self: flex-start;
-    display: inline-block;
-    padding: var(--slds-g-spacing-1, 0.25rem) var(--slds-g-spacing-2, 0.5rem);
-    border-radius: var(--slds-g-radius-border-pill, 15rem);
-    background: var(--slds-g-color-success-base-80, #91db8b);
-    color: var(--slds-g-color-success-base-30, #194e31);
-    font-size: var(--slds-g-font-scale-neg-2, 0.625rem);
-    font-weight: var(--slds-g-font-weight-7, 700);
-    letter-spacing: 0.0625rem;
+.pref-firm {
+    margin: 0;
+    font-size: var(--slds-g-font-scale-neg-1, 0.75rem);
+    color: var(--slds-g-color-neutral-base-30, #444);
+    overflow-wrap: anywhere;
 }
 
 /*
-  -- THE VISUALLY-HIDDEN SUBJECT OF THE PILL ---------------------------------
-  🔴 LOCAL, NOT THE GLOBAL `slds-assistive-text`. That class lives in a
+  -- THE VISUALLY-HIDDEN SUBJECT OF THE NAME ---------------------------------
+  🔴 IT OUTLIVED THE PILL IT WAS WRITTEN FOR (2026-08-25). It now prefixes the
+  name line, so the announced text is "Preferred broker: Jane Okafor" rather than
+  a bare name. That is the half of the deleted pill that carried information.
+  LOCAL, NOT THE GLOBAL `slds-assistive-text`: that class lives in a
   document-level SLDS stylesheet and under NATIVE shadow DOM it does not reach
-  into this component — the words "Preferred broker:" would then render VISIBLY
-  inside the pill. A local rule cannot fail that way. Copied from
-  `c/bovBrokerChangeHistory`'s `.bbc-sr-only`, which made the same call for the
-  same reason.
-  ⚠ NOT `display: none` AND NOT `visibility: hidden` — both remove the text from
+  into this component, so the words would render VISIBLY beside the name. Copied
+  from `c/bovBrokerChangeHistory`'s `.bbc-sr-only`.
+  NOT `display: none` AND NOT `visibility: hidden` — both remove the text from
   the accessibility tree, which is the one thing this span exists to add to it.
 */
 .pref-sr-only {

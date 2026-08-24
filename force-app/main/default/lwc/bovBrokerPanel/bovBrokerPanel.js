@@ -208,6 +208,25 @@ export default class BovBrokerPanel extends LightningElement {
     }
 
     /**
+     * The preferred broker's CONTACT name, handed to `c/bovPreferredBroker` as
+     * its PRIMARY line (2026-08-25).
+     *
+     * 🔴 SAME `''`-NEVER-`undefined` CONTRACT AS `preferredBrokerFirm` ABOVE, and
+     * for the same measured reason: a getter bound to an attribute on a custom
+     * element is written UNCONDITIONALLY, so `undefined` is capable of reaching
+     * the DOM as the literal string "undefined".
+     *
+     * ⚠ THE FALLBACK ORDER IS THE CHILD'S, NOT THIS ONE'S. `''` here means "no
+     * contact name on the flagged row"; `c/bovPreferredBroker` then promotes the
+     * FIRM to the primary line, and only falls back to "Unnamed broker" when
+     * both are empty. Deciding that here would duplicate the rule in two places.
+     */
+    get preferredBrokerContact() {
+        const row = this._preferredRow;
+        return (row && row.contactName) || '';
+    }
+
+    /**
      * The currently Selected submission, or `undefined`.
      *
      * 🔴 READS EVERY ROW, INCLUDING PREFERRED ONES. A preferred broker IS the

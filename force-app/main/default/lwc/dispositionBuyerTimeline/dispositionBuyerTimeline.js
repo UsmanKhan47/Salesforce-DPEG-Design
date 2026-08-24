@@ -165,9 +165,42 @@
  * order and flattened to em-dashes in exactly the same cases as before; the two
  * "step class" getters drive a decorative milestone rail and carry NO
  * information that is not already in the value cell beside them.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * 🔴 2026-08-25 — ONE CARD, THREE SECTIONS. THE TIMELINE IS SECTION 2.
+ * ══════════════════════════════════════════════════════════════════════════
+ * The user's design collapses what shipped on 2026-08-25 morning as three
+ * separate sidebar cards into ONE card with three sections, in this order:
+ *
+ *   1. PREFERRED BROKER — `c/bovPreferredBroker`, the green hero panel, MOUNTED
+ *      here rather than rebuilt. Absent entirely when no broker is flagged.
+ *   2. TIMELINE — everything this component already was, unchanged.
+ *   3. BOV RESPONSES — broker CONTACT + status, two columns. Absent with no rows.
+ *
+ * ⚠ `c/bovPreferredBrokerCard` AND `c/bovResponsesCard` WERE DELETED IN THE SAME
+ * CHANGE, along with their two `itemInstances` on
+ * `flexipages/Disposition_Record_Page`. Sections 1 and 3 ARE those cards, minus
+ * their own `lightning-card` chrome — do not re-create either bundle; if a
+ * section needs to move, move the markup.
+ * 🔴 `c/bovBrokerChangeHistory` IS UNAFFECTED and remains a standalone card
+ * above this one. It was never part of this merge.
+ *
+ * 🔴 THE COUNT IN THE CARD TITLE STILL COUNTS SECTION 2 ONLY — feed entries,
+ * NDAs plus responses. It did before the merge and the user asked for it to be
+ * left alone. Do NOT add the BOV rows to it: the number would then match nothing
+ * a reader can point at, since section 3's rows are not entries in the feed.
+ *
+ * ⚠ ONE CONSEQUENCE OF THE MERGE, RECORDED RATHER THAN FIXED: this card's
+ * FlexiPage visibility rule hides it before Release Materials, and the two
+ * deleted cards were visible from BOV Outreach. Sections 1 and 3 therefore no
+ * longer appear at BOV Outreach / Broker Selection / NDA — where the same
+ * information is already on screen in `c/bovBrokerPanel`'s "Brokers" card, which
+ * mounts the SAME `c/bovPreferredBroker` panel above the BOV Comparison Matrix.
+ * The rule was left exactly as it was, by instruction.
  */
 import { LightningElement, api, wire } from 'lwc';
 import getTimeline from '@salesforce/apex/DispositionBuyerTimelineController.getTimeline';
+import getSubmissions from '@salesforce/apex/BovController.getSubmissions';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -187,6 +220,32 @@ const EM_DASH = '—';
  * and the Apex suite pins it on the other.
  */
 const KIND_RESPONSE = 'Response';
+
+/**
+ * SECTION 3 — the name shown for a submission carrying neither a broker contact
+ * nor a firm name.
+ *
+ * ⚠ THE SAME WORDING AS `c/bovPreferredBroker`'s `UNNAMED` and
+ * `c/bovBrokerPanel`'s `outgoingPreferredLabel`, deliberately: section 1 of THIS
+ * CARD can be showing the same nameless broker at the same moment, and two
+ * placeholders for one missing value read as two different states.
+ */
+const UNNAMED_BROKER = 'Unnamed broker';
+
+/**
+ * SECTION 3 — the two words the status column is allowed to say.
+ *
+ * 🔴 BOTH ARE DERIVED, AND `Submission_Status__c` IS NOT PASSED THROUGH. This is
+ * the "only one row may show Selected" display rule — see `bovRows` for the full
+ * reasoning. The stored value can legitimately say `Selected` on two rows at
+ * once, so echoing it here would break the user's rule on exactly the sales
+ * where it matters.
+ * ⚠ THEY MATCH THE PICKLIST'S OWN VALUES (`Selected` / `Backup`) ON PURPOSE. The
+ * BOV Comparison Matrix at BOV Outreach renders the stored value verbatim, and a
+ * third vocabulary for the same two states would read as a different concept.
+ */
+const STATUS_SELECTED = 'Selected';
+const STATUS_BACKUP = 'Backup';
 
 export default class DispositionBuyerTimeline extends LightningElement {
     @api recordId;
@@ -409,6 +468,197 @@ export default class DispositionBuyerTimeline extends LightningElement {
             // distinguishable without sight.
             rowLabel: `${responseName} — release materials response, ${method}`
         };
+    }
+
+    /* ══════════════════════════════════════════════════════════════════════
+       SECTIONS 1 AND 3 — THE BOV SUBMISSIONS (added 2026-08-25).
+       ══════════════════════════════════════════════════════════════════════
+       🔴 ONE WIRE SERVES BOTH SECTIONS, AND THAT IS NOT AN OPTIMISATION — IT IS
+       WHAT MAKES THEM AGREE. Section 1 (the preferred-broker hero panel) and
+       section 3 (the BOV responses table) are two views of ONE payload; two
+       wires would be two cache subscriptions that can settle at different
+       moments, so the panel could name one broker while the table below it marks
+       a different row Selected.
+
+       ⚠ IT IS A SECOND WIRE ON THIS COMPONENT, NOT A SECOND SERVER READ. LDS
+       keys its cache on (adapter, config); `c/bovBrokerPanel` at BOV Outreach
+       passes the identical `{ dispositionId }` for the same record, so wherever
+       both are on screen the second subscriber is served from the same entry.
+
+       🔴 THIS WIRE IS INDEPENDENT OF `getTimeline`'S. A failure of one must not
+       blank the other: the timeline read failing says nothing about the BOV
+       submissions and vice versa, and collapsing them into one error state would
+       hide two-thirds of the card behind an unrelated permissions gap. Each
+       section owns its own visibility.
+    */
+    _bov = [];
+    _bovFailed = false;
+
+    /**
+     * Every BOV submission on this sale — the same payload the BOV Comparison
+     * Matrix renders at BOV Outreach.
+     *
+     * ⚠ THE APEX MESSAGE IS DELIBERATELY DISCARDED. `BovController.getSubmissions`
+     * has already replaced the underlying failure with one fixed generic sentence
+     * ending "contact your administrator", which names nothing section 3's own
+     * line does not — and this card already has a louder, differently-worded
+     * alert for the timeline's own failure. Two failure messages in one card is
+     * how a reader concludes the whole page is broken.
+     * 🔴 THE ERROR BRANCH RE-EMPTIES `_bov`. Section 3's visibility is
+     * `length > 0`, and section 1's gate reads the same array, so a failed
+     * refresh must not leave a stale broker panel above a line saying the
+     * responses could not be loaded — two contradictory claims at once.
+     */
+    @wire(getSubmissions, { dispositionId: '$recordId' })
+    wiredSubmissions({ data, error }) {
+        if (data) {
+            this._bov = data;
+            this._bovFailed = false;
+        } else if (error) {
+            this._bov = [];
+            this._bovFailed = true;
+        }
+    }
+
+    /**
+     * The submission flagged preferred, or `undefined`. Section 1's gate.
+     *
+     * ⚠ `=== true`, NOT TRUTHINESS. `isPreferred` is a `Boolean` on
+     * `BovController.BovRow`, so an Apex `null` arrives as JS `null` — not
+     * `false`. Under `=== true` a null row can never be treated as the preferred
+     * broker, which is the safe side for a flag whose whole meaning is "flagged".
+     * Same test, same reason, as `c/bovBrokerPanel._preferredRow`.
+     */
+    get _preferredRow() {
+        return this._bov.find((r) => r.isPreferred === true);
+    }
+
+    /**
+     * SECTION 1 RENDERS ONLY WHEN A PREFERRED BROKER EXISTS, AND THE GATE IS
+     * HERE RATHER THAN INSIDE `c/bovPreferredBroker`.
+     *
+     * 🔴 THAT IS THE CHILD'S DOCUMENTED CONTRACT, NOT A CHOICE THIS COMPONENT
+     * MAKES. An unrendered tag is not a flex item; a self-gating child that
+     * renders nothing STILL takes one step of the section stack's `gap`, leaving
+     * a blank band above the timeline on every sale with no preferred broker.
+     */
+    get hasPreferredBroker() {
+        return this._preferredRow !== undefined;
+    }
+
+    /**
+     * The preferred broker's CONTACT name and firm, handed to
+     * `c/bovPreferredBroker`.
+     *
+     * 🔴 BOTH RETURN `''`, NEVER `undefined`. A getter bound to an attribute on a
+     * custom element is written UNCONDITIONALLY, so `undefined` is capable of
+     * reaching the DOM as the literal string "undefined" — measured in this repo.
+     * ⚠ THE USER-FACING FALLBACK IS THE CHILD'S: `''` means "not recorded", and
+     * `c/bovPreferredBroker` decides what to show for it (the firm, then
+     * "Unnamed broker"). Same split as `c/bovBrokerPanel`'s two getters.
+     */
+    get preferredBrokerContact() {
+        const row = this._preferredRow;
+        return (row && row.contactName) || '';
+    }
+
+    get preferredBrokerFirm() {
+        const row = this._preferredRow;
+        return (row && row.brokerFirm) || '';
+    }
+
+    /** SECTION 3 renders only with rows; a failed read gets one honest line. */
+    get hasBovRows() {
+        return this._bov.length > 0;
+    }
+
+    get bovUnavailable() {
+        return this._bovFailed;
+    }
+
+    /**
+     * SECTION 3 — one row per BOV submission: the broker CONTACT, and a status.
+     *
+     * ══════════════════════════════════════════════════════════════════════════
+     * 🔴 THE STATUS SHOWN HERE IS DERIVED, NOT THE STORED `Submission_Status__c`.
+     * ══════════════════════════════════════════════════════════════════════════
+     * User instruction, 2026-08-25: *"only one row may show Selected"*.
+     *
+     * THE DATA MODEL LEGITIMATELY MARKS TWO ROWS `Selected` — the system-scored
+     * winner AND a preferred broker appointed over the top of it — and that is by
+     * design ELSEWHERE (the dual-slot model; see `BovSubmissionTriggerHandler`).
+     * It is not a defect to fix in Apex and NOTHING BELOW WRITES ANYTHING. This
+     * is a DISPLAY rule for this card only:
+     *
+     *     the effective broker is THE PREFERRED ONE IF ANY, ELSE THE SYSTEM-
+     *     SELECTED ONE; that single row reads "Selected" and every other row
+     *     reads "Backup", whatever the record stores.
+     *
+     * 🔴 THE PREFERRED ROW WINS THE TIE BECAUSE APPOINTMENT BEATS SCORE. A
+     * preferred broker is a person DPEG chose; the scored winner is a
+     * calculation. Reverse the precedence and the card would contradict the hero
+     * panel directly above it, which names the preferred broker unconditionally.
+     * ⚠ IF NEITHER EXISTS, NO ROW SAYS "Selected" — deliberately. "Backup" on
+     * every row is the truthful rendering of a sale where nobody is appointed
+     * yet, and inventing a winner from the top of the list would be a confident
+     * wrong answer.
+     *
+     * ── ORDERING IS THE SERVER'S ────────────────────────────────────────────
+     * 🔴 NO SORT HERE, matching the rest of this component.
+     * `BovSubmissionSelector.selectByDispositionId` returns
+     * `BOV_Score__c DESC NULLS LAST, CreatedDate ASC, Id ASC` — the ranking the
+     * selection was actually made on. Floating the effective row to the top would
+     * let this card and the BOV Comparison Matrix disagree about the same rows.
+     * ⚠ A CONSEQUENCE WORTH KNOWING: a preferred broker recorded before any BOV
+     * carries a NULL score and therefore sorts LAST here. That is not a defect —
+     * section 1 names them at the top of the card.
+     *
+     * ── THE NAME IS THE PERSON ──────────────────────────────────────────────
+     * 🔴 `contactName` FIRST, firm as a muted sub-line — user instruction, same
+     * one that rewrote section 1. The firm sub-line is SUPPRESSED when the
+     * contact name is missing and the firm has been promoted into the name slot,
+     * or the row would print the same words twice.
+     */
+    get bovRows() {
+        const effectiveId = this.effectiveBrokerId;
+        return this._bov.map((row) => {
+            // `.trim()` is part of the check, not tidying: '   ' is falsy nowhere
+            // in JavaScript, so a bare `||` renders a blank cell for a hand-typed
+            // spaces-only value — visually identical to the null case this
+            // fallback exists to prevent.
+            const contact =
+                typeof row.contactName === 'string' ? row.contactName.trim() : '';
+            const firm =
+                typeof row.brokerFirm === 'string' ? row.brokerFirm.trim() : '';
+            const name = contact || firm || UNNAMED_BROKER;
+            const isEffective = !!effectiveId && row.id === effectiveId;
+            return {
+                id: row.id,
+                name,
+                firm: firm && firm !== name ? firm : '',
+                hasFirm: !!firm && firm !== name,
+                status: isEffective ? STATUS_SELECTED : STATUS_BACKUP,
+                statusClass: isEffective
+                    ? 'dbt-bov-badge dbt-bov-badge--selected'
+                    : 'dbt-bov-badge dbt-bov-badge--backup'
+            };
+        });
+    }
+
+    /**
+     * The Id of the ONE row allowed to read "Selected" — see `bovRows`.
+     *
+     * ⚠ RETURNS `undefined` WHEN NOBODY IS APPOINTED, and `bovRows` treats that
+     * as "no row is effective" rather than defaulting to the first. `=== true` on
+     * both flags for the reason given on `_preferredRow`.
+     */
+    get effectiveBrokerId() {
+        const preferred = this._preferredRow;
+        if (preferred) {
+            return preferred.id;
+        }
+        const selected = this._bov.find((r) => r.isSelected === true);
+        return selected ? selected.id : undefined;
     }
 }
 

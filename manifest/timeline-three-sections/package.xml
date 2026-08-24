@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+    ONE CARD, THREE SECTIONS. 2026-08-25. The CONSTRUCTIVE half.
+
+    STATUS: PREPARED, DRY-RUN VALIDATED, NOT DEPLOYED. The user deploys, not this
+    repo.
+
+    WHAT THIS PAYLOAD DOES
+    ======================
+    Collapses the three stacked BOV sidebar cards that shipped this morning into
+    ONE card with three sections, per the user's design:
+
+      section 1  Preferred Broker   the green hero panel (c/bovPreferredBroker),
+                                    naming the broker CONTACT, firm demoted to a
+                                    muted second line, "YES" pill removed
+      section 2  Timeline           the merged NDA + Release Materials feed,
+                                    unchanged
+      section 3  BOV Responses      broker CONTACT + status, two columns
+
+    THE FOUR MEMBERS BELOW, AND WHY EACH IS IN THE PAYLOAD
+    =====================================================
+    1. dispositionBuyerTimeline   the card itself. Gains a second wire
+       (BovController.getSubmissions) that serves sections 1 and 3 from ONE
+       payload, so the hero panel and the table can never name two different
+       brokers.
+    2. bovPreferredBroker         MOUNTED by section 1 rather than rebuilt. Gains
+       `@api contactName`; loses the "YES" pill. It is SHARED with
+       c/bovBrokerPanel at BOV Outreach, so the pill disappears there too, which
+       the user asked for explicitly.
+    3. bovBrokerPanel             CHANGED ONLY because of member 2: it passes the
+       new `contact-name` attribute down and gains the getter behind it. Without
+       it the BOV Outreach panel would render a firm where the record page
+       renders a person.
+    4. Disposition_Record_Page    loses the two itemInstances naming the deleted
+       bundles.
+
+    THE FLEXIPAGE AND THE DELETIONS MUST TRAVEL TOGETHER
+    ====================================================
+    A FlexiPage referencing a deleted LightningComponentBundle does not deploy.
+    destructiveChangesPost.xml in this same directory removes the two bundles
+    AFTER this payload lands, by which time the page no longer names them.
+    POST, not PRE: the page edit has to be live first. Running either half alone
+    fails or leaves a dangling reference.
+
+    NOT IN THIS PAYLOAD, DELIBERATELY
+    =================================
+      * bovBrokerChangeHistory     untouched, still a standalone sidebar card.
+        The user asked for it to stay exactly as it is.
+      * Any Apex, object, field or permission set. NOTHING SERVER-SIDE CHANGED.
+        The "only one row may show Selected" rule the user asked for is DISPLAY
+        LOGIC inside the timeline bundle: the data model marks two rows Selected
+        by design (the scored winner AND the preferred broker), and that design
+        is correct elsewhere. The card derives what it shows and writes nothing.
+      * The timeline's FlexiPage visibilityRule. Left byte for byte as it was, by
+        instruction. It is narrower than the rule the two deleted cards carried,
+        so sections 1 and 3 no longer appear before Release Materials; that
+        consequence is recorded in the page's root comment and in the bundle's JS
+        header rather than silently fixed.
+
+    HOW TO RUN IT (only once authorised by the user)
+    ===============================================
+      sf project deploy start
+        with the manifest flag                 pointing at this file
+        with the post destructive changes flag pointing at destructiveChangesPost.xml
+                                               in this same directory
+        with the target org flag               set to usman&#45;dpeg
+        with the dry run flag                  for a validation, dropped for the
+                                               real deploy
+    The flag prefixes are spelled out in words on purpose: an XML comment body
+    cannot contain two consecutive hyphens.
+
+    Rollback: every component here is recoverable from git history, and the two
+    deleted bundles are recoverable from the commit that removes them.
+    -->
+    <types>
+        <members>dispositionBuyerTimeline</members>
+        <members>bovPreferredBroker</members>
+        <members>bovBrokerPanel</members>
+        <name>LightningComponentBundle</name>
+    </types>
+    <types>
+        <members>Disposition_Record_Page</members>
+        <name>FlexiPage</name>
+    </types>
+    <version>67.0</version>
+</Package>
