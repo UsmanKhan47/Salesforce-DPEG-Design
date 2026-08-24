@@ -355,6 +355,31 @@
         <apexClass>RecordStageAdvanceController</apexClass>
         <enabled>true</enabled>
     </classAccesses>
+    <!--
+      ADDED 2026-08-24 WITH THE RELEASE MATERIALS RESPONSE LOGGER, AND ADDED **BEFORE** THE FIRST
+      DEPLOY RATHER THAN AFTER UAT FOUND IT. This file already records THREE separate live-break
+      fixes on 2026-08-21 alone, all the same defect: a new @AuraEnabled controller shipped with
+      fieldPermissions and objectPermissions but NO classAccesses entry anywhere, and UAT hit
+      "You do not have access to the Apex class named '<X>'". ReleaseMaterialsResponseController
+      backs lwc/releaseMaterialsResponseLog, which c/dispositionMain renders at the Release
+      Materials stage — and that card is the ONLY route to creating a
+      Release_Materials_Response__c (the object ships with no tab and no list view), so without
+      this grant the feature does not exist for any non-admin persona.
+
+      ONLY THE ENTRY-POINT CONTROLLER IS GRANTED, matching this file's established pattern stated
+      at DispositionOfferFormController above: ReleaseMaterialsResponseService,
+      ReleaseMaterialsResponseSelector and the DispositionOfferFormService it reuses for the
+      broker resolution are all reached THROUGH this controller and need no grant of their own.
+
+      🔴 THIS ENTRY IS A DEPLOY-ORDER DEPENDENCY OF THE APEX, NOT AN OPTIONAL EXTRA. It must land
+      in the same deploy as ReleaseMaterialsResponseController, together with the object, its five
+      fields and the two disposition permission sets' field/object grants (which are already in
+      the org, measured 2026-08-24).
+    -->
+    <classAccesses>
+        <apexClass>ReleaseMaterialsResponseController</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
     <classAccesses>
         <apexClass>RentRollController</apexClass>
         <enabled>true</enabled>

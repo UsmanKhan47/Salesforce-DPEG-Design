@@ -116,6 +116,71 @@ describe('c-disposition-main', () => {
         expect(matrices[1].recordId).toBe(RECORD_ID);
     });
 
+    // ═════════════════════════════════════════════════════════════════════════
+    // 🔴 RELEASE MATERIALS (2026-08-24) — the response logger
+    //
+    // This tag is the ONLY route to creating a `Release_Materials_Response__c`:
+    // the object ships with no tab and no list view. Removing the line does not
+    // hide a feature, it deletes the only way in.
+    // ═════════════════════════════════════════════════════════════════════════
+
+    it('🔴 Release Materials stage renders the response logger, and only it', async () => {
+        const element = createComponent();
+
+        getRecord.emit(recordForStage('Release Materials'));
+        await Promise.resolve();
+
+        const logger = element.shadowRoot.querySelector(
+            'c-release-materials-response-log'
+        );
+        expect(logger).not.toBeNull();
+        // ⚠ THE CHILD HAS NO OTHER ROUTE TO THE DISPOSITION. Without record-id
+        // it wires `undefined`, its Apex returns a fully-populated EMPTY context
+        // rather than throwing, and the card renders a permanent, confident
+        // "No responses yet" that nothing on the page contradicts.
+        expect(logger.recordId).toBe(RECORD_ID);
+
+        // No other stage's children leak into this branch.
+        expect(
+            element.shadowRoot.querySelector('c-bov-comparison-matrix')
+        ).toBeNull();
+        expect(element.shadowRoot.querySelector('c-broker-listing')).toBeNull();
+        expect(element.shadowRoot.querySelector('c-wire-verification')).toBeNull();
+    });
+
+    it('🔴 the response logger appears at NO other stage', async () => {
+        // ⚠ EXHAUSTIVE OVER EVERY OTHER VALUE OF Disposition_Stage__c, not a
+        // sample. A near-miss in the getter's string comparison ('Release
+        // materials', an underscore, a trailing space) fails SILENTLY — the
+        // branch simply never fires — so the falsifier that matters is the
+        // POSITIVE test above. This one catches the opposite mistake: a getter
+        // widened to a `includes`/truthiness test that fires everywhere.
+        const otherStages = [
+            'Disposition Readiness',
+            'BOV Outreach',
+            'Broker Selection',
+            'NDA',
+            'Active Listing',
+            'Offer Selection',
+            'LOI',
+            'PSA',
+            'Closing',
+            'Sale Closes'
+        ];
+
+        for (const stage of otherStages) {
+            const element = createComponent();
+            getRecord.emit(recordForStage(stage));
+            // eslint-disable-next-line no-await-in-loop
+            await Promise.resolve();
+
+            expect(
+                element.shadowRoot.querySelector('c-release-materials-response-log')
+            ).toBeNull();
+            document.body.removeChild(element);
+        }
+    });
+
     it('Active Listing stage renders the broker-listing cluster', async () => {
         const element = createComponent();
 

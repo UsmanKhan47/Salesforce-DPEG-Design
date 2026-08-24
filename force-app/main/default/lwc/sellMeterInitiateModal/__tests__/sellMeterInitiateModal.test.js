@@ -60,6 +60,35 @@
  * Every assertion below goes through `sellType(element)` / `modalHeader(element)`.
  *
  * ─────────────────────────────────────────────────────────────────────────────
+ * 🔴 T-GRID-* — THE SUMMARY LAYOUT, AND WHY IT IS TESTED THE WAY IT IS
+ * ─────────────────────────────────────────────────────────────────────────────
+ * The summary renders TWO label/value pairs per row (2026-08-24), produced
+ * ENTIRELY by CSS grid tracks over one flat dt/dd iteration. jsdom performs no
+ * layout, so no test available here can observe a rendered column position —
+ * "it looks like two columns" is not a provable statement and no assertion
+ * below pretends to make one.
+ *
+ * What IS provable, and what T-GRID-1..6 actually pin:
+ *   1. the rendered DOM is a flat dt/dd stream with NO wrapper element and no
+ *      per-position class or style — i.e. the markup encodes no column at all;
+ *   2. the REAL stylesheet declares an EVEN, FIXED number of grid tracks in
+ *      both states (2 narrow / 4 wide), read out of the .css file itself;
+ *   3. laying the REAL rendered items into that REAL track count, row-major
+ *      the way grid auto-placement does, keeps every dt beside its own dd and
+ *      never splits a pair across rows — checked at 3, 4 AND 5 rows.
+ * (3) is the count-independence proof this layout exists to guarantee. It is a
+ * simulation and is labelled as one; its inputs are both real (the track count
+ * comes from the stylesheet, the 4-row case is cross-checked against the live
+ * DOM in T-GRID-2) so it cannot go green on a layout that was never written.
+ *
+ * ⚠ WHY THE ROW COUNT IS SIMULATED RATHER THAN RENDERED: `summaryRows` takes no
+ * input that varies its LENGTH — every one of the four entries renders an em
+ * dash when its @api value is absent, deliberately (see the JS). So there is no
+ * way to mount this component with 3 or 5 rows today, and hand-building a <dl>
+ * in the test would prove only that the fabrication was fabricated. When a
+ * fifth entry is added for real, T-GRID-2's expected list is the ONE place that
+ * needs updating — every other assertion is already count-agnostic.
+ *
  * 🔴 T-NO-RADIO — the control was a `lightning-radio-group` until 2026-08-24
  * ("Don't show radio button", user instruction). The picklist assertions alone
  * would all pass with BOTH controls rendered side by side, so the absence of the
@@ -86,6 +115,130 @@ const PROPS = {
     targetLabel: '$30.0M',
     peakDateLabel: 'Aug 12, 2027'
 };
+
+// The stylesheet and the template, read once, WITH THEIR COMMENTS STRIPPED.
+// Stripping first is not cosmetic and it is not optional here: both files
+// DESCRIBE the banned constructions by name ("do NOT simplify this into
+// repeat(auto-fit, ...)", "DO NOT SPLIT THIS INTO TWO COLUMN <div>s"), so every
+// ban below would otherwise fail against its own documentation. Same convention
+// as c-competing-broker-submissions' T2.
+const CSS_SOURCE = require('fs')
+    .readFileSync(
+        require('path').join(__dirname, '..', 'sellMeterInitiateModal.css'),
+        'utf8'
+    )
+    .replace(/\/\*[\s\S]*?\*\//g, '');
+
+const HTML_SOURCE = require('fs')
+    .readFileSync(
+        require('path').join(__dirname, '..', 'sellMeterInitiateModal.html'),
+        'utf8'
+    )
+    .replace(/<!--[\s\S]*?-->/g, '');
+
+/**
+ * Cut a top-level at-rule out of `css` by BRACE MATCHING, returning its
+ * prelude, its body, and the stylesheet with the whole block removed.
+ * Brace-matched rather than regexed because the block contains nested rules — a
+ * lazy `[^}]*` would stop at the first inner `}` and report an EMPTY at-rule,
+ * which is precisely the shape a "the wide state is missing" assertion must not
+ * mistake for success.
+ */
+function sliceAtRule(css, at) {
+    const start = css.indexOf(at);
+    if (start === -1) {
+        return { prelude: null, body: null, rest: css };
+    }
+    const open = css.indexOf('{', start);
+    let depth = 0;
+    let i = open;
+    for (; i < css.length; i++) {
+        if (css[i] === '{') {
+            depth++;
+        } else if (css[i] === '}') {
+            depth--;
+            if (depth === 0) {
+                break;
+            }
+        }
+    }
+    return {
+        prelude: css.slice(start, open).trim(),
+        body: css.slice(open + 1, i),
+        rest: css.slice(0, start) + css.slice(i + 1)
+    };
+}
+
+/** One declaration's value out of one rule, or undefined. */
+function declaration(css, selector, prop) {
+    const rule = new RegExp(
+        '(?:^|[};])\\s*' +
+            selector.replace(/\./g, '\\.') +
+            '(?![\\w-])\\s*\\{([^}]*)\\}'
+    ).exec(css);
+    if (!rule) {
+        return undefined;
+    }
+    const decl = new RegExp('(?:^|;)\\s*' + prop + '\\s*:\\s*([^;]+)').exec(
+        rule[1]
+    );
+    return decl ? decl[1].trim().replace(/\s+/g, ' ') : undefined;
+}
+
+/** `grid-template-columns` as a list of tracks. */
+function tracks(css, selector) {
+    const value = declaration(css, selector, 'grid-template-columns');
+    return value === undefined ? undefined : value.split(' ');
+}
+
+// The two layout states, READ FROM THE REAL STYLESHEET rather than restated.
+const WIDE = sliceAtRule(CSS_SOURCE, '@media');
+const NARROW_TRACKS = tracks(WIDE.rest, '.smi-summary');
+const WIDE_TRACKS = tracks(WIDE.body, '.smi-summary');
+
+/**
+ * CSS grid auto-placement, row-major, for `rowCount` label/value pairs laid
+ * into `trackCount` columns — the same flat dt,dd,dt,dd,... stream the template
+ * emits.
+ */
+function placePairs(rowCount, trackCount) {
+    const cells = [];
+    for (let i = 0; i < rowCount; i++) {
+        cells.push({ tag: 'DT', pair: i }, { tag: 'DD', pair: i });
+    }
+    const rows = [];
+    for (let i = 0; i < cells.length; i += trackCount) {
+        rows.push(cells.slice(i, i + trackCount));
+    }
+    return rows;
+}
+
+/** Chunk a flat list of rendered cells into visual rows of `trackCount`. */
+function chunk(cells, trackCount) {
+    const rows = [];
+    for (let i = 0; i < cells.length; i += trackCount) {
+        rows.push(cells.slice(i, i + trackCount));
+    }
+    return rows;
+}
+
+/**
+ * Every pair in `rows` is intact: a dt immediately followed, IN THE SAME ROW,
+ * by its own dd. False the moment the track count is odd — which is the single
+ * failure an auto-fit / auto-fill track list would introduce, and it corrupts
+ * every row, not just the last one.
+ */
+function pairsIntact(rows) {
+    return rows.every(
+        (row) =>
+            row.length % 2 === 0 &&
+            row.every((cell, i) =>
+                i % 2 === 0
+                    ? cell.tag === 'DT'
+                    : cell.tag === 'DD' && cell.pair === row[i - 1].pair
+            )
+    );
+}
 
 const flushPromises = () => new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -140,6 +293,224 @@ describe('c-sell-meter-initiate-modal', () => {
         // removal and it was the only surface rendering `propertyName`, so there is
         // no weaker version of that assertion to keep — the value is not displayed
         // at all now. See T-NO-PROSE below, which records the consequence.
+    });
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // 🔴 T-GRID-1..6 — THE TWO-PAIRS-PER-ROW SUMMARY LAYOUT (2026-08-24)
+    // Read the "T-GRID-*" section of the file header before changing any of
+    // these — in particular, why the ROW COUNT is simulated and not rendered.
+    // ═════════════════════════════════════════════════════════════════════════
+
+    it('🔴 T-GRID-1: the <dl> is ONE flat dt/dd stream — the markup encodes no column', async () => {
+        const element = createComponent();
+
+        await Promise.resolve();
+
+        const list = element.shadowRoot.querySelector('dl.smi-summary');
+        expect(list).not.toBeNull();
+        const items = [...list.children];
+
+        // Four pairs, strictly alternating, nothing in between.
+        expect(items.map((n) => n.tagName)).toEqual([
+            'DT',
+            'DD',
+            'DT',
+            'DD',
+            'DT',
+            'DD',
+            'DT',
+            'DD'
+        ]);
+
+        // 🔴 NO WRAPPER ELEMENTS. Grid items are the <dl> element's DIRECT children, so
+        // wrapping the iteration leaves the grid holding ONE item and no
+        // columns at all — and hardcoded halves would need rebalancing by hand
+        // the day a fifth row lands.
+        //
+        // ⚠ THIS LINE IS THE ONLY THING STANDING BETWEEN THE LAYOUT AND THAT
+        // EDIT, AND `is accessible` IS NOT A BACKSTOP FOR IT. Measured by
+        // mutation on 2026-08-24: wrapping the iteration in
+        // `<div class="smi-col">` left the accessibility test GREEN — the HTML
+        // spec permits <div> grouping inside a <dl> and axe follows the spec.
+        // T-GRID-1, T-GRID-2 and T-GRID-6 went red; nothing else did.
+        expect(list.querySelectorAll('div, span, ul, li').length).toBe(0);
+        items.forEach((n) => expect(n.children.length).toBe(0));
+
+        // 🔴 NO PER-POSITION STYLING. Every dt carries the SAME class and every
+        // dd the same class — no first/last/left/right variant, no inline
+        // style. That is what makes an element's index irrelevant to the
+        // layout, and it is the property a later "just target the 3rd one" edit
+        // destroys.
+        expect([
+            ...new Set(
+                items.filter((n) => n.tagName === 'DT').map((n) => n.className)
+            )
+        ]).toEqual(['smi-label']);
+        expect([
+            ...new Set(
+                items.filter((n) => n.tagName === 'DD').map((n) => n.className)
+            )
+        ]).toEqual(['smi-value']);
+        expect(items.some((n) => n.getAttribute('style'))).toBe(false);
+    });
+
+    it('🔴 T-GRID-2: two pairs per row, ACROSS-THEN-DOWN — at the stylesheet REAL track count', async () => {
+        const element = createComponent();
+
+        await Promise.resolve();
+
+        // The rendered stream...
+        const cells = [
+            ...element.shadowRoot.querySelectorAll('dl.smi-summary > *')
+        ].map((n) => n.textContent);
+
+        // ...chunked by the track count read out of the REAL .css file. Both
+        // halves are real, so changing the DOM order OR the track count fails
+        // this test.
+        expect(WIDE_TRACKS).toBeDefined();
+
+        // 🔴 THE COLUMN-ORDER DECISION, STATED ONCE. Row-major: pairs read
+        // left-to-right, then wrap. Column-major (NOI above Market Cap Rate in
+        // a left-hand column) was rejected — it cannot be expressed without
+        // baking ceil(N / 2) into grid-template-rows, and adding a 5th entry
+        // would MOVE an existing entry between columns instead of appending.
+        expect(chunk(cells, WIDE_TRACKS.length)).toEqual([
+            ['NOI', '$2.0M', 'Market Cap Rate', '6.5%'],
+            ['Target Price', '$30.0M', 'Peak Sell Date', 'Aug 12, 2027']
+        ]);
+
+        // And the fallback state stacks one pair per row, same source order.
+        expect(chunk(cells, NARROW_TRACKS.length)).toEqual([
+            ['NOI', '$2.0M'],
+            ['Market Cap Rate', '6.5%'],
+            ['Target Price', '$30.0M'],
+            ['Peak Sell Date', 'Aug 12, 2027']
+        ]);
+    });
+
+    it('🔴 T-GRID-3: the track count is EVEN and FIXED in both states — 2 narrow, 4 wide', () => {
+        // Read from the stylesheet, not restated here: `.smi-summary`
+        // unconditionally declares one pair per row and the @container block
+        // raises it to two.
+        expect(declaration(WIDE.rest, '.smi-summary', 'display')).toBe('grid');
+        expect(NARROW_TRACKS).toEqual(['auto', '1fr']);
+        expect(WIDE_TRACKS).toEqual(['auto', '1fr', 'auto', '1fr']);
+
+        // 🔴 EVEN, AND LITERAL. An odd track count interleaves every dd under
+        // the wrong dt (T-GRID-4 proves that), and repeat(auto-fit/auto-fill,…)
+        // — the "simplification" this shape invites — resolves to whatever
+        // number of tracks happens to fit, odd counts included.
+        [NARROW_TRACKS, WIDE_TRACKS].forEach((list) => {
+            expect(list.length % 2).toBe(0);
+            expect(list.join(' ')).not.toMatch(/auto-fit|auto-fill|repeat\(/);
+        });
+
+        // Nothing may reorder or re-flow the stream: column-major placement and
+        // positional selectors each re-introduce the ROW COUNT into the CSS.
+        expect(CSS_SOURCE).not.toMatch(/grid-auto-flow\s*:\s*column/);
+        expect(CSS_SOURCE).not.toMatch(/grid-template-rows/);
+        expect(CSS_SOURCE).not.toMatch(
+            /nth-child|nth-of-type|:first-child|:last-child/
+        );
+    });
+
+    it('🔴 T-GRID-4: the layout survives 3, 4 and 5 rows — no split pair, no stranded value', () => {
+        // SIMULATION — see the header for why the row count cannot be rendered.
+        // Its inputs are the REAL track counts above, and its 4-row case is
+        // cross-checked against the live DOM in T-GRID-2.
+        [NARROW_TRACKS.length, WIDE_TRACKS.length].forEach((trackCount) => {
+            [3, 4, 5].forEach((rowCount) => {
+                const rows = placePairs(rowCount, trackCount);
+                const where = rowCount + ' rows at ' + trackCount + ' tracks';
+
+                // Every dt sits beside its OWN dd, in the same row. Asserted
+                // with the case in the expected value so a failure names the
+                // combination instead of just saying "false".
+                expect(where + ': ' + pairsIntact(rows)).toBe(where + ': true');
+
+                // Nothing lost, nothing duplicated.
+                expect(rows.reduce((n, r) => n + r.length, 0)).toBe(
+                    rowCount * 2
+                );
+
+                // The last row of an ODD row count is a COMPLETE pair in the
+                // leftmost tracks — a half-filled row, never a stranded <dd>
+                // under an empty label. That is the orphan case this design
+                // exists to prevent.
+                const last = rows[rows.length - 1];
+                expect(where + ': ' + (last.length % 2)).toBe(where + ': 0');
+                expect(where + ': ' + last[0].tag).toBe(where + ': DT');
+            });
+        });
+
+        // Positive control for the loop above: the SAME simulation at an ODD
+        // track count must come back false, otherwise pairsIntact() is vacuous.
+        expect(pairsIntact(placePairs(4, 3))).toBe(false);
+        expect(pairsIntact(placePairs(5, 3))).toBe(false);
+    });
+
+    it('🔴 T-GRID-5: degrades to one pair per row — the wide state is CONDITIONAL and MIN-width', () => {
+        // The 4-track rule exists ONLY inside the at-rule. Unconditional 4
+        // tracks would burst a narrow modal body, which is worse than the stack
+        // it replaced.
+        expect(WIDE.prelude).not.toBeNull();
+        expect(WIDE.rest).not.toMatch(/auto 1fr auto 1fr/);
+        expect(WIDE.body).toMatch(/auto 1fr auto 1fr/);
+
+        // 🔴 MIN-WIDTH, NOT MAX-WIDTH — this is the whole degradation contract
+        // and it is a one-word edit away from being inverted. `min-width` makes
+        // the STACK the default and two-up the exception, so anywhere the query
+        // does not apply (a narrow screen, a context that never matches) falls
+        // back to the layout this component shipped with for months. A
+        // `max-width` query renders identically on a desktop and is broken
+        // everywhere else, which is exactly the kind of regression that reaches
+        // production.
+        expect(WIDE.prelude).toMatch(/^@media\b/);
+        expect(WIDE.prelude).toMatch(/min-width/);
+        expect(WIDE.prelude).not.toMatch(/max-width/);
+
+        // ⚠ A CONTAINER QUERY WOULD MEASURE THE RIGHT BOX AND WAS STILL BACKED
+        // OUT — see the stylesheet for the two reasons (size containment on a
+        // production modal nobody can open here; jsdom discarding the entire
+        // stylesheet on @container, measured as the ONLY such error in the
+        // repo's suite). Recorded so this line is understood as a decision and
+        // not as an oversight; it is not asserted, because a future @container
+        // would be a legitimate change and should not have to fight a test.
+
+        // SLDS 2 tokens for everything the wide state adds. The breakpoint
+        // itself is a bare 64rem BY NECESSITY — an at-rule prelude cannot
+        // resolve var(), so a token there would not fall back, it would
+        // disable the query outright.
+        expect(
+            declaration(WIDE.body, '.smi-value', 'padding-inline-end')
+        ).toMatch(/^var\(--slds-g-[\w-]+, /);
+
+        // No hardcoded colour anywhere, in the new block or out of it: strip
+        // every var() FALLBACK first, then hunt for a hex that survived.
+        expect(
+            CSS_SOURCE.replace(/var\(\s*(--[\w-]+)\s*,[^()]*\)/g, 'var($1)')
+        ).not.toMatch(/#[0-9a-f]{3,8}\b/i);
+    });
+
+    it('🔴 T-GRID-6: the template ITERATES the rows — it never enumerates or halves them', () => {
+        const list = /<dl[\s\S]*?<\/dl>/.exec(HTML_SOURCE);
+        expect(list).not.toBeNull();
+        const markup = list[0];
+
+        // Exactly one iteration over summaryRows, and it is the only content.
+        expect((markup.match(/for:each=\{summaryRows\}/g) || []).length).toBe(1);
+        expect(markup).not.toMatch(/<div|slds-grid|slds-col|lwc:if|lwc:else/);
+
+        // No row's label may be written into the markup — a literal here IS a
+        // hardcoded row, and the count follows it.
+        expect(markup).not.toMatch(/NOI|Cap Rate|Target Price|Peak Sell/);
+
+        // Positive control for the two bans above: the scan really is looking
+        // at the rendered template and not at an empty string. (HTML_SOURCE has
+        // its comments stripped, so the `<div>` the comment warns against does
+        // not reach the ban.)
+        expect(markup).toContain('<dt key={row.labelKey}');
+        expect(markup).toContain('<dd key={row.valueKey}');
     });
 
     // ─────────────────────────────────────────────────────────────────────────

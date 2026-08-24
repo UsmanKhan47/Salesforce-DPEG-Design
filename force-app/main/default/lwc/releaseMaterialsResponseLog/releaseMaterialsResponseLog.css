@@ -1,0 +1,261 @@
+/* SLDS 2 design tokens only (ARCHITECTURE.md §5). Every custom value below is a global styling
+   hook with its canonical literal fallback — a bare var(--hook) renders as NOTHING in the
+   Salesforce environments where hooks are unavailable, which is why the repo gate
+   `slds/no-slds-var-without-fallback` warns on one.
+
+   ⚠ --slds-g-color-on-surface-1 IS THE GREY ONE (#757575); -2 (#2e2e2e) and -3 (#181818) are
+   progressively DARKER. The numbering reads like an ascending emphasis scale and is the reverse,
+   so secondary text takes -1 and primary text takes -2/-3. Do NOT reach for
+   --slds-g-color-neutral-base-60 for muted text either: it is #939393, roughly 3.5:1 on white,
+   which fails WCAG AA for body copy — and axe's colour-contrast rule is inert in jsdom, so no
+   test would ever catch it.
+   ⚠ --slds-g-font-weight-regular DOES NOT EXIST. The weight scale is NUMERIC
+   (--slds-g-font-weight-1 … -7) with exactly ONE named member, -bold. The linter reports an
+   invented hook under `no-slds-namespace-for-custom-hooks`, which reads like a naming nit rather
+   than "that hook is not real".
+
+   ⚠ NO FIXED PIXEL WIDTHS AND NO `nowrap` ANYWHERE. This card lives in the disposition record
+   page's MAIN region today, which is wide — but `c/dispositionBuyerTimeline` was built for an
+   ~800px region, moved to a ~340px sidebar, and had to be rebuilt. The tile list below is the
+   shape that survived that move (a <ul>/<li> of self-labelling tiles with their own <dl>), used
+   here from the start so the same rework is never needed twice. */
+
+:host {
+    display: block;
+    /* `anywhere`, not `break-word` — only `anywhere` affects min-content sizing, which is what
+       lets the `min-width: 0` rules below actually take effect. On :host so it also covers the
+       .lv-error banner, whose text is a SERVER message this component cannot pre-wrap. */
+    overflow-wrap: anywhere;
+}
+
+.rmr-body {
+    padding: var(--slds-g-spacing-3, 0.75rem) var(--slds-g-spacing-4, 1rem);
+}
+
+/* The card-level "no broker appointed" line. Muted rather than red: no broker having been
+   appointed yet is a normal stage of a sale, and the card still lets the user log — it is not an
+   error and must not be styled as one. */
+.rmr-notice {
+    min-width: 0;
+    margin: 0 0 var(--slds-g-spacing-3, 0.75rem);
+    font-size: var(--slds-g-font-scale-neg-1, 0.75rem);
+    color: var(--slds-g-color-on-surface-1, #757575);
+}
+
+/* ===== The resolved broker (inside the form, between Method and Notes) ===== */
+.rmr-broker {
+    min-width: 0;
+}
+
+.rmr-readonly-label {
+    display: block;
+    font-size: var(--slds-g-font-scale-neg-1, 0.75rem);
+    color: var(--slds-g-color-on-surface-1, #757575);
+}
+
+.rmr-readonly-value {
+    min-width: 0;
+    margin: var(--slds-g-spacing-1, 0.25rem) 0 0;
+    font-weight: var(--slds-g-font-weight-bold, 700);
+    color: var(--slds-g-color-on-surface-2, #2e2e2e);
+}
+
+/* The no-broker state. Muted rather than red: no broker having been appointed yet is a normal
+   stage of a sale, and the card still lets the user log — it is not an error. */
+.rmr-readonly-value_empty {
+    font-weight: var(--slds-g-font-weight-4, 400);
+    font-style: italic;
+    color: var(--slds-g-color-on-surface-1, #757575);
+}
+
+.rmr-readonly-help {
+    min-width: 0;
+    margin: var(--slds-g-spacing-1, 0.25rem) 0 0;
+    font-size: var(--slds-g-font-scale-neg-1, 0.75rem);
+    color: var(--slds-g-color-on-surface-1, #757575);
+}
+
+/* ===== The form ===== */
+.rmr-form {
+    min-width: 0;
+    padding: var(--slds-g-spacing-4, 1rem);
+    margin-bottom: var(--slds-g-spacing-4, 1rem);
+    border: var(--slds-g-sizing-border-1, 1px) solid
+        var(--slds-g-color-border-1, #e5e5e5);
+    border-radius: var(--slds-g-radius-border-3, 0.5rem);
+    background: var(--slds-g-color-surface-container-2, #f3f3f3);
+}
+
+.rmr-field {
+    display: block;
+    min-width: 0;
+    margin-bottom: var(--slds-g-spacing-3, 0.75rem);
+}
+
+/* Buttons wrap beneath each other at extreme narrow widths rather than pushing the card wider. */
+.rmr-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: var(--slds-g-spacing-2, 0.5rem);
+    min-width: 0;
+}
+
+.rmr-actions_open {
+    justify-content: flex-start;
+    margin-bottom: var(--slds-g-spacing-4, 1rem);
+}
+
+/* ===== The logged rows ===== */
+/* auto-fill + `min(28rem, 100%)` and NO media query: a media query measures the VIEWPORT, but the
+   constraint here is CONTAINER width — the same viewport yields a wide main region or a narrow
+   sidebar. A BARE 28rem minimum would burst any container narrower than 448px, which is invisible
+   at desktop width and is exactly the failure c/dispositionBuyerTimeline was rebuilt for. */
+.rmr-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(28rem, 100%), 1fr));
+    gap: var(--slds-g-spacing-3, 0.75rem);
+    padding: 0;
+    margin: 0;
+    list-style: none;
+}
+
+.rmr-item {
+    min-width: 0;
+}
+
+.rmr-tile {
+    /* A flex/grid item defaults to `min-width: auto` and then REFUSES to shrink below its longest
+       unbreakable token, so one long note would force a tile wider than its container. This is
+       the LOAD-BEARING one. */
+    min-width: 0;
+    padding: var(--slds-g-spacing-3, 0.75rem);
+    border: var(--slds-g-sizing-border-1, 1px) solid
+        var(--slds-g-color-border-1, #e5e5e5);
+    border-radius: var(--slds-g-radius-border-3, 0.5rem);
+    background: var(--slds-g-color-surface-container-1, #fff);
+}
+
+/* Name left, method badge right; the badge wraps beneath the name at extreme narrow widths
+   rather than pushing the tile wider. */
+.rmr-tile-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--slds-g-spacing-2, 0.5rem);
+    min-width: 0;
+    margin-bottom: var(--slds-g-spacing-3, 0.75rem);
+}
+
+.rmr-name {
+    min-width: 0;
+    margin: 0;
+    font-size: var(--slds-g-font-scale-1, 0.875rem);
+    font-weight: var(--slds-g-font-weight-7, 700);
+    color: var(--slds-g-color-on-surface-3, #181818);
+}
+
+/* The broker, as a SUBTITLE under the response number rather than as the heading.
+   ⚠ It is one appointed broker per sale, so this line repeats down the whole list. That is the
+   data being true — placing it as secondary text is what stops the repetition reading as a
+   per-row identity claim. */
+.rmr-broker-line {
+    min-width: 0;
+    margin: calc(-1 * var(--slds-g-spacing-2, 0.5rem)) 0
+        var(--slds-g-spacing-3, 0.75rem);
+    font-size: var(--slds-g-font-scale-neg-1, 0.75rem);
+    color: var(--slds-g-color-on-surface-1, #757575);
+}
+
+.rmr-facts {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: var(--slds-g-spacing-2, 0.5rem) var(--slds-g-spacing-3, 0.75rem);
+    align-items: baseline;
+    min-width: 0;
+    margin: 0;
+}
+
+.rmr-label {
+    grid-column: 1;
+    min-width: 0;
+    margin: 0;
+    font-size: var(--slds-g-font-scale-neg-2, 0.625rem);
+    font-weight: var(--slds-g-font-weight-7, 700);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--slds-g-color-on-surface-1, #757575);
+}
+
+.rmr-c {
+    grid-column: 2;
+    min-width: 0;
+    margin: 0;
+    font-size: var(--slds-g-font-scale-base, 0.8125rem);
+    color: var(--slds-g-color-on-surface-2, #2e2e2e);
+}
+
+/* Notes are free text and can be long; they keep their author's line breaks. */
+.rmr-notes {
+    white-space: pre-line;
+}
+
+/* ===== The method badge =====
+   The label text IS the state (see the JS header). This is a pill around a word, never a
+   replacement for one. */
+.rmr-badge {
+    display: inline-flex;
+    align-items: center;
+    min-width: 0;
+    font-size: var(--slds-g-font-scale-neg-2, 0.625rem);
+    font-weight: var(--slds-g-font-weight-7, 700);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    border-radius: var(--slds-g-radius-border-pill, 15rem);
+    padding: var(--slds-g-spacing-1, 0.25rem) var(--slds-g-spacing-2, 0.5rem);
+    color: var(--slds-g-color-on-surface-2, #2e2e2e);
+    background: var(--slds-g-color-surface-container-1, #fff);
+    border: var(--slds-g-sizing-border-1, 1px) solid
+        var(--slds-g-color-border-1, #e5e5e5);
+}
+
+/* ===== Empty state =====
+   Centred icon + headline + explanation. It is a STATUS, not an alert: nothing having come back
+   yet is the ordinary state of a sale the day materials go out. */
+.rmr-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: var(--slds-g-spacing-1, 0.25rem);
+    padding: var(--slds-g-spacing-5, 1.5rem) var(--slds-g-spacing-4, 1rem);
+}
+
+.rmr-empty-icon {
+    --slds-c-icon-color-foreground-default: var(--slds-g-color-on-surface-1, #757575);
+    margin-bottom: var(--slds-g-spacing-1, 0.25rem);
+}
+
+.rmr-empty-text {
+    min-width: 0;
+    margin: 0;
+    font-size: var(--slds-g-font-scale-base, 0.8125rem);
+    font-weight: var(--slds-g-font-weight-7, 700);
+    color: var(--slds-g-color-on-surface-2, #2e2e2e);
+}
+
+.rmr-empty-sub {
+    min-width: 0;
+    /* A measure, not a width: keeps the explanatory line from running edge-to-edge in a wide
+       region while still shrinking freely. `ch` (not px) so it tracks the font. */
+    max-width: var(--slds-g-sizing-content-2, 45ch);
+    margin: 0;
+    font-size: var(--slds-g-font-scale-neg-1, 0.75rem);
+    color: var(--slds-g-color-on-surface-1, #757575);
+}
+
+/* ===== Error banner (cross-bundle class — keep the name) ===== */
+.lv-error {
+    font-size: var(--slds-g-font-scale-base, 0.8125rem);
+}

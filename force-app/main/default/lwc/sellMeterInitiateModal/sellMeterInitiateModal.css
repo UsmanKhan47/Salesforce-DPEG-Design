@@ -11,9 +11,33 @@
    the template). It supplied the gap between the intro and the summary box; the summary is now the
    first element in the body, and `.smi-body`'s own padding sits above it. */
 
-/* Two-column label/value grid. The <dl> carries dt/dd pairs with NO wrapper
-   elements (axe's definition-list rule), so the columns are produced here
-   rather than in the markup. */
+/* ═══════════════════════════════════════════════════════════════════════════
+   SUMMARY GRID — THE FALLBACK STATE: ONE label/value PAIR PER ROW.
+   ---------------------------------------------------------------------------
+   The <dl> carries dt/dd pairs with NO wrapper elements (axe's definition-list
+   rule), so every column here is produced by CSS over a flat iteration and
+   NOTHING about the layout lives in the markup.
+
+   🔴 THE TRACK COUNT IS THE ONLY THING THAT CHANGES BETWEEN THE TWO STATES,
+   AND IT IS ALWAYS AN EVEN, FIXED NUMBER. 2 tracks = 1 pair per row (here);
+   4 tracks = 2 pairs per row (the @media block at the bottom). Both are
+   independent of how many rows summaryRows returns — a dt always lands in an
+   even track with its own dd in the odd track beside it, at 3 rows, 4 rows or
+   5. Do NOT "simplify" this into repeat(auto-fit, ...) or repeat(auto-fill,
+   ...): those resolve to whatever number of tracks fits, an ODD count is
+   reachable, and one odd count interleaves every dd under the wrong dt for the
+   whole list. Do NOT reach for grid-auto-flow: column either — column-major
+   order requires grid-template-rows to encode ceil(N / 2), i.e. the row COUNT
+   baked into the stylesheet, which is exactly what this shape exists to avoid.
+
+   THIS RULE IS ALSO THE GRACEFUL-DEGRADATION PATH: it is UNCONDITIONAL, so
+   the narrow case needs no query of its own and no override — a small screen
+   simply never reaches the wide rule and keeps the single-pair stack, rather
+   than getting a 4-track grid that bursts its box. Keep it that way round: a
+   max-width query would make the WIDE state the default and the narrow one the
+   exception, which is the same layout on a desktop and a broken one everywhere
+   the query fails to apply.
+   ═══════════════════════════════════════════════════════════════════════════ */
 .smi-summary {
     display: grid;
     grid-template-columns: auto 1fr;
@@ -44,6 +68,68 @@
     font-size: var(--slds-g-font-scale-base, 0.8125rem);
     color: var(--slds-g-color-neutral-base-10, #181818);
     font-variant-numeric: tabular-nums;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   TWO PAIRS PER ROW (2026-08-24) — THE WIDE STATE
+   ---------------------------------------------------------------------------
+   Four tracks instead of two. Nothing else changes: same dt/dd stream, same
+   type treatment, same tokens.
+
+   READING ORDER IS ACROSS-THEN-DOWN (row-major), and that follows from the
+   markup rather than being imposed on it — the dt/dd stream is emitted in
+   summaryRows order and grid auto-placement fills it left to right, so the
+   visual sequence and the screen-reader sequence are the same sequence and no
+   `order` / `grid-row` shuffling is needed. Column-major (NOI stacked above
+   Market Cap Rate in a left-hand column) was rejected: it cannot be expressed
+   without putting ceil(N / 2) into grid-template-rows — the row COUNT, in the
+   stylesheet — and it is unstable under append, because a fifth entry MOVES an
+   existing entry from the right column into the left one instead of just
+   adding a row.
+
+   ⚠ 64rem IS DELIBERATELY CONSERVATIVE, AND IT IS A BARE LENGTH BY NECESSITY.
+   By necessity because an at-rule prelude cannot resolve var() — a token here
+   would not fall back, it would disable the query outright. Conservative
+   because a modal's width is a PERCENTAGE of the viewport whose factor varies
+   with the modal's size class, so the viewport is only ever an upper bound on
+   the space this grid actually gets: at 1024px even a half-width modal leaves
+   roughly 480px of usable body, which two pairs fit comfortably. Below that we
+   stack. The cost of being wrong on the low side is that a tablet keeps the
+   single-pair layout it has today; the cost of being wrong on the high side is
+   a cramped, ambiguous grid on a device nobody tested.
+
+   ⚠ A CONTAINER QUERY (@container on .smi-body) WAS BUILT FIRST AND BACKED OUT
+   — it measures the right box, and the reasoning c-competing-broker-submissions
+   gives for refusing media queries is sound. Two things killed it HERE and
+   both are recorded so this is not re-litigated blind:
+     1. `container-type: inline-size` applies size containment to the modal
+        body, and this component ships to production with no way to open it in
+        a browser first. A media query adds no containment and so cannot change
+        anything except which of these two rules wins.
+     2. jsdom cannot parse @container: it discards the WHOLE stylesheet and
+        logs an error stack. Measured — one occurrence across the entire repo
+        Jest suite, this file's. That costs every future computed-style or
+        contrast assertion in this bundle, permanently, for a layout benefit
+        that only appears if someone opens this modal at a non-default size.
+   The sidebar case that justifies @container elsewhere does not apply: this
+   modal is opened from exactly one place (c/sellMeterList) and never sizes
+   itself, so viewport and container track each other here.
+
+   The padding on .smi-value is what keeps the pairs readable at four tracks:
+   it roughly doubles the space AFTER a value (gap + padding) relative to the
+   space between a label and its OWN value (gap alone), so the eye groups each
+   pair correctly even when a long value fills its 1fr track. It is deliberately
+   NOT an nth-child rule — no declaration here may depend on an element's
+   position, because position is exactly what changes when a row is added.
+   ═══════════════════════════════════════════════════════════════════════════ */
+@media (min-width: 64rem) {
+    .smi-summary {
+        grid-template-columns: auto 1fr auto 1fr;
+    }
+
+    .smi-value {
+        padding-inline-end: var(--slds-g-spacing-4, 16px);
+    }
 }
 
 /* Cross-bundle error-banner class — shared with recentLeads /

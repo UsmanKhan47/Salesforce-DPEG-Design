@@ -425,6 +425,11 @@ public with sharing class NdaSelector {
      * sets grant it**. That is a DEPLOY-ORDER dependency, not a defect in this query.
      * ⚠ `Name` is deliberately NOT in the gate list: it is a standard AutoNumber on which
      * field-level security cannot be configured, so it is always readable.
+     * ⚠ NOR IS `CreatedDate` (added 2026-08-24 for the MERGED Buyer Activity timeline). It is a
+     * standard system audit field on which field-level security cannot be configured either, so it
+     * adds NO gate and cannot take the card down — which is the whole reason it, rather than a
+     * custom stamp, is the sort key the merge uses for an NDA entry. See
+     * `DispositionBuyerTimelineService.getTimeline` for why the NDA's own dates are NOT the key.
      * ⚠ A PermissionSet deploy REPLACES its entire `<fieldPermissions>` set, so one unrelated
      * redeploy that drops any line takes this whole card down.
      *
@@ -482,8 +487,8 @@ public with sharing class NdaSelector {
      * coordinate.
      *
      * @param dispositionId Parent Disposition__c Id; null-safe.
-     * @return Buyer-role NDAs with Id, Name, Broker__c, Broker__r.Name, Status__c, Date_Signed__c,
-     *         Materials_Released_Date__c and Party_Role__c populated, oldest first;
+     * @return Buyer-role NDAs with Id, Name, CreatedDate, Broker__c, Broker__r.Name, Status__c,
+     *         Date_Signed__c, Materials_Released_Date__c and Party_Role__c populated, oldest first;
      *         an empty list when the input is null or the Disposition has no buyer NDA (never null).
      * @throws System.QueryException when the running user lacks read on `NDA__c`, on `Contact`, or
      *         on any of the six custom fields above. The caller converts it to an
@@ -497,7 +502,7 @@ public with sharing class NdaSelector {
         }
         String buyerRole = PARTY_ROLE_BUYER;
         return [
-            SELECT Id, Name, Broker__c, Broker__r.Name, Status__c, Date_Signed__c,
+            SELECT Id, Name, CreatedDate, Broker__c, Broker__r.Name, Status__c, Date_Signed__c,
                    Materials_Released_Date__c, Party_Role__c
             FROM NDA__c
             WHERE Disposition__c = :dispositionId

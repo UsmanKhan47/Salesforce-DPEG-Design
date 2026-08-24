@@ -37,6 +37,30 @@
         ></c-bov-comparison-matrix>
         <c-bov-comparison-matrix record-id={recordId}></c-bov-comparison-matrix>
     </template>
+    <!--
+      RELEASE MATERIALS (2026-08-24). The response logger — what came back after the
+      offering materials went out.
+
+      🔴 THIS TAG IS THE ONLY WAY TO CREATE A `Release_Materials_Response__c`. The object
+      ships with NO TAB and NO LIST VIEW by design, so removing this line does not hide a
+      feature — it deletes the only route to it. (Contrast the call-for-offers removal
+      below, where the bundle was kept and only the render was dropped.)
+
+      ⚠ THE STAGE GATE IS HERE AND NOWHERE ELSE. `ReleaseMaterialsResponseService`
+      deliberately has NO save-time stage check: `Entry_DateTime__c` exists so a response
+      that arrived earlier can be BACKDATED, and a server-side stage rule would refuse
+      exactly that. This is a render gate, not a business rule.
+
+      ⚠ THE CARD GATES ITS OWN FORM. There is no permission test around this tag: the
+      component reads `canLog` off its own context and renders the list without an opener
+      for a read-only persona. Gating it here would mean this component describing an
+      object it otherwise has no reason to know about.
+    -->
+    <template if:true={isReleaseMaterials}>
+        <c-release-materials-response-log
+            record-id={recordId}
+        ></c-release-materials-response-log>
+    </template>
     <template if:true={isActiveListing}>
         <c-broker-listing record-id={recordId}></c-broker-listing>
         <!--

@@ -92,6 +92,35 @@
     color: var(--slds-g-color-on-surface-1, #757575);
 }
 
+/* RESPONSE TILE (2026-08-24, the merge). A Release Materials response rather than an NDA.
+   ⚠ IT IS A LEFT ACCENT, NOT A DIFFERENT BACKGROUND. The declined tile already owns "grey fill +
+   dashed border", and a second filled variant in the same list would read as a second kind of
+   terminated row. The accent marks a kind; the fill marks a state. They are allowed to co-occur.
+   🔴 AND THE ACCENT IS NOT THE SIGNAL. The kind travels as READABLE TEXT — the tile's own
+   `aria-label` says "release materials response" and the visible badge names the METHOD. Colour
+   alone is not a kind, exactly as colour alone is not a state on the declined tile. */
+.dbt-tile--response {
+    border-left: var(--slds-g-sizing-2, 0.25rem) solid
+        var(--slds-g-color-accent-container-1, #0176d3);
+}
+
+/* The response's RMR AutoNumber. Same visual weight as `.dbt-nda`, because the two kinds sit in
+   ONE list and a heading that changed size between rows would read as a hierarchy that is not
+   there. ⚠ IT IS A SEPARATE CLASS RATHER THAN A SECOND `.dbt-nda`: a shared class would make the
+   suite's "one row per NDA, headed by its NUMBER" assertion silently start counting responses. */
+.dbt-rmr {
+    min-width: 0;
+    margin: 0;
+    font-size: var(--slds-g-font-scale-1, 0.875rem);
+    font-weight: var(--slds-g-font-weight-7, 700);
+    color: var(--slds-g-color-on-surface-3, #181818);
+}
+
+/* Free-text notes keep their author's line breaks. */
+.dbt-notes {
+    white-space: pre-line;
+}
+
 /* Tile head: NDA number left, badges right; a badge wraps beneath the number at extreme narrow
    widths rather than pushing the tile wider. */
 .dbt-tile-head {
@@ -235,6 +264,16 @@
 }
 
 .dbt-badge--declined {
+    color: var(--slds-g-color-on-surface-2, #2e2e2e);
+    background: var(--slds-g-color-surface-container-1, #fff);
+    border: var(--slds-g-sizing-border-1, 1px) solid
+        var(--slds-g-color-border-1, #e5e5e5);
+}
+
+/* The response METHOD (More questions / Decision / Offer). Neutral chrome, identical to the
+   declined badge's, because it names a KIND OF ENTRY rather than a problem — three colour-coded
+   method pills would invent a severity ranking the data does not have. */
+.dbt-badge--method {
     color: var(--slds-g-color-on-surface-2, #2e2e2e);
     background: var(--slds-g-color-surface-container-1, #fff);
     border: var(--slds-g-sizing-border-1, 1px) solid

@@ -1,12 +1,39 @@
 /**
  * c-disposition-buyer-timeline
  * ---------------------------------------------------------------------------
- * The card titled "Buyer Activity timeline" on the Disposition record page: one
- * row per buyer-role NDA, showing the NDA's number, the broker it names, the two dates
- * of the NDA journey (signed -> materials released) and the duration between
- * them. Tranche 2 Workstream D
+ * The card titled "Buyer Activity timeline" on the Disposition record page: ONE
+ * CHRONOLOGICAL LIST MERGED FROM TWO SOURCES, newest first — buyer-role NDAs
+ * (number, broker, the two journey dates and the duration between them) and
+ * RELEASE MATERIALS RESPONSES (what came back after the materials went out).
+ * Tranche 2 Workstream D
  * (agent-output/disposition-tranche-2-requirements.md §3 D6.3), retargeted
- * 2026-08-21.
+ * 2026-08-21, MERGED 2026-08-24.
+ *
+ * ==========================================================================
+ * 🔴 THE MERGE (2026-08-24) — WHAT IT DID TO THIS COMPONENT
+ * ==========================================================================
+ * User decision: *"merge both sources into one chronological timeline"*.
+ *   · `timelineRows` now branches on `row.kind` FIRST and hands a response to
+ *     `responseRow`. The DTO is a FLAT UNION and the other kind's fields are
+ *     NULL, so mapping a response through the NDA branch produces a tile of
+ *     em-dashes with no heading.
+ *   · 🔴 THE NDA BRANCH AND THE NDA TILE ARE UNCHANGED, BY INSTRUCTION — "a
+ *     user should see new entries appear, not their existing ones change
+ *     shape". The only addition to an NDA view-model is `isResponse: false`.
+ *     Do not "harmonise" the two template branches.
+ *   · 🔴 THIS COMPONENT STILL DOES NOT SORT. The interleaving is Apex's, and
+ *     it is a statement about the data rather than a presentation preference —
+ *     see `DispositionBuyerTimelineService.getTimeline`, which also records the
+ *     rule the merge RETIRED ("declined parties sort last"). A declined NDA now
+ *     takes its chronological place like everything else; only its POSITION
+ *     changed, not its treatment.
+ *   · The EMPTY STATE wording widened, because "No NDAs yet" became a false
+ *     statement the moment a response could also produce a row.
+ *   · ⚠ THE ICON STAYED `standard:contract`. It names the NDA half only, which
+ *     is now a partial description — it was left alone because no icon in the
+ *     standard set names "NDAs and broker responses", and changing it would
+ *     trade one partial description for another while breaking a pinned test.
+ *     Recorded as a known imperfection, not an oversight.
  *
  * ==========================================================================
  * 🔴 THREE NAMES, ALL DIFFERENT, ALL DELIBERATE. READ THIS BEFORE "FIXING" ANY.
@@ -147,6 +174,20 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 /** Rendered wherever a date or a duration cannot be stated truthfully. */
 const EM_DASH = '—';
 
+/**
+ * `TimelineRow.kind` for a Release Materials response entry (2026-08-24).
+ *
+ * 🔴 THE TEST IS AGAINST THIS CONSTANT, NOT AGAINST "IS THERE A responseId". An
+ * `=== undefined` probe on a half-populated union would classify a row by which
+ * fields happened to be null, so a future NDA row that briefly lacked an ndaId
+ * would render as a response. `kind` is the server's explicit answer and it is
+ * never null — `DispositionBuyerTimelineService` sets it in both builders.
+ * ⚠ IT MUST MATCH `DispositionBuyerTimelineService.KIND_RESPONSE` EXACTLY. The
+ * pairing is not compile-checked; the Jest suite pins the string on this side
+ * and the Apex suite pins it on the other.
+ */
+const KIND_RESPONSE = 'Response';
+
 export default class DispositionBuyerTimeline extends LightningElement {
     @api recordId;
 
@@ -233,11 +274,16 @@ export default class DispositionBuyerTimeline extends LightningElement {
      * two re-titlings (2026-08-21, 2026-08-24) exactly as its wording said it
      * must.
      *
-     * ⚠ THE COUNT IS A COUNT OF NDAs — NOT OF BROKERS AND NOT OF BUYERS. See the
-     * class header. On a sale with one broker and four NDAs this reads "Buyer
-     * Activity timeline (4)", which is correct. Do not "reconcile" the number
-     * with the title by counting distinct counterparties; that number is 1 on
-     * every disposition and tells the reader nothing.
+     * ⚠ SINCE THE 2026-08-24 MERGE THE COUNT IS A COUNT OF **ENTRIES** — NDAs
+     * PLUS RESPONSES — NOT OF BROKERS AND NOT OF BUYERS. It counted NDAs only
+     * until that day, so a sale whose number jumps is not a defect. On a sale
+     * with one broker, two NDAs and three logged responses this reads "Buyer
+     * Activity timeline (5)", which matches the number of tiles below it — and
+     * matching the visible list is the only property a count on a card needs.
+     * Do not "reconcile" it with the title by counting distinct counterparties;
+     * that number is 1 on every disposition and tells the reader nothing, and
+     * do not split it into "2 NDAs, 3 responses" either — a two-part count in a
+     * card title is read as a ratio.
      *
      * ⚠ THE CAPITALISATION IS THE USER'S, VERBATIM: capital "A", lower-case "t"
      * ("Buyer Activity timeline", user instruction 2026-08-24). It is asymmetric
@@ -259,6 +305,12 @@ export default class DispositionBuyerTimeline extends LightningElement {
      */
     get timelineRows() {
         return (this.rows || []).map((row) => {
+            // 🔴 KIND FIRST. The DTO is a FLAT UNION and the other kind's fields
+            // are NULL, not empty — mapping a response row through the NDA
+            // branch below produces a tile of em-dashes with no heading.
+            if (row.kind === KIND_RESPONSE) {
+                return this.responseRow(row);
+            }
             const declined = row.isDeclined === true;
             const ndaSigned = declined
                 ? EM_DASH
@@ -278,6 +330,10 @@ export default class DispositionBuyerTimeline extends LightningElement {
                 ndaName,
                 brokerName: row.brokerName || EM_DASH,
                 isDeclined: declined,
+                // ⚠ FALSE, NOT UNDEFINED. `lwc:if` treats both as falsy, but an
+                // explicit boolean is what makes a Jest assertion on the shape
+                // of an NDA row meaningful rather than a test of `undefined`.
+                isResponse: false,
                 tileClass: declined ? 'dbt-tile dbt-tile--declined' : 'dbt-tile',
                 // The accessible name for the whole tile group. Colour and the
                 // badge are reinforcement; THIS is the state a screen reader
@@ -303,6 +359,56 @@ export default class DispositionBuyerTimeline extends LightningElement {
                 hasAnomaly: !declined && row.hasDateAnomaly === true
             };
         });
+    }
+
+    /**
+     * ONE RELEASE MATERIALS RESPONSE -> ONE TILE (2026-08-24).
+     *
+     * ⚠ IT SHARES THE TILE CHROME AND NONE OF THE JOURNEY. `dbt-tile` and
+     * `dbt-tile-head` / `dbt-facts` / `dbt-broker` are deliberately the same
+     * classes the NDA tile uses — the two kinds sit in ONE list and must read as
+     * one list — but the tile carries a `dbt-tile--response` modifier and its
+     * heading takes its own class (`dbt-rmr`, not `dbt-nda`) so a selector can
+     * always tell them apart. A shared `.dbt-nda` heading would have made the
+     * existing "one row per NDA, headed by its NUMBER" assertion silently start
+     * counting responses.
+     *
+     * 🔴 THERE IS NO MILESTONE RAIL ON A RESPONSE TILE. The rail's markers mean
+     * "this milestone has happened / is still to come", which is a statement
+     * about a JOURNEY. A response is a single event with one timestamp: a rail
+     * beside it would be decoration that asserts something untrue.
+     *
+     * ⚠ `entryDateTime` IS PASSED THROUGH RAW, not formatted here. It is a
+     * DATETIME (an unambiguous instant), so `lightning-formatted-date-time`
+     * renders it in the viewer's own timezone, which is correct — the opposite
+     * of the `formatDate` split-the-ISO-string treatment the NDA tile's bare
+     * `YYYY-MM-DD` Apex Dates need to avoid a UTC-midnight off-by-one.
+     *
+     * @param {object} row A `TimelineRow` whose `kind` is `Response`.
+     * @returns {object} The tile view-model.
+     */
+    responseRow(row) {
+        const responseName = row.responseName || EM_DASH;
+        const method = row.method || EM_DASH;
+        const brokerName = row.brokerName || EM_DASH;
+        return {
+            id: row.responseId,
+            isResponse: true,
+            responseName,
+            method,
+            brokerName,
+            // Notes are OPTIONAL on a response. An em-dash is the correct
+            // rendering of "none entered" — never a blank cell, which reads as
+            // a rendering failure rather than as missing data.
+            notes: row.notes || EM_DASH,
+            entryDateTime: row.entryDateTime,
+            tileClass: 'dbt-tile dbt-tile--response',
+            // The accessible name for the whole tile group. The badge and the
+            // subtitle are reinforcement; THIS is what a screen reader
+            // announces for the row, and it names the KIND so the two kinds are
+            // distinguishable without sight.
+            rowLabel: `${responseName} — release materials response, ${method}`
+        };
     }
 }
 

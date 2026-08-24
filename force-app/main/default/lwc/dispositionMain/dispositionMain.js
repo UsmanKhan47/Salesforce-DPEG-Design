@@ -24,6 +24,28 @@ export default class DispositionMain extends LightningElement {
     }
 
     get isBovOutreach()   { return this._stage === 'BOV Outreach'; }
+
+    /**
+     * The Release Materials response logger's stage (2026-08-24).
+     *
+     * ⚠ EXACT MATCH ON THE PICKLIST'S OWN API VALUE, `'Release Materials'` — a space, not an
+     * underscore, and title case. It is value 5 of 11 in
+     * `objects/Disposition__c/fields/Disposition_Stage__c.field-meta.xml`. A near-miss here fails
+     * SILENTLY: the branch simply never fires and the card never appears, with nothing on the page
+     * to suggest anything is missing.
+     *
+     * ⚠ NO RECORD-TYPE TEST, AND NONE IS NEEDED. `Release Materials` exists on BOTH record types
+     * and the card renders identically on both — the broker it resolves comes from a different
+     * SOURCE per record type, but that decision belongs to the server and the card is told the
+     * answer. Contrast `isActiveListing`, which is an on-market-only stage and needs no test for
+     * the opposite reason (off-market records can never reach the value).
+     *
+     * 🔴 THE GATE IS HERE AND NOWHERE ELSE. `ReleaseMaterialsResponseService` deliberately does NOT
+     * check the parent's stage at save time: `Entry_DateTime__c` exists so a response that arrived
+     * earlier can be backdated, and a save-time rule would refuse exactly that legitimate case.
+     */
+    get isReleaseMaterials() { return this._stage === 'Release Materials'; }
+
     get isActiveListing() { return this._stage === 'Active Listing'; }
 
     /**

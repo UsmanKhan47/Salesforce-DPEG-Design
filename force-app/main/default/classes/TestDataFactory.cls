@@ -3017,6 +3017,69 @@ public with sharing class TestDataFactory {
     }
 
     /**
+     * Release Materials responses for a Disposition — the log behind `c/releaseMaterialsResponseLog`
+     * and the second source of the merged Buyer Activity timeline. Added 2026-08-24.
+     *
+     * ⚠ THIS IS A FIXTURE SHORTCUT, NOT A SANCTIONED WAY TO CREATE A RESPONSE. Production rows come
+     * from `ReleaseMaterialsResponseService.logResponse`, which RESOLVES the broker from the parent
+     * rather than accepting one. A test of the WRITE must call the service; this exists so a test of
+     * a READ (the selector, the logger's list, the merged timeline) does not have to stage a broker
+     * appointment per row.
+     *
+     * ⚠ `Broker__c` IS LEFT NULL AND MUST BE SET BY THE CALLER IF IT NEEDS ONE. The field carries an
+     * ACTIVE, NON-OPTIONAL lookup filter (`Contact.RecordType.DeveloperName = 'Broker'`) which Apex
+     * DML enforces, so pointing it at an ordinary `createContact` Contact fails at INSERT with
+     * `FIELD_FILTER_VALIDATION_EXCEPTION` — a failure that reads like a defect in the code under
+     * test. Use `createBrokerContact(...)`, which produces a Contact the filter accepts.
+     * ⚠ A NULL BROKER IS ALSO THE REALISTIC DEFAULT: the service logs a response with a blank broker
+     * whenever none is appointed yet, and that is an accepted, non-blocking outcome.
+     *
+     * ⚠ `Entry_DateTime__c` IS SET EXPLICITLY AND DESCENDS BY ONE MINUTE PER INDEX, so index 0 is
+     * the NEWEST. Without it every row in one transaction shares a DateTime to the millisecond
+     * (the test clock is frozen), leaving only a tie-break to prove and making any ordering
+     * assertion — the selector's `DESC`, or the merged timeline's — vacuous. It also overrides the
+     * field's `NOW()` default, which is what a test asserting on order must do.
+     *
+     * ⚠ `Method__c` CYCLES THROUGH ALL THREE RESTRICTED VALUES so a fixture of three or more rows
+     * exercises every badge the card can render. The value set is `restricted` and Apex DML enforces
+     * it, so a typo here fails at insert rather than at the assertion.
+     *
+     * @param count         Number of responses.
+     * @param dispositionId Parent Disposition__c (nullable).
+     * @param doInsert      Insert when true.
+     * @return Responses, index 0 the NEWEST.
+     */
+    public static List<Release_Materials_Response__c> createReleaseMaterialsResponses(
+            Integer count, Id dispositionId, Boolean doInsert) {
+        requirePositive(count);
+        List<String> methods = new List<String>{ 'More questions', 'Decision', 'Offer' };
+        Datetime base = Datetime.now();
+        List<Release_Materials_Response__c> responses = new List<Release_Materials_Response__c>();
+        for (Integer i = 0; i < count; i++) {
+            responses.add(new Release_Materials_Response__c(
+                Disposition__c = dispositionId,
+                Method__c = methods[Math.mod(i, methods.size())],
+                Notes__c = 'Test release materials response ' + i,
+                Entry_DateTime__c = base.addMinutes(-i)
+            ));
+        }
+        insertIf(doInsert, responses);
+        return responses;
+    }
+
+    /**
+     * Single Release Materials response.
+     *
+     * @param dispositionId Parent Disposition__c (nullable).
+     * @param doInsert      Insert when true.
+     * @return The response row, `Method__c = 'More questions'`, no broker.
+     */
+    public static Release_Materials_Response__c createReleaseMaterialsResponse(
+            Id dispositionId, Boolean doInsert) {
+        return createReleaseMaterialsResponses(1, dispositionId, doInsert)[0];
+    }
+
+    /**
      * @param count         Number of Broker Listings.
      * @param dispositionId Parent Disposition__c (nullable).
      * @param doInsert      Insert when true.

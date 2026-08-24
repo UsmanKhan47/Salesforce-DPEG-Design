@@ -157,8 +157,70 @@ const DECLINED_ROW = {
     hasDateAnomaly: false
 };
 
+/**
+ * ⚠ NONE OF THE FOUR NDA FIXTURES ABOVE CARRIES A `kind`, AND THAT IS DELIBERATE
+ * RATHER THAN STALE. The real server sets `kind: 'NDA'` on every NDA row since
+ * 2026-08-24; leaving it off here is what pins the component's branch DEFAULTING
+ * to the NDA tile — the property that makes the merge non-breaking for anything
+ * that was already rendering. Add `kind` to these and that pin is lost.
+ */
+
 // Server order: actives first, declined last. The component must not re-sort.
+// ⚠ THIS IS AN NDA-ONLY FIXTURE AND MUST STAY ONE. Several assertions below are
+// positional (`dataRows(element)[3]` is the declined row) or count-based
+// (`toBe(4)`, three dt/dd per tile), so adding a response row here would red
+// tests that have nothing to do with the merge. The merged fixtures are separate.
 const TIMELINE = [COMPLETE_ROW, IN_FLIGHT_ROW, ANOMALY_ROW, DECLINED_ROW];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 🔴 THE MERGE (2026-08-24) — Release Materials responses share this list.
+//
+// The DTO is a FLAT UNION: a response row carries `kind`, `entryDateTime`,
+// `brokerName` and the four response fields, and every NDA-half field is NULL —
+// NOT absent and NOT empty. These fixtures reproduce that exactly, because the
+// component's branch reads `kind` and a fixture that also happened to carry an
+// `ndaName` would hide a branch that read the wrong thing.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** A response WITH notes and a resolved broker — the ordinary logged shape. */
+const RESPONSE_ROW = {
+    kind: 'Response',
+    entryDateTime: '2026-03-11T14:05:00.000Z',
+    brokerName: 'Derek Simmons',
+    responseId: 'a1A0000000000001AAA',
+    responseName: 'RMR-0007',
+    method: 'Offer',
+    notes: 'Verbal at 4.2m, 6.1 cap.',
+    ndaId: null,
+    ndaName: null,
+    status: null,
+    isDeclined: null,
+    ndaSignedDate: null,
+    materialsReleasedDate: null,
+    daysToRelease: null,
+    hasDateAnomaly: null
+};
+
+/** A response with NO notes and NO broker — both reachable, both normal. */
+const BARE_RESPONSE_ROW = {
+    ...RESPONSE_ROW,
+    entryDateTime: '2026-03-05T09:30:00.000Z',
+    responseId: 'a1A0000000000002AAA',
+    responseName: 'RMR-0008',
+    method: 'More questions',
+    // The service's fixed placeholder — never a blank, which reads as a
+    // rendering failure rather than as missing data.
+    brokerName: 'No broker recorded',
+    notes: null
+};
+
+/**
+ * The MERGED payload, in the order the server returns it: newest first ACROSS
+ * BOTH KINDS. ⚠ THE KINDS ALTERNATE ON PURPOSE — a component that grouped by
+ * kind, or that re-sorted, would produce a different sequence, and a fixture of
+ * "two NDAs then two responses" could not tell the difference.
+ */
+const MERGED = [RESPONSE_ROW, COMPLETE_ROW, BARE_RESPONSE_ROW, IN_FLIGHT_ROW];
 
 describe('c-disposition-buyer-timeline', () => {
     afterEach(() => {
@@ -259,12 +321,17 @@ describe('c-disposition-buyer-timeline', () => {
         expect(
             empty.querySelector('lightning-icon').iconName
         ).toBe('utility:groups');
+        // ⚠ THE WORDING WIDENED WITH THE 2026-08-24 MERGE. It was "No NDAs yet"
+        // / "as NDAs are raised on this disposition". Once a logged RESPONSE can
+        // also produce a row, both sentences became FALSE STATEMENTS on the very
+        // screen they appear on — the card would say "no NDAs" about a sale that
+        // also has no responses, and promise rows only for NDAs.
         expect(empty.querySelector('.dbt-empty-text').textContent.trim()).toBe(
-            'No NDAs yet'
+            'No activity yet'
         );
-        expect(empty.querySelector('.dbt-empty-sub').textContent).toContain(
-            'as NDAs are raised on this disposition'
-        );
+        expect(
+            empty.querySelector('.dbt-empty-sub').textContent.replace(/\s+/g, ' ')
+        ).toContain('as NDAs are raised and responses are logged');
     });
 
     it('🔴 DATA BRANCH: one row per NDA, headed by its NUMBER, in the order the server returned', async () => {
@@ -448,6 +515,207 @@ describe('c-disposition-buyer-timeline', () => {
         // nor the "no NDAs yet" empty state may appear on the error branch.
         expect(dataRows(element).length).toBe(0);
         expect(element.shadowRoot.querySelector('.dbt-empty')).toBeNull();
+    });
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // 🔴 THE MERGE (2026-08-24) — two kinds of tile in ONE list
+    // ═════════════════════════════════════════════════════════════════════════
+
+    /** Response tiles only. */
+    const responseTiles = (element) => [
+        ...element.shadowRoot.querySelectorAll('.dbt-tile--response')
+    ];
+
+    /** NDA tiles only — every tile that is NOT a response tile. */
+    const ndaTiles = (element) => [
+        ...element.shadowRoot.querySelectorAll('.dbt-tile:not(.dbt-tile--response)')
+    ];
+
+    it('🔴 MERGE: the component preserves SERVER order across both kinds — it does not group and does not re-sort', async () => {
+        const element = createComponent();
+
+        getTimeline.emit(MERGED);
+        await Promise.resolve();
+
+        // The rendered sequence of tile HEADINGS, whichever kind each one is.
+        // ⚠ READ OFF THE RENDERED DOM IN DOCUMENT ORDER, not off a getter —
+        // `querySelectorAll` on the two heading classes separately would lose
+        // the interleaving, which is the entire property under test.
+        const headings = [...element.shadowRoot.querySelectorAll('.dbt-nda, .dbt-rmr')].map(
+            (el) => el.textContent.trim()
+        );
+        expect(headings).toEqual(['RMR-0007', 'NDA-0101', 'RMR-0008', 'NDA-0102']);
+
+        // And the tile kinds alternate the way the payload does. R,R,N,N or
+        // N,N,R,R here would mean the component grouped by kind.
+        const kinds = [...element.shadowRoot.querySelectorAll('.dbt-tile')].map((tile) =>
+            tile.classList.contains('dbt-tile--response') ? 'R' : 'N'
+        );
+        expect(kinds).toEqual(['R', 'N', 'R', 'N']);
+    });
+
+    it('🔴 MERGE: a response renders its OWN tile — number, method badge, broker, timestamp and notes', async () => {
+        const element = createComponent();
+
+        getTimeline.emit(MERGED);
+        await Promise.resolve();
+
+        const tiles = responseTiles(element);
+        expect(tiles).toHaveLength(2);
+
+        const tile = tiles[0];
+        expect(tile.querySelector('.dbt-rmr').textContent.trim()).toBe('RMR-0007');
+        // ⚠ THE METHOD IS READABLE TEXT INSIDE THE BADGE, never a colour alone.
+        // A future text->badge->icon swap that deletes this word fails HERE.
+        expect(tile.querySelector('.dbt-badge--method').textContent.trim()).toBe('Offer');
+        expect(tile.querySelector('.dbt-broker').textContent.trim()).toBe('Derek Simmons');
+
+        const labels = [...tile.querySelectorAll('dt')].map((d) => d.textContent.trim());
+        expect(labels).toEqual(['Received', 'Notes']);
+
+        // 🔴 ASSERTED ON THE STUB'S `value` PROPERTY, NOT ON textContent. The
+        // sfdx-lwc-jest stub for a lightning base component renders an EMPTY
+        // template, so a textContent assertion here would be vacuously green
+        // whether or not the date was passed through at all.
+        const stamp = tile.querySelector('lightning-formatted-date-time');
+        expect(stamp).not.toBeNull();
+        expect(stamp.value).toBe('2026-03-11T14:05:00.000Z');
+
+        expect(tile.querySelector('.dbt-notes').textContent.trim()).toBe(
+            'Verbal at 4.2m, 6.1 cap.'
+        );
+    });
+
+    it('MERGE: a response with no notes renders an em-dash, never a blank cell', async () => {
+        const element = createComponent();
+
+        getTimeline.emit(MERGED);
+        await Promise.resolve();
+
+        // RMR-0008 carries `notes: null` — the normal shape for a response
+        // logged with only a method.
+        const bare = responseTiles(element)[1];
+        expect(bare.querySelector('.dbt-rmr').textContent.trim()).toBe('RMR-0008');
+        expect(bare.querySelector('.dbt-notes').textContent.trim()).toBe(EM_DASH);
+        // and the no-broker placeholder is the SAME string the NDA tile uses —
+        // the two kinds share one list, so two different words for the same
+        // absence would read as two different states.
+        expect(bare.querySelector('.dbt-broker').textContent.trim()).toBe(
+            'No broker recorded'
+        );
+    });
+
+    /**
+     * 🔴 THE RAIL IS A CLAIM ABOUT A JOURNEY, AND A RESPONSE IS NOT ONE.
+     * Its markers mean "this milestone has happened / is still to come". A
+     * response is a single event with one timestamp, so a rail beside it would
+     * be decoration asserting something untrue.
+     */
+    it('🔴 MERGE: a response tile carries NO milestone rail', async () => {
+        const element = createComponent();
+
+        getTimeline.emit(MERGED);
+        await Promise.resolve();
+
+        expect(responseTiles(element)[0].querySelectorAll('.dbt-step')).toHaveLength(0);
+        // Guard the guard: the NDA tile beside it still has both markers, so
+        // this is a real absence and not an empty component.
+        expect(ndaTiles(element)[0].querySelectorAll('.dbt-step')).toHaveLength(2);
+    });
+
+    /**
+     * ⚠ ACCESSIBILITY: the KIND travels as readable text, not as the left
+     * accent. A screen-reader user must be able to tell a response from an NDA.
+     */
+    it('MERGE: the tile group names its KIND in the accessible label', async () => {
+        const element = createComponent();
+
+        getTimeline.emit(MERGED);
+        await Promise.resolve();
+
+        const label = responseTiles(element)[0].getAttribute('aria-label');
+        expect(label).toContain('RMR-0007');
+        expect(label).toContain('release materials response');
+        expect(label).toContain('Offer');
+        expect(responseTiles(element)[0].getAttribute('role')).toBe('group');
+    });
+
+    /**
+     * 🔴 THE NON-BREAKING PIN. *"A user should see new entries appear, not their
+     * existing ones change shape."* An NDA tile rendered BESIDE response tiles
+     * must be identical to one rendered alone — same heading class, same three
+     * dt/dd pairs, same rail, same values.
+     * ⚠ THIS RUNS ON THE **MERGED** FIXTURE ON PURPOSE. The pre-existing NDA
+     * assertions all run on the NDA-only fixture, so none of them would notice
+     * an NDA tile that changed only when a response was present.
+     */
+    it('🔴 MERGE: an NDA tile is UNCHANGED with response tiles beside it', async () => {
+        const element = createComponent();
+
+        getTimeline.emit(MERGED);
+        await Promise.resolve();
+
+        const nda = ndaTiles(element)[0];
+        expect(nda.querySelector('.dbt-nda').textContent.trim()).toBe('NDA-0101');
+        expect(nda.querySelectorAll('dt')).toHaveLength(3);
+        expect(nda.querySelectorAll('dd')).toHaveLength(3);
+        expect([...nda.querySelectorAll('dt')].map((d) => d.textContent.trim())).toEqual([
+            'NDA signed',
+            'Materials released',
+            'Days to release'
+        ]);
+        expect(valueCells(nda)).toEqual(['Mar 2, 2026', 'Mar 9, 2026', '7 days']);
+        // The NDA tile has no method badge — that is the response tile's.
+        expect(nda.querySelector('.dbt-badge--method')).toBeNull();
+        expect(nda.querySelector('.dbt-rmr')).toBeNull();
+    });
+
+    it('MERGE: the card title counts ENTRIES of both kinds, not NDAs', async () => {
+        const element = createComponent();
+
+        getTimeline.emit(MERGED);
+        await Promise.resolve();
+
+        // Two NDAs + two responses. ⚠ IT COUNTED NDAs ONLY UNTIL 2026-08-24; a
+        // sale whose number jumped that day is not a defect. The property that
+        // matters is that the count matches the number of tiles below it.
+        expect(title(element)).toBe('Buyer Activity timeline (4)');
+        expect(dataRows(element)).toHaveLength(4);
+    });
+
+    /**
+     * 🔴 THE ABSENCE PIN, RE-RUN ON THE MERGED FIXTURE. T-NO-OFFER below runs on
+     * the NDA-only payload, so it could not see a "buyer" word introduced by a
+     * RESPONSE tile. This extends the same claim to the new markup rather than
+     * weakening it: the word may appear ONCE, as the card's title, and NOWHERE
+     * IN ANY ROW of either kind.
+     */
+    it('🔴 MERGE: response tiles do not reintroduce the word "buyer" anywhere in a row', async () => {
+        const element = createComponent();
+
+        getTimeline.emit(MERGED);
+        await Promise.resolve();
+
+        // Guard the guard: four tiles genuinely rendered.
+        expect(dataRows(element)).toHaveLength(4);
+
+        const tileText = dataRows(element)
+            .map((tile) => tile.textContent.toLowerCase())
+            .join(' ');
+        expect(tileText).not.toContain('buyer');
+
+        const text = element.shadowRoot.textContent.toLowerCase();
+        expect(text.match(/buyer/g)).toHaveLength(1);
+        expect(title(element).toLowerCase()).toContain('buyer');
+    });
+
+    it('is accessible with both kinds of tile in the list', async () => {
+        const element = createComponent();
+
+        getTimeline.emit(MERGED);
+        await Promise.resolve();
+
+        await expect(element).toBeAccessible();
     });
 
     // ─────────────────────────────────────────────────────────────────────────

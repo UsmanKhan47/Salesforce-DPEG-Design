@@ -1,0 +1,254 @@
+<template>
+    <!-- 🔴 THE CARD CHROME IS UNCONDITIONAL. Every branch below renders INSIDE it, so a card that
+         is briefly empty still tells the user WHICH panel is thinking. The count is appended only
+         once the wire has answered — see `cardTitle` in the JS for why a premature "(0)" is a claim
+         this card may not make. -->
+    <lightning-card icon-name="standard:feedback">
+        <span slot="title">{cardTitle}</span>
+
+        <!-- ERROR: visible and loud. The controller THROWS rather than returning an empty context
+             precisely so this branch exists — a silent blank card on a sale with three logged
+             responses is a confident wrong answer nothing on the page contradicts.
+             `lv-error` is the ONE genuinely cross-bundle class in this repo (shared with
+             recentLeads / recentOpportunities / renewalList / competingBrokerSubmissions /
+             dispositionBuyerTimeline) — do not rename it. -->
+        <template lwc:if={hasError}>
+            <div
+                class="lv-error rmr-error slds-p-around_medium slds-text-color_error"
+                role="alert"
+            >
+                {errorMessage}
+            </div>
+        </template>
+
+        <template lwc:else>
+            <div class="rmr-body">
+                <!-- 🔴 "SAY SO IN THE HEADER" (user instruction, 2026-08-24). A sale with no
+                     appointed broker is a state the user needs to know about BEFORE deciding to
+                     log, because every response recorded now is recorded without one.
+                     ⚠ IT IS SUPPRESSED WHILE THE FORM IS OPEN, because the form carries the same
+                     fact in its own "Response from" block — see below. Rendering both at once
+                     would be the same sentence twice on one small card, which reads as an error
+                     rather than as emphasis. `role="status"` and not `alert`: no broker having
+                     been appointed yet is a normal stage of a sale, not a problem. -->
+                <template lwc:if={showNoBrokerNotice}>
+                    <p class="rmr-notice" data-no-broker-notice role="status">
+                        No broker is appointed on this sale yet. Responses logged now are
+                        recorded without one.
+                    </p>
+                </template>
+
+                <!-- ═══════════════════════════════════════════════════════════════════════════
+                     THE FORM. Closed by default; opened by the button below.
+                     ═══════════════════════════════════════════════════════════════════════════
+                     🔴 FIELD ORDER IS THE REQUIREMENT, NOT A LAYOUT PREFERENCE: **Method,
+                     Response from, Notes** (user instruction, 2026-08-24), and it is pinned by a
+                     Jest test that walks the RENDERED tree in document order. "Response from" is
+                     second even though it is the only one of the three that is NOT a control.
+                     ⚠ AN EARLIER DRAFT PUT IT ABOVE THE FORM — "it is a fact about the sale, not a
+                     field of the entry" — WHICH RENDERED Response from, Method, Notes AND WAS
+                     WRONG. The order test caught it. Do not move it back out.
+                     🔴 NO `lightning-record-edit-form`. The broker is resolved SERVER-SIDE at save
+                     time and is never sent by the client, so there is no `Broker__c` field to put
+                     in a form's field set; and an LDS form would FLS-check every key in its
+                     payload, silently dropping a programmatic one WITH A SUCCESS TOAST. The write
+                     is imperative Apex through a service that owns the resolution. -->
+                <template lwc:if={isFormOpen}>
+                    <div class="rmr-form" data-form>
+                        <lightning-combobox
+                            class="rmr-field"
+                            data-method
+                            label="Method"
+                            placeholder="How did this response arrive?"
+                            options={methodOptions}
+                            value={method}
+                            required
+                            onchange={handleMethodChange}
+                        ></lightning-combobox>
+
+                        <!-- ═══════════════════════════════════════════════════════════════════
+                             THE APPOINTED BROKER — RESOLVED, DISPLAYED, NEVER PICKED.
+                             ═══════════════════════════════════════════════════════════════════
+                             🔴 RENDERED AS TEXT RATHER THAN AS A DISABLED LOOKUP, for the reason
+                             `c/dispositionLogOfferModal` records for the same value: a disabled
+                             lookup still looks like a control somebody may enable, and there is
+                             no case in which this value should be hand-picked. User decision
+                             2026-08-24, *"lookup to the appointed broker only"* — there is exactly
+                             ONE right answer per sale, so a picker would be a control with one
+                             correct option and several wrong ones.
+                             🔴 AND IT IS NOT AN INPUT AT ALL: nothing here is sent to the server.
+                             `saveResponse` takes no broker argument, so the resolution happens
+                             again at save time and a stale value on an open form cannot be
+                             submitted. -->
+                        <div class="rmr-broker rmr-field" data-broker>
+                            <span class="rmr-readonly-label">Response from</span>
+                            <template lwc:if={hasBroker}>
+                                <p class="rmr-readonly-value">{brokerName}</p>
+                                <p class="rmr-readonly-help">{brokerSource}</p>
+                            </template>
+
+                            <!-- 🔴 THE NO-BROKER BRANCH DOES **NOT** REFUSE THE FORM, AND THAT IS
+                                 THE DELIBERATE DIFFERENCE FROM c/dispositionLogOfferModal, WHICH
+                                 DOES. User instruction 2026-08-24: *"If no broker is resolvable,
+                                 still allow the entry with a blank broker rather than blocking the
+                                 log."* An offer naming nobody cannot be attributed or chosen
+                                 between; "a decision came back on the 3rd" is a complete and
+                                 useful record on its own.
+                                 ⚠ BUT IT MUST SAY SO. A blank value under a "Response from" label
+                                 is indistinguishable from a rendering failure, so this states the
+                                 absence in words AND names where a broker would come from — the
+                                 same source line the resolved branch shows, which is what makes
+                                 it actionable rather than merely honest. -->
+                            <template lwc:else>
+                                <p
+                                    class="rmr-readonly-value rmr-readonly-value_empty"
+                                    data-no-broker
+                                >
+                                    No broker appointed yet
+                                </p>
+                                <p class="rmr-readonly-help">
+                                    This response will be recorded without a broker.
+                                    {brokerSource}.
+                                </p>
+                            </template>
+                        </div>
+
+                        <lightning-textarea
+                            class="rmr-field"
+                            data-notes
+                            label="Notes"
+                            placeholder="The question asked, the decision given, or the offer terms."
+                            max-length="32768"
+                            value={notes}
+                            onchange={handleNotesChange}
+                        ></lightning-textarea>
+
+                        <div class="rmr-actions">
+                            <lightning-button
+                                data-cancel
+                                label="Cancel"
+                                onclick={handleCancel}
+                                disabled={isSaving}
+                            ></lightning-button>
+                            <!-- ⚠ `disabled={isSaveDisabled}` IS A GETTER, NOT A TEMPLATE
+                                 EXPRESSION — LWC has no expressions in templates, and a
+                                 client-side disable is an AFFORDANCE ONLY. The service refuses a
+                                 blank or unknown method with its own authored message whatever
+                                 this button does. -->
+                            <lightning-button
+                                data-save
+                                variant="brand"
+                                label="Log response"
+                                onclick={handleSave}
+                                disabled={isSaveDisabled}
+                            ></lightning-button>
+                        </div>
+                    </div>
+                </template>
+
+                <!-- The opener. Hidden entirely for a persona who may not create — see `canLog`
+                     in the JS: a Save button that is always refused is worse than no button. -->
+                <template lwc:elseif={canLog}>
+                    <div class="rmr-actions rmr-actions_open">
+                        <lightning-button
+                            data-open
+                            label="Log a response"
+                            icon-name="utility:add"
+                            onclick={handleOpenForm}
+                        ></lightning-button>
+                    </div>
+                </template>
+
+                <!-- ═══════════════════════════════════════════════════════════════════════════
+                     WHAT HAS ALREADY BEEN LOGGED — NEWEST FIRST.
+                     ═══════════════════════════════════════════════════════════════════════════
+                     ⚠ THE ORDER IS THE SERVER'S. `ReleaseMaterialsResponseSelector` orders
+                     `Entry_DateTime__c DESC NULLS LAST, Name DESC` and this component does NOT
+                     re-sort — two sorts would be free to disagree.
+                     role="list" is NOT redundant: `list-style: none` makes WebKit drop the
+                     implicit list role, and `aria-label` is only exposed on an element whose role
+                     supports naming. axe has no rule for it, so a passing toBeAccessible() is not
+                     evidence against it. -->
+                <template lwc:if={hasEntries}>
+                    <ul class="rmr-list" role="list" aria-label="Logged responses">
+                        <template for:each={entries} for:item="entry">
+                            <li key={entry.id} class="rmr-item">
+                                <!-- ⚠ THE GROUP ROLE SITS ON THIS INNER DIV, NOT ON THE <li>.
+                                     role="group" on the <li> would REPLACE its implicit `listitem`
+                                     role, and axe's `list` rule then reports the <ul> as having a
+                                     disallowed child — the accessible name would cost the list
+                                     semantics it was added to complement. -->
+                                <div
+                                    class="rmr-tile"
+                                    role="group"
+                                    aria-label={entry.rowLabel}
+                                >
+                                    <div class="rmr-tile-head">
+                                        <h3 class="rmr-name">{entry.responseName}</h3>
+                                        <!-- ⚠ THE METHOD TRAVELS AS READABLE TEXT INSIDE THE
+                                             BADGE, never as a colour alone. This repo has a
+                                             measured incident of a text->badge swap deleting
+                                             accessible content a test had pinned. -->
+                                        <span class="rmr-badge" data-method-badge>
+                                            {entry.method}
+                                        </span>
+                                    </div>
+
+                                    <p class="rmr-broker-line">{entry.brokerName}</p>
+
+                                    <!-- dt/dd ONLY, in order and with no wrapper divs — axe's
+                                         `definition-list` rule is strict, so the two-track layout
+                                         is done entirely in CSS. -->
+                                    <dl class="rmr-facts">
+                                        <dt class="rmr-label">Received</dt>
+                                        <dd class="rmr-c">
+                                            <template lwc:if={entry.entryDateTime}>
+                                                <!-- ⚠ `lightning-formatted-date-time`, NOT a
+                                                     hand-rolled parse. This is a DATETIME (an
+                                                     unambiguous instant), so rendering it in the
+                                                     viewer's own timezone is correct — unlike the
+                                                     bare `YYYY-MM-DD` Apex Dates on the timeline
+                                                     card, where `new Date(value)` parses as UTC
+                                                     midnight and renders the DAY BEFORE for any
+                                                     viewer west of Greenwich. -->
+                                                <lightning-formatted-date-time
+                                                    data-received
+                                                    value={entry.entryDateTime}
+                                                    year="numeric"
+                                                    month="short"
+                                                    day="2-digit"
+                                                    hour="2-digit"
+                                                    minute="2-digit"
+                                                ></lightning-formatted-date-time>
+                                            </template>
+                                            <template lwc:else>{emDash}</template>
+                                        </dd>
+
+                                        <dt class="rmr-label">Notes</dt>
+                                        <dd class="rmr-c rmr-notes">{entry.notes}</dd>
+                                    </dl>
+                                </div>
+                            </li>
+                        </template>
+                    </ul>
+                </template>
+
+                <!-- EMPTY. A STATUS, not an alert: nothing having come back yet is the ordinary
+                     state of a sale the day materials go out, not a problem. -->
+                <template lwc:elseif={isEmpty}>
+                    <div class="rmr-empty" role="status">
+                        <lightning-icon
+                            icon-name="utility:comments"
+                            size="small"
+                            class="rmr-empty-icon"
+                        ></lightning-icon>
+                        <p class="rmr-empty-text">No responses yet</p>
+                        <p class="rmr-empty-sub">
+                            Rows appear here as brokers respond to the released materials.
+                        </p>
+                    </div>
+                </template>
+            </div>
+        </template>
+    </lightning-card>
+</template>

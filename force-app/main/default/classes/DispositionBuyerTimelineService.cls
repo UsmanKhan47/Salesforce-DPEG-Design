@@ -1,16 +1,77 @@
 /**
- * Builds the card titled "BROKER ACTIVITY TIMELINE" for one Disposition — one row per buyer-role NDA, carrying the
- * NDA's number, the broker it names, the two dates of the NDA journey (signed -> materials
- * released) and the duration between them. Backs `DispositionBuyerTimelineController` ->
+ * Builds the card titled "BUYER ACTIVITY TIMELINE" for one Disposition — a SINGLE CHRONOLOGICAL LIST
+ * MERGED FROM TWO SOURCES: buyer-role NDAs (the NDA's number, the broker it names, the two dates of
+ * the NDA journey and the duration between them) and Release Materials RESPONSES (what came back
+ * after the offering materials went out). Backs `DispositionBuyerTimelineController` ->
  * `c/dispositionBuyerTimeline` (Tranche 2 Workstream D,
- * `agent-output/disposition-tranche-2-requirements.md` §3 D6.3; retargeted 2026-08-21).
+ * `agent-output/disposition-tranche-2-requirements.md` §3 D6.3; retargeted 2026-08-21; MERGED
+ * 2026-08-24).
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════
+ * 🔴 THE MERGE (2026-08-24) — WHAT CHANGED, AND THE ONE RULE IT RETIRED
+ * ══════════════════════════════════════════════════════════════════════════════════════════
+ * User decision, 2026-08-24: *"merge both sources into one chronological timeline"*. Two kinds of
+ * entry now share one list, newest first, interleaved by date. `TimelineRow.kind` says which kind a
+ * row is, and every row carries the timestamp it sorted on.
+ *
+ *   KIND_NDA       one buyer-role NDA. Sort key = `NDA__c.CreatedDate` — the moment the NDA was
+ *                  RAISED, i.e. the moment that entry joined the timeline.
+ *   KIND_RESPONSE  one `Release_Materials_Response__c`. Sort key = `Entry_DateTime__c` — when the
+ *                  response HAPPENED, which a user may deliberately backdate.
+ *
+ * 🔴 THE NDA SORT KEY IS `CreatedDate` AND **NOT** THE NDA'S OWN SIGNED / RELEASED DATES. Three
+ * reasons, and the third is the one that would bite:
+ *   1. Those two fields are `Date`, not `Datetime`. Promoting a Date to a Datetime to compare it
+ *      against `Entry_DateTime__c` invents a time of day and makes the merged order TIMEZONE-
+ *      DEPENDENT — this repo already carries a measured off-by-one incident from exactly that
+ *      conversion, and the whole point of this card is to be right about when things happened.
+ *   2. Both are routinely NULL (most rows sit mid-journey), so a key built from them would leave
+ *      most NDAs unplaceable.
+ *   3. 🔴 A "LATEST ACTIVITY" KEY WOULD MAKE A TILE **MOVE** WHEN SOMEONE BACK-DATES A MATERIALS
+ *      DATE. A timeline whose rows re-order on an unrelated edit is not a timeline. `CreatedDate` is
+ *      immutable, always present, and is already the ordering the selector applied — so the merge
+ *      reuses the card's existing ordering rather than making a new claim about the data.
+ * ⚠ `CreatedDate` IS SECOND-GRANULAR, so several NDAs raised in one transaction share a key. The
+ * comparator's tie-break is a TOTAL order (see `NewestFirst`); tests that need distinct keys use
+ * `Test.setCreatedDate`.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════
+ * 🔴 THE MERGE RETIRED THE "DECLINED PARTIES SORT LAST" RULE. THAT IS DELIBERATE, AND IT IS THE
+ *    ONE BEHAVIOUR CHANGE ANY EXISTING USER WILL NOTICE. DO NOT "RESTORE" IT.
+ * ══════════════════════════════════════════════════════════════════════════════════════════
+ * Until 2026-08-24 this method split the rows in two and appended the declined ones, on the ground
+ * that *"a party who walked away is not part of the live sequence"*. **A chronological merge and a
+ * status-pinned tail cannot both be true**: pinning declined rows to the end would place an NDA
+ * declined yesterday BELOW a response logged last month, in a list whose entire ordering promise is
+ * that the newest thing is at the top. The instruction was explicit ("interleave by date, newest
+ * first"), so the chronological rule won and the status rule was deleted rather than quietly
+ * weakened.
+ * 🔴 WHAT SURVIVES, AND IT IS THE PART THAT MATTERED: declined parties are still INCLUDED, still
+ * badged `Declined` in readable text, and still carry NO DATES AT ALL. Only their POSITION changed.
+ * The audit argument (`NDA__c.allowDelete` is false by D20; hiding them would make this card
+ * disagree with the NDAs related list on the same page) is untouched.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠ AN NDA ROW'S RENDERED CONTENT IS UNCHANGED BY THE MERGE, BY INSTRUCTION AND BY DESIGN
+ * ══════════════════════════════════════════════════════════════════════════════════════════
+ * Every field an NDA row carried before 2026-08-24 it still carries, under the SAME NAME and with
+ * the same contract — the DTO gained fields, it did not reshape. *"A user should see new entries
+ * appear, not their existing ones change shape."* The inner class WAS renamed (`NdaRow` ->
+ * `TimelineRow`) because it now describes two kinds of row and an inner class has no org-level
+ * identity, so the rename is fully compile-checked — the same reason `BuyerRow` -> `NdaRow` was
+ * safe on 2026-08-21. The wire keys the component reads are unchanged.
+ *
+ * ⚠ THE RESPONSE ROWS ARE NOT READ HERE. `ReleaseMaterialsResponseService.getResponses` owns that
+ * object's query AND its mapping (including the `No broker recorded` placeholder), and this class
+ * calls it. Reading `ReleaseMaterialsResponseSelector` directly from here would give the two cards
+ * two copies of the broker-name fallback and let them drift on the value most likely to be null.
  *
  * ══════════════════════════════════════════════════════════════════════════════════════════
  * 🔴 THREE NAMES, ALL DIFFERENT, ALL DELIBERATE — READ THIS BEFORE "CORRECTING" ANY OF THEM
  * ══════════════════════════════════════════════════════════════════════════════════════════
  *   API NAMES (this class, the controller, the test, the LWC bundle) say  BUYER
- *   THE CARD TITLE ON SCREEN says                        "Broker Activity Timeline"
- *   ONE ROW IS                                            ONE NDA
+ *   THE CARD TITLE ON SCREEN says                        "Buyer Activity timeline" (2026-08-24)
+ *   ONE ROW IS                        ONE NDA **OR** ONE RELEASE MATERIALS RESPONSE (2026-08-24)
  *
  * 1. THE API NAMES ARE HISTORICAL AND STAY. DPEG communicates only with the appointed listing
  *    broker; buyers sit behind them and are not tracked (user decision, 2026-08-21), so this card
@@ -24,13 +85,13 @@
  *    inner class WAS renamed (`BuyerRow` -> `NdaRow`) because an inner class has no org-level
  *    identity of its own and the rename is fully compile-checked.
  *
- * 2. 🔴 THE TITLE SAYS "BROKER"; THE ROWS ARE NOT GROUPED BY BROKER, AND GROUPING THEM WOULD
+ * 2. 🔴 THE ROWS ARE NOT GROUPED BY BROKER, AND GROUPING THEM WOULD
  *    DESTROY THE CARD. There is ONE appointed broker per sale, so `brokerName` BELOW IS THE SAME
  *    STRING ON EVERY ROW of a normal disposition. That is the data being true, not duplication to
  *    be cleaned up. The title (user instruction, 2026-08-21; it was briefly "NDA Activity Timeline")
  *    names the party DPEG deals with — it is not a promise of a per-broker rollup. A GROUP BY here
  *    would collapse a three-NDA sale to a single row and delete the timeline the card exists to
- *    show. `buildRow` therefore stays strictly one-row-per-NDA, and the LWC renders the broker as a
+ *    show. `buildNdaRow` therefore stays strictly one-row-per-NDA, and the LWC renders the broker as a
  *    per-tile SUBTITLE under the NDA number rather than as the tile heading.
  *
  * 3. The row's identity is the NDA AutoNumber — the only per-row identity always present (a broker
@@ -128,33 +189,40 @@
  * never sharing). That is a REACHABLE state, not a defensive nicety.
  *
  * ── LAYERING ────────────────────────────────────────────────────────────────────────────────
- * Service (ARCHITECTURE.md §2, `layer=service`). **ZERO SOQL and ZERO DML.** The one read goes to a
- * selector — `NdaSelector.selectBuyerTimelineByDispositionId`, `WITH USER_MODE`, because a human
- * opened the record page and asked for exactly this. A `QueryException` from it is a REAL
- * PROVISIONING GAP and is deliberately allowed to propagate to the controller, which converts it to
- * a user-safe `AuraHandledException`. **It is NOT swallowed into an empty timeline**: a card that
- * silently renders zero NDAs on a sale that has three is the "wrong answer, not an error" failure
- * this repo has paid for repeatedly, and it is strictly worse here than a visible error message.
+ * Service (ARCHITECTURE.md §2, `layer=service`). **ZERO SOQL and ZERO DML.** Both reads go to
+ * selectors — `NdaSelector.selectBuyerTimelineByDispositionId` directly, and
+ * `ReleaseMaterialsResponseSelector.selectByDispositionId` through
+ * `ReleaseMaterialsResponseService.getResponses`. Both are `WITH USER_MODE`, because a human opened
+ * the record page and asked for exactly this. A `QueryException` from either is a REAL PROVISIONING
+ * GAP and is deliberately allowed to propagate to the controller, which converts it to a user-safe
+ * `AuraHandledException`. **It is NOT swallowed into an empty timeline**: a card that silently
+ * renders zero entries on a sale that has three is the "wrong answer, not an error" failure this
+ * repo has paid for repeatedly, and it is strictly worse here than a visible error message.
+ * 🔴 AND THE TWO READS FAIL TOGETHER, ON PURPOSE. Catching one so the other's rows still render
+ * would produce a timeline that is silently HALF a timeline — the shape a reader cannot detect.
  *
  * ── BUDGET ──────────────────────────────────────────────────────────────────────────────────
- * **EXACTLY ONE SOQL AND ZERO DML PER CALL, CONSTANT IN THE NUMBER OF NDAs** — it was two until
- * 2026-08-21, when the offer read went with the first-offer column. 🔴 The broker name is
- * TRAVERSED IN THE SAME QUERY (`Broker__r.Name`) and must never become a second Contact read, per
- * NDA or otherwise; that would be SOQL-in-a-loop on a page render.
+ * **EXACTLY TWO SOQL AND ZERO DML PER CALL, CONSTANT IN THE NUMBER OF ENTRIES OF EITHER KIND** —
+ * one NDA read and one response read. (It was one from 2026-08-21 until the 2026-08-24 merge, and
+ * two before that for a different reason.) 🔴 Each broker name is TRAVERSED IN ITS OWN QUERY
+ * (`Broker__r.Name`) and must never become a per-row Contact read; that would be SOQL-in-a-loop on
+ * a page render. Both halves of the ceiling are ASSERTED, not described.
  * ⚠ This is a read path invoked once per page view, not a trigger path, so
  * `.claude/rules/bulk-test-rule.md`'s 251-record mandate does not attach to THIS class — it attaches
  * in full to the two stamp services and the trigger, which is where those tests live. The falsifier
- * that matters here is the CONSTANT query count across many NDAs, and it is asserted.
+ * that matters here is the CONSTANT query count across many entries, and it is asserted.
  *
  * ── SHARING ─────────────────────────────────────────────────────────────────────────────────
- * `with sharing`. The selector read is `USER_MODE` on a `with sharing` selector, so a row the
+ * `with sharing`. Both selector reads are `USER_MODE` on `with sharing` selectors, so a row the
  * running user cannot see simply does not appear — the correct direction for a card a human is
- * reading. **Do not add a `without sharing` escape**: an under-count here is visible (the related
- * list beside it shows the same scoping) rather than an inverted automated verdict, which is the
- * only shape that has ever justified one in this repo.
+ * reading. (Both objects carry `viewAllRecords = true` on both disposition permission sets, so
+ * nothing is scoped away today.) **Do not add a `without sharing` escape**: an under-count here is
+ * visible (the related list beside it shows the same scoping) rather than an inverted automated
+ * verdict, which is the only shape that has ever justified one in this repo.
  *
  * @see force-app/main/default/classes/DispositionBuyerTimelineController.cls (the thin boundary)
  * @see force-app/main/default/classes/NdaSelector.cls (selectBuyerTimelineByDispositionId)
+ * @see force-app/main/default/classes/ReleaseMaterialsResponseService.cls (the second source)
  * @see force-app/main/default/lwc/dispositionBuyerTimeline/dispositionBuyerTimeline.js
  */
 public with sharing class DispositionBuyerTimelineService {
@@ -187,14 +255,30 @@ public with sharing class DispositionBuyerTimelineService {
     @TestVisible
     private static final String STATUS_DECLINED = 'Declined';
 
+    /** `TimelineRow.kind` for a buyer-role NDA entry. Matches the LWC's own constant. */
+    @TestVisible
+    private static final String KIND_NDA = 'NDA';
+
+    /** `TimelineRow.kind` for a Release Materials response entry. Matches the LWC's own constant. */
+    @TestVisible
+    private static final String KIND_RESPONSE = 'Response';
+
     /**
-     * One NDA's row on the timeline. A DTO across the `@AuraEnabled` boundary (ARCHITECTURE.md §2)
-     * — every field is a value the component renders directly, and nothing it must not display ever
-     * crosses.
+     * ONE ENTRY ON THE MERGED TIMELINE — either an NDA or a Release Materials response. A DTO across
+     * the `@AuraEnabled` boundary (ARCHITECTURE.md §2): every field is a value the component renders
+     * directly, and nothing it must not display ever crosses.
+     *
+     * ⚠ IT IS A FLAT UNION, NOT TWO NESTED OBJECTS, AND THAT IS THE POINT. Nesting the NDA half
+     * under a `nda` property would have renamed every wire key the component already reads
+     * (`row.ndaName` -> `row.nda.ndaName`) and reshaped an entry the 2026-08-24 instruction said
+     * must not change. Every field below that predates the merge keeps its exact name and contract;
+     * the merge ADDED `kind`, `entryDateTime` and the four response fields and touched nothing else.
+     * 🔴 READ `kind` BEFORE READING ANYTHING ELSE. The other-kind fields are NULL, not empty — a
+     * consumer that renders `ndaName` on a response row renders nothing at all.
      *
      * 🔴 THERE IS NO `ndaSignedRaw` / `rawStatus` / `isSigned` ESCAPE HATCH, DELIBERATELY. A declined
-     * party's retained `Date_Signed__c` is suppressed in `buildRow` and never enters this object, so
-     * no template change and no future consumer can leak it. That is why the suppression lives in
+     * party's retained `Date_Signed__c` is suppressed in `buildNdaRow` and never enters this object,
+     * so no template change and no future consumer can leak it. That is why the suppression lives in
      * the service rather than in the component's getters.
      *
      * 🔴 AND THERE IS NO `buyerName`, NO `firstOfferDate` AND NO `daysToRespond`. All three were
@@ -202,7 +286,39 @@ public with sharing class DispositionBuyerTimelineService {
      * nothing links an offer to a specific NDA. Re-adding any of them is re-adding a claim the data
      * cannot support; read the class header first.
      */
-    public class NdaRow {
+    public class TimelineRow {
+
+        /**
+         * `KIND_NDA` or `KIND_RESPONSE`. NEVER null — the component branches on it, and an
+         * unrecognised value must be impossible rather than merely unlikely.
+         */
+        @AuraEnabled
+        public String kind;
+
+        /**
+         * THE VALUE THIS ROW SORTED ON, and the one the component displays on a RESPONSE row.
+         *
+         * NDA rows       -> `NDA__c.CreatedDate`. Always non-null (a system audit field).
+         * Response rows  -> `Release_Materials_Response__c.Entry_DateTime__c`. CAN be null — the
+         *                   field defaults to `NOW()` but is not `required`, so an API or
+         *                   data-loader row may carry none. Such a row sorts LAST; see `NewestFirst`.
+         *
+         * ⚠ IT IS EXPOSED RATHER THAN CONSUMED-AND-DISCARDED so the ordering is FALSIFIABLE from
+         * the client as well as from Apex: a Jest test can assert the rendered order matches the
+         * timestamps it was given, instead of trusting that the server sorted.
+         */
+        @AuraEnabled
+        public Datetime entryDateTime;
+
+        /**
+         * The broker's display name — the ONE field both kinds populate, and the reason it sits
+         * here rather than in either half. Never null and never blank on either kind: both
+         * builders fall back to a fixed placeholder. See `resolveBrokerName`.
+         */
+        @AuraEnabled
+        public String brokerName;
+
+        // ── NDA HALF. All null on a response row. ────────────────────────────────────────────
 
         /** The NDA row's Id — the component's `for:each` key and its record link target. */
         @AuraEnabled
@@ -214,13 +330,6 @@ public with sharing class DispositionBuyerTimelineService {
          */
         @AuraEnabled
         public String ndaName;
-
-        /**
-         * `Broker__r.Name`, falling back to a fixed placeholder. Never null and never blank — see
-         * `resolveBrokerName` and the class header's note on why a null broker is normal.
-         */
-        @AuraEnabled
-        public String brokerName;
 
         /** Raw `Status__c`, for the component's accessible state text. Never a display date. */
         @AuraEnabled
@@ -252,69 +361,168 @@ public with sharing class DispositionBuyerTimelineService {
          */
         @AuraEnabled
         public Boolean hasDateAnomaly;
+
+        // ── RESPONSE HALF (2026-08-24). All null on an NDA row. ──────────────────────────────
+
+        /** The response row's Id — the component's `for:each` key and its record link target. */
+        @AuraEnabled
+        public Id responseId;
+
+        /** `Name` — the `RMR-{0000}` AutoNumber. The response row's identity, always present. */
+        @AuraEnabled
+        public String responseName;
+
+        /**
+         * `Method__c`: `More questions`, `Decision` or `Offer`. Rendered as the visible badge TEXT
+         * on a response tile, never as a colour alone — the same accessibility rule the `Declined`
+         * badge follows.
+         */
+        @AuraEnabled
+        public String method;
+
+        /** `Notes__c`, or null when none was entered. Notes are optional on a response. */
+        @AuraEnabled
+        public String notes;
     }
 
-    /** Rendered when an NDA carries no broker Contact. See the class header — no backfill exists. */
+    /**
+     * Rendered when an NDA carries no broker Contact. See the class header — no backfill exists.
+     *
+     * ⚠ IT IS BYTE-IDENTICAL TO `ReleaseMaterialsResponseService.NO_BROKER` AND IS DELIBERATELY NOT
+     * SHARED WITH IT. The two placeholders appear as tiles in ONE merged list, so they must AGREE —
+     * two different strings for the same absence read as two different states — but coupling them
+     * would let a change to either card's wording move the other silently. The merged card's Jest
+     * suite asserts both tiles render the same string, which is the falsifier that keeps them honest
+     * without the coupling.
+     */
     @TestVisible
     private static final String NO_BROKER = 'No broker recorded';
 
     /**
-     * The timeline for one Disposition — active NDAs first (in creation order), declined last.
+     * The MERGED timeline for one Disposition — NDA entries and Release Materials responses in ONE
+     * chronological list, NEWEST FIRST.
      *
-     * NOT-FOUND CONTRACT: a null Id, or a Disposition with no buyer NDA, returns an EMPTY LIST
-     * rather than null. "No NDA has been raised yet" is a completely normal early state that the
-     * component renders as an empty state; it must not be an exception and must not be a null the
-     * caller has to guard.
+     * NOT-FOUND CONTRACT: a null Id, or a Disposition with neither a buyer NDA nor a response,
+     * returns an EMPTY LIST rather than null. "Nothing has happened yet" is a completely normal
+     * early state that the component renders as an empty state; it must not be an exception and must
+     * not be a null the caller has to guard.
+     * ⚠ NEITHER SOURCE SHORT-CIRCUITS THE OTHER. Both reads always run: a sale can carry logged
+     * responses with no buyer NDA on it at all, and the pre-merge `if (ndas.isEmpty()) return rows;`
+     * would have rendered that sale's timeline as EMPTY. That line was DELETED, not moved.
      *
      * ── ⚠ THE SORT IS DONE **HERE**, NOT IN THE COMPONENT, AND THAT IS A CHOICE ─────────────────
      * `brokerAssignmentHistory` sorts in JavaScript. This one sorts in Apex because the ordering is
-     * a STATEMENT ABOUT THE DATA ("a party who walked away is not part of the live sequence"), not a
-     * presentation preference, and because an Apex sort is falsifiable by an Apex test that also has
-     * the records in front of it. The component preserves server order and does not re-sort;
+     * a STATEMENT ABOUT THE DATA (one chronology across two objects), not a presentation preference,
+     * because an Apex sort is falsifiable by an Apex test that also has the records in front of it,
+     * and because merging on the client would mean the client knowing which timestamp belongs to
+     * which kind. The component preserves server order and does not re-sort;
      * `dispositionBuyerTimeline.js`'s header says so, so the two cannot start disagreeing.
      *
-     * ⚠ ACTIVE ROWS KEEP THE SELECTOR'S `CreatedDate ASC, Id ASC` ORDER — this is a TIMELINE, so the
-     * first NDA raised reads first. The sort below is STABLE with respect to that: it moves declined
-     * rows to the end and touches nothing else.
+     * 🔴 THE OLD "ACTIVE FIRST, DECLINED LAST" TWO-PASS SPLIT IS GONE — the class header records why
+     * a chronological merge and a status-pinned tail cannot both be true. Its replacement is a
+     * single TOTAL-ORDER comparator over the combined list.
      *
-     * @param dispositionId The Disposition whose NDA journey to build; null-safe.
-     * @return One row per buyer-role NDA, actives first then declined; empty when the input is null
-     *         or there are no buyer NDAs. Never null.
-     * @throws System.QueryException when the running user lacks read on `NDA__c`, on `Contact`, or
-     *         on any selected custom field — `Broker__c` most likely of all, since it is new.
+     * @param dispositionId The Disposition whose activity to build; null-safe.
+     * @return One row per buyer-role NDA plus one per logged response, NEWEST FIRST; empty when the
+     *         input is null or the sale has neither. Never null.
+     * @throws System.QueryException when the running user lacks read on `NDA__c`, on
+     *         `Release_Materials_Response__c`, on `Contact`, or on any selected custom field.
      *         Deliberately allowed to propagate — see the class header's layering note.
      * @example
-     * List&lt;DispositionBuyerTimelineService.NdaRow&gt; rows =
+     * List&lt;DispositionBuyerTimelineService.TimelineRow&gt; rows =
      *     DispositionBuyerTimelineService.getTimeline(dispositionId);
      */
-    public static List<NdaRow> getTimeline(Id dispositionId) {
-        List<NdaRow> rows = new List<NdaRow>();
+    public static List<TimelineRow> getTimeline(Id dispositionId) {
+        List<TimelineRow> rows = new List<TimelineRow>();
         if (dispositionId == null) {
             return rows;
         }
 
-        // THE ONLY QUERY. Buyer-role NDAs only; `Party_Role__c` is filtered in the selector, and the
-        // broker's name is TRAVERSED here rather than resolved by a second read.
-        List<NDA__c> ndas = NdaSelector.selectBuyerTimelineByDispositionId(dispositionId);
-        if (ndas.isEmpty()) {
-            return rows;
+        // ── SOURCE 1. Buyer-role NDAs only; `Party_Role__c` is filtered in the selector, and the
+        // broker's name is TRAVERSED in that query rather than resolved by a second read.
+        for (NDA__c nda : NdaSelector.selectBuyerTimelineByDispositionId(dispositionId)) {
+            rows.add(buildNdaRow(nda));
         }
 
-        // Two passes so the declined rows land last without a comparator. A Comparable/Comparator
-        // implementation would need its own class and its own tie-break to stay stable; splitting
-        // the single ordered list in two preserves the selector's ordering within each group for
-        // free, which is exactly the guarantee the ApexDoc promises.
-        List<NdaRow> declined = new List<NdaRow>();
-        for (NDA__c nda : ndas) {
-            NdaRow row = buildRow(nda);
-            if (row.isDeclined) {
-                declined.add(row);
-            } else {
-                rows.add(row);
-            }
+        // ── SOURCE 2. Release Materials responses, through the SERVICE that owns that object's
+        // query and its mapping — never through its selector directly. See the class header.
+        for (ReleaseMaterialsResponseService.ResponseRow response
+                : ReleaseMaterialsResponseService.getResponses(dispositionId)) {
+            rows.add(buildResponseRow(response));
         }
-        rows.addAll(declined);
+
+        // ONE chronology across both kinds. A TOTAL order, so the result does not depend on
+        // `List.sort` being stable — which is not documented and must not be assumed.
+        rows.sort(new NewestFirst());
         return rows;
+    }
+
+    /**
+     * Newest first across both kinds, with a TOTAL order so the result is deterministic.
+     *
+     * 🔴 IT IS A TOTAL ORDER ON PURPOSE. `List.sort(Comparator)` is not documented as stable, and
+     * `NDA__c.CreatedDate` is SECOND-granular — several NDAs raised in one transaction (routine in a
+     * test, reachable in a bulk load) share a key exactly. Without the tie-break their rendered
+     * order would be free to change between two renders of the same unchanged data, which on a
+     * timeline reads as the data having changed.
+     *
+     * ⚠ AN UNDATED ROW SINKS TO THE BOTTOM RATHER THAN FLOATING TO THE TOP.
+     * `Entry_DateTime__c` defaults to `NOW()` but is NOT `required`, so an API or data-loader row
+     * can carry null. The platform's default for a `DESC` sort is NULLS FIRST, which would put a row
+     * claiming no time at all above every row that does — the exact opposite of what "newest first"
+     * means. (`ReleaseMaterialsResponseSelector` makes the same choice in SOQL for the same reason;
+     * this comparator is what enforces it once the two lists are combined.)
+     *
+     * ⚠ THE TIE-BREAK IS THE ROW'S OWN 18-CHARACTER Id, DESCENDING. Ids are unique across both
+     * objects, so the order is total; the direction between two rows that genuinely share an instant
+     * is arbitrary, and it is FIXED, which is the only property that matters.
+     */
+    private class NewestFirst implements Comparator<TimelineRow> {
+        public Integer compare(TimelineRow a, TimelineRow b) {
+            if (a.entryDateTime == b.entryDateTime) {
+                return rowKey(b).compareTo(rowKey(a));
+            }
+            if (a.entryDateTime == null) {
+                return 1;
+            }
+            if (b.entryDateTime == null) {
+                return -1;
+            }
+            return a.entryDateTime > b.entryDateTime ? -1 : 1;
+        }
+    }
+
+    /**
+     * The row's own record Id as a String — the comparator's tie-break key.
+     *
+     * @param row Either kind of row; exactly one of the two Ids is populated.
+     * @return The 18-character Id.
+     */
+    private static String rowKey(TimelineRow row) {
+        return String.valueOf(row.ndaId == null ? row.responseId : row.ndaId);
+    }
+
+    /**
+     * One Release Materials response -> one row. Pure: no SOQL, no DML, no state.
+     *
+     * ⚠ IT MAPS AN ALREADY-BUILT DTO RATHER THAN A QUERIED SOBJECT, which is what keeps the broker
+     * placeholder and the null-notes contract owned by `ReleaseMaterialsResponseService`. The only
+     * things this method decides are the row's KIND and its SORT KEY.
+     *
+     * @param response A response row from `ReleaseMaterialsResponseService.getResponses`.
+     * @return The timeline row. Never null; every NDA-half field is left null.
+     */
+    private static TimelineRow buildResponseRow(
+            ReleaseMaterialsResponseService.ResponseRow response) {
+        TimelineRow row = new TimelineRow();
+        row.kind = KIND_RESPONSE;
+        row.entryDateTime = response.entryDateTime;
+        row.brokerName = response.brokerName;
+        row.responseId = response.responseId;
+        row.responseName = response.responseName;
+        row.method = response.method;
+        row.notes = response.notes;
+        return row;
     }
 
     /**
@@ -325,11 +533,19 @@ public with sharing class DispositionBuyerTimelineService {
      * show it — is the same code with the same output today and is one careless edit away from
      * leaking a declined party's retained signature date.
      *
+     * ⚠ RENAMED FROM `buildRow` ON 2026-08-24. There are two builders now, and a bare `buildRow`
+     * sitting beside `buildResponseRow` would read as the generic one.
+     *
      * @param nda A buyer-role NDA with the timeline fields populated.
-     * @return The row. Never null.
+     * @return The row. Never null; every response-half field is left null.
      */
-    private static NdaRow buildRow(NDA__c nda) {
-        NdaRow row = new NdaRow();
+    private static TimelineRow buildNdaRow(NDA__c nda) {
+        TimelineRow row = new TimelineRow();
+        row.kind = KIND_NDA;
+        // 🔴 THE SORT KEY IS `CreatedDate`, NOT EITHER OF THE NDA'S OWN DATES. The three reasons are
+        // in the class header, and the third — a tile that MOVES when a materials date is back-dated
+        // — is what makes the obvious alternative wrong rather than merely awkward.
+        row.entryDateTime = nda.CreatedDate;
         row.ndaId = nda.Id;
         row.ndaName = nda.Name;
         row.status = nda.Status__c;
@@ -378,7 +594,7 @@ public with sharing class DispositionBuyerTimelineService {
      * @param row      The row being built — mutated ONLY to set `hasDateAnomaly`.
      * @return Whole days, or null.
      */
-    private static Integer span(Date fromDate, Date toDate, NdaRow row) {
+    private static Integer span(Date fromDate, Date toDate, TimelineRow row) {
         if (fromDate == null || toDate == null) {
             return null;
         }

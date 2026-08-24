@@ -95,6 +95,72 @@
                                 role="group"
                                 aria-label={row.rowLabel}
                             >
+                            <!-- ═══════════════════════════════════════════════════════
+                                 🔴 TWO KINDS OF TILE SINCE 2026-08-24 (the merge).
+                                 ═══════════════════════════════════════════════════════
+                                 The list interleaves buyer NDAs and Release Materials
+                                 RESPONSES, newest first, and `kind` decides which tile
+                                 renders. The branch is INSIDE the group div on purpose:
+                                 the tile chrome (class, role, aria-label) is identical
+                                 for both kinds, so the two read as one list and every
+                                 existing assertion on that div keeps working.
+                                 ⚠ THE NDA BRANCH BELOW IS BYTE-IDENTICAL TO WHAT IT WAS
+                                 BEFORE THE MERGE, by instruction — "a user should see new
+                                 entries appear, not their existing ones change shape". Do
+                                 not "harmonise" the two branches. -->
+                            <template lwc:if={row.isResponse}>
+                                <!-- A RESPONSE. The heading is the RMR AutoNumber, the
+                                     badge is the METHOD as readable text, and the broker
+                                     is the subtitle — the same shape as the NDA tile so
+                                     the eye reads down one column.
+                                     🔴 NO MILESTONE RAIL HERE. The rail's markers mean
+                                     "this milestone has happened / is still to come",
+                                     which is a claim about a JOURNEY; a response is a
+                                     single event with one timestamp, so a rail beside it
+                                     would be decoration asserting something untrue.
+                                     ⚠ THE HEADING TAKES `dbt-rmr`, NOT `dbt-nda`. A
+                                     shared class would make the existing "one row per
+                                     NDA, headed by its NUMBER" assertion silently start
+                                     counting responses. -->
+                                <div class="dbt-tile-head">
+                                    <h3 class="dbt-rmr">{row.responseName}</h3>
+                                    <span class="dbt-badge dbt-badge--method">
+                                        {row.method}
+                                    </span>
+                                </div>
+
+                                <p class="dbt-broker">{row.brokerName}</p>
+
+                                <dl class="dbt-facts">
+                                    <dt class="dbt-label">Received</dt>
+                                    <dd class="dbt-c dbt-mono">
+                                        <!-- ⚠ `lightning-formatted-date-time`, NOT the
+                                             `formatDate` helper beside it. This value is
+                                             a DATETIME — an unambiguous instant — so
+                                             rendering it in the viewer's own timezone is
+                                             CORRECT. The helper exists for the NDA tile's
+                                             bare `YYYY-MM-DD` Apex Dates, where
+                                             `new Date(value)` parses as UTC midnight and
+                                             renders the day before west of Greenwich. -->
+                                        <template lwc:if={row.entryDateTime}>
+                                            <lightning-formatted-date-time
+                                                value={row.entryDateTime}
+                                                year="numeric"
+                                                month="short"
+                                                day="2-digit"
+                                                hour="2-digit"
+                                                minute="2-digit"
+                                            ></lightning-formatted-date-time>
+                                        </template>
+                                        <template lwc:else>—</template>
+                                    </dd>
+
+                                    <dt class="dbt-label">Notes</dt>
+                                    <dd class="dbt-c dbt-notes">{row.notes}</dd>
+                                </dl>
+                            </template>
+
+                            <template lwc:else>
                                 <!-- 🔴 THE HEADING IS THE NDA NUMBER, AND THE BROKER IS
                                      THE SUBTITLE UNDER IT. It was the BUYER'S NAME until
                                      2026-08-21; buyers are not tracked, and the AutoNumber
@@ -162,6 +228,7 @@
                                         {row.daysToRelease}
                                     </dd>
                                 </dl>
+                            </template>
                             </div>
                         </li>
                     </template>
@@ -178,6 +245,13 @@
                  rather than describing an action, and unlike this card's intro line (deleted
                  above) it names no rule the user could get from anywhere else on the screen.
                  If they want it gone too it is a two-line deletion — the headline must stay. -->
+            <!-- ⚠ THE WORDING WIDENED WITH THE 2026-08-24 MERGE, AND THAT WAS NECESSARY
+                 RATHER THAN COSMETIC. It read "No NDAs yet" / "Rows appear here as NDAs
+                 are raised on this disposition." — which, now that a logged RESPONSE also
+                 produces a row, would be a FALSE STATEMENT on the exact screen it appears:
+                 the card would say "no NDAs" about a sale that also has no responses, and
+                 tell the user rows appear only for NDAs when they appear for both. Two
+                 assertions in the Jest suite moved with it. -->
             <template lwc:elseif={isEmpty}>
                 <div class="dbt-empty" role="status">
                     <lightning-icon
@@ -185,9 +259,10 @@
                         size="small"
                         class="dbt-empty-icon"
                     ></lightning-icon>
-                    <p class="dbt-empty-text">No NDAs yet</p>
+                    <p class="dbt-empty-text">No activity yet</p>
                     <p class="dbt-empty-sub">
-                        Rows appear here as NDAs are raised on this disposition.
+                        Rows appear here as NDAs are raised and responses are logged on
+                        this disposition.
                     </p>
                 </div>
             </template>

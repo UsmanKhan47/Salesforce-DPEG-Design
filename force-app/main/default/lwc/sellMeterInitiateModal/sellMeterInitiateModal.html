@@ -35,8 +35,33 @@
 
             <!-- Read-only property summary. dt/dd ONLY, in order and with no
                  wrapper divs — axe's `definition-list` rule is strict, and the
-                 two-column layout is done in CSS instead of markup (the same
-                 shape c-competing-broker-submissions uses).
+                 layout is done in CSS instead of markup (the same shape
+                 c-competing-broker-submissions uses).
+
+                 🔴 THIS RENDERS AS TWO PAIRS PER ROW (2026-08-24) AND THERE IS
+                 DELIBERATELY NOTHING HERE THAT SAYS SO. The template emits ONE
+                 flat dt/dd stream in `summaryRows` order; the stylesheet lays
+                 it into 4 grid tracks (2 pairs) where there is room and 2 tracks
+                 (1 pair) where there is not. Reading order is
+                 ACROSS-THEN-DOWN, which is simply the DOM order laid out by the
+                 grid — visual order and screen-reader order are the same
+                 sequence, so no `order` / `grid-row` shuffling is needed or
+                 wanted.
+
+                 🔴 DO NOT SPLIT THIS INTO TWO COLUMN `<div>`s. `summaryRows`
+                 has changed length before and a fifth entry is already under
+                 discussion (see the removal note above), so hardcoded halves
+                 would need re-balancing by hand every time. A wrapper also
+                 DESTROYS THE LAYOUT OUTRIGHT: grid items are the <dl> element's DIRECT
+                 children, so wrapping the iteration leaves the grid with one
+                 item and no columns at all.
+
+                 ⚠ A WRAPPER IS NOT AN ACCESSIBILITY FAILURE, AND THE a11y TEST
+                 WILL NOT CATCH IT — measured 2026-08-24 by mutation: adding
+                 `<div class="smi-col">` around the iteration left `is
+                 accessible` GREEN (the HTML spec permits <div> grouping inside
+                 a <dl>, and axe follows the spec). T-GRID-1 and T-GRID-6 are
+                 what actually refuse it.
 
                  ⚠ THE dt AND dd CARRY DIFFERENT KEYS. Each iteration emits TWO
                  sibling elements into the same list, so reusing one key for both

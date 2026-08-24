@@ -1,9 +1,28 @@
 /**
- * @description Tests the read path behind the card titled "Broker Activity Timeline" end to end —
+ * @description Tests the read path behind the card titled "Buyer Activity timeline" end to end —
  * `DispositionBuyerTimelineController` -> `DispositionBuyerTimelineService` ->
- * `NdaSelector.selectBuyerTimelineByDispositionId`
+ * `NdaSelector.selectBuyerTimelineByDispositionId` **and**
+ * `ReleaseMaterialsResponseService.getResponses`
  * (`agent-output/disposition-tranche-2-requirements.md` §3 D6.3, added 2026-08-20;
- * RETARGETED 2026-08-21).
+ * RETARGETED 2026-08-21; MERGED 2026-08-24).
+ *
+ * ═══════════════════════════════════════════════════════════════════════════════════════════
+ * 🔴 WHAT THE 2026-08-24 MERGE CHANGED IN THIS CLASS
+ * ═══════════════════════════════════════════════════════════════════════════════════════════
+ * The card now carries TWO KINDS OF ROW in one chronological list, newest first: buyer-role NDAs
+ * and Release Materials responses. Three consequences here, and the second is the important one:
+ *   1. `NdaRow` -> `TimelineRow` throughout. A pure rename; no assertion changed meaning.
+ *   2. 🔴 `declinedParties_sortAfterActiveOnes` WAS REPLACED, NOT EDITED. Its rule ("declined last")
+ *      was deliberately retired — a chronological merge and a status-pinned tail cannot both be
+ *      true. ⚠ AND IT WOULD HAVE SURVIVED THE CHANGE **VACUOUSLY**: its fixture created the
+ *      declined NDA first, so "the active row comes first" is ALSO true under newest-first, for a
+ *      completely different reason. The replacement inverts the fixture so only one rule can pass.
+ *      Read `declinedParty_takesItsCHRONOLOGICALPlace_notATailPosition`.
+ *   3. The budget went from ONE query to TWO (`manyNdas_costsExactlyTwoQueries`). The second read
+ *      is unconditional by design — a sale can carry responses and no NDA at all.
+ * ⚠ AN NDA ROW'S CONTENT IS UNCHANGED and `ndaRow_carriesEveryPreMergeFieldUnchanged` pins that
+ * field by field, because the Jest fixtures in `lwc/dispositionBuyerTimeline/__tests__` were
+ * written before the merge and must keep rendering identically.
  *
  * ⚠ THE API NAMES SAY "BUYER", THE CARD SAYS "BROKER", AND A ROW IS AN NDA — all three disagree on
  * purpose (`DispositionBuyerTimelineService`'s header carries the argument: a rename is a FlexiPage
@@ -142,8 +161,8 @@ private class DispositionBuyerTimelineTest {
     }
 
     /** The single row for a disposition, asserted to exist. */
-    private static DispositionBuyerTimelineService.NdaRow onlyRow(Id dispositionId) {
-        List<DispositionBuyerTimelineService.NdaRow> rows =
+    private static DispositionBuyerTimelineService.TimelineRow onlyRow(Id dispositionId) {
+        List<DispositionBuyerTimelineService.TimelineRow> rows =
             DispositionBuyerTimelineService.getTimeline(dispositionId);
         Assert.areEqual(1, rows.size(), 'FIXTURE PRECONDITION: exactly one timeline row expected');
         return rows[0];
@@ -170,7 +189,7 @@ private class DispositionBuyerTimelineTest {
         insert nda;
 
         Test.startTest();
-        DispositionBuyerTimelineService.NdaRow row = onlyRow(d.Id);
+        DispositionBuyerTimelineService.TimelineRow row = onlyRow(d.Id);
         Test.stopTest();
 
         Assert.isNull(row.ndaSignedDate,
@@ -198,7 +217,7 @@ private class DispositionBuyerTimelineTest {
         insert nda;
 
         Test.startTest();
-        DispositionBuyerTimelineService.NdaRow row = onlyRow(d.Id);
+        DispositionBuyerTimelineService.TimelineRow row = onlyRow(d.Id);
         Test.stopTest();
 
         Assert.isTrue(row.isDeclined, 'The row must be flagged terminated');
@@ -222,7 +241,7 @@ private class DispositionBuyerTimelineTest {
         insert nda;
 
         Test.startTest();
-        List<DispositionBuyerTimelineService.NdaRow> rows =
+        List<DispositionBuyerTimelineService.TimelineRow> rows =
             DispositionBuyerTimelineService.getTimeline(d.Id);
         Test.stopTest();
 
@@ -231,36 +250,64 @@ private class DispositionBuyerTimelineTest {
             + 'D20, so they persist, and the NDAs related list on the same page will show them');
     }
 
-    /** Declined parties sort LAST, after every active party, whatever order they were created in. */
+    /**
+     * 🔴 REPLACES `declinedParties_sortAfterActiveOnes`, WHICH THE 2026-08-24 MERGE RETIRED.
+     *
+     * That test pinned the rule "declined parties sort LAST, after every active party, whatever
+     * order they were created in". **The merge deleted that rule on purpose** — a chronological
+     * newest-first list and a status-pinned tail cannot both be true, and the instruction was
+     * explicit. `DispositionBuyerTimelineService`'s header carries the full argument.
+     *
+     * ⚠ THE OLD TEST WOULD HAVE SURVIVED THE CHANGE **VACUOUSLY**, WHICH IS WHY IT WAS REPLACED
+     * RATHER THAN LEFT ALONE. It created the declined NDA FIRST and the active one SECOND, then
+     * asserted the active row came first. Under newest-first that assertion is ALSO true — for a
+     * completely different reason (the active row is simply newer). It would have gone on passing
+     * while testing nothing.
+     *
+     * So this test inverts the fixture: the DECLINED party is created LAST, i.e. it is the NEWEST
+     * entry. Under the old rule it would have to be at the bottom; under the new one it must be at
+     * the TOP. Those are the two possible answers and the test can only agree with one.
+     * ⚠ `Test.setCreatedDate` IS REQUIRED. `CreatedDate` is second-granular, so two NDAs inserted in
+     * one transaction share a key exactly and only the comparator's Id tie-break would decide —
+     * which is deterministic but is not the property under test.
+     */
     @isTest
-    static void declinedParties_sortAfterActiveOnes() {
+    static void declinedParty_takesItsCHRONOLOGICALPlace_notATailPosition() {
         Disposition__c d = freshDisposition();
         Contact appointed = broker();
-        // Deliberately created declined-FIRST so a passing assertion cannot be creation order.
-        NDA__c declined = timelineNda(d.Id, appointed.Id);
-        declined.Status__c = STATUS_DECLINED;
         NDA__c active = timelineNda(d.Id, appointed.Id);
         active.Status__c = STATUS_SENT;
-        insert new List<NDA__c>{ declined, active };
+        NDA__c declined = timelineNda(d.Id, appointed.Id);
+        declined.Status__c = STATUS_DECLINED;
+        insert new List<NDA__c>{ active, declined };
+
+        // The declined party is the NEWEST entry on the sale — the state the old rule would have
+        // pushed to the bottom of the card.
+        Test.setCreatedDate(active.Id, Datetime.now().addDays(-10));
+        Test.setCreatedDate(declined.Id, Datetime.now().addDays(-1));
 
         Map<Id, NDA__c> named = new Map<Id, NDA__c>(
             [SELECT Id, Name FROM NDA__c WHERE Disposition__c = :d.Id]
         );
 
         Test.startTest();
-        List<DispositionBuyerTimelineService.NdaRow> rows =
+        List<DispositionBuyerTimelineService.TimelineRow> rows =
             DispositionBuyerTimelineService.getTimeline(d.Id);
         Test.stopTest();
 
-        Assert.areEqual(2, rows.size(), 'Both parties appear');
+        Assert.areEqual(2, rows.size(), 'Both parties appear — inclusion is unchanged');
         // ⚠ ASSERTED ON THE **NDA Id**, NOT ON THE AUTONUMBER STRING. The AutoNumber increments
-        // org-wide and is not predictable from a test, and it happens to sort in creation order —
-        // so a name-based assertion here could pass for the wrong reason.
-        Assert.areEqual(active.Id, rows[0].ndaId,
-            'The ACTIVE party comes first even though the declined one was created first');
-        Assert.areEqual(declined.Id, rows[1].ndaId, 'and the declined one is last');
-        Assert.areEqual(named.get(active.Id).Name, rows[0].ndaName,
-            'and the row carries its own NDA number');
+        // org-wide, is not predictable from a test, and happens to sort in creation order — so a
+        // name-based assertion here could pass for the wrong reason.
+        Assert.areEqual(declined.Id, rows[0].ndaId,
+            '🔴 THE DECLINED PARTY IS FIRST BECAUSE IT IS THE NEWEST. If this is the ACTIVE row, '
+            + 'the retired "declined last" rule has been restored — read the service header before '
+            + '"fixing" it, because that removal was deliberate and was instructed.');
+        Assert.areEqual(active.Id, rows[1].ndaId, 'and the older, still-active party is below it');
+        Assert.isTrue(rows[0].isDeclined,
+            'and the row is still MARKED declined — only its POSITION changed, not its treatment');
+        Assert.areEqual(named.get(declined.Id).Name, rows[0].ndaName,
+            'and it carries its own NDA number');
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -282,7 +329,7 @@ private class DispositionBuyerTimelineTest {
         NDA__c saved = [SELECT Name FROM NDA__c WHERE Id = :nda.Id LIMIT 1];
 
         Test.startTest();
-        DispositionBuyerTimelineService.NdaRow row = onlyRow(d.Id);
+        DispositionBuyerTimelineService.TimelineRow row = onlyRow(d.Id);
         Test.stopTest();
 
         Assert.areEqual(Date.newInstance(2026, 3, 2), row.ndaSignedDate, 'signed date');
@@ -305,7 +352,7 @@ private class DispositionBuyerTimelineTest {
         insert nda;
 
         Test.startTest();
-        DispositionBuyerTimelineService.NdaRow row = onlyRow(d.Id);
+        DispositionBuyerTimelineService.TimelineRow row = onlyRow(d.Id);
         Test.stopTest();
 
         Assert.areEqual(Date.newInstance(2026, 3, 2), row.ndaSignedDate, 'the signature shows');
@@ -331,7 +378,7 @@ private class DispositionBuyerTimelineTest {
         insert nda;
 
         Test.startTest();
-        DispositionBuyerTimelineService.NdaRow row = onlyRow(d.Id);
+        DispositionBuyerTimelineService.TimelineRow row = onlyRow(d.Id);
         Test.stopTest();
 
         Assert.isNull(row.daysToRelease,
@@ -351,7 +398,7 @@ private class DispositionBuyerTimelineTest {
         insert nda;
 
         Test.startTest();
-        DispositionBuyerTimelineService.NdaRow row = onlyRow(d.Id);
+        DispositionBuyerTimelineService.TimelineRow row = onlyRow(d.Id);
         Test.stopTest();
 
         Assert.areEqual(0, row.daysToRelease,
@@ -380,7 +427,7 @@ private class DispositionBuyerTimelineTest {
         insert new List<NDA__c>{ buyerRoleRow, brokerRoleRow };
 
         Test.startTest();
-        List<DispositionBuyerTimelineService.NdaRow> rows =
+        List<DispositionBuyerTimelineService.TimelineRow> rows =
             DispositionBuyerTimelineService.getTimeline(d.Id);
         Test.stopTest();
 
@@ -402,7 +449,7 @@ private class DispositionBuyerTimelineTest {
         insert new List<NDA__c>{ mine, theirs };
 
         Test.startTest();
-        DispositionBuyerTimelineService.NdaRow row = onlyRow(thisSale.Id);
+        DispositionBuyerTimelineService.TimelineRow row = onlyRow(thisSale.Id);
         Test.stopTest();
 
         Assert.areEqual(mine.Id, row.ndaId, 'One sale, one NDA list');
@@ -429,7 +476,7 @@ private class DispositionBuyerTimelineTest {
         insert nda;
 
         Test.startTest();
-        DispositionBuyerTimelineService.NdaRow row = onlyRow(d.Id);
+        DispositionBuyerTimelineService.TimelineRow row = onlyRow(d.Id);
         Test.stopTest();
 
         Assert.areEqual(DispositionBuyerTimelineService.NO_BROKER, row.brokerName,
@@ -456,7 +503,7 @@ private class DispositionBuyerTimelineTest {
      * loop on a page render, and every row-value assertion in this class would stay green.
      */
     @isTest
-    static void manyNdas_costsExactlyOneQuery() {
+    static void manyNdas_costsExactlyTwoQueries() {
         Disposition__c d = freshDisposition();
         Integer ndaCount = 25;
         List<Contact> brokers = TestDataFactory.createBrokerContacts(ndaCount, null, true);
@@ -472,20 +519,213 @@ private class DispositionBuyerTimelineTest {
 
         Test.startTest();
         Integer queriesBefore = Limits.getQueries();
-        List<DispositionBuyerTimelineService.NdaRow> rows =
+        List<DispositionBuyerTimelineService.TimelineRow> rows =
             DispositionBuyerTimelineService.getTimeline(d.Id);
         Integer queriesUsed = Limits.getQueries() - queriesBefore;
         Test.stopTest();
 
         Assert.areEqual(ndaCount, rows.size(), 'One row per buyer-role NDA');
-        Assert.areEqual(1, queriesUsed,
-            'EXACTLY ONE query for ' + ndaCount + ' NDAs, with the broker names traversed inside '
-            + 'it. A second read here is either a per-NDA Contact lookup (SOQL in a loop) or the '
-            + 'disposition-level offer read the service header refuses.');
-        for (DispositionBuyerTimelineService.NdaRow row : rows) {
+        Assert.areEqual(2, queriesUsed,
+            'EXACTLY TWO queries for ' + ndaCount + ' NDAs — one NDA read and one response read, '
+            + 'with the broker names traversed INSIDE each. ⚠ IT WAS ONE UNTIL THE 2026-08-24 '
+            + 'MERGE; the second query is the Release Materials response source and is unconditional '
+            + 'by design (a sale can carry responses and no NDA). A THIRD is either a per-NDA '
+            + 'Contact lookup (SOQL in a loop) or the disposition-level offer read the service '
+            + 'header refuses.');
+        for (DispositionBuyerTimelineService.TimelineRow row : rows) {
             Assert.areEqual(10, row.daysToRelease, 'and every row computed its duration');
             Assert.isTrue(String.isNotBlank(row.brokerName), 'and named its broker');
         }
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // 🔴 THE MERGE (2026-08-24) — two sources, ONE chronological list
+    //
+    // User decision: *"merge both sources into one chronological timeline"*. These tests own the
+    // interleaving, the kind marker, the deleted early-return, and the fact that an NDA row's
+    // CONTENT did not change. The ORDERING rule they pin REPLACED "declined last" — see
+    // `declinedParty_takesItsCHRONOLOGICALPlace_notATailPosition` above.
+    // ═════════════════════════════════════════════════════════════════════════
+
+    private static final String KIND_NDA = 'NDA';
+    private static final String KIND_RESPONSE = 'Response';
+
+    /**
+     * 🔴 THE CENTRAL MERGE TEST. Two NDAs and two responses, timestamps deliberately INTERLEAVED so
+     * that neither "all NDAs then all responses" nor "all responses then all NDAs" can pass.
+     *
+     * ⚠ THE FIXTURE IS BUILT SO THAT SOURCE ORDER AND ANSWER ORDER DISAGREE. Both NDAs are older
+     * than one response and newer than the other. A merge that simply concatenated the two
+     * already-ordered lists would produce N,N,R,R or R,R,N,N; only a genuine sort produces the
+     * expected sequence below.
+     * ⚠ `Test.setCreatedDate` IS REQUIRED FOR THE NDA HALF — `CreatedDate` is second-granular and
+     * every row inserted in one transaction shares it.
+     */
+    @isTest
+    static void mergedTimeline_interleavesBothKindsNewestFirst() {
+        Disposition__c d = freshDisposition();
+        Contact appointed = broker();
+
+        NDA__c olderNda = timelineNda(d.Id, appointed.Id);
+        olderNda.Status__c = STATUS_SENT;
+        NDA__c newerNda = timelineNda(d.Id, appointed.Id);
+        newerNda.Status__c = STATUS_SENT;
+        insert new List<NDA__c>{ olderNda, newerNda };
+        Test.setCreatedDate(olderNda.Id, Datetime.now().addDays(-30));
+        Test.setCreatedDate(newerNda.Id, Datetime.now().addDays(-20));
+
+        Release_Materials_Response__c newestResponse =
+            TestDataFactory.createReleaseMaterialsResponse(d.Id, false);
+        newestResponse.Entry_DateTime__c = Datetime.now().addDays(-5);
+        Release_Materials_Response__c oldestResponse =
+            TestDataFactory.createReleaseMaterialsResponse(d.Id, false);
+        oldestResponse.Entry_DateTime__c = Datetime.now().addDays(-40);
+        insert new List<Release_Materials_Response__c>{ newestResponse, oldestResponse };
+
+        Test.startTest();
+        List<DispositionBuyerTimelineService.TimelineRow> rows =
+            DispositionBuyerTimelineService.getTimeline(d.Id);
+        Test.stopTest();
+
+        Assert.areEqual(4, rows.size(), 'Every entry of both kinds appears exactly once');
+        Assert.areEqual(
+            new List<String>{ KIND_RESPONSE, KIND_NDA, KIND_NDA, KIND_RESPONSE },
+            new List<String>{ rows[0].kind, rows[1].kind, rows[2].kind, rows[3].kind },
+            '🔴 THE KINDS MUST ALTERNATE THE WAY THE DATES DO. N,N,R,R or R,R,N,N here means the '
+            + 'two lists were CONCATENATED rather than merged — which would also be the result of '
+            + 'deleting the sort entirely, since both source reads are already ordered.');
+        Assert.areEqual(newestResponse.Id, rows[0].responseId, '-5 days: the newest entry');
+        Assert.areEqual(newerNda.Id, rows[1].ndaId, 'then -20 days');
+        Assert.areEqual(olderNda.Id, rows[2].ndaId, 'then -30 days');
+        Assert.areEqual(oldestResponse.Id, rows[3].responseId, 'and -40 days is the oldest');
+    }
+
+    /**
+     * 🔴 THE DELETED EARLY RETURN. Before the merge this method opened with
+     * `if (ndas.isEmpty()) return rows;`, which after the merge would render a sale with logged
+     * responses and no NDA as COMPLETELY EMPTY — a confident wrong answer nothing on the page
+     * contradicts.
+     *
+     * ⚠ THIS STATE IS NORMAL, NOT CONTRIVED. `Release_Materials_Response__c` carries no NDA
+     * dependency of any kind, and a response can be logged on any sale at any time.
+     */
+    @isTest
+    static void responsesWithNoNdaAtAll_stillRenderATimeline() {
+        Disposition__c d = freshDisposition();
+        TestDataFactory.createReleaseMaterialsResponses(2, d.Id, true);
+
+        Test.startTest();
+        List<DispositionBuyerTimelineService.TimelineRow> rows =
+            DispositionBuyerTimelineService.getTimeline(d.Id);
+        Test.stopTest();
+
+        Assert.areEqual(2, rows.size(),
+            '🔴 A SALE WITH RESPONSES AND NO NDA IS NOT AN EMPTY TIMELINE. Zero here means the '
+            + 'pre-merge `if (ndas.isEmpty()) return rows;` short-circuit has come back.');
+        Assert.areEqual(KIND_RESPONSE, rows[0].kind, 'and both rows are response entries');
+        Assert.areEqual(KIND_RESPONSE, rows[1].kind, 'both of them');
+    }
+
+    /** A response row carries everything the tile renders, and nothing an NDA row would. */
+    @isTest
+    static void responseRow_carriesItsMethodNotesBrokerAndTimestamp() {
+        Disposition__c d = freshDisposition();
+        Contact appointed = broker();
+        Release_Materials_Response__c response =
+            TestDataFactory.createReleaseMaterialsResponse(d.Id, false);
+        response.Method__c = 'Offer';
+        response.Notes__c = 'Verbal at 4.2m, 6.1 cap.';
+        response.Broker__c = appointed.Id;
+        insert response;
+        Contact named = [SELECT Id, Name FROM Contact WHERE Id = :appointed.Id LIMIT 1];
+
+        Test.startTest();
+        List<DispositionBuyerTimelineService.TimelineRow> rows =
+            DispositionBuyerTimelineService.getTimeline(d.Id);
+        Test.stopTest();
+
+        DispositionBuyerTimelineService.TimelineRow row = rows[0];
+        Assert.areEqual(KIND_RESPONSE, row.kind, 'The kind marker is what the tile branches on');
+        Assert.areEqual(response.Id, row.responseId, 'the record link target');
+        Assert.isTrue(String.isNotBlank(row.responseName), 'the RMR AutoNumber identity');
+        Assert.areEqual('Offer', row.method, 'the method, rendered as readable badge TEXT');
+        Assert.areEqual('Verbal at 4.2m, 6.1 cap.', row.notes, 'and the note itself');
+        Assert.areEqual(named.Name, row.brokerName, 'and the broker, from the same traversal');
+        Assert.isNotNull(row.entryDateTime, 'and the timestamp it sorted on');
+        // 🔴 THE NDA HALF IS NULL, NOT EMPTY. A consumer that renders ndaName on a response row
+        // renders nothing at all — which is why the component reads `kind` FIRST.
+        Assert.isNull(row.ndaId, 'no NDA Id on a response row');
+        Assert.isNull(row.ndaName, 'no NDA number');
+        Assert.isNull(row.status, 'no NDA status');
+    }
+
+    /**
+     * ⚠ THE REGRESSION PIN FOR *"a user should see new entries appear, not their existing ones
+     * change shape"*. Every field an NDA row carried before the merge it still carries, under the
+     * same name — this is what a Jest fixture written before 2026-08-24 depends on.
+     */
+    @isTest
+    static void ndaRow_carriesEveryPreMergeFieldUnchanged() {
+        Disposition__c d = freshDisposition();
+        Contact appointed = broker();
+        NDA__c nda = timelineNda(d.Id, appointed.Id);
+        nda.Status__c = STATUS_SIGNED;
+        nda.Date_Signed__c = Date.today().addDays(-9);
+        nda.Materials_Released_Date__c = Date.today().addDays(-2);
+        insert nda;
+        Contact named = [SELECT Id, Name FROM Contact WHERE Id = :appointed.Id LIMIT 1];
+
+        Test.startTest();
+        DispositionBuyerTimelineService.TimelineRow row =
+            DispositionBuyerTimelineService.getTimeline(d.Id)[0];
+        Test.stopTest();
+
+        Assert.areEqual(KIND_NDA, row.kind, 'The new marker says NDA');
+        Assert.areEqual(nda.Id, row.ndaId, 'ndaId unchanged');
+        Assert.isTrue(String.isNotBlank(row.ndaName), 'ndaName unchanged');
+        Assert.areEqual(named.Name, row.brokerName, 'brokerName unchanged');
+        Assert.areEqual(STATUS_SIGNED, row.status, 'status unchanged');
+        Assert.isFalse(row.isDeclined, 'isDeclined unchanged');
+        Assert.areEqual(Date.today().addDays(-9), row.ndaSignedDate, 'ndaSignedDate unchanged');
+        Assert.areEqual(Date.today().addDays(-2), row.materialsReleasedDate,
+            'materialsReleasedDate unchanged');
+        Assert.areEqual(7, row.daysToRelease, 'daysToRelease unchanged');
+        Assert.isFalse(row.hasDateAnomaly, 'hasDateAnomaly unchanged');
+        Assert.isNotNull(row.entryDateTime,
+            'and the ONE new value on an NDA row is its CreatedDate sort key');
+        Assert.isNull(row.method, 'while every response-half field stays null');
+        Assert.isNull(row.notes, 'including the notes');
+    }
+
+    /**
+     * 🔴 AN UNDATED ROW SINKS, IT DOES NOT FLOAT. `Entry_DateTime__c` defaults to `NOW()` but is
+     * NOT `required`, so an API or data-loader row can carry null — and the platform's default for
+     * a `DESC` sort is NULLS **FIRST**, which would put a row claiming no time at all above every
+     * dated entry on the card.
+     */
+    @isTest
+    static void anUndatedResponse_sinksToTheBottomRatherThanFloatingToTheTop() {
+        Disposition__c d = freshDisposition();
+        NDA__c nda = timelineNda(d.Id, broker().Id);
+        nda.Status__c = STATUS_SENT;
+        insert nda;
+        Test.setCreatedDate(nda.Id, Datetime.now().addDays(-100));
+
+        Release_Materials_Response__c undated =
+            TestDataFactory.createReleaseMaterialsResponse(d.Id, false);
+        undated.Entry_DateTime__c = null;
+        insert undated;
+
+        Test.startTest();
+        List<DispositionBuyerTimelineService.TimelineRow> rows =
+            DispositionBuyerTimelineService.getTimeline(d.Id);
+        Test.stopTest();
+
+        Assert.areEqual(2, rows.size(), 'Both entries appear — an undated row is not discarded');
+        Assert.areEqual(nda.Id, rows[0].ndaId,
+            'A 100-day-old NDA still outranks an undated response. If the undated row is first, '
+            + 'the comparator has lost its null handling and NULLS FIRST has taken over.');
+        Assert.isNull(rows[1].entryDateTime, 'and the undated row is at the bottom');
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -522,7 +762,7 @@ private class DispositionBuyerTimelineTest {
         NDA__c saved = [SELECT Name FROM NDA__c WHERE Id = :nda.Id LIMIT 1];
 
         Test.startTest();
-        List<DispositionBuyerTimelineService.NdaRow> rows =
+        List<DispositionBuyerTimelineService.TimelineRow> rows =
             DispositionBuyerTimelineController.getTimeline(d.Id);
         Test.stopTest();
 
@@ -535,7 +775,7 @@ private class DispositionBuyerTimelineTest {
     @isTest
     static void controller_withNullId_returnsEmptyList() {
         Test.startTest();
-        List<DispositionBuyerTimelineService.NdaRow> rows =
+        List<DispositionBuyerTimelineService.TimelineRow> rows =
             DispositionBuyerTimelineController.getTimeline(null);
         Test.stopTest();
 
@@ -549,7 +789,7 @@ private class DispositionBuyerTimelineTest {
         Disposition__c d = freshDisposition();
 
         Test.startTest();
-        List<DispositionBuyerTimelineService.NdaRow> rows =
+        List<DispositionBuyerTimelineService.TimelineRow> rows =
             DispositionBuyerTimelineController.getTimeline(d.Id);
         Test.stopTest();
 
