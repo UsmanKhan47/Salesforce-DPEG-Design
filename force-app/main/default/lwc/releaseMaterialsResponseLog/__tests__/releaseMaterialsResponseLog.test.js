@@ -629,6 +629,246 @@ describe('c-release-materials-response-log', () => {
     });
 
     // ═════════════════════════════════════════════════════════════════════════
+    // 🔴 THE loiCounterOffer IDIOM — ADDED BY THE 2026-08-24 THEMING PASS
+    // ═════════════════════════════════════════════════════════════════════════
+    // User instruction: *"make it the same as the LOI counter offers LWC"*. The
+    // 25 tests above were ALL GREEN before and after that pass without a single
+    // edit — which is the point of the seven tests below. Every structural fact
+    // the pass established (where the opener lives, which button comes first,
+    // which container class boxes the form and the tiles, what the empty state
+    // is made of, and that the tile spacing is `gap` rather than whitespace) was
+    // invisible to the existing suite, so a later "tidy-up" could revert the
+    // whole thing and stay green.
+    // ⚠ EACH ONE WAS MUTATION-TESTED: the rule was broken, the test confirmed
+    // RED, and the rule restored. A pin that never goes red is not a pin.
+
+    it('🔴 IDIOM: the opener is a slot="actions" card button, not a button in the body', async () => {
+        const element = createComponent();
+
+        getLogContext.emit(CONTEXT);
+        await Promise.resolve();
+
+        const opener = q(element, '[data-open]');
+        // 🔴 THE SLOT IS THE WHOLE POINT. loiCounterOffer puts its "Add" button
+        // in the card header; this card used to put a full-width "Log a
+        // response" button at the top of the body, which is the single loudest
+        // "different component family" tell there was.
+        expect(opener.getAttribute('slot')).toBe('actions');
+        expect(opener.label).toBe('Add');
+        expect(opener.iconName).toBe('utility:add');
+        // ⚠ AND IT IS OUTSIDE THE PADDED BODY WRAPPER. Asserted by CONTAINMENT,
+        // not by reading the template: a slot attribute on an element still
+        // nested in the body would be ignored by lightning-card and the button
+        // would render in the wrong place while the attribute assertion above
+        // stayed green.
+        const body = q(element, '.slds-p-horizontal_small');
+        expect(body).not.toBeNull();
+        expect(body.contains(opener)).toBe(false);
+        expect(q(element, 'lightning-card').contains(opener)).toBe(true);
+    });
+
+    it('🔴 IDIOM: brand Save comes FIRST, neutral Cancel second, with an explicit right margin', async () => {
+        const element = createComponent();
+
+        getLogContext.emit(CONTEXT);
+        await Promise.resolve();
+        await openForm(element);
+
+        // ⚠ ONE DOCUMENT-ORDER QUERY, not two querySelectors. Asserting each
+        // button separately cannot express "Save is first" at all — and the old
+        // markup had Cancel first, right-aligned, which is what this reverses.
+        const buttons = all(element, '[data-save], [data-cancel]');
+        expect(buttons.map((b) => b.label)).toEqual(['Save', 'Cancel']);
+        expect(buttons[0].variant).toBe('brand');
+        expect(buttons[1].variant).toBe('neutral');
+        // 🔴 THE SEPARATION IS AN EXPLICIT MARGIN UTILITY, NOT RENDERED
+        // WHITESPACE. The LWC compiler discards whitespace-only text nodes
+        // between siblings, so without this class the two buttons touch.
+        expect(buttons[0].classList.contains('slds-m-right_x-small')).toBe(true);
+    });
+
+    it('🔴 IDIOM: the form and the tiles share loiCounterOffer’s slds-box container', async () => {
+        const element = createComponent();
+
+        getLogContext.emit(CONTEXT);
+        await Promise.resolve();
+        await openForm(element);
+
+        // The entry form is `slds-box slds-box_x-small` — the same container
+        // class loiCounterOffer boxes its own entry form with. It replaced a
+        // hand-rolled .rmr-form rule that re-implemented border, radius,
+        // padding and background from raw styling hooks.
+        const form = q(element, '[data-form]');
+        expect(form.classList.contains('slds-box')).toBe(true);
+        expect(form.classList.contains('slds-box_x-small')).toBe(true);
+        expect(form.classList.contains('slds-m-bottom_small')).toBe(true);
+
+        // Every logged tile uses the same box, so the card reads as one family.
+        tiles(element).forEach((tile) => {
+            expect(tile.classList.contains('slds-box')).toBe(true);
+            expect(tile.classList.contains('slds-box_x-small')).toBe(true);
+        });
+    });
+
+    it('🔴 IDIOM: form fields are separated by an explicit slds-m-top_x-small, never by whitespace', async () => {
+        const element = createComponent();
+
+        getLogContext.emit(CONTEXT);
+        await Promise.resolve();
+        await openForm(element);
+
+        // ⚠ THE FIRST FIELD MUST NOT HAVE IT (it would push the combobox off
+        // the top of the box) and EVERY LATER ONE MUST. Measured four times
+        // this week in this repo: two sibling tags render edge to edge because
+        // the template compiler deletes the whitespace-only text node between
+        // them, so this class IS the separation.
+        expect(q(element, '[data-method]').classList.contains('slds-m-top_x-small')).toBe(
+            false
+        );
+        expect(q(element, '[data-broker]').classList.contains('slds-m-top_x-small')).toBe(
+            true
+        );
+        expect(q(element, '[data-notes]').classList.contains('slds-m-top_x-small')).toBe(
+            true
+        );
+        // The read-only broker block is dressed as an SLDS form element so it
+        // sits with the two controls around it rather than as loose text.
+        expect(q(element, '[data-broker]').classList.contains('slds-form-element')).toBe(
+            true
+        );
+    });
+
+    it('🔴 IDIOM: the method pill is slds-badge — not a hand-rolled .rmr-badge', async () => {
+        const element = createComponent();
+
+        getLogContext.emit(CONTEXT);
+        await Promise.resolve();
+
+        const badge = q(element, '[data-method-badge]');
+        expect(badge.classList.contains('slds-badge')).toBe(true);
+        // ⚠ AND THE WORD IS STILL IN IT. A badge that loses its text is exactly
+        // the regression the LIST test above pins; this one only changes the
+        // dress, so both facts are asserted at once.
+        expect(badge.textContent.trim()).toBe('Offer');
+    });
+
+    it('🔴 IDIOM: the empty state is muted body text, with no centred icon column', async () => {
+        const element = createComponent();
+
+        getLogContext.emit(EMPTY_CONTEXT);
+        await Promise.resolve();
+
+        const empty = q(element, '.rmr-empty');
+        // ⚠ A TAG SCAN, NOT A textContent CHECK. A child component's shadow
+        // text never reaches this shadowRoot's textContent (measured: it
+        // returns ''), so the only way to pin the absence of the old
+        // <lightning-icon> is to look for the tag.
+        expect(empty.querySelector('lightning-icon')).toBeNull();
+        expect(all(element, 'lightning-icon')).toHaveLength(0);
+        // Both lines are muted body text — loiCounterOffer's "No counter offers
+        // yet." treatment, rather than a designed empty-state block.
+        expect(q(element, '.rmr-empty-text').classList.contains('slds-text-color_weak')).toBe(
+            true
+        );
+        expect(q(element, '.rmr-empty-sub').classList.contains('slds-text-color_weak')).toBe(
+            true
+        );
+    });
+
+    /**
+     * 🔴 T-CSS — A SOURCE-TEXT PIN ON THE STYLESHEET.
+     *
+     * ⚠ `require`, NEVER an ESM `import { readFileSync } from 'fs'` — the LWC
+     * compiler rejects that with LWC1702, which the editor surfaces as an error
+     * with an EMPTY message. Every T-CSS file in this repo uses this form.
+     * ⚠ COMMENTS ARE STRIPPED FIRST. This stylesheet's header NAMES the deleted
+     * rules (.rmr-form, .rmr-field, .rmr-actions, .rmr-badge) in prose to record
+     * what moved to SLDS utilities — without the strip, the absence assertions
+     * below would match that prose and fail for the wrong reason.
+     * 🔴 DO NOT "IMPROVE" THIS INTO A MEASUREMENT: jsdom does no layout, so
+     * getBoundingClientRect(), scrollWidth and clientWidth are all 0 and the
+     * obvious assertion is `0 <= 0` — green whether or not the card overflows.
+     */
+    it('🔴 T-CSS: the tile gaps are load-bearing, and nothing re-implements an SLDS utility', () => {
+        const CSS = require('fs')
+            .readFileSync(
+                require('path').join(__dirname, '..', 'releaseMaterialsResponseLog.css'),
+                'utf8'
+            )
+            .replace(/\/\*[\s\S]*?\*\//g, '');
+
+        // A selector-anchored slice, never a bare /gap:/ — an unanchored search
+        // passes while any ONE of the three copies survives, and a MISSING rule
+        // returns '' so every assertion below it reds rather than silently
+        // matching somewhere else in the file.
+        // ⚠ indexOf, NOT a constructed RegExp: a `new RegExp('...\{...')` here
+        // loses a backslash level depending on how the file is written and
+        // silently matches NOTHING, which reads as "the rule is gone" — a green
+        // absence assertion for the wrong reason.
+        const rule = (selector) => {
+            const at = CSS.indexOf(selector + ' {');
+            return at < 0 ? '' : CSS.slice(at, CSS.indexOf('}', at));
+        };
+        // 🔴 WITHOUT THESE THREE THE CARD HAS NO SEPARATION AT ALL. The LWC
+        // template compiler discards whitespace-only text nodes between sibling
+        // elements, so deleting a `gap` does not "tighten" a layout — it welds
+        // the tiles / the name and its badge / every label and its value
+        // together, and no rendered TEXT changes to show it.
+        expect(rule('.rmr-list')).toMatch(/gap:/);
+        expect(rule('.rmr-tile-head')).toMatch(/gap:/);
+        expect(rule('.rmr-facts')).toMatch(/gap:/);
+
+        // The responsive tile grid — a BARE 28rem minimum bursts any container
+        // narrower than 448px, which is invisible at desktop width and is the
+        // exact failure c/dispositionBuyerTimeline had to be rebuilt for.
+        expect(rule('.rmr-list')).toMatch(/minmax\(\s*min\(28rem,\s*100%\)/);
+        expect(CSS).not.toMatch(/@media/);
+        expect(CSS).not.toMatch(/overflow(-x)?\s*:\s*(auto|scroll)/);
+
+        // 🔴 THE RULES THE THEMING PASS DELETED MUST STAY DELETED. Each one
+        // re-implemented an SLDS utility that the markup now carries, and
+        // re-adding any of them re-creates the drift that made this card read
+        // as a different component family.
+        expect(CSS).not.toMatch(/\.rmr-form\s*\{/);
+        expect(CSS).not.toMatch(/\.rmr-field\s*\{/);
+        expect(CSS).not.toMatch(/\.rmr-actions\s*\{/);
+        expect(CSS).not.toMatch(/\.rmr-badge\s*\{/);
+        expect(CSS).not.toMatch(/\.rmr-body\s*\{/);
+
+        // 🔴 DARK MODE. NOTHING ELSE IN THIS PIPELINE CATCHES A DARK-MODE
+        // FAILURE: the SLDS linter only checks that a hook was USED, Jest
+        // asserts class names, and axe's colour-contrast rule is INERT in jsdom,
+        // so toBeAccessible() passing is not evidence. A source-text assertion
+        // on the comment-stripped stylesheet is the only automated falsifier.
+        // Every colour must come from a global styling hook, which is what
+        // makes it re-resolve under the dark theme; a raw literal does not.
+        const colourDecls = CSS.match(/(?:color|background|background-color|border-color):[^;]+;/g) || [];
+        expect(colourDecls.length).toBeGreaterThan(0);
+        colourDecls.forEach((decl) => {
+            expect(decl.slice(decl.indexOf(':') + 1).trim()).toMatch(/^var\(--slds-/);
+        });
+        // ⚠ AND NOT `--slds-g-color-<semantic>-container-1`, WHICH IS A SOLID
+        // DARK FILL, NOT A PALE TINT (#2e844a for success, #ba0517 for error).
+        // The pale literal fallback written beside it describes only the
+        // hook-UNDEFINED case, so a file using it reads as correct while
+        // rendering dark-on-dark. The safe tint pairing is `-base-95` +
+        // `-base-30`; here the boxes are `slds-box`, which SLDS themes itself.
+        expect(CSS).not.toMatch(/container-1/);
+
+        // ⚠ :host CARRIES NO TOP MARGIN OR BORDER, despite loiCounterOffer's
+        // :host rule having both. This card is a child of c/dispositionMain,
+        // whose own :host owns the stack `gap` for every card at every stage and
+        // whose stylesheet says in terms: do not add per-card margins on top of
+        // it — they double up.
+        expect(rule(':host')).not.toMatch(/margin/);
+        expect(rule(':host')).not.toMatch(/border/);
+        // Still load-bearing for the narrow-container work: only `anywhere`
+        // affects min-content sizing, which is what lets `min-width: 0` bite.
+        expect(rule(':host')).toMatch(/overflow-wrap:\s*anywhere/);
+        expect(rule('.rmr-tile')).toMatch(/min-width:\s*0/);
+    });
+
+    // ═════════════════════════════════════════════════════════════════════════
     // ACCESSIBILITY
     // ═════════════════════════════════════════════════════════════════════════
 

@@ -15,13 +15,14 @@
              a self-labelling dt/dd TILE (and before that a two-column flex row). The tile's
              four <dt> labels — When / Reason / Logged by / Notes — are gone from the visible
              markup and replaced by three lines per entry:
-                1. {outgoing} → {incoming}, both bold;
+                1. the broker's name (SIMPLIFIED 2026-08-24 from "{outgoing} → {incoming}");
                 2. calendar icon · date-time · pipe · reason;
                 3. "Logged By:" · name.
 
              🔴 WHAT REPLACED THE VISIBLE LABELS IS NOT NOTHING. Removing a <dt> removes the
              accessible name of the value beside it, so each value that lost a visible label
-             carries an equivalent: the date-time's label is the calendar icon's
+             carries an equivalent: the broker name's label is a shape-specific `.bbc-sr-only`
+             span (see line 1 below), the date-time's is the calendar icon's
              `alternative-text`, the reason's is a locally-defined `.bbc-sr-only` span (NOT the global
              `slds-assistive-text` — that class lives in a document-level SLDS stylesheet, and
              under NATIVE shadow DOM it would not reach into this component, leaving the word
@@ -63,21 +64,43 @@
                         </div>
 
                         <div class="bbc-body">
-                            <!-- The swap reads left-to-right as "this became that", BOTH FIRMS
-                                 BOLD (the outgoing firm is no longer struck through or greyed —
-                                 the supplied design gives them equal weight). It WRAPS rather
-                                 than truncating: at 340px "No Previous Broker → Marcus &
-                                 Millichap" legitimately needs two lines, and a firm name clipped
-                                 to an ellipsis is worse than a wrapped one.
-                                 ⚠ The arrow is a GLYPH, aria-hidden, with the relationship
-                                 spelled out in assistive text beside it — screen readers vary on
-                                 whether they announce "→" at all, and "JLL Cushman & Wakefield"
-                                 with no verb between them is not a broker change. -->
-                            <h3 class="bbc-swap slds-hyphenate">
-                                <span class="bbc-outgoing">{row.outgoing}</span>
-                                <span class="bbc-arrow" aria-hidden="true">→</span>
-                                <span class="bbc-sr-only">replaced by</span>
-                                <span class="bbc-incoming">{row.incoming}</span>
+                            <!-- 🔴 LINE 1 — ONE BROKER NAME. The "{outgoing} → {incoming}" pairing
+                                 (arrow glyph, `.bbc-outgoing`, `.bbc-incoming`, and the assistive
+                                 "replaced by" between them) WAS REMOVED ON 2026-08-24 at the
+                                 user's request: "just show the broker name, when he was replaced,
+                                 and what was the reason". Two firm names plus a glyph is three
+                                 wrapped lines in a ~340px sidebar to state one fact.
+
+                                 WHICH name this is depends on the row shape and is decided in ONE
+                                 place — `brokerNameOf` in the JS. Replacement ⇒ the OUTGOING firm
+                                 (the broker who was replaced). Initial appointment ⇒ the INCOMING
+                                 firm, because there is no outgoing one and it is the only broker
+                                 the row names. Neither firm is guaranteed: a row with neither
+                                 renders the words "Broker not recorded" rather than an empty span.
+
+                                 🔴 THE ASSISTIVE LABEL IS SHAPE-SPECIFIC AND IS NOT DECORATION.
+                                 Stripping the visible pairing left a heading that is a bare firm
+                                 name inside a card titled "Broker Replace History" — which on an
+                                 APPOINTMENT row would announce that this broker was replaced, and
+                                 nobody was. "Replaced broker:" / "Appointed broker:" is the honest
+                                 version, and it is what replaced the old "replaced by": that
+                                 string described a relationship this markup no longer renders, so
+                                 leaving it here would have had a screen reader announce a pairing
+                                 a sighted user cannot see. Sighted readers get the same
+                                 distinction from Reason__c on the next line ("Initial
+                                 Appointment"), which is why no visible badge was added.
+
+                                 ⚠ Do not delete the colon in `brokerLabel`. The compiler discards
+                                 the whitespace between these two spans, so the heading's
+                                 accessible name is the concatenation — "Replaced brokerJLL"
+                                 without it.
+
+                                 It WRAPS rather than truncating: at 340px a firm name legitimately
+                                 needs two lines, and a name clipped to an ellipsis is worse than a
+                                 wrapped one — the firm IS the fact the entry exists to record. -->
+                            <h3 class="bbc-broker slds-hyphenate">
+                                <span class="bbc-sr-only">{row.brokerLabel}</span>
+                                <span class="bbc-name">{row.brokerName}</span>
                             </h3>
 
                             <!-- Line 2: when · | · why. The pipe is decorative and is rendered

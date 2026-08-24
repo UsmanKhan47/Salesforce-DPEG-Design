@@ -224,6 +224,30 @@ export default class ReleaseMaterialsResponseLog extends LightningElement {
     }
 
     /**
+     * Whether to render the "Add" opener in the CARD'S ACTIONS SLOT.
+     *
+     * Added 2026-08-24 by the theming pass that aligned this card with
+     * `c/loiCounterOffer`, which places its own "Add" button there. A slotted
+     * element is a child of `<lightning-card>` and therefore CANNOT sit inside
+     * the body's `lwc:if` / `lwc:elseif` chain, so the two conditions the chain
+     * used to express have to be stated here instead:
+     *   · `canLog`   — an affordance, never the guard (see the class header).
+     *     It is false before the wire answers AND on the error branch, because
+     *     both leave `context` undefined, which is what keeps the button off a
+     *     card that is still loading or has failed.
+     *   · `!isFormOpen` — the opener is REPLACED by the form, not shown beside
+     *     it. ⚠ THIS IS BEHAVIOUR, NOT STYLING, and it is pinned by a Jest
+     *     test. loiCounterOffer instead keeps its button mounted and disabled
+     *     while editing; that difference was left alone deliberately, because
+     *     the pass was scoped to presentation.
+     * 🔴 NO NEW STATE. This getter reads two existing ones and adds nothing to
+     * the component's behaviour.
+     */
+    get showOpener() {
+        return this.canLog && !this.isFormOpen;
+    }
+
+    /**
      * The card-level "no broker appointed" line — the *"say so in the header"*
      * half of the 2026-08-24 instruction.
      *

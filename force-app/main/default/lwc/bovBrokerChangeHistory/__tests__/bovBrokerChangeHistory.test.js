@@ -34,12 +34,34 @@
  * 🔴 THE RENDERED SHAPE IS A VERTICAL TIMELINE (2026-08-24).
  * ─────────────────────────────────────────────────────────────────────────────
  * Restyled to a design the user supplied. Per entry: a decorative dot-and-line rail, then
- *   line 1  {outgoing} → {incoming}, BOTH BOLD;
+ *   line 1  ONE broker name, BOLD (see below);
  *   line 2  calendar icon · date-time · "|" · reason;
  *   line 3  "Logged By:" · name;
  *   line 4  the RETAINED notes affordance (see T-NOTES-KEPT).
  * Before this it was a dt/dd tile grid (2026-08-21) and before that a two-column flex row
  * (2026-08-20). The two-column row must not come back — see T-TIMELINE.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * 🔴 LINE 1 IS ONE NAME, AND WHICH NAME DEPENDS ON THE ROW SHAPE (2026-08-24).
+ * ─────────────────────────────────────────────────────────────────────────────
+ * The "{outgoing} → {incoming}" pairing was removed at the user's request ("just show the broker
+ * name, when he was replaced, and what was the reason"). THE ROWS ARE NOT ALL THE SAME KIND, so
+ * one rule cannot be tested with one fixture:
+ *   • REPLACEMENT (an outgoing firm exists) → the OUTGOING firm is rendered. It is the broker who
+ *     was replaced, which is what the entry records. T-BROKER-NAME.
+ *   • INITIAL APPOINTMENT (no outgoing firm) → the INCOMING firm is rendered, and the entry must
+ *     NOT be presented as a replacement, because nobody was replaced. T-APPOINTMENT.
+ *   • Both firms are legitimately NULL-able — `Incoming_Broker_Firm__c` was null on a live
+ *     retirement row on 2026-08-24 and `Outgoing_Broker_Firm__c` is null on every appointment —
+ *     and a row with NEITHER must still render a word rather than a blank span, "undefined" or a
+ *     bare dash. T-NULL-INCOMING and T-NO-NAME.
+ * The distinction between the two shapes is carried by a shape-specific ASSISTIVE label
+ * ("Replaced broker:" / "Appointed broker:") plus Reason__c on line 2, which already reads
+ * "Initial Appointment" on those rows. A fixture that only ever carries two firms passes every
+ * one of those rules while the card is wrong, which is why each gets its own fixture below.
+ *
+ * ⚠ T-NO-ARROW is an ABSENCE pin with a PRESENCE control in the same test: a card that rendered
+ * no entries at all would satisfy "there is no arrow" perfectly.
  *
  * 🔴 WHY THESE TESTS READ ELEMENTS AND PROPERTIES, NEVER GETTERS. This repo has a measured defect
  * where a getter-only assertion stayed green while the rendered output was wrong (a getter's
@@ -48,11 +70,15 @@
  * a PROPERTY (`iconName`, `alternativeText`, `value`) — the Jest stubs render an EMPTY template,
  * so a `textContent` assertion against one of them is vacuously green whatever the component does.
  *
- * ⚠ THE HEADLINE'S SPACES COME FROM CSS `gap`, NOT FROM THE MARKUP. The template compiler discards
- * the whitespace-only text nodes between the three spans, so `h3.textContent` is
- * "JLL→replaced byCushman & Wakefield" — correct, and not what a reader sees. The assertions
- * therefore read the individual spans and their DOM ORDER rather than the concatenated string; an
- * `h3.textContent` assertion here would be pinning an artefact of the compiler.
+ * ⚠ NEVER ASSERT ON `h3.textContent`. The template compiler discards the whitespace-only text node
+ * between the headline's assistive label and the name, so the heading's concatenated text is
+ * "Replaced broker:JLL" — an artefact of the compiler, not what anybody sees or hears. Every
+ * headline assertion below reads `.bbc-name` (the visible name) and `.bbc-sr-only` (the label)
+ * SEPARATELY. This is also why the label ends in a colon: without it the accessible name reads
+ * "Replaced brokerJLL".
+ * ⚠ THE SAME TRAP APPLIES TO LINE 2, which still IS a flex row of three siblings (timestamp, pipe,
+ * reason) whose only separation is the CSS `gap` — that is where the T-CSS gap pin now points,
+ * having previously pointed at the deleted `.bbc-swap`.
  */
 import { createElement } from 'lwc';
 import BovBrokerChangeHistory from 'c/bovBrokerChangeHistory';
@@ -107,17 +133,59 @@ const HISTORY = [
     }
 ];
 
-/** The service records an APPOINTMENT (no incumbent) with blank outgoing columns. */
+/**
+ * The service records an APPOINTMENT (no incumbent) with blank outgoing columns. This is a REAL
+ * live shape — every disposition's first broker row looks like this — and it is the shape a
+ * headline that only knows how to print the outgoing firm gets wrong, silently, by printing
+ * nothing.
+ */
 const APPOINTMENT_ONLY = [
     {
         id: 'a1B0000000000003AAA',
         changeNumber: 'BBC-0003',
         outgoingBrokerFirm: null,
         incomingBrokerFirm: 'Marcus & Millichap',
-        reason: 'Company Decision',
+        reason: 'Initial Appointment',
         notes: null,
         entryDateTime: '2026-08-01T12:00:00.000Z',
         loggedBy: null
+    }
+];
+
+/**
+ * 🔴 A REPLACEMENT WHOSE *INCOMING* FIRM IS NULL. Not hypothetical: this was the live state of a
+ * preferred-broker retirement on this org on 2026-08-24 — the incoming Contact carried no firm
+ * when the change was written. Under the old arrow headline it rendered "Colliers Houston → —";
+ * the row still names the broker who was replaced, so nothing about it should be blank now.
+ */
+const NULL_INCOMING = [
+    {
+        id: 'a1B0000000000005AAA',
+        changeNumber: 'BBC-0005',
+        outgoingBrokerFirm: 'Colliers Houston',
+        incomingBrokerFirm: null,
+        reason: 'Company Decision',
+        notes: null,
+        entryDateTime: '2026-08-24T10:09:00.000Z',
+        loggedBy: 'Avery Chen'
+    }
+];
+
+/**
+ * 🔴 NEITHER FIRM. Both columns are nullable, so this row is constructible, and an audit entry
+ * with a date and a reason is still worth showing. What it must NOT do is render an empty span,
+ * the literal "undefined"/"null", or a bare dash where a name belongs.
+ */
+const NO_FIRMS = [
+    {
+        id: 'a1B0000000000006AAA',
+        changeNumber: 'BBC-0006',
+        outgoingBrokerFirm: null,
+        incomingBrokerFirm: null,
+        reason: 'Company Decision',
+        notes: null,
+        entryDateTime: '2026-05-05T07:00:00.000Z',
+        loggedBy: 'Avery Chen'
     }
 ];
 
@@ -166,15 +234,18 @@ describe('c-bov-broker-change-history', () => {
         el.shadowRoot.querySelector('span[slot="title"]').textContent.trim();
 
     /**
-     * The headline's visible parts in DOM order, as `class -> text` pairs. Reading the ORDER is the
-     * point: "Cushman & Wakefield → JLL" contains exactly the same strings as the correct headline
-     * and means the opposite.
+     * The headline's two parts, read SEPARATELY and never as `h3.textContent` — the compiler eats
+     * the whitespace between them, so the concatenation ("Replaced broker:JLL") is an artefact.
+     * `name` is what a sighted reader sees; `label` is the visually-hidden, shape-specific word
+     * that stops an APPOINTMENT being announced as a replacement.
      */
-    const headline = (entry) =>
-        [...entry.querySelector('.bbc-swap').children].map((c) => [
-            c.className,
-            c.textContent
-        ]);
+    const headline = (entry) => {
+        const h = entry.querySelector('h3.bbc-broker');
+        return {
+            name: h.querySelector('.bbc-name').textContent,
+            label: h.querySelector('.bbc-sr-only').textContent
+        };
+    };
 
     it('BEFORE THE WIRE ANSWERS: renders no rows, no empty state and — crucially — no spinner', async () => {
         const element = createComponent();
@@ -212,7 +283,7 @@ describe('c-bov-broker-change-history', () => {
         expect(title(element)).toBe('Broker Replace History (2)');
     });
 
-    it('DATA: one timeline entry per change, with both stamped firm snapshots in order', async () => {
+    it('DATA: one timeline entry per change, headlined by the broker who was replaced', async () => {
         const element = createComponent();
 
         getHistory.emit(HISTORY);
@@ -224,16 +295,16 @@ describe('c-bov-broker-change-history', () => {
 
         const first = rows(element)[0];
 
-        // 🔴 THE HEADLINE, READ AS RENDERED ELEMENTS IN DOM ORDER. Outgoing, then the arrow, then
-        // the assistive relationship word, then incoming. Reversing the two firms produces a
-        // headline containing all the same text and asserting the opposite fact, which is exactly
-        // what a set-membership assertion would miss.
-        expect(headline(first)).toEqual([
-            ['bbc-outgoing', 'JLL'],
-            ['bbc-arrow', '→'],
-            ['bbc-sr-only', 'replaced by'],
-            ['bbc-incoming', 'Cushman & Wakefield']
-        ]);
+        // 🔴 T-BROKER-NAME — THE HEADLINE ON A REPLACEMENT IS THE *OUTGOING* FIRM.
+        // This row replaced JLL with Cushman & Wakefield. The broker who was replaced — the one
+        // this entry exists to record, and the one the user asked to see — is JLL. Printing the
+        // incoming firm instead is the single most likely way to get this wrong: it reads
+        // perfectly, names a real firm from the same row, and is the opposite fact. The fixture
+        // deliberately carries TWO DIFFERENT firms so that swapping them fails here.
+        expect(headline(first).name).toBe('JLL');
+        // ...and the one thing that keeps a bare firm name honest under a card titled "Broker
+        // Replace History": the assistive label that says which kind of row this is.
+        expect(headline(first).label).toBe('Replaced broker:');
 
         // 🔴 LINE 2 — the calendar icon, the timestamp, the pipe, the reason, in that order.
         // The icon is a base component whose Jest stub renders an EMPTY template, so it is
@@ -279,25 +350,35 @@ describe('c-bov-broker-change-history', () => {
         getHistory.emit(HISTORY);
         await Promise.resolve();
 
-        const incoming = [...rows(element)].map(
-            (r) => r.querySelector('.bbc-incoming').textContent
+        const names = [...rows(element)].map(
+            (r) => r.querySelector('.bbc-name').textContent
         );
         // Newest first, exactly as BovBrokerChangeSelector returned it. A client-side sort added
         // later would be a second copy of the server's ORDER BY — including a tie-break JS cannot
         // see — and would drift from it silently.
-        expect(incoming).toEqual(['Cushman & Wakefield', 'JLL']);
+        // ⚠ REPOINTED 2026-08-24 from `.bbc-incoming` to the single rendered name. The two rows'
+        // names are still DIFFERENT ('JLL' then 'CBRE', the two outgoing firms), so a reversed
+        // list still fails — an ordering test over identical strings proves nothing.
+        expect(names).toEqual(['JLL', 'CBRE']);
     });
 
     // ─────────────────────────────────────────────────────────────────────────────────────────
-    // 🔴 T-NO-PREVIOUS — THE BRANCH A NAIVE "{outgoing} → {incoming}" TEMPLATE GETS WRONG.
+    // 🔴 T-APPOINTMENT — THE ROW SHAPE WHERE NOBODY WAS REPLACED.
     //
-    // The service records an APPOINTMENT (nobody to replace) with a NULL outgoing firm. Bound
-    // straight into the template that renders as "undefined → JLL"; guarded with an `lwc:if` on
-    // the firm instead of a fallback STRING it renders as a bare "→ JLL". Neither is caught by a
-    // test that only ever feeds the wire a two-firm row, which is why this branch gets its own.
+    // The service records an APPOINTMENT (no incumbent) with a NULL outgoing firm, and this is the
+    // FIRST row of every disposition that ever had a broker. A headline that simply prints the
+    // outgoing firm renders NOTHING here — no error, no blank-looking bug, just a missing name on
+    // the one row where the incoming firm is the only broker there is. And a headline that prints
+    // a name but presents it as "replaced" states something false about this sale.
+    //
+    // ⚠ THIS TEST REPLACES T-NO-PREVIOUS, which pinned the fallback string "No Previous Broker"
+    // occupying the outgoing slot of the arrow headline. That slot no longer exists, so the old
+    // assertion could not be repointed — it pinned a rendering, not a rule. The RULE it protected
+    // (an appointment must not render as "undefined →" or as a bare arrow) is stronger here: the
+    // appointed firm's own name is now what renders.
     // ─────────────────────────────────────────────────────────────────────────────────────────
 
-    it('🔴 T-NO-PREVIOUS: an appointment reads "No Previous Broker → {firm}", not "undefined →"', async () => {
+    it('🔴 T-APPOINTMENT: an appointment shows the APPOINTED firm and is not called a replacement', async () => {
         const element = createComponent();
 
         getHistory.emit(APPOINTMENT_ONLY);
@@ -306,15 +387,19 @@ describe('c-bov-broker-change-history', () => {
         expect(rows(element).length).toBe(1);
         const entry = rows(element)[0];
 
-        // 🔴 THE EXACT RENDERED HEADLINE, IN ORDER. Both halves matter: the fallback WORDING
-        // ("No Previous Broker", not an em dash the reader has to interpret) and the fact that it
-        // occupies the outgoing SLOT, so the arrow still points from it to the appointed firm.
-        expect(headline(entry)).toEqual([
-            ['bbc-outgoing', 'No Previous Broker'],
-            ['bbc-arrow', '→'],
-            ['bbc-sr-only', 'replaced by'],
-            ['bbc-incoming', 'Marcus & Millichap']
-        ]);
+        // 🔴 THE INCOMING FIRM, BECAUSE THERE IS NO OUTGOING ONE. Falling back to a placeholder
+        // ("No Previous Broker", an em dash, a blank) would drop the only broker this row names.
+        expect(headline(entry).name).toBe('Marcus & Millichap');
+        // 🔴 AND IT IS NOT ANNOUNCED AS A REPLACEMENT. Nobody was replaced on this row; the card's
+        // own title says "Replace", so the label is what stops the entry asserting that somebody
+        // was. This is the assertion that fails if the label is hard-coded rather than derived.
+        expect(headline(entry).label).toBe('Appointed broker:');
+        // The sighted reader's version of the same distinction, from Reason__c on line 2.
+        expect(entry.querySelector('.bbc-reason').textContent).toBe(
+            'Initial Appointment'
+        );
+        // 🔴 AND NOTHING ANYWHERE CLAIMS A REPLACEMENT HAPPENED.
+        expect(text(element)).not.toContain('Replaced broker');
 
         // Asserted on the RENDERED markup, not on a getter: an undefined bound into the template
         // renders the literal string "undefined".
@@ -345,11 +430,101 @@ describe('c-bov-broker-change-history', () => {
         expect(entry.querySelector('.bbc-sep')).toBeNull();
         expect(entry.querySelector('.bbc-reason')).toBeNull();
         expect(entry.querySelector('.bbc-meta').textContent).not.toContain('|');
-        // The headline is unaffected by any of the optional lines being absent.
-        expect(entry.querySelector('.bbc-outgoing').textContent).toBe(
-            'Colliers'
+        // The headline is unaffected by any of the optional lines being absent — and on this
+        // fixture (a replacement: Colliers → Newmark) it is still the OUTGOING firm.
+        expect(headline(entry).name).toBe('Colliers');
+        expect(headline(entry).label).toBe('Replaced broker:');
+    });
+
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+    // 🔴 T-NULL-INCOMING / T-NO-NAME — BOTH FIRM COLUMNS ARE NULLABLE, AND ONE OF THEM WAS NULL
+    // ON LIVE DATA ON 2026-08-24. Two separate rules: an absent INCOMING firm must not disturb a
+    // replacement's headline at all (the name it prints comes from the other column), and a row
+    // with NEITHER firm must still print a word rather than an empty span.
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+
+    it('🔴 T-NULL-INCOMING: a replacement with no incoming firm still names the broker replaced', async () => {
+        const element = createComponent();
+
+        getHistory.emit(NULL_INCOMING);
+        await Promise.resolve();
+
+        const entry = rows(element)[0];
+        // The outgoing firm is present, so this is a replacement and the headline is unaffected
+        // by the null on the other side. Under the arrow headline this row read
+        // "Colliers Houston → —"; the dash is now gone with the pairing that needed it.
+        expect(headline(entry).name).toBe('Colliers Houston');
+        expect(headline(entry).label).toBe('Replaced broker:');
+        // 🔴 NO RESIDUE OF THE MISSING VALUE ANYWHERE ON THE CARD.
+        expect(text(element)).not.toContain('undefined');
+        expect(text(element)).not.toContain('—');
+        expect(text(element)).not.toContain('Broker not recorded');
+        // The rest of the entry is intact, so the assertions above are about the headline and not
+        // about a card that failed to render.
+        expect(entry.querySelector('.bbc-reason').textContent).toBe(
+            'Company Decision'
         );
-        expect(entry.querySelector('.bbc-incoming').textContent).toBe('Newmark');
+        expect(entry.querySelector('.bbc-loggedby').textContent).toBe(
+            'Avery Chen'
+        );
+    });
+
+    it('🔴 T-NO-NAME: a row with neither firm says so in words — never a blank span or a dash', async () => {
+        const element = createComponent();
+
+        getHistory.emit(NO_FIRMS);
+        await Promise.resolve();
+
+        expect(rows(element).length).toBe(1);
+        const entry = rows(element)[0];
+
+        // 🔴 A WORD, NOT AN ABSENCE. An empty `.bbc-name` renders as a silent gap where the most
+        // important fact on the entry should be — indistinguishable from a styling bug, and
+        // announced as nothing at all. The audit entry still has a date and a reason worth
+        // reading, so it renders, and it says what is missing.
+        expect(headline(entry).name).toBe('Broker not recorded');
+        expect(headline(entry).name.trim().length).toBeGreaterThan(0);
+        expect(text(element)).not.toContain('undefined');
+        expect(text(element)).not.toContain('null');
+        // No outgoing firm ⇒ not a replacement, whatever the reason says.
+        expect(headline(entry).label).toBe('Appointed broker:');
+    });
+
+    it('🔴 T-NO-ARROW: the two-firm pairing is gone — no arrow, no "replaced by", no second firm', async () => {
+        const element = createComponent();
+
+        getHistory.emit(HISTORY);
+        await Promise.resolve();
+
+        // 🔴 THE PRESENCE CONTROL FIRST. Every absence below is satisfied perfectly by a card
+        // that renders nothing at all, so this test is worthless without proof that two real
+        // entries, each with a real visible name, are on screen.
+        expect(rows(element).length).toBe(2);
+        expect(
+            [...rows(element)].map((r) => r.querySelector('.bbc-name').textContent)
+        ).toEqual(['JLL', 'CBRE']);
+
+        // 1. The retired class names.
+        expect(element.shadowRoot.querySelector('.bbc-swap')).toBeNull();
+        expect(element.shadowRoot.querySelector('.bbc-outgoing')).toBeNull();
+        expect(element.shadowRoot.querySelector('.bbc-incoming')).toBeNull();
+        expect(element.shadowRoot.querySelector('.bbc-arrow')).toBeNull();
+
+        // 2. 🔴 THE RENDERED GLYPH AND THE RELATIONSHIP WORDING — a re-added pairing usually
+        //    arrives under a new class name. "replaced by" in particular must not survive as
+        //    assistive text: it would announce, to a screen-reader user only, a relationship no
+        //    sighted user can see, which is the exact defect the arrow's removal was meant to
+        //    avoid leaving behind.
+        expect(text(element)).not.toContain('→');
+        expect(text(element).toLowerCase()).not.toContain('replaced by');
+        expect(element.shadowRoot.innerHTML).not.toContain('→');
+
+        // 3. 🔴 THE SECOND FIRM ITSELF. Both fixture rows pair two DIFFERENT firms, so the
+        //    incoming ones are strings that can only appear if the pairing came back. (Note
+        //    'JLL' is HISTORY[1]'s incoming firm AND HISTORY[0]'s outgoing firm, which is why the
+        //    assertion below names 'Cushman & Wakefield' — a string that is incoming and nothing
+        //    else.)
+        expect(text(element)).not.toContain('Cushman & Wakefield');
     });
 
     it('🔴 EMPTY: says "No broker changes recorded" — with no alert and no spinner anywhere near it', async () => {
@@ -567,10 +742,15 @@ describe('c-bov-broker-change-history', () => {
             element.shadowRoot.querySelector('.bbc-note-full').textContent
         ).toBe(LONG_NOTE);
         // The subtitle names WHICH change the note belongs to — a note with no context is a note
-        // the reader cannot use.
+        // the reader cannot use — and it names it EXACTLY as the entry's headline does, because
+        // both go through the same `brokerNameOf` helper. A subtitle that still said
+        // "JLL → Cushman & Wakefield" would be the deleted pairing surviving in a second place.
         expect(
             element.shadowRoot.querySelector('.bbc-note-sub').textContent
-        ).toBe('JLL → Cushman & Wakefield');
+        ).toBe('JLL');
+        expect(
+            element.shadowRoot.querySelector('.bbc-note-sub').textContent
+        ).toBe(headline(rows(element)[0]).name);
 
         element.shadowRoot.querySelector('.bbc-note-close').click();
         await Promise.resolve();
@@ -578,12 +758,13 @@ describe('c-bov-broker-change-history', () => {
         expect(element.shadowRoot.querySelector('.slds-modal')).toBeNull();
     });
 
-    it('VIEW: the popup subtitle uses the same "No Previous Broker" wording as the headline', async () => {
+    it('VIEW: on an appointment the popup subtitle names the same broker the headline does', async () => {
         const element = createComponent();
 
-        // A long note on an APPOINTMENT — the one row shape where the subtitle has to compose a
-        // fallback. The two fallbacks live in different methods (`historyRows` and `openNote`),
-        // so changing one and not the other is a live risk and shows up only here.
+        // A long note on an APPOINTMENT — the row shape where the subtitle and the headline have
+        // to make the SAME choice between two columns, one of which is null. They used to compose
+        // that choice separately in `historyRows` and `openNote`; they now share `brokerNameOf`,
+        // and this test is what keeps a future "just inline it" from re-splitting them.
         getHistory.emit([
             { ...APPOINTMENT_ONLY[0], notes: LONG_NOTE }
         ]);
@@ -594,7 +775,10 @@ describe('c-bov-broker-change-history', () => {
 
         expect(
             element.shadowRoot.querySelector('.bbc-note-sub').textContent
-        ).toBe('No Previous Broker → Marcus & Millichap');
+        ).toBe('Marcus & Millichap');
+        expect(
+            element.shadowRoot.querySelector('.bbc-note-sub').textContent
+        ).toBe(headline(rows(element)[0]).name);
     });
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -682,16 +866,29 @@ describe('c-bov-broker-change-history', () => {
         // full-note popup and the two centred states, not just the timeline.
         expect(CSS_SOURCE).toMatch(/:host\s*\{[^}]*overflow-wrap\s*:\s*anywhere/);
 
-        // The headline must WRAP. At 340px "No Previous Broker → Marcus & Millichap" legitimately
-        // needs two lines, and a firm name clipped to an ellipsis is worse than a wrapped one —
-        // the firm is the fact the whole entry exists to record.
-        expect(CSS_SOURCE).toMatch(/\.bbc-swap\s*\{[^}]*flex-wrap\s*:\s*wrap/);
+        // 🔴 THE HEADLINE MUST WRAP, NEVER TRUNCATE. At 340px a long firm name legitimately needs
+        // two lines, and a name clipped to an ellipsis is worse than a wrapped one — the firm is
+        // the fact the whole entry exists to record.
+        // ⚠ REPOINTED 2026-08-24. This used to pin `.bbc-swap { flex-wrap: wrap }`, which is gone
+        // with the arrow pairing: the headline is no longer a flex row, so `flex-wrap` on it
+        // would style nothing. The rule survives as (a) the grid item's min-width, (b) :host's
+        // overflow-wrap above, and (c) a ban on the two properties that would clip it.
+        expect(CSS_SOURCE).toMatch(/\.bbc-broker\s*\{[^}]*min-width\s*:\s*0/);
+        expect(CSS_SOURCE).not.toMatch(
+            /\.bbc-(broker|name)[^{]*\{[^}]*text-overflow/
+        );
+        expect(CSS_SOURCE).not.toMatch(
+            /\.bbc-(broker|name)[^{]*\{[^}]*white-space/
+        );
 
-        // 🔴 AND IT MUST HAVE A GAP. The template compiler discards the whitespace-only text
-        // nodes between the headline's spans, so with no gap the card renders
-        // "JLL→Cushman & Wakefield". This is the only thing standing between the design and that.
+        // 🔴 A GAP IS STILL LOAD-BEARING MARKUP, JUST ONE LINE FURTHER DOWN. The template compiler
+        // discards the whitespace-only text nodes between sibling elements, and line 2 is three
+        // real siblings — the timestamp, the "|" and the reason. With no gap the card renders
+        // "Aug 19, 2026, 3:04 PM|Better BOV Received".
+        // ⚠ REPOINTED 2026-08-24 from `.bbc-swap`, whose four spans this same rule used to hold
+        // apart. Deleting the arrow headline deleted that anchor; it did NOT delete the trap.
         expect(CSS_SOURCE).toMatch(
-            /\.bbc-swap\s*\{[^}]*gap\s*:\s*var\(--slds-g-spacing-/
+            /\.bbc-meta\s*\{[^}]*gap\s*:\s*var\(--slds-g-spacing-/
         );
 
         // The rail's line must reach the next dot on its own, without anyone measuring an entry.

@@ -4,6 +4,19 @@
    `slds/no-slds-var-without-fallback` warns on one.
 
    ═══════════════════════════════════════════════════════════════════════════════════════════
+   🔴 EVERY COLOUR ON THIS CARD IS A HOOK, INCLUDING THE RAIL'S DOT AND ITS CONNECTING LINE.
+   ═══════════════════════════════════════════════════════════════════════════════════════════
+   The card must be legible in BOTH light and dark. The SLDS 2 hooks used below resolve to a
+   `light-dark(...)` pair in the dark-capable (cosmos) theme — the track's hook is
+   light-dark(#c9c9c9, #444) and the surface it sits on is light-dark(#fff, #242424) — so a
+   literal hex written straight into a declaration would be correct in exactly one of the two
+   themes and invisible or glaring in the other. The literals that DO appear here are var()
+   FALLBACKS, reached only where hooks are unavailable altogether. T-TOKENS in the Jest suite
+   fails if any colour-bearing declaration stops going through var(--slds-…), and it anchors the
+   DOT and the TRACK separately: they carry no text, so if their colour resolves to nothing the
+   timeline simply is not there and no other assertion notices.
+
+   ═══════════════════════════════════════════════════════════════════════════════════════════
    🔴 NOTHING IN THIS COMPONENT MAY SCROLL SIDEWAYS AT ANY CONTAINER WIDTH.
    ═══════════════════════════════════════════════════════════════════════════════════════════
    This card moved from a ~800px main region to a ~340px record-page SIDEBAR, and the six-column
@@ -23,15 +36,17 @@
         `anywhere` affects min-content sizing, which is what lets rule 3 take effect. It sits on
         :host so it also covers the `.lv-error` banner, whose text is a server message this
         component neither controls nor can pre-wrap;
-     5. grid minimum `min(18rem, 100%)`, NEVER a bare 18rem — a bare 18rem minimum bursts any
-        container narrower than 288px. This is the rule that looks over-complicated and invites a
-        "simplifying" edit; its failure mode is invisible at desktop width and shows only in the
-        sidebar;
+     5. ⚠ RULE 5 WAS THE MULTI-COLUMN TILE GRID'S MINIMUM (`minmax(min(18rem, 100%), 1fr)`,
+        never a bare 18rem, which bursts any container narrower than 288px). IT IS GONE WITH
+        THE GRID (2026-08-24) AND MUST NOT BE RESTORED: the list is now a SINGLE-COLUMN
+        timeline, so there is no track minimum left to burst anything. Re-adding `auto-fill`
+        would put entries side by side and leave the rail joining things that are not
+        consecutive — T-CSS reds on the string;
      6. no fixed pixel widths on content.
-   The grid uses `auto-fill` and NO media queries on purpose: a media query measures the
-   VIEWPORT, but the constraint here is CONTAINER width — the same viewport yields a ~340px
-   sidebar or a ~900px main region. Placed in a wide region this card lays the same tiles out in
-   two or three columns with no code change.
+   NO MEDIA QUERIES, and that has not changed: a media query measures the VIEWPORT, but the
+   constraint here is CONTAINER width — the same viewport yields a ~276px sidebar or a ~900px
+   main region. Placed in a wide region this card renders the same single column, which is
+   correct for a timeline and is the one thing the tile grid got wrong.
 
    ⚠ --slds-g-color-on-surface-1 is the GREY one (#757575); -2 (#2e2e2e) and -3 (#181818) are
    progressively DARKER. The numbering reads like an ascending emphasis scale and is the reverse,
@@ -54,55 +69,122 @@
    card header by its removal. `.dbt-empty-sub` is a DIFFERENT rule and was kept — see the
    template's empty-state comment. */
 
-/* ===== Tile list ===== */
+/* ===== The timeline list =====
+   🔴 SINGLE COLUMN, DELIBERATELY, AND THE `repeat(auto-fill, minmax(min(18rem, 100%), 1fr))`
+   TILE GRID THAT PRECEDED IT IS GONE ON PURPOSE — not by oversight, and not something to
+   "restore" on the next wide-region pass. A connecting line down the left only means anything
+   if the entries it joins are consecutive; two entries side by side would leave the rail
+   drawing a line between things that do not follow one another. The single column is also why
+   the `min(18rem, 100%)` guard is no longer needed and no longer present: there is no track
+   minimum left to burst a narrow container. (Same reasoning, same words, as
+   c/bovBrokerChangeHistory — the two cards share a page and now share a rail.)
+   ⚠ THE LIST HAS NO `gap`, AND THAT IS LOAD-BEARING RATHER THAN AN OMISSION. See `.dbt-item`. */
 .dbt-list {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(min(18rem, 100%), 1fr));
-    gap: var(--slds-g-spacing-3, 0.75rem);
-    padding: var(--slds-g-spacing-3, 0.75rem) var(--slds-g-spacing-4, 1rem);
+    display: block;
+    padding: var(--slds-g-spacing-4, 1rem);
     margin: 0;
     list-style: none;
 }
 
+/* ONE ENTRY: the rail column, then the body. PORTED FROM c/bovBrokerChangeHistory's `.bbc-entry`
+   — same track, same gap, same spacing — because the two cards render the same visual idea in
+   the same sidebar and two implementations of it would drift apart on the first edit to either.
+   🔴 THE SEPARATION BETWEEN ENTRIES IS THIS ELEMENT'S `padding-bottom`, NEVER THE LIST'S `gap`.
+   A gap is OUTSIDE every item, so the rail's connecting track cannot span it and the line breaks
+   between every pair of dots. This is the single easiest thing to get wrong here. */
 .dbt-item {
     min-width: 0;
+    display: grid;
+    grid-template-columns: var(--slds-g-sizing-4, 0.75rem) 1fr;
+    column-gap: var(--slds-g-spacing-3, 0.75rem);
+    padding-bottom: var(--slds-g-spacing-4, 1rem);
 }
 
+.dbt-item:last-child {
+    padding-bottom: 0;
+}
+
+/* ===== The entry rail: a filled dot per entry, joined by a line =====
+   DECORATIVE — `aria-hidden` in the template. It says "this is one entry in a chronological
+   feed", which is true of BOTH kinds of entry, which is why it is uniform and why it is drawn
+   for a response as well as for an NDA. The per-milestone rail further down (`.dbt-step`) is a
+   different rail making a different claim, and it stays NDA-only. */
+.dbt-rail {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 0;
+}
+
+/* The dot sits a quarter-rem down so it centres on the first line of the headline beside it —
+   an offset in `rem`, not a magic `em` fraction of whatever font-size happens to apply.
+   ⚠ ITS COLOUR IS THE ACCENT HOOK, THE SAME ONE THE RETIRED RESPONSE ACCENT BAR USED, and it is
+   identical on every entry. It is a position marker, not a status: two dot colours down one rail
+   would read as a state the data does not have. */
+.dbt-dot {
+    flex: none;
+    width: var(--slds-g-sizing-3, 0.5rem);
+    height: var(--slds-g-sizing-3, 0.5rem);
+    margin-top: var(--slds-g-spacing-1, 0.25rem);
+    border-radius: var(--slds-g-radius-border-circle, 100%);
+    background: var(--slds-g-color-accent-container-1, #0176d3);
+}
+
+/* `flex: 1 1 auto` inside a full-height rail is what makes the line reach the NEXT dot without
+   anyone measuring anything: the rail stretches to the entry's height (grid `align-items:
+   stretch`), the dot is fixed, and the track takes the remainder — including the entry's bottom
+   padding. Nothing here needs to know how tall an entry is, which matters on THIS card more
+   than on the sibling: an NDA entry is three dt/dd pairs taller than a response entry. */
+.dbt-track {
+    flex: 1 1 auto;
+    width: var(--slds-g-sizing-border-1, 1px);
+    margin-top: var(--slds-g-spacing-1, 0.25rem);
+    background: var(--slds-g-color-border-1, #c9c9c9);
+}
+
+/* The line ends ON the last dot rather than trailing off into the card's padding, which would
+   read as "and then something else happened" on a list that is complete. */
+.dbt-item:last-child .dbt-track {
+    display: none;
+}
+
+/* ===== The entry body =====
+   🔴 NO BORDER, NO FILL, NO PADDING SINCE 2026-08-24. It was a bordered, filled, rounded tile;
+   the rail plus the entry's bottom padding do that job now, and a box drawn inside a rail is a
+   second container making the same statement — at ~276px it also cost ~28px of horizontal text
+   width the sidebar cannot spare. `min-width: 0` is the ONE load-bearing declaration left here
+   (see rule 3 in the header) and is pinned by T-CSS: it is the grid item holding every text
+   line, and without it one long broker name refuses to shrink and bursts the card. */
 .dbt-tile {
     min-width: 0;
-    padding: var(--slds-g-spacing-3, 0.75rem);
-    border: var(--slds-g-sizing-border-1, 1px) solid
-        var(--slds-g-color-border-1, #e5e5e5);
-    border-radius: var(--slds-g-radius-border-3, 0.5rem);
-    background: var(--slds-g-color-surface-container-1, #fff);
 }
 
-/* TERMINATED TILE. Muted rather than red: a party who declined is a normal, recorded outcome,
-   not an error state. The accessible signal is the badge TEXT and the tile's aria-label — never
-   this colour and never this dashed border.
+/* TERMINATED ENTRY. Muted rather than red: a party who declined is a normal, recorded outcome,
+   not an error state. The accessible signal is the badge TEXT and the group's aria-label — never
+   this colour.
+   ⚠ THE GREY FILL AND DASHED BORDER WERE RETIRED WITH THE TILE CHROME (2026-08-24), NOT LOST:
+   they were reinforcement of a state that has always travelled as the word "Declined", and there
+   is no box left to fill or dash. The muting below is what survived, and it is enough — a whole
+   entry in secondary grey beside black ones is legible at a glance.
    ⚠ --slds-g-color-disabled-container-1 is WHITE and --slds-g-color-on-disabled-1 is pale grey,
-   so the natural-looking "disabled" pairing would be near-invisible on this white card. */
-.dbt-tile--declined {
-    background: var(--slds-g-color-neutral-base-95, #f3f3f3);
-    border-style: dashed;
-}
+   so the natural-looking "disabled" pairing would have been near-invisible here anyway. */
 .dbt-tile--declined .dbt-nda,
 .dbt-tile--declined .dbt-broker,
 .dbt-tile--declined .dbt-c {
     color: var(--slds-g-color-on-surface-1, #757575);
 }
 
-/* RESPONSE TILE (2026-08-24, the merge). A Release Materials response rather than an NDA.
-   ⚠ IT IS A LEFT ACCENT, NOT A DIFFERENT BACKGROUND. The declined tile already owns "grey fill +
-   dashed border", and a second filled variant in the same list would read as a second kind of
-   terminated row. The accent marks a kind; the fill marks a state. They are allowed to co-occur.
-   🔴 AND THE ACCENT IS NOT THE SIGNAL. The kind travels as READABLE TEXT — the tile's own
-   `aria-label` says "release materials response" and the visible badge names the METHOD. Colour
-   alone is not a kind, exactly as colour alone is not a state on the declined tile. */
-.dbt-tile--response {
-    border-left: var(--slds-g-sizing-2, 0.25rem) solid
-        var(--slds-g-color-accent-container-1, #0176d3);
-}
+/* RESPONSE ENTRY (2026-08-24, the merge) — A CLASS WITH NO DECLARATIONS, ON PURPOSE.
+   🔴 DO NOT DELETE IT FROM THE TEMPLATE AS "UNSTYLED MARKUP". It is the selector hook the entire
+   Jest suite uses to tell the two kinds apart (`.dbt-tile--response` / `.dbt-tile:not(...)`),
+   and it is the counterpart of `.dbt-rmr` on the heading.
+   Its former left ACCENT BAR was retired with the tile chrome: sitting 12px from a 1px rail, a
+   4px vertical bar reads as a second, broken rail rather than as a kind marker. Nothing was lost
+   in the trade, because the accent was never the signal — the kind travels as READABLE TEXT (the
+   group's aria-label says "release materials response", the visible badge names the METHOD, the
+   heading is an RMR number and the labels are Received / Notes). Colour alone was not a kind
+   then and is not one now.
+   ⚠ DO NOT RE-ADD IT AS A DOT COLOUR EITHER. See `.dbt-dot`. */
 
 /* The response's RMR AutoNumber. Same visual weight as `.dbt-nda`, because the two kinds sit in
    ONE list and a heading that changed size between rows would read as a hierarchy that is not

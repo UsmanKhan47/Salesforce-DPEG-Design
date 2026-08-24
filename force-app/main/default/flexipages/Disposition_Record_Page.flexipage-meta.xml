@@ -436,7 +436,29 @@
          than genuinely validating it (documented earlier in this repo's history). The genuine
          verification available here is that the retrieve itself succeeded against the org and
          that this file was diffed against that retrieved copy field-by-field before comments
-         were reinserted, not that a subsequent dry run passed. -->
+         were reinserted, not that a subsequent dry run passed.
+
+         =====================================================================
+         2026-08-24 - RELEASE MATERIALS FELL THROUGH TO NEITHER main REGION COMPONENT. FIXED.
+         =====================================================================
+         c_dispositionMain (dispositionMain, main region) and flexipage_fieldSection (the
+         disposition-fields Details section, same region) are COMPLEMENTARY visibility rules -
+         one is an OR-of-EQUAL allowlist, the other the AND-of-NE inverse - and together with
+         flexipage_fieldSection_ndaDetails's single EQUAL-NDA rule they must partition the full
+         Disposition_Stage__c value set used by either record type (11 On_Market values, 9
+         Off_Market values, 9 shared) so every stage renders EXACTLY ONE of the three. Release
+         Materials was omitted from BOTH c_dispositionMain's allowlist and
+         flexipage_fieldSection's NE exclusion list, so at that stage neither intended surface
+         matched and the AND-of-NE rule (missing one exclusion) fired by default, silently
+         rendering Details instead of dispositionMain and hiding the Release Materials response
+         logger (c-release-materials-response-log) inside it.
+
+         🔴 THE INVARIANT THIS BUG BROKE, RESTATED SO IT DOES NOT RECUR: c_dispositionMain's
+         visibilityRule and flexipage_fieldSection's visibilityRule (both a few flexiPageRegions
+         below, in the `main` region) must always be exact complements. Any future stage added
+         to, removed from, or renamed within Disposition_Stage__c.field-meta.xml's valueSetDefinition
+         requires editing BOTH rules in the SAME change - one more EQUAL criterion added to the OR
+         chain, one more NE criterion added to the AND chain - never just one side. -->
     <flexiPageRegions>
         <itemInstances>
             <componentInstance>
@@ -1019,8 +1041,24 @@
                 </componentInstanceProperties>
                 <componentName>dispositionMain</componentName>
                 <identifier>c_dispositionMain</identifier>
+                <!-- 2026-08-24 (Release Materials visibility fix): a 5th EQUAL criterion was
+                     ADDED to this pre-existing OR rule (booleanFilter extended from
+                     "1 OR 2 OR 3 OR 4" to "1 OR 2 OR 3 OR 4 OR 5") so the Release Materials
+                     response logger (c-release-materials-response-log, wired inside
+                     dispositionMain under if:true={isReleaseMaterials}) actually renders at
+                     that stage. It previously fell through to the Details fieldSection below
+                     because Release Materials appeared in NEITHER component's rule.
+                     🔴 COMPLEMENT INVARIANT: this rule and the Details fieldSection's NE rule
+                     immediately below MUST stay exact complements over the full
+                     Disposition_Stage__c value set used by either record type (On_Market carries
+                     BOV Outreach/Active Listing; both share the rest) - every stage renders
+                     EXACTLY ONE of dispositionMain, this Details section, or the
+                     flexipage_fieldSection_ndaDetails EQUAL-NDA section further below, never
+                     zero and never more than one. Editing one side of this pair without the
+                     other reproduces this exact defect. The four pre-existing criteria are
+                     UNTOUCHED. -->
                 <visibilityRule>
-                    <booleanFilter>1 OR 2 OR 3 OR 4</booleanFilter>
+                    <booleanFilter>1 OR 2 OR 3 OR 4 OR 5</booleanFilter>
                     <criteria>
                         <leftValue>{!Record.Disposition_Stage__c}</leftValue>
                         <operator>EQUAL</operator>
@@ -1040,6 +1078,11 @@
                         <leftValue>{!Record.Disposition_Stage__c}</leftValue>
                         <operator>EQUAL</operator>
                         <rightValue>Sale Closes</rightValue>
+                    </criteria>
+                    <criteria>
+                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
+                        <operator>EQUAL</operator>
+                        <rightValue>Release Materials</rightValue>
                     </criteria>
                 </visibilityRule>
             </componentInstance>
@@ -1066,9 +1109,17 @@
                      also hides at the NDA stage. Its replacement -
                      flexipage_fieldSection_ndaDetails, a few flexiPageRegions below - carries
                      the mirror-image EQUAL rule and renders in exactly this slot only at that
-                     one stage. The four pre-existing criteria are UNTOUCHED. -->
+                     one stage. The four pre-existing criteria are UNTOUCHED.
+                     2026-08-24 (Release Materials visibility fix): a 6th NE criterion was ADDED
+                     (booleanFilter extended again, "1 AND 2 AND 3 AND 4 AND 5" to
+                     "1 AND 2 AND 3 AND 4 AND 5 AND 6") so this section also hides at Release
+                     Materials, now that c_dispositionMain's OR rule above claims that stage.
+                     🔴 COMPLEMENT INVARIANT - see the comment on c_dispositionMain's
+                     visibilityRule immediately above: this NE chain and that OR chain must stay
+                     exact complements. If a value is ever added to or removed from one, it must
+                     be added to or removed from the other in the SAME edit. -->
                 <visibilityRule>
-                    <booleanFilter>1 AND 2 AND 3 AND 4 AND 5</booleanFilter>
+                    <booleanFilter>1 AND 2 AND 3 AND 4 AND 5 AND 6</booleanFilter>
                     <criteria>
                         <leftValue>{!Record.Disposition_Stage__c}</leftValue>
                         <operator>NE</operator>
@@ -1093,6 +1144,11 @@
                         <leftValue>{!Record.Disposition_Stage__c}</leftValue>
                         <operator>NE</operator>
                         <rightValue>NDA</rightValue>
+                    </criteria>
+                    <criteria>
+                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
+                        <operator>NE</operator>
+                        <rightValue>Release Materials</rightValue>
                     </criteria>
                 </visibilityRule>
             </componentInstance>

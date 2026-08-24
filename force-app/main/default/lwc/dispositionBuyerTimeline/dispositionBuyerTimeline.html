@@ -28,7 +28,46 @@
         </template>
 
         <template lwc:else>
-            <!-- DATA: ONE STACKED TILE PER NDA.
+            <!-- DATA: ONE CHRONOLOGICAL LIST, ONE ENTRY PER RECORD, TWO KINDS OF ENTRY.
+                 ═══════════════════════════════════════════════════════════════════════
+                 🔴 RESTYLED 2026-08-24 TO THE USER-SUPPLIED TIMELINE DESIGN — AND IT IS
+                 STILL ONE CARD WITH ONE LIST.
+                 ═══════════════════════════════════════════════════════════════════════
+                 The design was read as a VISUAL LANGUAGE, not as a layout to copy: a
+                 coloured icon chip in the header (already present — a `standard:` icon
+                 on a lightning-card renders as a filled coloured chip, and the sibling
+                 card uses the identical mechanism), the count in the title (already
+                 present), a vertical rail down the left, and each entry as a compact
+                 block of headline / muted meta / labelled detail. It was NOT read as an
+                 instruction to split this into three sections or three cards: the whole
+                 point of the 2026-08-24 merge was that the two sources interleave.
+
+                 WHAT ACTUALLY CHANGED IS THE CONTAINER, NOT THE CONTENT:
+                   · the `repeat(auto-fill, minmax(min(18rem,100%), 1fr))` TILE GRID is
+                     gone. ⚠ A timeline is single-column BY DEFINITION — two entries side
+                     by side leave the rail drawing a line between things that are not
+                     consecutive. That is why the multi-column guard it used to need is
+                     also gone, and why re-adding `auto-fill` reds T-CSS;
+                   · each <li> is now `[rail][body]`, the rail being a straight port of
+                     c/bovBrokerChangeHistory's (see the comment on it below);
+                   · the per-entry BORDER + FILL is gone. The rail and the entry's bottom
+                     padding separate one entry from the next now, and a box drawn inside
+                     a rail is a second container saying the same thing — at ~276px it
+                     also cost ~28px of text width the sidebar cannot spare.
+                     ⚠ TWO STYLE RULES WENT WITH IT and their JOB DID NOT: the declined
+                     entry's grey fill / dashed border, and the response entry's left
+                     accent bar. Both were reinforcement of a signal that has always
+                     travelled as READABLE TEXT (the "Declined" badge, the method badge,
+                     the group's aria-label), and both were retired rather than ported
+                     because a 4px accent bar 12px from a 1px rail reads as a second,
+                     broken rail. The classes `.dbt-tile--declined` and
+                     `.dbt-tile--response` REMAIN on the markup — they are the selector
+                     hooks the whole suite tells the two kinds apart with, and the
+                     declined entry still mutes its own text.
+                   · the CONTENT of an entry is byte-for-byte what it was: same headings,
+                     same badges, same broker subtitle, same dt/dd pairs, same milestone
+                     rail on the NDA branch. Every existing assertion still applies.
+
                  ═══════════════════════════════════════════════════════════════════════
                  🔴 THIS WAS A SIX-COLUMN TABLE AND MUST NEVER BECOME ONE AGAIN.
                  ═══════════════════════════════════════════════════════════════════════
@@ -39,9 +78,12 @@
                  five value columns at ~35px each, every date clipped to an ellipsis.
 
                  The replacement is the same shape c/competingBrokerSubmissions adopted for
-                 the same reason: a <ul>/<li> of self-labelling tiles, each carrying its own
-                 <dl>, so no column has to be shared across rows and nothing scrolls
-                 sideways at ANY container width. The dt/dd pairs are the single-record
+                 the same reason: a <ul>/<li> of self-labelling entries, each carrying its
+                 own <dl>, so no column has to be shared across rows and nothing scrolls
+                 sideways at ANY container width. ⚠ THE 2026-08-24 RESTYLE TOOK THE BOX OFF
+                 THOSE ENTRIES BUT NOT THE PROPERTY THAT MATTERS — each one still carries
+                 its own labels and shares no column with its neighbours, which is the part
+                 that makes the sidebar work. The dt/dd pairs are the single-record
                  equivalent of the <th scope="col"> -> <td> association the table provided;
                  the labels are now VISIBLE TEXT on every tile rather than a heading row far
                  away at the top, which is what makes a tile readable on its own.
@@ -81,6 +123,38 @@
                 >
                     <template for:each={timelineRows} for:item="row">
                         <li key={row.id} class="dbt-item">
+                            <!-- ═══════════════════════════════════════════════════════
+                                 THE ENTRY RAIL (2026-08-24) — A DOT PER ENTRY, JOINED.
+                                 ═══════════════════════════════════════════════════════
+                                 🔴 THIS IS THE SAME RAIL AS c/bovBrokerChangeHistory's
+                                 `.bbc-rail` / `.bbc-dot` / `.bbc-track`, deliberately —
+                                 the two cards sit in the SAME sidebar on the SAME record
+                                 page, and two implementations of one visual idea drift
+                                 apart on the first change to either. The markup and the
+                                 CSS treatment are ports of that bundle's; only the class
+                                 prefix differs (LWC styles are per-bundle, so the rules
+                                 cannot literally be shared).
+
+                                 ⚠ IT IS DECORATIVE AND `aria-hidden`. It carries nothing
+                                 the entry's own text does not: the dot marks "this is one
+                                 entry" and the track joins it to the next. An announced
+                                 pair of empty spans per entry is noise.
+
+                                 🔴 IT SITS OUTSIDE THE GROUP DIV, NOT INSIDE IT. The
+                                 group is the addressable ENTRY (role + aria-label +
+                                 `.dbt-tile`, which is what every row assertion in the
+                                 suite selects); putting decoration inside it would make
+                                 the rail part of the thing a screen reader announces and
+                                 would put a non-text child inside the labelled group.
+
+                                 🔴 EVERY ENTRY GETS ONE, BOTH KINDS. See the response
+                                 branch below for why that does NOT contradict the
+                                 "no rail on a response" rule — it is a different rail. -->
+                            <div class="dbt-rail" aria-hidden="true">
+                                <span class="dbt-dot"></span>
+                                <span class="dbt-track"></span>
+                            </div>
+
                             <!-- ⚠ THE GROUP ROLE SITS ON THIS INNER DIV, NOT ON THE <li>.
                                  role="group" on the <li> would replace its implicit
                                  `listitem` role, and axe's `list` rule then reports the
@@ -113,11 +187,30 @@
                                      badge is the METHOD as readable text, and the broker
                                      is the subtitle — the same shape as the NDA tile so
                                      the eye reads down one column.
-                                     🔴 NO MILESTONE RAIL HERE. The rail's markers mean
-                                     "this milestone has happened / is still to come",
-                                     which is a claim about a JOURNEY; a response is a
-                                     single event with one timestamp, so a rail beside it
-                                     would be decoration asserting something untrue.
+                                     🔴 NO MILESTONE RAIL HERE. STILL TRUE AFTER THE
+                                     2026-08-24 RESTYLE — RE-DERIVED, NOT INHERITED.
+                                     The card now has TWO rails and they make DIFFERENT
+                                     claims, which is the whole reason both can be
+                                     correct at once:
+                                       · the ENTRY rail (`.dbt-rail`, one dot per <li>,
+                                         far left) claims only "this is one entry in a
+                                         chronological feed". That is true of an NDA and
+                                         equally true of a response, so it is drawn for
+                                         BOTH kinds and is uniform;
+                                       · the MILESTONE rail (`.dbt-step` markers, inline
+                                         with the labels inside this body) claims "this
+                                         milestone has happened / is still to come",
+                                         which is a claim about a JOURNEY. A response is
+                                         a single event with one timestamp, so a marker
+                                         beside "Received" would assert a progression
+                                         that does not exist.
+                                     ⚠ SO THE ORIGINAL REASONING IS NOT RETRACTED — it
+                                     was always about the MILESTONE rail, and the
+                                     milestone rail still stops at the NDA branch. What
+                                     changed is that a second, weaker rail now exists at
+                                     the LIST level. Do not "harmonise" them by adding
+                                     `.dbt-step` here, and do not withhold `.dbt-rail`
+                                     from this branch citing the paragraph above.
                                      ⚠ THE HEADING TAKES `dbt-rmr`, NOT `dbt-nda`. A
                                      shared class would make the existing "one row per
                                      NDA, headed by its NUMBER" assertion silently start

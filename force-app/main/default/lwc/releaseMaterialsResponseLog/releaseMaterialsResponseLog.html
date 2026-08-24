@@ -1,28 +1,85 @@
 <template>
-    <!-- 🔴 THE CARD CHROME IS UNCONDITIONAL. Every branch below renders INSIDE it, so a card that
+    <!-- ═══════════════════════════════════════════════════════════════════════════════════════
+         🔴 THIS CARD IS DELIBERATELY THE SAME COMPONENT FAMILY AS `c/loiCounterOffer`.
+         ═══════════════════════════════════════════════════════════════════════════════════════
+         User instruction 2026-08-24: *"make it the same as the LOI counter offers LWC"*. That
+         component is the house idiom for a "card with an inline entry form above the log of what
+         has already been recorded", and this one was a visual outlier. What was adopted from it,
+         verbatim:
+           · `<lightning-card icon-name="standard:…">` + `<span slot="title">Label (N)</span>`;
+           · THE OPENER LIVES IN `slot="actions"`, labelled "Add" with `utility:add` — NOT a
+             button in the body;
+           · ONE body wrapper carrying `slds-p-horizontal_small slds-p-bottom_small`;
+           · the entry form is an `slds-box slds-box_x-small slds-m-bottom_small`, its fields
+             separated by `slds-m-top_x-small`;
+           · the form's buttons are `slds-m-top_small`, brand Save FIRST, neutral Cancel SECOND,
+             left-aligned;
+           · the empty state is muted body text (`slds-text-color_weak`), not a centred icon
+             column;
+           · state pills are `slds-badge`.
+         🔴 SPACING IS EXPLICIT SLDS MARGIN UTILITIES OR AN EXPLICIT `gap` — NEVER RENDERED
+         WHITESPACE. The LWC template compiler discards whitespace-only text nodes between sibling
+         elements, so two adjacent tags render EDGE TO EDGE with literally nothing between them
+         (measured four times this week in this repo). Removing a `slds-m-top_x-small` here does
+         not "tighten" the form, it welds two fields together.
+         ⚠ WHERE THIS CARD DIVERGES FROM loiCounterOffer, AND WHY, IS RECORDED AT EACH SITE
+         BELOW — there are four. Do not "finish the job" on any of them without reading the reason.
+
+         🔴 THE CARD CHROME IS UNCONDITIONAL. Every branch below renders INSIDE it, so a card that
          is briefly empty still tells the user WHICH panel is thinking. The count is appended only
          once the wire has answered — see `cardTitle` in the JS for why a premature "(0)" is a claim
          this card may not make. -->
     <lightning-card icon-name="standard:feedback">
         <span slot="title">{cardTitle}</span>
 
-        <!-- ERROR: visible and loud. The controller THROWS rather than returning an empty context
-             precisely so this branch exists — a silent blank card on a sale with three logged
-             responses is a confident wrong answer nothing on the page contradicts.
-             `lv-error` is the ONE genuinely cross-bundle class in this repo (shared with
-             recentLeads / recentOpportunities / renewalList / competingBrokerSubmissions /
-             dispositionBuyerTimeline) — do not rename it. -->
-        <template lwc:if={hasError}>
-            <div
-                class="lv-error rmr-error slds-p-around_medium slds-text-color_error"
-                role="alert"
-            >
-                {errorMessage}
-            </div>
+        <!-- ═══════════════════════════════════════════════════════════════════════════════════
+             THE OPENER — IN THE CARD'S ACTIONS SLOT, EXACTLY AS `c/loiCounterOffer` PLACES ITS
+             "Add" BUTTON.
+             ═══════════════════════════════════════════════════════════════════════════════════
+             ⚠ DIVERGENCE 1 — loiCounterOffer keeps its Add button MOUNTED and merely
+             `disabled={editing}` while its form is open. This one is UNRENDERED while the form is
+             open, because that is existing BEHAVIOUR, not styling: a Jest test pins "the opener is
+             replaced by the form, not shown beside it", and the brief for this pass was explicitly
+             "theming, not a rewrite". Hiding vs disabling is a behavioural choice and was left
+             alone.
+             It is also hidden entirely for a persona who may not create — see `canLog` in the JS:
+             a Save button that is always refused is worse than no button. Both conditions live in
+             `showOpener` because a slotted element cannot sit inside the body's if/else chain. -->
+        <template lwc:if={showOpener}>
+            <lightning-button
+                slot="actions"
+                data-open
+                label="Add"
+                icon-name="utility:add"
+                onclick={handleOpenForm}
+            ></lightning-button>
         </template>
 
-        <template lwc:else>
-            <div class="rmr-body">
+        <!-- ONE padded body wrapper for every branch, including the error — loiCounterOffer's
+             shape. The error used to carry its own `slds-p-around_medium` from outside this
+             wrapper; inside it that would double up. -->
+        <div class="slds-p-horizontal_small slds-p-bottom_small">
+            <!-- ERROR: visible and loud. The controller THROWS rather than returning an empty
+                 context precisely so this branch exists — a silent blank card on a sale with three
+                 logged responses is a confident wrong answer nothing on the page contradicts.
+                 `lv-error` is the ONE genuinely cross-bundle class in this repo (shared with
+                 recentLeads / recentOpportunities / renewalList / competingBrokerSubmissions /
+                 dispositionBuyerTimeline) — do not rename it.
+                 ⚠ DIVERGENCE 2 — loiCounterOffer prefixes its server message with a lead-in
+                 ("Counter offers could not be loaded: {msg}"). NOT ADOPTED: this component's own
+                 fallback message already names the card ("Couldn't load the release materials
+                 responses."), so the lead-in would render the same sentence twice in a row. The
+                 `slds-text-color_error` + `slds-p-vertical_x-small` treatment IS adopted. -->
+            <template lwc:if={hasError}>
+                <p
+                    class="lv-error rmr-error slds-text-color_error slds-p-vertical_x-small"
+                    role="alert"
+                >
+                    {errorMessage}
+                </p>
+            </template>
+
+            <template lwc:else>
                 <!-- 🔴 "SAY SO IN THE HEADER" (user instruction, 2026-08-24). A sale with no
                      appointed broker is a state the user needs to know about BEFORE deciding to
                      log, because every response recorded now is recorded without one.
@@ -30,19 +87,29 @@
                      fact in its own "Response from" block — see below. Rendering both at once
                      would be the same sentence twice on one small card, which reads as an error
                      rather than as emphasis. `role="status"` and not `alert`: no broker having
-                     been appointed yet is a normal stage of a sale, not a problem. -->
+                     been appointed yet is a normal stage of a sale, not a problem.
+                     Muted body text (`slds-text-color_weak`) — the same treatment loiCounterOffer
+                     gives its "Set a Primary LOI on this deal…" line, which is the same kind of
+                     sentence: a fact about the deal, not a failure. -->
                 <template lwc:if={showNoBrokerNotice}>
-                    <p class="rmr-notice" data-no-broker-notice role="status">
+                    <p
+                        class="slds-text-color_weak slds-p-vertical_x-small"
+                        data-no-broker-notice
+                        role="status"
+                    >
                         No broker is appointed on this sale yet. Responses logged now are
                         recorded without one.
                     </p>
                 </template>
 
                 <!-- ═══════════════════════════════════════════════════════════════════════════
-                     THE FORM. Closed by default; opened by the button below.
+                     THE FORM. Closed by default; opened by the header button above.
+                     `slds-box slds-box_x-small slds-m-bottom_small` is loiCounterOffer's entry
+                     form container, adopted verbatim — it replaces a hand-rolled `.rmr-form` rule
+                     that re-implemented the same border, radius and padding with raw hooks.
                      ═══════════════════════════════════════════════════════════════════════════
-                     🔴 FIELD ORDER IS THE REQUIREMENT, NOT A LAYOUT PREFERENCE: **Method,
-                     Response from, Notes** (user instruction, 2026-08-24), and it is pinned by a
+                     🔴 FIELD ORDER IS THE REQUIREMENT, NOT A LAYOUT PREFERENCE: Method,
+                     Response from, Notes (user instruction, 2026-08-24), and it is pinned by a
                      Jest test that walks the RENDERED tree in document order. "Response from" is
                      second even though it is the only one of the three that is NOT a control.
                      ⚠ AN EARLIER DRAFT PUT IT ABOVE THE FORM — "it is a fact about the sale, not a
@@ -54,9 +121,8 @@
                      payload, silently dropping a programmatic one WITH A SUCCESS TOAST. The write
                      is imperative Apex through a service that owns the resolution. -->
                 <template lwc:if={isFormOpen}>
-                    <div class="rmr-form" data-form>
+                    <div class="slds-box slds-box_x-small slds-m-bottom_small" data-form>
                         <lightning-combobox
-                            class="rmr-field"
                             data-method
                             label="Method"
                             placeholder="How did this response arrive?"
@@ -69,29 +135,40 @@
                         <!-- ═══════════════════════════════════════════════════════════════════
                              THE APPOINTED BROKER — RESOLVED, DISPLAYED, NEVER PICKED.
                              ═══════════════════════════════════════════════════════════════════
+                             ⚠ DIVERGENCE 3 — loiCounterOffer has no read-only field, so it offers
+                             no idiom to copy for one. Rather than invent a third, this uses SLDS's
+                             OWN read-only form-element shape (`slds-form-element` +
+                             `__label` / `__static` / `__help`), which is what makes this block
+                             read as a sibling of the combobox and textarea above and below it
+                             instead of as free-floating text. The `.rmr-readonly-*` classes are
+                             KEPT alongside: they are the hooks the field-order Jest test walks.
                              🔴 RENDERED AS TEXT RATHER THAN AS A DISABLED LOOKUP, for the reason
                              `c/dispositionLogOfferModal` records for the same value: a disabled
                              lookup still looks like a control somebody may enable, and there is
                              no case in which this value should be hand-picked. User decision
-                             2026-08-24, *"lookup to the appointed broker only"* — there is exactly
+                             2026-08-24, "lookup to the appointed broker only" — there is exactly
                              ONE right answer per sale, so a picker would be a control with one
                              correct option and several wrong ones.
                              🔴 AND IT IS NOT AN INPUT AT ALL: nothing here is sent to the server.
                              `saveResponse` takes no broker argument, so the resolution happens
                              again at save time and a stale value on an open form cannot be
                              submitted. -->
-                        <div class="rmr-broker rmr-field" data-broker>
-                            <span class="rmr-readonly-label">Response from</span>
+                        <div class="slds-form-element slds-m-top_x-small" data-broker>
+                            <span class="rmr-readonly-label slds-form-element__label">Response from</span>
                             <template lwc:if={hasBroker}>
-                                <p class="rmr-readonly-value">{brokerName}</p>
-                                <p class="rmr-readonly-help">{brokerSource}</p>
+                                <p class="rmr-readonly-value slds-form-element__static">
+                                    {brokerName}
+                                </p>
+                                <p class="rmr-readonly-help slds-form-element__help">
+                                    {brokerSource}
+                                </p>
                             </template>
 
-                            <!-- 🔴 THE NO-BROKER BRANCH DOES **NOT** REFUSE THE FORM, AND THAT IS
+                            <!-- 🔴 THE NO-BROKER BRANCH DOES NOT REFUSE THE FORM, AND THAT IS
                                  THE DELIBERATE DIFFERENCE FROM c/dispositionLogOfferModal, WHICH
-                                 DOES. User instruction 2026-08-24: *"If no broker is resolvable,
+                                 DOES. User instruction 2026-08-24: "If no broker is resolvable,
                                  still allow the entry with a blank broker rather than blocking the
-                                 log."* An offer naming nobody cannot be attributed or chosen
+                                 log." An offer naming nobody cannot be attributed or chosen
                                  between; "a decision came back on the 3rd" is a complete and
                                  useful record on its own.
                                  ⚠ BUT IT MUST SAY SO. A blank value under a "Response from" label
@@ -101,12 +178,12 @@
                                  it actionable rather than merely honest. -->
                             <template lwc:else>
                                 <p
-                                    class="rmr-readonly-value rmr-readonly-value_empty"
+                                    class="rmr-readonly-value rmr-readonly-value_empty slds-form-element__static"
                                     data-no-broker
                                 >
                                     No broker appointed yet
                                 </p>
-                                <p class="rmr-readonly-help">
+                                <p class="rmr-readonly-help slds-form-element__help">
                                     This response will be recorded without a broker.
                                     {brokerSource}.
                                 </p>
@@ -114,7 +191,7 @@
                         </div>
 
                         <lightning-textarea
-                            class="rmr-field"
+                            class="slds-m-top_x-small"
                             data-notes
                             label="Notes"
                             placeholder="The question asked, the decision given, or the offer terms."
@@ -123,45 +200,56 @@
                             onchange={handleNotesChange}
                         ></lightning-textarea>
 
-                        <div class="rmr-actions">
-                            <lightning-button
-                                data-cancel
-                                label="Cancel"
-                                onclick={handleCancel}
-                                disabled={isSaving}
-                            ></lightning-button>
+                        <!-- loiCounterOffer's button block, adopted verbatim: `slds-m-top_small`,
+                             BRAND SAVE FIRST with `slds-m-right_x-small`, neutral Cancel second,
+                             left-aligned. The old block was a right-aligned flex row with Cancel
+                             first — the single loudest "different component family" tell on the
+                             card. The right margin is an explicit utility, NOT a `gap`, precisely
+                             because the compiler eats the whitespace between the two tags. -->
+                        <div class="slds-m-top_small">
                             <!-- ⚠ `disabled={isSaveDisabled}` IS A GETTER, NOT A TEMPLATE
                                  EXPRESSION — LWC has no expressions in templates, and a
                                  client-side disable is an AFFORDANCE ONLY. The service refuses a
                                  blank or unknown method with its own authored message whatever
                                  this button does. -->
                             <lightning-button
+                                class="slds-m-right_x-small"
                                 data-save
                                 variant="brand"
-                                label="Log response"
+                                label="Save"
                                 onclick={handleSave}
                                 disabled={isSaveDisabled}
                             ></lightning-button>
+                            <lightning-button
+                                data-cancel
+                                variant="neutral"
+                                label="Cancel"
+                                onclick={handleCancel}
+                                disabled={isSaving}
+                            ></lightning-button>
                         </div>
-                    </div>
-                </template>
-
-                <!-- The opener. Hidden entirely for a persona who may not create — see `canLog`
-                     in the JS: a Save button that is always refused is worse than no button. -->
-                <template lwc:elseif={canLog}>
-                    <div class="rmr-actions rmr-actions_open">
-                        <lightning-button
-                            data-open
-                            label="Log a response"
-                            icon-name="utility:add"
-                            onclick={handleOpenForm}
-                        ></lightning-button>
                     </div>
                 </template>
 
                 <!-- ═══════════════════════════════════════════════════════════════════════════
                      WHAT HAS ALREADY BEEN LOGGED — NEWEST FIRST.
                      ═══════════════════════════════════════════════════════════════════════════
+                     ⚠ DIVERGENCE 4, AND THE BIG ONE — loiCounterOffer renders its history as
+                     `<c-list-datatable>`. NOT ADOPTED, for two reasons that both outrank the
+                     visual match:
+                       1. It is a REWRITE, not a theme. A datatable needs a `columns` definition
+                          and sort state in the JS, and this pass was explicitly scoped to
+                          presentation with the behaviour, fields and payload untouched.
+                       2. A fixed-column table does not survive the ~340px record-page sidebar.
+                          `c/dispositionBuyerTimeline` was built as a grid for an ~800px region,
+                          moved, and had to be REBUILT as exactly this shape — a ul/li of
+                          self-labelling tiles with their own dl. That rework is not worth doing
+                          twice.
+                     WHAT WAS ADOPTED INSTEAD: the tiles now use loiCounterOffer's OWN container
+                     class, `slds-box slds-box_x-small` (the same one its entry form uses), rather
+                     than a hand-rolled border/radius/background that merely imitated it; and the
+                     method pill is now `slds-badge`, the badge class loiCounterOffer uses in its
+                     card title.
                      ⚠ THE ORDER IS THE SERVER'S. `ReleaseMaterialsResponseSelector` orders
                      `Entry_DateTime__c DESC NULLS LAST, Name DESC` and this component does NOT
                      re-sort — two sorts would be free to disagree.
@@ -173,13 +261,13 @@
                     <ul class="rmr-list" role="list" aria-label="Logged responses">
                         <template for:each={entries} for:item="entry">
                             <li key={entry.id} class="rmr-item">
-                                <!-- ⚠ THE GROUP ROLE SITS ON THIS INNER DIV, NOT ON THE <li>.
-                                     role="group" on the <li> would REPLACE its implicit `listitem`
-                                     role, and axe's `list` rule then reports the <ul> as having a
+                                <!-- ⚠ THE GROUP ROLE SITS ON THIS INNER DIV, NOT ON THE li.
+                                     role="group" on the li would REPLACE its implicit `listitem`
+                                     role, and axe's `list` rule then reports the ul as having a
                                      disallowed child — the accessible name would cost the list
                                      semantics it was added to complement. -->
                                 <div
-                                    class="rmr-tile"
+                                    class="rmr-tile slds-box slds-box_x-small"
                                     role="group"
                                     aria-label={entry.rowLabel}
                                 >
@@ -189,7 +277,7 @@
                                              BADGE, never as a colour alone. This repo has a
                                              measured incident of a text->badge swap deleting
                                              accessible content a test had pinned. -->
-                                        <span class="rmr-badge" data-method-badge>
+                                        <span class="slds-badge" data-method-badge>
                                             {entry.method}
                                         </span>
                                     </div>
@@ -233,22 +321,26 @@
                     </ul>
                 </template>
 
-                <!-- EMPTY. A STATUS, not an alert: nothing having come back yet is the ordinary
-                     state of a sale the day materials go out, not a problem. -->
+                <!-- EMPTY. loiCounterOffer's idiom is ONE muted line of body text
+                     (`slds-text-color_weak slds-p-vertical_x-small`), not a centred icon column —
+                     the icon/headline/subtext stack was the second loudest "different family"
+                     tell, and it is gone.
+                     ⚠ THE EXPLANATORY SECOND LINE IS KEPT (loiCounterOffer has only the one).
+                     Deleting user-facing text that says WHERE the rows come from is a content
+                     change, not a theming one, and it was not in scope. Both lines are muted body
+                     text, so the block still reads as one quiet sentence-pair rather than as a
+                     designed empty state.
+                     A STATUS, not an alert: nothing having come back yet is the ordinary state of
+                     a sale the day materials go out. -->
                 <template lwc:elseif={isEmpty}>
-                    <div class="rmr-empty" role="status">
-                        <lightning-icon
-                            icon-name="utility:comments"
-                            size="small"
-                            class="rmr-empty-icon"
-                        ></lightning-icon>
-                        <p class="rmr-empty-text">No responses yet</p>
-                        <p class="rmr-empty-sub">
+                    <div class="rmr-empty slds-p-vertical_x-small" role="status">
+                        <p class="rmr-empty-text slds-text-color_weak">No responses yet</p>
+                        <p class="rmr-empty-sub slds-text-color_weak">
                             Rows appear here as brokers respond to the released materials.
                         </p>
                     </div>
                 </template>
-            </div>
-        </template>
+            </template>
+        </div>
     </lightning-card>
 </template>

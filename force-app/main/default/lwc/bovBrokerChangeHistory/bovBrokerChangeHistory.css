@@ -63,7 +63,8 @@
 
 /* Visually hidden, still announced. LOCAL ON PURPOSE — `slds-assistive-text` is defined in a
    document-level SLDS stylesheet, so under native shadow DOM it would not reach this component
-   and the words it hides ("replaced by", "Reason") would render as visible clutter. This rule
+   and the words it hides ("Replaced broker:", "Appointed broker:", "Reason") would render as
+   visible clutter. This rule
    travels with the component and cannot fail that way.
    ⚠ Sized in `--slds-g-sizing-border-1` rather than a literal 1px so the whole stylesheet stays
    free of raw pixel values; the box is never seen, so the exact size is immaterial. */
@@ -146,38 +147,34 @@
     min-width: 0;
 }
 
-/* ===== Line 1 — the swap: "this became that" =====
-   WRAPS rather than truncates. At 340px "No Previous Broker → Marcus & Millichap" legitimately
-   needs two lines, and a firm name clipped to an ellipsis is worse than a wrapped one — the firm
-   is the fact the whole entry exists to record.
-   ⚠ THE `gap` IS NOT COSMETIC. The template compiler discards the whitespace-only text nodes
-   between these spans, so with `gap: 0` the headline renders as "JLL→Cushman & Wakefield". The
-   space between the firms and the arrow comes from here and nowhere else. */
-.bbc-swap {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: var(--slds-g-spacing-2, 0.5rem);
+/* ===== Line 1 — the broker's name =====
+   🔴 SIMPLIFIED 2026-08-24. `.bbc-swap`, `.bbc-outgoing`, `.bbc-incoming` and `.bbc-arrow` are
+   GONE: the headline was "{outgoing} → {incoming}" and is now a single name (which firm that is
+   is decided in the JS). Two names and a glyph wrapped to three lines at this width to say one
+   thing. Do not resurrect them — the classes have no markup left to style.
+
+   NOT A FLEX ROW ANY MORE, AND THAT IS THE POINT. The old rule needed `display:flex` +
+   `flex-wrap` + a `gap` because it laid out four siblings on one line, and the gap was
+   load-bearing markup (the compiler eats the whitespace between them). With one visible span
+   there is nothing to space: the heading is ordinary flow content that wraps by itself, helped
+   by `overflow-wrap: anywhere` on :host. The remaining span beside it is `.bbc-sr-only`, which is
+   absolutely positioned and out of flow.
+   ⚠ THE GAP RULE STILL MATTERS ON LINE 2 (`.bbc-meta`), where the timestamp, the pipe and the
+   reason are three real siblings — that is where the T-CSS gap pin now points.
+
+   IT WRAPS, IT NEVER TRUNCATES. At 340px a firm name legitimately needs two lines, and a name
+   clipped to an ellipsis is worse than a wrapped one: the firm is the fact the whole entry
+   exists to record. Nothing here may set `text-overflow` or a `white-space` that prevents it. */
+.bbc-broker {
     min-width: 0;
     margin: 0;
-}
-
-/* 🔴 BOTH FIRMS CARRY THE SAME WEIGHT AND COLOUR, per the supplied design. The outgoing firm
-   used to be greyed and struck through; that de-emphasis is deliberately GONE. Restoring it
-   would re-rank two facts the design ranks equally — and on an "appointment" entry it would
-   strike through the words "No Previous Broker", which is not a thing that was cancelled. */
-.bbc-outgoing,
-.bbc-incoming {
-    min-width: 0;
     font-size: var(--slds-g-font-scale-1, 0.875rem);
     font-weight: var(--slds-g-font-weight-7, 700);
     color: var(--slds-g-color-on-surface-3, #181818);
 }
 
-.bbc-arrow {
-    flex: none;
-    font-size: var(--slds-g-font-scale-1, 0.875rem);
-    color: var(--slds-g-color-on-surface-1, #757575);
+.bbc-name {
+    min-width: 0;
 }
 
 /* ===== Line 2 — when | why ===== */

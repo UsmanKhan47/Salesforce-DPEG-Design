@@ -39,3 +39,40 @@
        part of the same rhythm rather than a second, similar value. */
     gap: var(--slds-g-spacing-4, 1rem);
 }
+
+/*
+  ═════════════════════════════════════════════════════════════════════════════
+  THE DIVIDER BETWEEN THE PREFERRED CARD AND THE MATRIX.
+  ═════════════════════════════════════════════════════════════════════════════
+  🔴 THE "ONLY WHEN BOTH SECTIONS RENDER" RULE IS ENFORCED IN THE TEMPLATE, NOT
+  HERE. The element sits inside `lwc:if={hasPreferredBroker}` alongside the card
+  it follows, so a trailing rule above a lone matrix is unreachable rather than
+  merely unlikely. Do NOT move it out and re-gate it with `:not(:last-child)` or
+  an adjacency selector — this stack has exactly two possible shapes, and a CSS
+  gate would silently start drawing again the day a third child is added.
+
+  ⚠ A ONE-PIXEL BOX, NOT A `border-top` ON THE LOWER CARD. Each child renders its
+  own `lightning-card`, so a border on the card below would sit flush against
+  that card's own edge and read as a doubled line. As a flex ITEM the rule takes
+  `.panel-stack`'s 1rem gap on BOTH sides and is centred between the two cards
+  with no margin at all — which also keeps the stylesheet's no-margin invariant
+  (see the header above) intact. Spacing between the two cards is therefore
+  1rem + 1px + 1rem by design; that breathing room is what makes the boundary
+  read as deliberate rather than as a hairline crammed into the old gap.
+
+  🔴 `flex: none` IS LOAD-BEARING. Flex items may shrink, and a 1px-high item in
+  a column that runs short of space shrinks to nothing — the divider would simply
+  not be there, with no other visible change and nothing in a jsdom suite able to
+  see it. jsdom performs no layout, so this file is pinned as SOURCE TEXT.
+
+  ⚠ TOKENS, NOT LITERALS, BECAUSE OF DARK MODE. `--slds-g-color-border-1` is
+  `light-dark(#c9c9c9, #444)` under SLDS 2, so it inverts with the theme; a
+  literal `#c9c9c9` would stay pale grey and vanish on a dark surface. Same hook
+  and same treatment as `c/brokerListing`'s `.cfo-rule`, deliberately — the two
+  cards sit inches apart on the same page and must not use two treatments.
+*/
+.panel-rule {
+    flex: none;
+    height: var(--slds-g-sizing-border-1, 1px);
+    background: var(--slds-g-color-border-1, #c9c9c9);
+}

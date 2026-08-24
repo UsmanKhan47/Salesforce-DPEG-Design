@@ -509,9 +509,116 @@ describe('c-bov-broker-panel', () => {
 
         const stack = element.shadowRoot.querySelector('.panel-stack');
         expect(stack).not.toBeNull();
+        // ⚠ THE DIVIDER IS A SIBLING OF THE TWO CARDS, NOT A CHILD OF EITHER —
+        // that is what makes the stack's own 1rem gap fall on both sides of it
+        // and centre it. Nesting it inside the preferred card's tag, or wrapping
+        // the pair in a <div>, both fail here.
         expect(
             [...stack.children].map((el) => el.tagName.toLowerCase())
-        ).toEqual(['c-bov-comparison-matrix', 'c-bov-comparison-matrix']);
+        ).toEqual(['c-bov-comparison-matrix', 'div', 'c-bov-comparison-matrix']);
+    });
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // 🔴 THE DIVIDER BETWEEN THE TWO SECTIONS
+    // ═════════════════════════════════════════════════════════════════════════
+
+    /**
+     * 🔴 PRESENCE **AND** ABSENCE, ON ONE INSTANCE, IN ONE TEST. A bare
+     * `expect(q('.panel-rule')).toBeNull()` passes for two entirely different
+     * reasons — the condition correctly withheld the rule, or the divider was
+     * deleted from the template altogether. The presence half is the control
+     * that dies when the feature does; without it the absence half is vacuous.
+     *
+     * ⚠ RE-EMITTING ON THE SAME COMPONENT IS THE POINT. `getSubmissions.emit`
+     * pushes to every live instance, so the second emit is a DATA CHANGE on the
+     * component that just rendered the rule — not a second fixture that might be
+     * failing to render it for some unrelated reason.
+     *
+     * The no-preferred state is the one on screen most of the time: every
+     * disposition starts without a preferred broker, and a hairline above a lone
+     * matrix card would be a rule with nothing on one side of it.
+     */
+    it('🔴 THE DIVIDER: drawn between the two cards, and GONE when the preferred card is', async () => {
+        const element = createComponent();
+
+        // ── WITH a preferred broker: two cards, one rule, and it is BETWEEN them.
+        getSubmissions.emit(WITH_PREFERRED);
+        await Promise.resolve();
+
+        const stack = element.shadowRoot.querySelector('.panel-stack');
+        expect(element.shadowRoot.querySelectorAll('.panel-rule')).toHaveLength(
+            1
+        );
+        expect(
+            [...stack.children].map((el) => el.tagName.toLowerCase())
+        ).toEqual(['c-bov-comparison-matrix', 'div', 'c-bov-comparison-matrix']);
+        // Position, not just existence: the rule is the MIDDLE child. A divider
+        // rendered after both cards would satisfy a `not.toBeNull()` check.
+        expect(stack.children[1].classList.contains('panel-rule')).toBe(true);
+
+        // ── WITHOUT one: the matrix is the only child and the rule is gone.
+        getSubmissions.emit(SUBMISSIONS);
+        await Promise.resolve();
+
+        expect(matrices(element)).toHaveLength(1);
+        expect(element.shadowRoot.querySelector('.panel-rule')).toBeNull();
+        expect(
+            [...element.shadowRoot.querySelector('.panel-stack').children].map(
+                (el) => el.tagName.toLowerCase()
+            )
+        ).toEqual(['c-bov-comparison-matrix']);
+    });
+
+    /**
+     * ⚠ DECORATION MUST NOT BE ANNOUNCED. The rule names nothing — each card's
+     * own title is what tells a screen-reader user a new section has begun — so
+     * it carries `role="presentation"` AND `aria-hidden`, and no text at all.
+     */
+    it('🔴 THE DIVIDER is decorative: no text, presentation role, aria-hidden', async () => {
+        const element = createComponent();
+
+        getSubmissions.emit(WITH_PREFERRED);
+        await Promise.resolve();
+
+        const rule = element.shadowRoot.querySelector('.panel-rule');
+        expect(rule).not.toBeNull();
+        expect(rule.getAttribute('role')).toBe('presentation');
+        expect(rule.getAttribute('aria-hidden')).toBe('true');
+        expect(rule.textContent).toBe('');
+        expect(rule.children).toHaveLength(0);
+    });
+
+    /**
+     * 🔴 THE STYLESHEET IS THE ONLY PLACE THE DIVIDER IS VISIBLE AT ALL. jsdom
+     * performs no layout and resolves no custom properties, so `getComputedStyle`
+     * cannot tell a 1px hairline from a rule with no height, no colour, or one
+     * that has shrunk to zero. Source text is the only gate available.
+     */
+    it('🔴 .panel-rule is a TOKENISED hairline that cannot shrink away', () => {
+        const rule = ruleBody(/\.panel-rule\s*\{([^}]*)\}/);
+        expect(rule).not.toBeNull();
+
+        // Flex items shrink. A 1px-high item that shrinks is simply not there,
+        // and nothing else in this suite would notice.
+        expect(rule).toMatch(/flex:\s*none\b/);
+
+        // ⚠ THE TOKENS ARE PART OF THE ASSERTION, NOT POLISH.
+        // `--slds-g-color-border-1` is `light-dark(#c9c9c9, #444)`: a literal
+        // would read correctly in exactly one of light and dark, and axe's
+        // contrast rule is inert in jsdom, so nothing else catches that.
+        expect(rule).toMatch(/height:\s*var\(\s*--slds-g-sizing-border-1\b/);
+        expect(rule).toMatch(/background:\s*var\(\s*--slds-g-color-border-1\b/);
+
+        // No raw colour or pixel value outside a token fallback.
+        const withoutTokens = rule.replace(/var\([^()]*\)/g, 'TOKEN');
+        expect(withoutTokens).not.toMatch(/#[0-9a-fA-F]{3,8}/);
+        expect(withoutTokens).not.toMatch(/\b(rgb|rgba|hsl|hsla)\(/);
+        expect(withoutTokens).not.toMatch(/\d+px/);
+
+        // 🔴 A BOX, NOT A `border-top` — the same treatment `c/brokerListing`'s
+        // `.cfo-rule` uses on the same page. A border here would sit flush
+        // against the lower card's own `lightning-card` edge and read doubled.
+        expect(rule).not.toMatch(/border-(top|bottom|left|right)\s*:/);
     });
 
     it('🔴 .panel-stack is a column flex container with a TOKENISED gap', () => {

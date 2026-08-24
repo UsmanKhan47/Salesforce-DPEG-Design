@@ -1,7 +1,27 @@
-/* SLDS 2 design tokens only (ARCHITECTURE.md §5). Every custom value below is a global styling
-   hook with its canonical literal fallback — a bare var(--hook) renders as NOTHING in the
-   Salesforce environments where hooks are unavailable, which is why the repo gate
-   `slds/no-slds-var-without-fallback` warns on one.
+/* c-release-materials-response-log
+   ═══════════════════════════════════════════════════════════════════════════════════════════════
+   🔴 THIS FILE IS DELIBERATELY SMALL, AND THAT IS THE POINT OF THE 2026-08-24 THEMING PASS.
+   ═══════════════════════════════════════════════════════════════════════════════════════════════
+   `c/loiCounterOffer` — the card this one was asked to match — ships a stylesheet with ONE rule
+   and carries all of its spacing, boxing and muted text on SLDS utility classes in the template.
+   This card previously hand-rolled all of that with raw styling hooks, which is what made it read
+   as a different component family. Everything that had an SLDS equivalent was DELETED here and
+   moved to the markup:
+
+     .rmr-body        -> slds-p-horizontal_small slds-p-bottom_small (the card body wrapper)
+     .rmr-notice      -> slds-text-color_weak slds-p-vertical_x-small
+     .rmr-form        -> slds-box slds-box_x-small slds-m-bottom_small
+     .rmr-field       -> slds-m-top_x-small (on each field AFTER the first)
+     .rmr-actions     -> slds-m-top_small + slds-m-right_x-small on the brand button
+     .rmr-actions_open-> gone; the opener moved into the card's `slot="actions"`
+     .rmr-badge       -> slds-badge
+     .rmr-empty*      -> slds-text-color_weak slds-p-vertical_x-small (no centred icon column)
+     .rmr-tile        -> slds-box slds-box_x-small (border/radius/padding/background all deleted)
+     .rmr-readonly-*  -> slds-form-element__label / __static / __help carry the type scale
+
+   ⚠ WHAT SURVIVES IS ONLY WHAT SLDS HAS NO CLASS FOR: the responsive tile grid, the two-track
+   definition list, and three type/colour overrides. Do NOT re-add a hook for something a
+   `slds-*` utility already does — that is precisely the drift this pass reversed.
 
    ⚠ --slds-g-color-on-surface-1 IS THE GREY ONE (#757575); -2 (#2e2e2e) and -3 (#181818) are
    progressively DARKER. The numbering reads like an ascending emphasis scale and is the reverse,
@@ -10,58 +30,49 @@
    which fails WCAG AA for body copy — and axe's colour-contrast rule is inert in jsdom, so no
    test would ever catch it.
    ⚠ --slds-g-font-weight-regular DOES NOT EXIST. The weight scale is NUMERIC
-   (--slds-g-font-weight-1 … -7) with exactly ONE named member, -bold. The linter reports an
-   invented hook under `no-slds-namespace-for-custom-hooks`, which reads like a naming nit rather
-   than "that hook is not real".
+   (--slds-g-font-weight-1 … -7) with exactly ONE named member, -bold.
+   ⚠ EVERY var() CARRIES ITS CANONICAL LITERAL FALLBACK. A bare var(--hook) renders as NOTHING in
+   the Salesforce environments where hooks are unavailable, which is why the repo gate
+   `slds/no-slds-var-without-fallback` warns on one.
+
+   🔴 EVERY `gap` AND EVERY `margin` BELOW IS MARKUP, NOT DECORATION. The LWC template compiler
+   discards whitespace-only text nodes between sibling elements, so deleting the `gap` on
+   .rmr-list does not "tighten" the list — it welds the tiles edge to edge with literally nothing
+   between them. Measured four times this week in this repo. __tests__ pins these rules against
+   this file's SOURCE for exactly that reason.
 
    ⚠ NO FIXED PIXEL WIDTHS AND NO `nowrap` ANYWHERE. This card lives in the disposition record
    page's MAIN region today, which is wide — but `c/dispositionBuyerTimeline` was built for an
    ~800px region, moved to a ~340px sidebar, and had to be rebuilt. The tile list below is the
-   shape that survived that move (a <ul>/<li> of self-labelling tiles with their own <dl>), used
-   here from the start so the same rework is never needed twice. */
+   shape that survived that move, used here from the start so the same rework is never needed
+   twice. It is also the reason this card keeps tiles where loiCounterOffer uses a datatable. */
 
 :host {
     display: block;
     /* `anywhere`, not `break-word` — only `anywhere` affects min-content sizing, which is what
        lets the `min-width: 0` rules below actually take effect. On :host so it also covers the
-       .lv-error banner, whose text is a SERVER message this component cannot pre-wrap. */
+       .lv-error banner, whose text is a SERVER message this component cannot pre-wrap.
+       ⚠ NO TOP MARGIN / BORDER HERE, DESPITE loiCounterOffer's :host RULE HAVING ONE. That card
+       sits under a field section on a record page and separates itself. This one is a child of
+       `c/dispositionMain`, whose :host owns the stack `gap` for every card at every stage, and
+       whose stylesheet says in terms: DO NOT ADD PER-CARD MARGINS ON TOP OF THIS — they double
+       up, and a trailing one leaves dead space above the page footer. */
     overflow-wrap: anywhere;
 }
 
-.rmr-body {
-    padding: var(--slds-g-spacing-3, 0.75rem) var(--slds-g-spacing-4, 1rem);
-}
+/* ===== The resolved broker, inside the form between Method and Notes =====
+   `slds-form-element__label` / `__static` / `__help` in the markup carry the type scale and the
+   muted help colour, so only two things are left to say. */
 
-/* The card-level "no broker appointed" line. Muted rather than red: no broker having been
-   appointed yet is a normal stage of a sale, and the card still lets the user log — it is not an
-   error and must not be styled as one. */
-.rmr-notice {
-    min-width: 0;
-    margin: 0 0 var(--slds-g-spacing-3, 0.75rem);
-    font-size: var(--slds-g-font-scale-neg-1, 0.75rem);
-    color: var(--slds-g-color-on-surface-1, #757575);
-}
-
-/* ===== The resolved broker (inside the form, between Method and Notes) ===== */
-.rmr-broker {
-    min-width: 0;
-}
-
-.rmr-readonly-label {
-    display: block;
-    font-size: var(--slds-g-font-scale-neg-1, 0.75rem);
-    color: var(--slds-g-color-on-surface-1, #757575);
-}
-
+/* The name reads as a VALUE, not as help text. `slds-form-element__static` is regular weight. */
 .rmr-readonly-value {
-    min-width: 0;
-    margin: var(--slds-g-spacing-1, 0.25rem) 0 0;
+    margin: 0;
     font-weight: var(--slds-g-font-weight-bold, 700);
     color: var(--slds-g-color-on-surface-2, #2e2e2e);
 }
 
-/* The no-broker state. Muted rather than red: no broker having been appointed yet is a normal
-   stage of a sale, and the card still lets the user log — it is not an error. */
+/* The no-broker state. Muted and italic rather than red: no broker having been appointed yet is a
+   normal stage of a sale, and the card still lets the user log — it is not an error. */
 .rmr-readonly-value_empty {
     font-weight: var(--slds-g-font-weight-4, 400);
     font-style: italic;
@@ -69,51 +80,18 @@
 }
 
 .rmr-readonly-help {
-    min-width: 0;
-    margin: var(--slds-g-spacing-1, 0.25rem) 0 0;
-    font-size: var(--slds-g-font-scale-neg-1, 0.75rem);
-    color: var(--slds-g-color-on-surface-1, #757575);
+    margin: 0;
 }
 
-/* ===== The form ===== */
-.rmr-form {
-    min-width: 0;
-    padding: var(--slds-g-spacing-4, 1rem);
-    margin-bottom: var(--slds-g-spacing-4, 1rem);
-    border: var(--slds-g-sizing-border-1, 1px) solid
-        var(--slds-g-color-border-1, #e5e5e5);
-    border-radius: var(--slds-g-radius-border-3, 0.5rem);
-    background: var(--slds-g-color-surface-container-2, #f3f3f3);
-}
-
-.rmr-field {
-    display: block;
-    min-width: 0;
-    margin-bottom: var(--slds-g-spacing-3, 0.75rem);
-}
-
-/* Buttons wrap beneath each other at extreme narrow widths rather than pushing the card wider. */
-.rmr-actions {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    gap: var(--slds-g-spacing-2, 0.5rem);
-    min-width: 0;
-}
-
-.rmr-actions_open {
-    justify-content: flex-start;
-    margin-bottom: var(--slds-g-spacing-4, 1rem);
-}
-
-/* ===== The logged rows ===== */
-/* auto-fill + `min(28rem, 100%)` and NO media query: a media query measures the VIEWPORT, but the
+/* ===== The logged rows =====
+   auto-fill + `min(28rem, 100%)` and NO media query: a media query measures the VIEWPORT, but the
    constraint here is CONTAINER width — the same viewport yields a wide main region or a narrow
    sidebar. A BARE 28rem minimum would burst any container narrower than 448px, which is invisible
    at desktop width and is exactly the failure c/dispositionBuyerTimeline was rebuilt for. */
 .rmr-list {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(min(28rem, 100%), 1fr));
+    /* 🔴 LOAD-BEARING: without it the tiles touch. Nothing renders between two sibling elements. */
     gap: var(--slds-g-spacing-3, 0.75rem);
     padding: 0;
     margin: 0;
@@ -124,20 +102,16 @@
     min-width: 0;
 }
 
+/* The tile's border, radius, padding and background all come from `slds-box slds-box_x-small` in
+   the markup now — loiCounterOffer's own container class. This rule is what SLDS does not do:
+   a grid item defaults to `min-width: auto` and then REFUSES to shrink below its longest
+   unbreakable token, so one long note would force a tile wider than its container. */
 .rmr-tile {
-    /* A flex/grid item defaults to `min-width: auto` and then REFUSES to shrink below its longest
-       unbreakable token, so one long note would force a tile wider than its container. This is
-       the LOAD-BEARING one. */
     min-width: 0;
-    padding: var(--slds-g-spacing-3, 0.75rem);
-    border: var(--slds-g-sizing-border-1, 1px) solid
-        var(--slds-g-color-border-1, #e5e5e5);
-    border-radius: var(--slds-g-radius-border-3, 0.5rem);
-    background: var(--slds-g-color-surface-container-1, #fff);
 }
 
 /* Name left, method badge right; the badge wraps beneath the name at extreme narrow widths
-   rather than pushing the tile wider. */
+   rather than pushing the tile wider. The `gap` is the ONLY separation between them. */
 .rmr-tile-head {
     display: flex;
     flex-wrap: wrap;
@@ -168,9 +142,13 @@
     color: var(--slds-g-color-on-surface-1, #757575);
 }
 
+/* The two-track label/value layout. SLDS has no dl utility, and axe's `definition-list` rule
+   forbids the wrapper divs a grid would otherwise need — so the tracks are done here. */
 .rmr-facts {
     display: grid;
     grid-template-columns: max-content 1fr;
+    /* 🔴 LOAD-BEARING both ways: the row gap separates the two fact rows and the column gap
+       separates every label from its value. Delete it and "ReceivedMar 11, 2026" is what renders. */
     gap: var(--slds-g-spacing-2, 0.5rem) var(--slds-g-spacing-3, 0.75rem);
     align-items: baseline;
     min-width: 0;
@@ -201,48 +179,13 @@
     white-space: pre-line;
 }
 
-/* ===== The method badge =====
-   The label text IS the state (see the JS header). This is a pill around a word, never a
-   replacement for one. */
-.rmr-badge {
-    display: inline-flex;
-    align-items: center;
-    min-width: 0;
-    font-size: var(--slds-g-font-scale-neg-2, 0.625rem);
-    font-weight: var(--slds-g-font-weight-7, 700);
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-    border-radius: var(--slds-g-radius-border-pill, 15rem);
-    padding: var(--slds-g-spacing-1, 0.25rem) var(--slds-g-spacing-2, 0.5rem);
-    color: var(--slds-g-color-on-surface-2, #2e2e2e);
-    background: var(--slds-g-color-surface-container-1, #fff);
-    border: var(--slds-g-sizing-border-1, 1px) solid
-        var(--slds-g-color-border-1, #e5e5e5);
-}
-
 /* ===== Empty state =====
-   Centred icon + headline + explanation. It is a STATUS, not an alert: nothing having come back
-   yet is the ordinary state of a sale the day materials go out. */
-.rmr-empty {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    text-align: center;
-    gap: var(--slds-g-spacing-1, 0.25rem);
-    padding: var(--slds-g-spacing-5, 1.5rem) var(--slds-g-spacing-4, 1rem);
-}
-
-.rmr-empty-icon {
-    --slds-c-icon-color-foreground-default: var(--slds-g-color-on-surface-1, #757575);
-    margin-bottom: var(--slds-g-spacing-1, 0.25rem);
-}
-
+   The centred icon column is GONE (see the template): loiCounterOffer states an empty log in one
+   muted line of body text, and `slds-text-color_weak` in the markup now carries the colour. Only
+   the margins and the measure are left. */
 .rmr-empty-text {
     min-width: 0;
     margin: 0;
-    font-size: var(--slds-g-font-scale-base, 0.8125rem);
-    font-weight: var(--slds-g-font-weight-7, 700);
-    color: var(--slds-g-color-on-surface-2, #2e2e2e);
 }
 
 .rmr-empty-sub {
@@ -250,12 +193,11 @@
     /* A measure, not a width: keeps the explanatory line from running edge-to-edge in a wide
        region while still shrinking freely. `ch` (not px) so it tracks the font. */
     max-width: var(--slds-g-sizing-content-2, 45ch);
-    margin: 0;
-    font-size: var(--slds-g-font-scale-neg-1, 0.75rem);
-    color: var(--slds-g-color-on-surface-1, #757575);
+    margin: var(--slds-g-spacing-1, 0.25rem) 0 0;
 }
 
 /* ===== Error banner (cross-bundle class — keep the name) ===== */
 .lv-error {
+    margin: 0;
     font-size: var(--slds-g-font-scale-base, 0.8125rem);
 }

@@ -9,6 +9,34 @@ const UNAVAILABLE =
     'Broker change history is unavailable right now.';
 
 /**
+ * 🔴 BOTH FIRM COLUMNS ARE NULLABLE AND A ROW WITH NEITHER IS POSSIBLE, so the headline needs a
+ * WORD rather than a blank span, an em dash or the literal "undefined". Measured on live data
+ * 2026-08-24: `Incoming_Broker_Firm__c` was null on a real retirement row (the incoming Contact
+ * carried no firm when the change was written), and `Outgoing_Broker_Firm__c` is null on EVERY
+ * initial appointment. This card is an audit log — a nameless row still has a date and a reason
+ * worth reading, so it renders, and it says plainly that the name is what is missing.
+ */
+const UNNAMED_BROKER = 'Broker not recorded';
+
+/**
+ * 🔴 THE ONE PLACE THE DISPLAYED BROKER IS CHOSEN. Used by both `historyRows` (the headline) and
+ * `openNote` (the popup subtitle) so the two cannot drift — before 2026-08-24 each composed its
+ * own fallback string and a test existed purely to catch that drift.
+ *
+ * WHICH FIRM IS "THE BROKER" DEPENDS ON THE ROW SHAPE, and the shape is read off the DATA (is
+ * there an outgoing firm?) rather than off the Reason__c picklist TEXT. A picklist relabel must
+ * not change which name this card prints.
+ *   • REPLACEMENT (an outgoing firm exists) → the OUTGOING firm. That is the broker who was
+ *     replaced, which is the fact the entry records; the incoming firm is the sale's CURRENT
+ *     broker and is already shown elsewhere on this record page.
+ *   • INITIAL APPOINTMENT (no outgoing firm) → the INCOMING firm. Nobody was replaced, and the
+ *     appointed firm is the only broker the row names at all.
+ */
+function brokerNameOf(row) {
+    return row.outgoingBrokerFirm || row.incomingBrokerFirm || UNNAMED_BROKER;
+}
+
+/**
  * c-bov-broker-change-history — every broker replacement recorded against one disposition, newest
  * first (2026-08-20, Tranche 2 Workstream B / design D4.6).
  *
@@ -51,9 +79,34 @@ const UNAVAILABLE =
  * 🔴 A VERTICAL TIMELINE IN A ~340px SIDEBAR COLUMN. DO NOT REINTRODUCE THE TWO-COLUMN ROW.
  * ══════════════════════════════════════════════════════════════════════════════════════════
  * RESTYLED 2026-08-24 to a design the user supplied: a dot-and-line rail down the left, and per
- * entry a bold "{outgoing} → {incoming}" headline, a calendar-icon/date/pipe/reason line, and a
- * "Logged By: {name}" line. It was a self-labelling dt/dd TILE before that (2026-08-21) and a
- * two-column flex row before that (2026-08-20).
+ * entry a bold headline, a calendar-icon/date/pipe/reason line, and a "Logged By: {name}" line.
+ * It was a self-labelling dt/dd TILE before that (2026-08-21) and a two-column flex row before
+ * that (2026-08-20).
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════
+ * 🔴 ONE BROKER NAME PER ENTRY. THE "{outgoing} → {incoming}" ARROW HEADLINE IS GONE (2026-08-24).
+ * ══════════════════════════════════════════════════════════════════════════════════════════
+ * The user asked for "just the broker name, when he was replaced, and what was the reason". The
+ * arrow pairing put TWO firm names and a relationship glyph on the first line of a ~340px sidebar
+ * card, where it routinely wrapped to three lines to say one thing. Per entry now:
+ *   line 1  the broker's NAME — see `brokerNameOf` for WHICH firm that is and why;
+ *   line 2  calendar icon · date-time · "|" · reason;
+ *   line 3  "Logged By: {name}";
+ *   line 4  the RETAINED notes affordance (see the template).
+ *
+ * 🔴 THE ENTRY MUST NOT CALL AN APPOINTMENT A REPLACEMENT. A bare name under a card titled
+ * "Broker Replace History" does exactly that on an initial-appointment row, where nobody was
+ * replaced at all. Two things stop it, and NEITHER invents a type field:
+ *   1. `brokerLabel` — a visually-hidden, shape-specific label on the headline ("Replaced broker:"
+ *      / "Appointed broker:"). It also replaces the old assistive "replaced by", which described a
+ *      relationship this card no longer renders and must not be left behind announcing one.
+ *   2. Reason__c itself, rendered on line 2, which already reads "Initial Appointment" on those
+ *      rows. That is the sighted reader's distinction, and it is why NO visible badge was added:
+ *      the brief was to remove furniture from this card, not to add a new label to every row.
+ * ⚠ THE RESIDUAL CASE is an appointment whose reason is null — line 2 then carries a date and
+ * nothing else, and only assistive tech gets the distinction. Accepted deliberately (a visible
+ * qualifier on every row is the thing being removed); revisit here if a null Reason__c turns out
+ * to happen in practice rather than in theory.
  *
  * `reason` and `loggedBy` below are BARE VALUES and must stay that way. They were pre-composed
  * strings ("Reason: X" / "Logged by X") in the original row layout; the tile promoted the wording
@@ -141,15 +194,23 @@ export default class BovBrokerChangeHistory extends LightningElement {
         return this._rows.map((row) => {
             const notes = row.notes || '';
             const notesLong = notes.length > NOTE_PREVIEW;
+            // 🔴 THE ROW SHAPE, READ OFF THE DATA. An outgoing firm exists ⇒ somebody was
+            // replaced. No outgoing firm ⇒ this is the sale's FIRST appointment and there was no
+            // incumbent — the service writes those rows with blank outgoing columns. Do NOT
+            // re-derive this from `reason`: that picklist can be relabelled.
+            const isReplacement = !!row.outgoingBrokerFirm;
             return {
                 id: row.id,
                 changeNumber: row.changeNumber,
-                // 🔴 THE FIRM STRINGS ARE STAMPED SNAPSHOTS, and an absent OUTGOING firm is a
-                // meaningful state rather than missing data: the service records an APPOINTMENT
-                // (no incumbent to replace) with blank outgoing columns. Naming it beats an em dash
-                // the reader has to interpret.
-                outgoing: row.outgoingBrokerFirm || 'No Previous Broker',
-                incoming: row.incomingBrokerFirm || '—',
+                // 🔴 ONE NAME, AND NEVER BLANK — see `brokerNameOf` and UNNAMED_BROKER above.
+                brokerName: brokerNameOf(row),
+                // Visually hidden, and the trailing COLON is load-bearing: the template compiler
+                // discards the whitespace between this span and the name beside it, so the
+                // heading's accessible name is the two strings CONCATENATED — without punctuation
+                // a screen reader is handed "Replaced brokerJLL".
+                brokerLabel: isReplacement
+                    ? 'Replaced broker:'
+                    : 'Appointed broker:',
                 entryDateTime: row.entryDateTime,
                 // ⚠ BARE VALUES — the wording lives in the template (see the class header).
                 // A line with no value is OMITTED from the markup entirely rather than rendered
@@ -198,9 +259,11 @@ export default class BovBrokerChangeHistory extends LightningElement {
         this._note = {
             open: true,
             text: row.notes || '',
-            subtitle: `${row.outgoingBrokerFirm || 'No Previous Broker'} → ${
-                row.incomingBrokerFirm || '—'
-            }`
+            // The popup has to name WHICH entry the note belongs to, and must name it the same
+            // way the entry itself does — hence the SHARED helper rather than a second composed
+            // string here. This line used to build its own "{outgoing} → {incoming}" and its own
+            // two fallbacks, which is a drift risk that no longer exists.
+            subtitle: brokerNameOf(row)
         };
     }
 

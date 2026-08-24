@@ -52,6 +52,30 @@
  * branch renders a visible alert rather than a silent blank.
  *
  * ═══════════════════════════════════════════════════════════════════════════
+ * 🔴 THE TIMELINE RESTYLE (2026-08-24) — WHAT IT DID AND DID NOT CHANGE
+ * ═══════════════════════════════════════════════════════════════════════════
+ * The card adopted the user-supplied design's visual language: a rail down the
+ * left with one dot per entry, and entries as compact blocks rather than boxed
+ * tiles. It is STILL ONE CARD WITH ONE LIST — the design was not read as an
+ * instruction to split the merged feed back into sections.
+ *
+ * The rail is a PORT of c/bovBrokerChangeHistory's (`.bbc-rail`/`.bbc-dot`/
+ * `.bbc-track` -> `.dbt-rail`/`.dbt-dot`/`.dbt-track`), because the two cards
+ * sit in the same sidebar on the same record page.
+ *
+ * 🔴 NOT ONE ASSERTION ABOUT AN ENTRY'S CONTENT CHANGED, AND THAT IS THE POINT:
+ * the headings, badges, broker subtitle, dt/dd pairs, milestone markers, values
+ * and aria-labels are all byte-for-byte what they were. Only the container did.
+ * What DID change in this file:
+ *   - T-CSS lost the `minmax(min(18rem, 100%), 1fr)` requirement (the tile grid
+ *     it guarded is gone) and gained `not.toMatch(/auto-fill/)` in its place —
+ *     a timeline is single-column by definition, and side-by-side entries leave
+ *     the rail joining things that are not consecutive;
+ *   - T-RAIL-CSS, T-TOKENS and four DOM pins were added.
+ * ⚠ THE TWO RAILS ARE DIFFERENT THINGS. See the block above the RAIL tests
+ * before concluding that the response entry's rail contradicts T-RAIL.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
  * 🔴 THE SIX-COLUMN TABLE IS GONE AND MUST NOT COME BACK (2026-08-21).
  * ═══════════════════════════════════════════════════════════════════════════
  * This card moved to the ~340px record-page sidebar, where the old grid
@@ -623,6 +647,115 @@ describe('c-disposition-buyer-timeline', () => {
         expect(ndaTiles(element)[0].querySelectorAll('.dbt-step')).toHaveLength(2);
     });
 
+    // ═════════════════════════════════════════════════════════════════════════
+    // 🔴 THE ENTRY RAIL (2026-08-24 restyle) — A SECOND, WEAKER RAIL.
+    //
+    // Ported from c/bovBrokerChangeHistory, which renders the same rail in the
+    // same sidebar on the same record page.
+    //
+    // 🔴 READ THIS WITH THE TEST ABOVE, NOT INSTEAD OF IT. The two rails make
+    // DIFFERENT claims and both are correct at once:
+    //   · the ENTRY rail says "this is one entry in a chronological feed" —
+    //     true of an NDA and equally true of a response, so it is drawn for
+    //     BOTH kinds and is uniform;
+    //   · the MILESTONE rail (`.dbt-step`) says "this milestone has happened /
+    //     is still to come" — a claim about a JOURNEY, which a single-timestamp
+    //     response does not have, so it stays NDA-only.
+    // The original "no rail on a response" reasoning is therefore intact rather
+    // than overruled: it was always about the milestone rail. A future edit that
+    // gives a response a `.dbt-step`, or that withholds `.dbt-rail` from one,
+    // reds one of these two tests.
+    // ═════════════════════════════════════════════════════════════════════════
+
+    /** The <li> per entry — the grid that holds [rail][body]. */
+    const entries = (element) => [
+        ...element.shadowRoot.querySelectorAll('.dbt-item')
+    ];
+
+    it('🔴 RAIL: every entry carries a dot and a connecting track — BOTH kinds, uniformly', async () => {
+        const element = createComponent();
+
+        getTimeline.emit(MERGED);
+        await Promise.resolve();
+
+        // Guard the guard: four entries, two of each kind, genuinely rendered.
+        expect(entries(element)).toHaveLength(4);
+        expect(responseTiles(element)).toHaveLength(2);
+        expect(ndaTiles(element)).toHaveLength(2);
+
+        entries(element).forEach((entry) => {
+            const rail = entry.querySelector('.dbt-rail');
+            expect(rail).not.toBeNull();
+            // 🔴 DECORATIVE. It carries nothing the entry's text does not, and
+            // an announced pair of empty spans per entry is noise.
+            expect(rail.getAttribute('aria-hidden')).toBe('true');
+            expect(rail.querySelectorAll('.dbt-dot')).toHaveLength(1);
+            expect(rail.querySelectorAll('.dbt-track')).toHaveLength(1);
+        });
+
+        // 🔴 AND IT IS UNIFORM. A per-kind or per-state dot class would make the
+        // rail a status signal, which is exactly what the card refuses to do
+        // with colour — the kind and the state travel as readable text. This
+        // assertion is what stops the retired response accent bar coming back
+        // as a coloured dot.
+        const dotClasses = [
+            ...element.shadowRoot.querySelectorAll('.dbt-dot')
+        ].map((dot) => dot.className);
+        expect(dotClasses).toEqual(['dbt-dot', 'dbt-dot', 'dbt-dot', 'dbt-dot']);
+    });
+
+    it('🔴 RAIL: the rail is decoration OUTSIDE the announced group, and it comes first', async () => {
+        const element = createComponent();
+
+        getTimeline.emit(MERGED);
+        await Promise.resolve();
+
+        // ⚠ STRUCTURAL, ON THE RENDERED DOM. A source-text CSS pin cannot see
+        // the rail being moved INSIDE the group div — the stylesheet would be
+        // unchanged, the visual would be near-identical, and a screen reader
+        // would start announcing the group with two empty spans in it. Reading
+        // `children` in document order is what catches that.
+        entries(element).forEach((entry) => {
+            const kids = [...entry.children];
+            expect(kids).toHaveLength(2);
+            expect(kids[0].className).toBe('dbt-rail');
+            // The body is the addressable entry: role + aria-label + the class
+            // every row assertion in this file selects.
+            expect(kids[1].classList.contains('dbt-tile')).toBe(true);
+            expect(kids[1].getAttribute('role')).toBe('group');
+            expect(kids[1].querySelector('.dbt-rail')).toBeNull();
+        });
+    });
+
+    it('RAIL: an NDA-only list is railed the same way — the restyle is not merge-specific', async () => {
+        const element = createComponent();
+
+        getTimeline.emit(TIMELINE);
+        await Promise.resolve();
+
+        expect(entries(element)).toHaveLength(4);
+        expect(element.shadowRoot.querySelectorAll('.dbt-dot')).toHaveLength(4);
+        expect(element.shadowRoot.querySelectorAll('.dbt-track')).toHaveLength(4);
+        // Including the declined entry, which is a recorded outcome and takes
+        // its chronological place like everything else.
+        expect(
+            dataRows(element)[3].parentElement.querySelector('.dbt-dot')
+        ).not.toBeNull();
+    });
+
+    it('RAIL: the empty state has no rail to draw', async () => {
+        const element = createComponent();
+
+        getTimeline.emit([]);
+        await Promise.resolve();
+
+        // A dot with no entry beside it is a timeline claiming an event that
+        // did not happen.
+        expect(element.shadowRoot.querySelectorAll('.dbt-dot')).toHaveLength(0);
+        expect(element.shadowRoot.querySelector('.dbt-list')).toBeNull();
+        expect(element.shadowRoot.querySelector('.dbt-empty')).not.toBeNull();
+    });
+
     /**
      * ⚠ ACCESSIBILITY: the KIND travels as readable text, not as the left
      * accent. A screen-reader user must be able to tell a response from an NDA.
@@ -947,6 +1080,16 @@ describe('c-disposition-buyer-timeline', () => {
         // even if the class names are kept.
         expect(CSS_SOURCE).not.toMatch(/repeat\(\s*5\s*,/);
 
+        // 🔴 AND THE MULTI-COLUMN TILE GRID THAT REPLACED IT (2026-08-24). A
+        // timeline is single-column by definition: two entries side by side
+        // leave the rail drawing a line between things that are not
+        // consecutive. This assertion REPLACES the old
+        // `minmax(min(18rem, 100%), 1fr)` requirement — that guard existed only
+        // to stop the auto-fill track bursting a narrow container, and with no
+        // track there is nothing left for it to guard. Deleting it without this
+        // line would have left the grid free to come back unnoticed.
+        expect(CSS_SOURCE).not.toMatch(/auto-fill/);
+
         // --- REQUIRED, and every one SELECTOR-ANCHORED ----------------------
         // An unanchored /min-width:\s*0/ passes while ANY ONE of the many
         // occurrences survives. The LOAD-BEARING one is on the grid item.
@@ -957,15 +1100,84 @@ describe('c-disposition-buyer-timeline', () => {
         // pre-wrap) and the empty state, not just the tiles.
         expect(CSS_SOURCE).toMatch(/:host\s*\{[^}]*overflow-wrap\s*:\s*anywhere/);
 
-        // The grid minimum. A bare `minmax(18rem, 1fr)` bursts any container
-        // narrower than 288px — invisible at desktop width, and the ONLY place
-        // it shows is the sidebar this rework exists for.
-        expect(CSS_SOURCE).toMatch(/minmax\(\s*min\(\s*18rem\s*,\s*100%\s*\)/);
-
         // The broker subtitle, added 2026-08-21, must shrink like everything
         // else on the tile — it is the longest free-text value on the card now
         // that the buyer name is gone.
         expect(CSS_SOURCE).toMatch(/\.dbt-broker\s*\{[^}]*min-width\s*:\s*0/);
+    });
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 🔴 T-RAIL-CSS — the entry rail's stylesheet pin (2026-08-24 restyle).
+    //
+    // jsdom performs NO LAYOUT, so nothing in a DOM assertion can see whether
+    // the line actually reaches the next dot. These four declarations are what
+    // make it do so without measuring anything, and each one has a specific,
+    // silent failure mode if it goes.
+    // ─────────────────────────────────────────────────────────────────────────
+    it('🔴 T-RAIL-CSS: the entry rail is drawn the way c/bovBrokerChangeHistory draws it', () => {
+        // 1. THE LIST MUST NOT CARRY A `gap`, AND THIS IS THE SUBTLEST RULE ON
+        //    THE CARD. A gap sits OUTSIDE every item, so the connecting track
+        //    cannot span it and the line breaks between every pair of dots —
+        //    which looks like a styling nicety and is actually the timeline
+        //    failing. The separation is the ENTRY's padding-bottom instead.
+        const listRule = CSS_SOURCE.match(/\.dbt-list\s*\{([^}]*)\}/);
+        expect(listRule).not.toBeNull();
+        expect(listRule[1]).not.toMatch(/gap\s*:/);
+
+        // 2. ...and the entry supplies that separation.
+        expect(CSS_SOURCE).toMatch(
+            /\.dbt-item\s*\{[^}]*padding-bottom\s*:\s*var\(--slds-g-spacing-/
+        );
+
+        // 3. The two-column grid: rail track, then the body.
+        expect(CSS_SOURCE).toMatch(
+            /\.dbt-item\s*\{[^}]*grid-template-columns\s*:\s*var\(--slds-g-sizing-[^;]*1fr/
+        );
+
+        // 4. `flex: 1 1 auto` is what makes the track reach the NEXT dot with
+        //    nobody measuring an entry — it takes whatever height the rail has
+        //    left. `flex: none` here would collapse every segment to nothing and
+        //    leave a column of unjoined dots.
+        expect(CSS_SOURCE).toMatch(/\.dbt-track\s*\{[^}]*flex\s*:\s*1\s+1\s+auto/);
+
+        // 5. The line ends ON the last dot. Without this it trails off into the
+        //    card's padding, which reads as "and then something else happened"
+        //    on a list that is complete.
+        expect(CSS_SOURCE).toMatch(
+            /\.dbt-item:last-child\s+\.dbt-track\s*\{[^}]*display\s*:\s*none/
+        );
+    });
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 🔴 T-TOKENS — the ONLY automated light/dark check that exists here.
+    //
+    // axe's colour-contrast rule is inert in jsdom (no layout, no computed
+    // colour) and the SLDS linter is a separate command a reviewer can forget.
+    // Every SLDS 2 colour hook resolves to a `light-dark(...)` pair in the
+    // cosmos theme, so a literal written straight into a declaration is correct
+    // in exactly one theme. Blanking `var(--hook, #fallback)` INCLUDING its
+    // fallback is the trick: a hex surviving that is one nothing can re-theme.
+    // ─────────────────────────────────────────────────────────────────────────
+    it('🔴 T-TOKENS: no colour is hardcoded — the card must read in light AND dark', () => {
+        const withoutTokens = CSS_SOURCE.replace(/var\(\s*--[^()]*\)/g, 'TOKEN');
+
+        expect(withoutTokens).not.toMatch(/#[0-9a-fA-F]{3}\b/);
+        expect(withoutTokens).not.toMatch(/rgba?\(/);
+        expect(withoutTokens).not.toMatch(/hsla?\(/);
+
+        // Guard the guard: the blanking above would also "pass" a stylesheet
+        // that had lost its hooks altogether.
+        expect((CSS_SOURCE.match(/var\(\s*--slds-/g) || []).length).toBeGreaterThan(20);
+
+        // 🔴 THE TWO DECORATIONS ANCHORED BY NAME. They carry NO text, so if
+        // their colour resolves to nothing the rail is simply invisible and
+        // every other assertion in this file still passes.
+        expect(CSS_SOURCE).toMatch(
+            /\.dbt-dot\s*\{[^}]*background\s*:\s*var\(--slds-g-color-/
+        );
+        expect(CSS_SOURCE).toMatch(
+            /\.dbt-track\s*\{[^}]*background\s*:\s*var\(--slds-g-color-/
+        );
     });
 
     it('is accessible', async () => {

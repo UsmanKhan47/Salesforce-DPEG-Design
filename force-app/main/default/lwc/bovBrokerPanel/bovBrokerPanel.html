@@ -87,6 +87,39 @@
                     record-id={recordId}
                     preferred-only
                 ></c-bov-comparison-matrix>
+
+                <!--
+                    ── THE DIVIDER ──────────────────────────────────────────────
+                    🔴 IT LIVES INSIDE THIS `lwc:if`, NOT BETWEEN THE TWO TAGS,
+                    AND THAT IS THE WHOLE GUARD. The preferred card is optional;
+                    with no preferred broker the matrix is the ONLY child, and a
+                    rule above it would be a hairline with nothing on one side.
+                    Sharing the preferred card's own condition makes the stray
+                    case structurally unreachable — there is no state in which
+                    this element renders and the card above it does not.
+
+                    ⚠ IT IS A FLEX ITEM, NOT A `border-top` ON THE CARD BELOW.
+                    Two consequences, both deliberate:
+                      - `.panel-stack`'s existing 1rem `gap` therefore applies on
+                        BOTH sides of it, so the rule is centred between the two
+                        cards BY CONSTRUCTION — no margin, no magic number, and
+                        nothing to re-tune if the gap ever changes. (A margin is
+                        also forbidden in this stylesheet; see its header.)
+                      - A `border-top` would instead sit flush against the lower
+                        card's own `lightning-card` border and read as a doubled
+                        edge. This is the same call `c/brokerListing` made for
+                        `.cfo-rule` earlier today, and the same token.
+
+                    ⚠ DECORATIVE ONLY — `role="presentation"` AND `aria-hidden`.
+                    It carries no text and names nothing; each card's own title
+                    ("Preferred Broker" / "BOV Comparison Matrix (n)") is what
+                    tells a screen reader a new section has started.
+                -->
+                <div
+                    class="panel-rule"
+                    role="presentation"
+                    aria-hidden="true"
+                ></div>
             </template>
             <c-bov-comparison-matrix
                 record-id={recordId}
