@@ -1,8 +1,15 @@
 import { api } from 'lwc';
 import LightningModal from 'lightning/modal';
 
-/** Submission_Status__c is a restricted picklist of exactly {Backup, Selected}. */
-const STATUS_BACKUP = 'Backup';
+/**
+ * 🔴 `STATUS_BACKUP` WAS DELETED FROM HERE 2026-08-24. This bundle no longer names a
+ * `Submission_Status__c` value anywhere: the control is not rendered in either mode and the key is
+ * not in the payload on either submit path. The picklist DEFAULT (`Backup`) carries a new row
+ * until `BovAutoSelectionService` — its sole writer for rows created here — decides. The retracted
+ * comments below and in the template still QUOTE the old constant; that is history, not a live
+ * reference. (The identically-named constants in `BovAutoSelectionService`,
+ * `BovSubmissionService` and `BovSubmissionSelectionGuardTest` are unrelated Apex.)
+ */
 
 /** Shown when the platform hands back an error with nothing readable in it. */
 const GENERIC_ERROR = 'The broker response could not be saved.';
@@ -92,6 +99,15 @@ const SAVE_PREFERRED = 'Save preferred broker';
  *     formula fields (`Broker_Display__c`, `Property_Name__c`, `Selected_Broker__c`) already
  *     excluded above for the same reason. See the template for the same retraction in place.
  *
+ *   - `Submission_Status__c` — 🔴 ADDED TO THIS LIST 2026-08-24, AND IT IS THE ONE DELIBERATE
+ *     SUBTRACTION FROM THE LAYOUT. It is on `BOV Submission Layout` and it WAS rendered here
+ *     (response mode only, for part of 2026-08-24). Omitted in BOTH modes now: automatic
+ *     selection by score is live, so the field is SERVER-DERIVED, and an insert naming
+ *     `Selected` is refused outright by `BovSubmissionSelectionGuardService`. The picklist
+ *     default (`Backup`) is what a new row carries until `BovAutoSelectionService` runs. The
+ *     layout is untouched — a status can still be set by hand from the record page, by someone
+ *     who can see which sibling already holds the single `Selected` slot. This dialog cannot.
+ *
  * NOTHING IS ADDED BEYOND THE LAYOUT. Every field on this form is one the platform's own New
  * screen offers, which is the property that makes this dialog a drop-in replacement for it.
  *
@@ -108,7 +124,11 @@ const SAVE_PREFERRED = 'Save preferred broker';
  *
  * THIS BUNDLE NOW HAS TWO MODES, driven by `@api isPreferred` (default `false`):
  *
- *   isPreferred = false  "Add Broker Response"   — unchanged, byte for byte, in every respect.
+ *   isPreferred = false  "Add Broker Response"   — 🔴 RETRACTED IN PLACE 2026-08-24 (LATER
+ *                                                  STILL): NO LONGER "unchanged, byte for byte".
+ *                                                  The `Submission_Status__c` input was removed
+ *                                                  from THIS mode too — see item 3. Everything
+ *                                                  else about it is still untouched.
  *   isPreferred = true   "Add Preferred Broker"  — records a broker DPEG would LIKE to use.
  *
  * What the second mode changes, and nothing else:
@@ -126,6 +146,15 @@ const SAVE_PREFERRED = 'Save preferred broker';
  *      Selected sibling exists. `BovAutoSelectionService` is the SOLE WRITER of that field on
  *      this path; the picklist default (`Backup`) carries the row safely until it runs. Full
  *      argument at `withParent()`.
+ *      🔴 RETRACTED IN PLACE 2026-08-24 (LATER STILL) — THIS IS NO LONGER SOMETHING THE PREFERRED
+ *      MODE CHANGES, BECAUSE IT IS NOW TRUE OF BOTH MODES. The input is removed from the form
+ *      outright and neither submit path sends the key. Every word above about why the value
+ *      cannot be written from here still applies; it now applies unconditionally. The response
+ *      mode arrived at the same place by its own route: automatic selection by score is live, so
+ *      a hand-picked `Selected` fights the scoring model AND is refused by
+ *      `BovSubmissionSelectionGuardService` on any disposition that already has an appointed
+ *      broker — which, once a disposition is priced, is all of them. Read this item as a
+ *      BOTH-MODES fact, and item 2 as the only remaining difference besides the two labels.
  *   4. `Is_Preferred_Broker__c = true` is forced in `withParent()`.
  *
  * 🔴 THE STATEMENT ABOVE — "Every field rendered here is granted `editable=true`" — NOW HAS AN
@@ -186,10 +215,6 @@ export default class BovAddResponseModal extends LightningModal {
         return this._saving;
     }
 
-    get defaultStatus() {
-        return STATUS_BACKUP;
-    }
-
     get modalTitle() {
         return this.isPreferred === true ? TITLE_PREFERRED : TITLE_RESPONSE;
     }
@@ -209,10 +234,16 @@ export default class BovAddResponseModal extends LightningModal {
         return this.isPreferred !== true;
     }
 
-    /** `Submission_Status__c` is offered only in response mode — see the template for why. */
-    get isStatusRendered() {
-        return this.isPreferred !== true;
-    }
+    // ══════════════════════════════════════════════════════════════════════════════════════
+    // 🔴 `isStatusRendered` AND `defaultStatus` WERE DELETED HERE 2026-08-24.
+    // ══════════════════════════════════════════════════════════════════════════════════════
+    // The deleted docblock read: "`Submission_Status__c` is offered only in response mode — see
+    // the template for why." It is now offered in NEITHER mode, so a mode-keyed getter has
+    // nothing left to decide and a `defaultStatus` getter has no control to feed.
+    // ⚠ CHECKED BEFORE DELETING: a repo-wide grep for `isStatusRendered` / `defaultStatus` /
+    // `bar-field-status` found callers ONLY in this bundle's own template and Jest suite (the
+    // `defaultStatusCode` in SharePointCalloutMock is an unrelated Apex field). Nothing else
+    // reads them. See the template for why the control itself went.
 
     /**
      * The one place that knows `Disposition__c` must be forced onto the payload.
@@ -261,6 +292,22 @@ export default class BovAddResponseModal extends LightningModal {
      * 🔴 THAT SERVICE IS THE SOLE WRITER OF `Submission_Status__c` ON THE PREFERRED PATH. Do not
      * reintroduce a status key here "to be explicit": two writers of one invariant is how this
      * repo has produced silent divergence before, and this one would additionally be refused.
+     *
+     * ══════════════════════════════════════════════════════════════════════════════════════
+     * 🔴 RETRACTED IN PLACE 2026-08-24 (LATER STILL): "ON THE PREFERRED PATH" IS NOW "ON EVERY
+     * PATH". Only the SCOPE of everything above has widened — its reasoning is what keeps the
+     * key out, so it is kept verbatim.
+     * ══════════════════════════════════════════════════════════════════════════════════════
+     * This method never wrote the status on the RESPONSE path either. That path sent the key
+     * because `handleSave` gathered it from a RENDERED input carrying `value="Backup"`. That
+     * input is gone from the template, so `handleSave` has nothing to gather and the native
+     * (ENTER) submit — which carries only the form's own rendered fields — has nothing to send.
+     * `BovAutoSelectionService` is the sole writer of `Submission_Status__c` for every row
+     * created by this dialog, in both modes.
+     * ⚠ THE ANSWER TO "the status should be X" IS NEVER A KEY IN THIS PAYLOAD. It is the record
+     * page (the layout still offers the field) or the matrix's Replace Broker action — both of
+     * which can see which sibling already holds the single `Selected` slot, and this create
+     * dialog cannot.
      *
      * ⚠ THE PREFERRED KEY IS OMITTED ENTIRELY IN RESPONSE MODE — not sent as `false`. Two
      * reasons, and the second is the load-bearing one:

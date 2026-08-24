@@ -41,6 +41,22 @@
  * `BovSubmissionSelectionGuardService` on any disposition that already has an
  * appointed broker — a failure that happens in the ORG, never in Jest.
  *
+ * 🔴 WIDENED 2026-08-24 (LATER STILL) TO **BOTH** PAYLOADS AND BOTH RENDERS.
+ * `Submission_Status__c` was removed from the form in RESPONSE mode too, so the
+ * control exists in neither mode and no submit path sends the key. Three things
+ * moved with it, listed so nothing looks dropped:
+ *   - `STATUS: defaults to Backup …` (asserted `.bar-field-status`'s value) and
+ *     `T-PREFERRED-STATUS …` (asserted its absence in ONE mode, and asserted the
+ *     default mode still OFFERED it — a line that is now false) are both
+ *     replaced by the single T-NO-STATUS pin, which carries their reasoning.
+ *   - the two payload assertions that read `.toBe('Backup')` are now
+ *     `not.toHaveProperty`. 🔴 THAT DIFFERENCE IS THE WHOLE POINT: an equality
+ *     assertion still passes when the key is sent with the expected value, so
+ *     only the absence form catches a regression that starts sending the key.
+ *   - T-PARENT-BUTTON lost the assertion that proved `handleSave` GATHERS input
+ *     values at all (the status control was the only Jest-visible input with a
+ *     value the parent injection did not already force). T-GATHER replaces it.
+ *
  * ⚠ EVERY DEFAULT-MODE TEST ABOVE IS ALSO THE REGRESSION PIN FOR MODE ONE.
  * `createComponent()` uses its default parameter — which does NOT set
  * `isPreferred` — so the whole existing suite runs in response mode and fails
@@ -119,8 +135,12 @@ describe('c-bov-add-response-modal', () => {
             'Cap_Rate__c',
             'Commission_Rate__c',
             'Days_To_Market__c',
-            'Hist_Success_Rate__c',
-            'Submission_Status__c'
+            'Hist_Success_Rate__c'
+            // 🔴 `Submission_Status__c` LEFT THIS LIST 2026-08-24. It is the one
+            // field on `BOV Submission Layout` this form deliberately withholds:
+            // automatic selection by score owns the value now, and an insert
+            // naming 'Selected' is refused by BovSubmissionSelectionGuardService.
+            // Its absence is pinned by name in T-NO-STATUS below.
         ]);
 
         expect(form(element).objectApiName).toBe('BOV_Submission__c');
@@ -186,19 +206,47 @@ describe('c-bov-add-response-modal', () => {
         expect(parent.disabled).toBe(true);
     });
 
-    it('STATUS: defaults to Backup — appointment is the Replace Broker path', () => {
-        const element = createComponent();
+    // ─────────────────────────────────────────────────────────────────────────
+    // 🔴 T-NO-STATUS — THE SINGLE ABSENCE PIN FOR `Submission_Status__c`
+    //     (2026-08-24, and it covers BOTH modes)
+    //
+    // REPLACES TWO TESTS, both of which are gone and neither of which was
+    // dropped silently:
+    //   1. `STATUS: defaults to Backup — appointment is the Replace Broker path`
+    //      asserted `.bar-field-status`'s value was 'Backup'. It existed to make
+    //      the 2026-08-21 removal of the `.bar-note` prose safe ("the user still
+    //      SEES Backup in the control"). With the control gone, that argument is
+    //      retracted in the template: a new row's status is no longer a
+    //      user-facing fact at create time, because BovAutoSelectionService may
+    //      overturn it in the same transaction.
+    //   2. `T-PREFERRED-STATUS: … NOT rendered on this path` asserted the same
+    //      absence for preferred mode ONLY, and closed with
+    //      `expect(fieldNames(createComponent())).toContain('Submission_Status__c')`
+    //      — a line that is now FALSE. Its comment recorded that the control was
+    //      hidden because the status is decided by BovAutoSelectionService, not
+    //      typed; that reasoning survives here and now applies to both modes.
+    //
+    // 🔴 WHY ONE PIN AND NOT TWO: an absence assertion passes for ANY reason the
+    // node is missing, including "the component never rendered". Two of them
+    // would rot independently. This one guards the guard, names the field, and
+    // checks both modes in a single place.
+    // ─────────────────────────────────────────────────────────────────────────
 
-        // 🔴 THE CONTROL ITSELF IS THE VISIBLE STEER, AND SINCE 2026-08-21 IT IS THE
-        // ONLY ONE. `.bar-note` ("New responses are logged as Backup. Use Replace
-        // Broker on the comparison matrix to appoint one.") was removed in the UAT
-        // prose pass, and this assertion is what makes that removal safe: the field
-        // renders WITH the value, so a user still sees "Backup" before saving.
-        // If this default is ever dropped, the removal stops being safe — see
-        // T-NO-PROSE below.
-        expect(
-            element.shadowRoot.querySelector('.bar-field-status').value
-        ).toBe('Backup');
+    it('🔴 T-NO-STATUS: the Submission_Status__c input is rendered in NEITHER mode', () => {
+        [createComponent(), preferredComponent()].forEach((element) => {
+            // Guard the guard: the form rendered and has fields, so each absence
+            // below is a real absence and not an unmounted component.
+            expect(form(element)).not.toBeNull();
+            expect(inputs(element).length).toBeGreaterThan(0);
+
+            // 1. BY FIELD NAME — catches the control returning under any class.
+            expect(fieldNames(element)).not.toContain('Submission_Status__c');
+            // 2. BY CLASS — catches it returning under its original class with a
+            //    fieldName typo, which a `not.toContain` on names would miss.
+            expect(
+                element.shadowRoot.querySelector('.bar-field-status')
+            ).toBeNull();
+        });
     });
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -268,10 +316,31 @@ describe('c-bov-add-response-modal', () => {
         // submission, so relying on it would make the parent lookup depend on a
         // base-component implementation detail. It is forced in JS instead.
         expect(payload.Disposition__c).toBe(DISPOSITION_ID);
-        // The gathered input values ride along. (In Jest only the two fields
-        // with a bound `value` have one — the stub leaves the rest undefined,
-        // and undefined values are dropped rather than sent as nulls.)
-        expect(payload.Submission_Status__c).toBe('Backup');
+        // 🔴 AND NO STATUS KEY — not 'Backup', not any value (2026-08-24).
+        // `not.toHaveProperty`, deliberately, rather than an equality check:
+        // the regression worth catching is the key COMING BACK at all, and
+        // `.toBe('Backup')` would pass for exactly that regression.
+        expect(payload).not.toHaveProperty('Submission_Status__c');
+    });
+
+    it('🔴 T-GATHER: the footer Save carries what the user typed, not just the forced parent', () => {
+        // ⚠ THIS REPLACES A FALSIFIER THAT LEFT WITH THE STATUS CONTROL.
+        // T-PARENT-BUTTON above used to prove `handleSave`'s gather loop runs by
+        // asserting `payload.Submission_Status__c === 'Backup'` — in Jest the
+        // stub leaves every input's `value` undefined except the ones the
+        // template binds, and that was the only bound one whose value was not
+        // ALSO forced by `withParent()`. Delete the gather loop today and every
+        // other payload assertion in this file still passes, because
+        // `Disposition__c` and `Is_Preferred_Broker__c` are both injected.
+        // This test puts a value on a stub input and demands it reach submit().
+        const element = createComponent();
+        element.shadowRoot.querySelector('.bar-field-amount').value = 12500000;
+        const submit = jest.spyOn(form(element), 'submit');
+
+        element.shadowRoot.querySelector('.bar-save').click();
+
+        expect(submit).toHaveBeenCalledTimes(1);
+        expect(submit.mock.calls[0][0].BOV_Amount__c).toBe(12500000);
     });
 
     it('🔴 T-PARENT-ENTER: a native submit (ENTER in a field) forces it too', () => {
@@ -521,34 +590,6 @@ describe('c-bov-add-response-modal', () => {
         ).toBe(true);
     });
 
-    it('🔴 T-PREFERRED-STATUS: the Submission_Status__c input is NOT rendered on this path', () => {
-        const element = preferredComponent();
-
-        // Guard the guard: the form rendered and has fields, so the absence
-        // below is a real absence.
-        expect(form(element)).not.toBeNull();
-        expect(inputs(element).length).toBeGreaterThan(0);
-
-        // 🔴 THE REASON CHANGED 2026-08-24 (the assertion did not).
-        // It used to be: "Broker_Finalize_Approval's entry criterion is
-        // Submission_Status__c = 'Selected' AND NOTHING ELSE, so a user who
-        // picked Selected on a preferred row would enter that broker into the
-        // approval." The user has since decided a preferred broker IS the
-        // appointed broker, so that is no longer a hazard.
-        // IT STAYS HIDDEN FOR A NEW REASON: the status of a preferred row is
-        // decided by BovAutoSelectionService, not typed. An input here would
-        // offer a value the next trigger run overwrites — a control whose value
-        // is discarded with a success toast, the same test this form applies to
-        // Broker_Firm__c and Contact_Name__c.
-        expect(fieldNames(element)).not.toContain('Submission_Status__c');
-        expect(
-            element.shadowRoot.querySelector('.bar-field-status')
-        ).toBeNull();
-
-        // The default path still offers it. Without this half, deleting the
-        // control outright would pass.
-        expect(fieldNames(createComponent())).toContain('Submission_Status__c');
-    });
 
     it('🔴 T-PREFERRED-PAYLOAD-BUTTON: the footer Save forces the flag and writes NO status', () => {
         const element = preferredComponent();
@@ -621,12 +662,20 @@ describe('c-bov-add-response-modal', () => {
         // lightning-record-edit-form — so an unconditional `false` here would
         // break the working "Add Broker Response" dialog the moment this
         // deploys, in order to set a flag to the value it already defaults to.
+        // ⚠ RETRACTED IN PLACE 2026-08-24: the field IS now live on usman-dpeg
+        // (FieldDefinition query, see the component header), so the OUTAGE half
+        // of that reasoning is spent. The assertion stands on the other half —
+        // there is no value in writing a field to the value it already defaults
+        // to, and every key added here is one more key the form FLS-checks.
         expect(payload).not.toHaveProperty('Is_Preferred_Broker__c');
         // And the default path's payload is otherwise unchanged.
         expect(payload.Disposition__c).toBe(DISPOSITION_ID);
-        expect(payload.Submission_Status__c).toBe('Backup');
+        // 🔴 …EXCEPT THAT IT NO LONGER SENDS A STATUS KEY EITHER (2026-08-24).
+        // This line read `expect(payload.Submission_Status__c).toBe('Backup')`
+        // until the input was removed from response mode too. The two payloads
+        // are now identical apart from the preferred flag.
+        expect(payload).not.toHaveProperty('Submission_Status__c');
     });
-
     it('T-PREFERRED: is accessible', async () => {
         const element = preferredComponent();
 

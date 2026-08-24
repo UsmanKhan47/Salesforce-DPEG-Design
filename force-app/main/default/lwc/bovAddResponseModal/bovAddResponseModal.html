@@ -211,14 +211,43 @@
                          ⚠ AND THE VALUE NO LONGER REACHES THE SERVER FROM HERE AT ALL.
                          `withParent()` does NOT send Submission_Status__c on this path — not
                          Backup, not Selected, not the key. The picklist DEFAULT is Backup, so
-                         the row inserts guard-safe on its own. See the JS. -->
-                    <template lwc:if={isStatusRendered}>
-                        <lightning-input-field
-                            class="bar-field bar-field-status"
-                            field-name="Submission_Status__c"
-                            value={defaultStatus}
-                        ></lightning-input-field>
-                    </template>
+                         the row inserts guard-safe on its own. See the JS.
+
+                         ═══════════════════════════════════════════════════════════════
+                         🔴 RETRACTED IN PLACE 2026-08-24 (LATER STILL) — THE CONTROL IS NOW GONE
+                         FROM **BOTH** MODES. THERE IS NO `Submission_Status__c` INPUT ON THIS
+                         FORM AT ALL, AND NO STATUS KEY IN THE PAYLOAD ON EITHER SUBMIT PATH.
+                         ═══════════════════════════════════════════════════════════════
+                         Everything above stands as written and is kept deliberately — it is the
+                         record of WHY nobody should put this control back. In particular "the
+                         field is still offered (the page layout offers it too, so hiding it here
+                         would be a silent divergence from the screen this dialog replaced)" was
+                         true while a status was something a user could meaningfully CHOOSE.
+                         🔴 THAT PREMISE IS SPENT: AUTOMATIC SELECTION BY SCORE IS LIVE.
+                         `BovAutoSelectionService` now derives the status of every row on the
+                         disposition — highest score promoted to `Selected`, everything else
+                         demoted to `Backup`, in one bulk DML. A user hand-picking `Selected`
+                         here would be fighting the scoring model, and would not even get that
+                         far: `BovSubmissionSelectionGuardService` runs in `beforeInsert` and
+                         `addError`s THEIR OWN SAVE while a committed `Selected` sibling exists —
+                         which, on any priced disposition, it always does. That refusal is pinned
+                         by `preferredInsertedAsSelected_isRefused_soTheModalMustNotSetIt`.
+                         ⚠ THE LAYOUT-DIVERGENCE ARGUMENT IS ANSWERED, NOT IGNORED. `BOV
+                         Submission Layout` still offers the field and is untouched by this
+                         change, so a status can still be set by hand — from the RECORD PAGE, by
+                         someone looking at the whole disposition. What is withdrawn is setting it
+                         from a CREATE dialog, which cannot see which sibling already holds the
+                         single `Selected` slot.
+                         🔴 NOT RENDERED IS ALSO NOT SENT, AND THAT IS THE HALF THAT MATTERS.
+                         `handleSave` gathers only the rendered `lightning-input-field`s, and the
+                         native (ENTER) submit carries only the form's own rendered fields, so no
+                         `Submission_Status__c` key reaches the server from here. The picklist
+                         DEFAULT (`Backup`) carries the row until the server decides.
+                         ⚠ DO NOT "BE EXPLICIT" AND SEND `'Backup'`. That would make this a
+                         SECOND WRITER of a field whose sole writer is `BovAutoSelectionService`,
+                         and it is exactly what the Jest suite forbids: the payload pins assert
+                         the key is ABSENT (`not.toHaveProperty`), not that it equals `'Backup'`.
+                         The two are different, and only the first catches the regression. -->
                 </div>
 
                 <!-- 🔴 NO CLOSING NOTE. `.bar-note` ("New responses are logged as Backup. Use
@@ -229,7 +258,18 @@
                      SEES "Backup" in the control itself. The reason that default is load-bearing —
                      "Selected" exclusivity is a server invariant maintained by
                      BovSubmissionService.replaceSelectedBroker — is documented on that field above,
-                     for developers, which is who needs it. -->
+                     for developers, which is who needs it.
+
+                     🔴 RETRACTED IN PLACE 2026-08-24 (LATER STILL). "IT WAS NOT THE ONLY CARRIER
+                     OF THE FACT IT STATED" IS NO LONGER TRUE — the `Submission_Status__c` control
+                     is gone from this form in BOTH modes (see the retraction above it), so nothing
+                     on this dialog shows the user the word "Backup" any more.
+                     ⚠ THAT IS ACCEPTABLE, AND IT IS THE POINT: a new row's status is no longer a
+                     user-facing fact at create time. `BovAutoSelectionService` derives it from the
+                     scores, so the value this dialog COULD have shown ("Backup") is not
+                     necessarily the value the row ends up holding. Re-adding the sentence would
+                     state a default the server may overturn moments later. The status a user needs
+                     to read is the committed pill in `c/bovComparisonMatrix`. -->
             </lightning-record-edit-form>
         </div>
     </lightning-modal-body>
