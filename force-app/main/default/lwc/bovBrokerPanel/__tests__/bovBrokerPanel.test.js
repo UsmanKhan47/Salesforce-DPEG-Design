@@ -30,12 +30,17 @@
  *    in this repo: a parent's `shadowRoot.textContent` is `""` with children
  *    rendering their own cards. Every assertion about the children here is a TAG
  *    scan or a PROPERTY read, never a text search.
- * 3. `preferred-only` IS A BARE ATTRIBUTE in the template. LWC resolves a
- *    valueless attribute on a custom element to boolean `true`; the near-miss
- *    `preferred-only=""` is the FALSY empty string and would silently turn the
- *    top card into a second copy of the matrix. Every assertion on it is
- *    `toBe(true)` / `toBe(false)` — a truthiness check passes on `"true"` and on
- *    `""` respectively and proves nothing.
+ * 3. 🔴 RETRACTED LATER THE SAME DAY — THERE IS NO `preferred-only` ATTRIBUTE.
+ *    This fact read: *"`preferred-only` IS A BARE ATTRIBUTE in the template. LWC
+ *    resolves a valueless attribute on a custom element to boolean `true`; the
+ *    near-miss `preferred-only=""` is the FALSY empty string … Every assertion on
+ *    it is `toBe(true)` / `toBe(false)`."* The preferred view became a HERO PANEL
+ *    rather than a filtered table, so `@api preferredOnly` was deleted from
+ *    `c/bovComparisonMatrix` and the top child is now `c/bovPreferredBroker`.
+ *    WHAT REPLACES IT is the `firmName` contract, asserted on the RENDERED child
+ *    — including the blank-name case, where this component must pass `''` and NOT
+ *    `undefined`: a getter bound to an attribute is written unconditionally, and
+ *    `undefined` reaches the DOM as the literal string "undefined".
  * 4. `LightningModal.open()` IS A STATIC ON A CLASS and cannot be driven like a
  *    wire adapter, so both modals are mocked wholesale. Their own behaviour is
  *    proved in lwc/bovReplaceBrokerModal/__tests__ and
@@ -347,10 +352,27 @@ describe('c-bov-broker-panel', () => {
             (b) => b.label
         );
 
-    /** The rendered matrix children, in document order. */
+    /**
+     * The rendered matrix children, in document order.
+     *
+     * ⚠ IT IS A LIST FOR A HISTORICAL REASON: this bundle used to be mounted
+     * TWICE (once with `preferred-only`), so 'how many' was a real question. It
+     * is now always 0 or 1, and the tests that used to read index 1 read index 0.
+     */
     const matrices = (el) => [
         ...el.shadowRoot.querySelectorAll('c-bov-comparison-matrix')
     ];
+
+    /**
+     * The rendered preferred-broker panel, or null.
+     *
+     * 🔴 A SEPARATE BUNDLE SINCE 2026-08-24, NOT A MODE. The preferred view is a
+     * hero panel (a green fill, a shield, a label, a firm name and a YES pill)
+     * and shares no rendering with the matrix table, so `@api preferredOnly` was
+     * deleted rather than widened. See `c/bovPreferredBroker`'s `.js` header.
+     */
+    const preferredPanel = (el) =>
+        el.shadowRoot.querySelector('c-bov-preferred-broker');
 
     // ═════════════════════════════════════════════════════════════════════════
     // THE PANEL ITSELF — one header, three buttons, two cards
@@ -457,51 +479,122 @@ describe('c-bov-broker-panel', () => {
     });
 
     // ═════════════════════════════════════════════════════════════════════════
-    // 🔴 THE TWO CARDS, AND THE GAP THE PREFERRED ONE USED TO ORPHAN
+    // 🔴 THE TWO SECTIONS, AND THE GAP THE PREFERRED ONE USED TO ORPHAN
     // ═════════════════════════════════════════════════════════════════════════
+    //
+    // 🔴 THE TOP SECTION CHANGED BUNDLE ON 2026-08-24 AND THESE FOUR TESTS
+    // CHANGED WITH IT. It used to be a SECOND `<c-bov-comparison-matrix>` mounted
+    // with a bare `preferred-only` attribute, and the assertions here were
+    // `matrices(element)).toHaveLength(2)` plus `cards[0].preferredOnly).toBe(true)`.
+    // The user's design turned that card into a hero panel, so the flag was
+    // deleted and the top child is `<c-bov-preferred-broker>`. The `toBe(true)`
+    // pin had no successor to inherit — there is no boolean any more — so what
+    // replaces it is the `firmName` contract, asserted on the RENDERED child.
+    //
+    // ⚠ THE GAP AND DIVIDER CLAIMS ARE UNCHANGED BY THAT SWAP, and that is worth
+    // saying: both are about `.panel-stack`'s CHILDREN, whatever those children
+    // are. What changed is only the tag name each assertion expects.
 
-    it('🔴 NO PREFERRED BROKER: exactly ONE card renders — the preferred TAG is not in the DOM at all', async () => {
+    it('🔴 NO PREFERRED BROKER: the preferred TAG is not in the DOM at all', async () => {
         const element = createComponent();
 
         getSubmissions.emit(SUBMISSIONS);
         await Promise.resolve();
 
-        const cards = matrices(element);
         // 🔴 THIS IS THE GAP FIX, ASSERTED. `dispositionMain.css` documented the
         // old behaviour as "KNOWN, ACCEPTED": the preferred instance rendered an
         // EMPTY card, and a zero-height flex item still takes a `gap`, so the
-        // stack began one 1rem step low. A component that merely renders nothing
-        // would still be an element here and this would read 2.
-        expect(cards).toHaveLength(1);
-        expect(cards[0].preferredOnly).toBe(false);
+        // stack began one 1rem step low. A component that merely rendered
+        // nothing would still be an element here and this would not be null.
+        expect(preferredPanel(element)).toBeNull();
+
+        // ⚠ AND IT IS THE **ONLY** GATE NOW. `c/bovComparisonMatrix` used to
+        // self-gate too (`lwc:if={isVisible}`), so the old arrangement had a
+        // second line of defence. `c/bovPreferredBroker` has no data and cannot
+        // gate itself — remove this `lwc:if` and an empty green panel renders on
+        // every disposition that has no preferred broker.
+        expect(matrices(element)).toHaveLength(1);
     });
 
-    it('🔴 WITH A PREFERRED BROKER: TWO cards, preferred FIRST, and preferred-only is BOOLEAN true', async () => {
+    it('🔴 WITH A PREFERRED BROKER: the panel renders FIRST and carries the firm name', async () => {
         const element = createComponent();
 
         getSubmissions.emit(WITH_PREFERRED);
         await Promise.resolve();
 
-        const cards = matrices(element);
-        expect(cards).toHaveLength(2);
+        const panel = preferredPanel(element);
+        expect(panel).not.toBeNull();
 
-        // 🔴 `querySelectorAll` RETURNS DOCUMENT ORDER, so index 0 IS the top
-        // card. A `querySelector` test would pass with the tags in either order.
-        // ⚠ `toBe(true)`, NEVER A TRUTHINESS CHECK. `preferred-only` is written
-        // as a BARE attribute; the near-miss `preferred-only=""` passes the FALSY
-        // empty string and would render a second copy of the matrix here.
-        expect(cards[0].preferredOnly).toBe(true);
-        expect(cards[0].recordId).toBe(RECORD_ID);
+        // 🔴 THE WHOLE CONTRACT BETWEEN THESE TWO COMPONENTS, ON THE RENDERED
+        // CHILD — not on this component's getter. A getter-only assertion has
+        // passed in this project while the rendered output was wrong.
+        expect(panel.firmName).toBe('Cushman & Wakefield');
 
-        // The bare tag is unchanged by construction.
-        expect(cards[1].preferredOnly).toBe(false);
-        expect(cards[1].recordId).toBe(RECORD_ID);
+        // ⚠ AND THE PANEL ACTUALLY RENDERED IT. The prop assertion above passes
+        // whether or not the child does anything with the value; a child's shadow
+        // text never reaches THIS component's `shadowRoot.textContent` (measured:
+        // it returns ""), so the only way to see it is to reach into the child.
+        expect(panel.shadowRoot.querySelector('.pref-firm').textContent).toBe(
+            'Cushman & Wakefield'
+        );
+
+        // 🔴 DOCUMENT ORDER: the panel is ABOVE the matrix. A `querySelector`
+        // pair would pass with the two in either order.
+        const order = [...element.shadowRoot.querySelector('.panel-stack').children]
+            .map((el) => el.tagName.toLowerCase())
+            .filter((tag) => tag !== 'div');
+        expect(order).toEqual([
+            'c-bov-preferred-broker',
+            'c-bov-comparison-matrix'
+        ]);
+
+        // The matrix is unchanged by construction and still gets the record id.
+        expect(matrices(element)).toHaveLength(1);
+        expect(matrices(element)[0].recordId).toBe(RECORD_ID);
     });
 
-    it('🔴 both cards are DIRECT children of .panel-stack — which is why ONE gap covers them', async () => {
-        // The gap lives on `.panel-stack`. Wrap either card in a plain <div> and
-        // the gap applies to the wrapper instead — the cards inside go flush
-        // again while every other assertion in this file still passes.
+    /**
+     * ══════════════════════════════════════════════════════════════════════════
+     * 🔴 A BLANK FIRM NAME MUST NOT PRODUCE AN EMPTY PANEL OR THE WORD "undefined".
+     * ══════════════════════════════════════════════════════════════════════════
+     * `Broker_Firm__c` is legitimately nullable and was NULL on live data this
+     * week. A preferred broker is a firm DPEG would like to use, recorded ahead
+     * of any quoted opinion of value, so the thin row carrying the flag often
+     * carries nothing else.
+     *
+     * ⚠ THE TWO HALVES OF THE FIX ARE IN DIFFERENT BUNDLES, so this test crosses
+     * the boundary on purpose: THIS component must hand down `''` rather than
+     * `undefined` (a getter bound to an attribute is written unconditionally, and
+     * `undefined` is what reaches the DOM as the literal string "undefined"), and
+     * `c/bovPreferredBroker` must turn `''` into "Unnamed broker". Asserting only
+     * the prop would leave the visible outcome unpinned; asserting only the text
+     * would stay green if this component started passing `undefined` and the
+     * child happened to absorb it.
+     */
+    it('🔴 A PREFERRED BROKER WITH NO FIRM NAME: the panel still renders, reading "Unnamed broker"', async () => {
+        const element = createComponent();
+
+        getSubmissions.emit([
+            ...SUBMISSIONS,
+            { ...PREFERRED_ROW, brokerFirm: null }
+        ]);
+        await Promise.resolve();
+
+        const panel = preferredPanel(element);
+        expect(panel).not.toBeNull();
+
+        // An EMPTY STRING, never `undefined` and never `null`.
+        expect(panel.firmName).toBe('');
+
+        const firm = panel.shadowRoot.querySelector('.pref-firm');
+        expect(firm.textContent).toBe('Unnamed broker');
+        expect(panel.shadowRoot.textContent).not.toContain('undefined');
+    });
+
+    it('🔴 the panel and the matrix are DIRECT children of .panel-stack — which is why ONE gap covers them', async () => {
+        // The gap lives on `.panel-stack`. Wrap either section in a plain <div>
+        // and the gap applies to the wrapper instead — the children inside go
+        // flush again while every other assertion in this file still passes.
         const element = createComponent();
 
         getSubmissions.emit(WITH_PREFERRED);
@@ -509,13 +602,13 @@ describe('c-bov-broker-panel', () => {
 
         const stack = element.shadowRoot.querySelector('.panel-stack');
         expect(stack).not.toBeNull();
-        // ⚠ THE DIVIDER IS A SIBLING OF THE TWO CARDS, NOT A CHILD OF EITHER —
+        // ⚠ THE DIVIDER IS A SIBLING OF THE TWO SECTIONS, NOT A CHILD OF EITHER —
         // that is what makes the stack's own 1rem gap fall on both sides of it
-        // and centre it. Nesting it inside the preferred card's tag, or wrapping
+        // and centre it. Nesting it inside the preferred panel's tag, or wrapping
         // the pair in a <div>, both fail here.
         expect(
             [...stack.children].map((el) => el.tagName.toLowerCase())
-        ).toEqual(['c-bov-comparison-matrix', 'div', 'c-bov-comparison-matrix']);
+        ).toEqual(['c-bov-preferred-broker', 'div', 'c-bov-comparison-matrix']);
     });
 
     // ═════════════════════════════════════════════════════════════════════════
@@ -538,10 +631,10 @@ describe('c-bov-broker-panel', () => {
      * disposition starts without a preferred broker, and a hairline above a lone
      * matrix card would be a rule with nothing on one side of it.
      */
-    it('🔴 THE DIVIDER: drawn between the two cards, and GONE when the preferred card is', async () => {
+    it('🔴 THE DIVIDER: drawn between the two sections, and GONE when the preferred panel is', async () => {
         const element = createComponent();
 
-        // ── WITH a preferred broker: two cards, one rule, and it is BETWEEN them.
+        // ── WITH a preferred broker: two sections, one rule, and it is BETWEEN them.
         getSubmissions.emit(WITH_PREFERRED);
         await Promise.resolve();
 
@@ -551,16 +644,16 @@ describe('c-bov-broker-panel', () => {
         );
         expect(
             [...stack.children].map((el) => el.tagName.toLowerCase())
-        ).toEqual(['c-bov-comparison-matrix', 'div', 'c-bov-comparison-matrix']);
+        ).toEqual(['c-bov-preferred-broker', 'div', 'c-bov-comparison-matrix']);
         // Position, not just existence: the rule is the MIDDLE child. A divider
-        // rendered after both cards would satisfy a `not.toBeNull()` check.
+        // rendered after both sections would satisfy a `not.toBeNull()` check.
         expect(stack.children[1].classList.contains('panel-rule')).toBe(true);
 
         // ── WITHOUT one: the matrix is the only child and the rule is gone.
         getSubmissions.emit(SUBMISSIONS);
         await Promise.resolve();
 
-        expect(matrices(element)).toHaveLength(1);
+        expect(preferredPanel(element)).toBeNull();
         expect(element.shadowRoot.querySelector('.panel-rule')).toBeNull();
         expect(
             [...element.shadowRoot.querySelector('.panel-stack').children].map(
@@ -1237,7 +1330,7 @@ describe('c-bov-broker-panel', () => {
     // THE REFRESH FAN-OUT
     // ═════════════════════════════════════════════════════════════════════════
 
-    it('🔴 a write refreshes THIS wire AND every rendered child', async () => {
+    it('🔴 a write refreshes THIS wire AND the matrix child', async () => {
         BovAddResponseModal.open.mockResolvedValue({
             recordId: 'a0X010000000099'
         });
@@ -1247,17 +1340,25 @@ describe('c-bov-broker-panel', () => {
         await Promise.resolve();
 
         const kids = matrices(element);
-        expect(kids).toHaveLength(2);
+        expect(kids).toHaveLength(1);
         const spies = kids.map((kid) => jest.spyOn(kid, 'refreshData'));
 
         addBtn(element).click();
         await flushPromises();
 
-        // ⚠ THE CHILD CALLS ARE NOT DECORATION. All three wires share one LDS
-        // cache entry, so invalidating it here SHOULD re-provision the children —
-        // but that is an assumption about LDS internals which no Jest stub models
-        // and which nothing on this page would report if it stopped holding.
+        // ⚠ THE CHILD CALL IS NOT DECORATION. Both wires share one LDS cache
+        // entry, so invalidating it here SHOULD re-provision the child — but that
+        // is an assumption about LDS internals which no Jest stub models and
+        // which nothing on this page would report if it stopped holding.
         spies.forEach((spy) => expect(spy).toHaveBeenCalledTimes(1));
+
+        // 🔴 `c/bovPreferredBroker` IS NOT IN THAT LIST AND MUST NOT BE ADDED. It
+        // has no wire and therefore no `refreshData()`; it renders
+        // `preferredBrokerFirm`, derived from THIS component's `_data`, so the
+        // `refreshApex` asserted below IS its whole refresh path. Pinned so that
+        // a future `@api refreshData()` on that bundle is a deliberate decision
+        // rather than something `_refreshAll` starts calling by accident.
+        expect(typeof preferredPanel(element).refreshData).toBe('undefined');
 
         // And this component's OWN wire was refreshed with the UN-DESTRUCTURED
         // wire result. `refreshApex` cannot re-provision a wire from a

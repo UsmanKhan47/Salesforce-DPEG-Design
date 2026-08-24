@@ -1,6 +1,6 @@
 /*
   ═════════════════════════════════════════════════════════════════════════════
-  🔴 THE STACK GAP BETWEEN THE TWO BROKER CARDS LIVES HERE, AND NOWHERE ELSE.
+  🔴 THE STACK GAP BETWEEN THE TWO BROKER SECTIONS LIVES HERE, AND NOWHERE ELSE.
   ═════════════════════════════════════════════════════════════════════════════
   The LWC template compiler discards whitespace-only text nodes between sibling
   elements, so with `display: block` the two `c-bov-comparison-matrix` cards
@@ -35,7 +35,7 @@
     display: flex;
     flex-direction: column;
     /* --slds-g-spacing-4 = 1rem, the same step `dispositionMain.css` uses for
-       the page-level card stack, so the two cards inside this panel read as
+       the page-level card stack, so the two sections inside this panel read as
        part of the same rhythm rather than a second, similar value. */
     gap: var(--slds-g-spacing-4, 1rem);
 }
@@ -54,9 +54,9 @@
   ⚠ A ONE-PIXEL BOX, NOT A `border-top` ON THE LOWER CARD. Each child renders its
   own `lightning-card`, so a border on the card below would sit flush against
   that card's own edge and read as a doubled line. As a flex ITEM the rule takes
-  `.panel-stack`'s 1rem gap on BOTH sides and is centred between the two cards
+  `.panel-stack`'s 1rem gap on BOTH sides and is centred between the two sections
   with no margin at all — which also keeps the stylesheet's no-margin invariant
-  (see the header above) intact. Spacing between the two cards is therefore
+  (see the header above) intact. Spacing between the two sections is therefore
   1rem + 1px + 1rem by design; that breathing room is what makes the boundary
   read as deliberate rather than as a hairline crammed into the old gap.
 

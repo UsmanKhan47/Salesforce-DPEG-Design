@@ -108,13 +108,17 @@ describe('c-disposition-main', () => {
     // This branch mounted `c-bov-comparison-matrix` TWICE — once with
     // `preferred-only hide-actions`, once bare — and three tests here pinned that
     // pair, its document order and its bare-attribute booleans.
-    // `c-bov-broker-panel` now wraps both cards under ONE header carrying the
+    // `c-bov-broker-panel` now wraps both sections under ONE header carrying the
     // three broker buttons, so ALL of that moved to
     // `lwc/bovBrokerPanel/__tests__/bovBrokerPanel.test.js`, which pins the pair,
-    // the order, `preferredOnly === true` on the top card and `=== false` on the
-    // bare one — plus the `lwc:if` that stops the preferred card orphaning a
-    // stack gap when the disposition has no preferred broker, which is the
-    // defect `dispositionMain.css` used to document as "KNOWN, ACCEPTED".
+    // the order and the `lwc:if` that stops the preferred section orphaning a
+    // stack gap when the disposition has no preferred broker — the defect
+    // `dispositionMain.css` used to document as "KNOWN, ACCEPTED".
+    // 🔴 RETRACTED IN PLACE: that list used to end "`preferredOnly === true` on the
+    // top card and `=== false` on the bare one". THERE IS NO SUCH FLAG ANY MORE.
+    // Later on 2026-08-24 the preferred view became a hero panel rather than a
+    // filtered table, so it became its own bundle (`c/bovPreferredBroker`) and the
+    // boolean pin was replaced by a `firmName` contract.
     //
     // ⚠ WHAT MUST STAY PINNED **HERE** is the only thing this file controls:
     // WHICH tag this stage renders, and that the matrix bundle is no longer

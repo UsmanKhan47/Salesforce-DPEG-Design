@@ -17,10 +17,15 @@
           Response", "Replace Broker" and "Add Preferred Broker" above BOTH cards. The two
           children keep their own section titles — user decision.
 
-          ⚠ THE TWO CHILD TAGS STILL EXIST; THEY MOVED INSIDE THE PANEL. Read
-          `bovBrokerPanel.html` before changing anything about which cards render here:
-          the order (preferred ABOVE the matrix) and the bare `preferred-only` attribute
-          are both requirements, and both now live there.
+          ⚠ BOTH SECTIONS STILL EXIST; THEY MOVED INSIDE THE PANEL. Read
+          `bovBrokerPanel.html` before changing anything about which sections render
+          here: the order (preferred ABOVE the matrix) is a requirement and now lives
+          there.
+          🔴 RETRACTED IN PLACE: this used to add "and the bare `preferred-only`
+          attribute". THAT ATTRIBUTE NO LONGER EXISTS. Later on 2026-08-24 the
+          preferred view became a hero panel rather than a filtered table, so
+          `@api preferredOnly` was deleted from `c/bovComparisonMatrix` and the top
+          child became its own bundle, `c/bovPreferredBroker`.
 
           🔴 THE GAP DEFECT THIS FILE'S STYLESHEET DOCUMENTED IS FIXED BY THE MOVE, NOT
           WORKED AROUND. The comment in dispositionMain.css read "KNOWN, ACCEPTED: … with

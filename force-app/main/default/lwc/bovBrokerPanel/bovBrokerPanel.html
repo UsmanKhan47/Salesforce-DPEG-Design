@@ -1,9 +1,9 @@
 <!--
   ══════════════════════════════════════════════════════════════════════════════
-  c-bov-broker-panel — ONE header, ONE action bar, TWO broker cards (2026-08-24).
+  c-bov-broker-panel — ONE header, ONE action bar, TWO broker sections (2026-08-24).
   ══════════════════════════════════════════════════════════════════════════════
   This bundle exists to give the BOV Outreach stage a SINGLE header carrying the
-  three broker buttons, above two cards that keep their own section titles
+  three broker buttons, above two sections that carry their own titles
   ("Preferred Broker", "BOV Comparison Matrix (n)") — user decision.
 
   🔴 THE THREE BUTTONS MOVED HERE OUT OF `c/bovComparisonMatrix`. That bundle no
@@ -11,13 +11,29 @@
   raises a toast: it is a table with a title. Its Jest suite pins that it has NO
   `lightning-button` in either mode, so a button re-added there reds immediately.
 
-  ⚠ BOTH CHILD TAGS ARE THE SAME BUNDLE, and that is unchanged from what
-  `dispositionMain.html` used to do directly. `preferred-only` is a BARE
-  attribute — LWC resolves a valueless attribute on a custom element to boolean
-  `true`, whereas `preferred-only=""` is the FALSY empty string and would turn
-  the top card into a second copy of the matrix. Pinned with `toBe(true)`.
+  ══════════════════════════════════════════════════════════════════════════════
+  🔴 RETRACTED LATER THE SAME DAY — THE TWO CHILDREN ARE NO LONGER ONE BUNDLE.
+  ══════════════════════════════════════════════════════════════════════════════
+  What stood here read: *"BOTH CHILD TAGS ARE THE SAME BUNDLE … `preferred-only`
+  is a BARE attribute — LWC resolves a valueless attribute on a custom element to
+  boolean `true`, whereas `preferred-only=""` is the FALSY empty string and would
+  turn the top card into a second copy of the matrix. Pinned with `toBe(true)`."*
 
-  🔴 THE PREFERRED CARD IS GATED **HERE**, WITH `lwc:if`, AND THAT IS THE GAP FIX.
+  THE FLAG IS GONE. The user's design turns the preferred view into a HERO PANEL
+  — a green fill, a shield, a label, a firm name and a YES pill — which shares no
+  rendering with a datatable, so `c/bovComparisonMatrix` lost `@api preferredOnly`
+  entirely and the top child is now `c/bovPreferredBroker`. Read that bundle's
+  `.js` header for the full list of what the flag was driving and what came out
+  with it. The `toBe(true)` pin is replaced by an assertion on the rendered
+  child's `firmName`, which is the whole of the new contract.
+
+  ⚠ THE TOP CHILD TAKES A PROP AND HAS NO WIRE. It is presentational: this
+  component already holds every BOV row and already finds the flagged one, so it
+  hands the firm name down. That is also why `_refreshAll` below only calls
+  `refreshData()` on the matrix — the panel re-renders from this component's own
+  wire, with nothing to re-provision.
+
+  🔴 THE PREFERRED PANEL IS GATED **HERE**, WITH `lwc:if`, AND THAT IS THE GAP FIX.
   `dispositionMain.css` documented the defect this replaces: a child that
   self-gates to nothing is STILL a flex item, so a `gap` beside it renders one
   1rem step of empty space with no card in it. There is no CSS escape (a custom
@@ -25,8 +41,12 @@
   to not render the tag — which needs the BOV rows, and this component has them
   because the three buttons' visibility rules need them anyway. `dispositionMain`
   never did, which is why the defect was accepted there and is fixed here.
-  ⚠ The child ALSO still self-gates on `isVisible`. That redundancy is deliberate:
-  it keeps the child correct if it is ever mounted somewhere that has no data.
+  ⚠ RETRACTED IN PLACE: this used to add *"The child ALSO still self-gates on
+  `isVisible`. That redundancy is deliberate."* `c/bovPreferredBroker` has NO
+  self-gate — it has no data to gate on — so this `lwc:if` is now the ONLY thing
+  standing between an absent preferred broker and an empty green panel. Do not
+  remove it in favour of a getter inside the child; a child that renders nothing
+  is still a flex item and still takes a `gap`, which is the defect above.
 -->
 <template>
     <lightning-card icon-name="standard:contact">
@@ -83,20 +103,27 @@
 
         <div class="panel-stack">
             <template lwc:if={hasPreferredBroker}>
-                <c-bov-comparison-matrix
-                    record-id={recordId}
-                    preferred-only
-                ></c-bov-comparison-matrix>
+                <!-- ⚠ `firm-name` IS ALWAYS A STRING, NEVER `undefined`. The
+                     getter returns `''` when the flagged row carries no firm
+                     name, and `c/bovPreferredBroker` turns `''` into "Unnamed
+                     broker". `Broker_Firm__c` is legitimately nullable and was
+                     null on live data this week. -->
+                <c-bov-preferred-broker
+                    firm-name={preferredBrokerFirm}
+                ></c-bov-preferred-broker>
 
                 <!--
                     ── THE DIVIDER ──────────────────────────────────────────────
                     🔴 IT LIVES INSIDE THIS `lwc:if`, NOT BETWEEN THE TWO TAGS,
-                    AND THAT IS THE WHOLE GUARD. The preferred card is optional;
+                    AND THAT IS THE WHOLE GUARD. The preferred panel is optional;
                     with no preferred broker the matrix is the ONLY child, and a
                     rule above it would be a hairline with nothing on one side.
-                    Sharing the preferred card's own condition makes the stray
+                    Sharing the preferred panel's own condition makes the stray
                     case structurally unreachable — there is no state in which
-                    this element renders and the card above it does not.
+                    this element renders and the panel above it does not. THE
+                    DIVIDER THEREFORE STILL APPEARS ONLY WHEN BOTH SECTIONS DO,
+                    and that survived the panel rewrite untouched because the
+                    condition, not the child's identity, is what enforces it.
 
                     ⚠ IT IS A FLEX ITEM, NOT A `border-top` ON THE CARD BELOW.
                     Two consequences, both deliberate:
@@ -111,9 +138,10 @@
                         `.cfo-rule` earlier today, and the same token.
 
                     ⚠ DECORATIVE ONLY — `role="presentation"` AND `aria-hidden`.
-                    It carries no text and names nothing; each card's own title
-                    ("Preferred Broker" / "BOV Comparison Matrix (n)") is what
-                    tells a screen reader a new section has started.
+                    It carries no text and names nothing; the panel's own eyebrow
+                    label ("Preferred Broker") and the matrix card's title ("BOV
+                    Comparison Matrix (n)") are what tell a screen reader a new
+                    section has started.
                 -->
                 <div
                     class="panel-rule"

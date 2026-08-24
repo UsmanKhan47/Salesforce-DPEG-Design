@@ -58,29 +58,25 @@ const COLUMNS = [
     { label: 'Status', fieldName: 'status', type: 'pill', typeAttributes: { wrapStyle: { fieldName: 'statusWrap' }, dotStyle: { fieldName: 'statusDot' } } }
 ];
 
-/**
- * The same columns MINUS Status, for the preferred-broker card (2026-08-24).
+/*
+ * ══════════════════════════════════════════════════════════════════════════════
+ * 🔴 `PREFERRED_COLUMNS` WAS DELETED HERE ON 2026-08-24. DO NOT RE-DERIVE IT.
+ * ══════════════════════════════════════════════════════════════════════════════
+ * It was `COLUMNS.filter((c) => c.fieldName !== 'status')` — the same columns
+ * minus Status — and it existed for exactly one consumer: the `preferredOnly`
+ * instance of this bundle, which rendered the "Preferred Broker" card as a
+ * one-row table. There is no such instance any more. The preferred broker is
+ * rendered by `c/bovPreferredBroker`, which is not a table and therefore has no
+ * columns to choose.
  *
- * 🔴 DERIVED, NOT A SECOND HAND-WRITTEN ARRAY. A copied array is a second place to add
- * "Cap Rate" to and forget, and the two cards showing different columns for the same broker is
- * the exact class of disagreement that forced `brokerOptionLabel` out of this file and into
- * `c/utils`. Keyed on `fieldName`, not on the human `label`, so renaming the column header does
- * not silently reinstate the column here.
- *
- * ⚠ WHY STATUS GOES AT ALL: THE PILL IS A CONSTANT ON THAT CARD, so the column carries zero
- * information for the price of a column's width.
- * 🔴 THE DIRECTION OF THE CONSTANT FLIPPED ON 2026-08-24 AND THE CONCLUSION DID NOT — worth
- * recording, because a reader who checks the old reasoning will find it inverted and may assume
- * the decision inverted with it. It first read: *"a preferred broker is never Selected, so the
- * pill would read Backup on every row, forever."* The user then decided a preferred broker IS
- * the appointed broker, so it now reads SELECTED on every row, forever. Constant either way.
- * ⚠ AND IT WOULD BE ACTIVELY MISLEADING TO SHOW IT NOW: the same green "Selected" pill appears
- * in the matrix below to mean "this is the appointed broker among the scored field", and there
- * is exactly one appointed broker across BOTH cards. Two Selected pills on one page, one per
- * card, would read as the duplicate-Selected data defect the whole exclusivity guard exists to
- * prevent.
+ * The reasoning it carried is preserved because it explains a DECISION, not a
+ * mechanism, and the decision still holds in the new panel: the Status pill was
+ * dropped because it is CONSTANT on that card, and showing it would put a second
+ * green "Selected" pill on the page for a disposition that has exactly ONE
+ * appointed broker — which reads as the duplicate-Selected data defect the whole
+ * exclusivity guard exists to prevent. `c/bovPreferredBroker` shows a "YES" pill
+ * meaning *preferred*, not a Status pill, for that reason.
  */
-const PREFERRED_COLUMNS = COLUMNS.filter((c) => c.fieldName !== 'status');
 
 /**
  * c-bov-comparison-matrix — the BOV Outreach broker table on the Disposition record page.
@@ -116,30 +112,25 @@ const PREFERRED_COLUMNS = COLUMNS.filter((c) => c.fieldName !== 'status');
  * move intact — it now backs `@api refreshData()`, which the panel calls after
  * every write. See that method for the full argument.
  *
- * ── 🔴 THIS BUNDLE RENDERS TWICE ON THE PAGE (2026-08-24) ───────────────────
- * `c/bovBrokerPanel` mounts it once with `preferred-only` (the "Preferred Broker"
- * card, above) and once bare (the matrix, below). `@api preferredOnly` defaults
- * `false`, so the bare instance is unchanged by construction.
- * ⚠ `@api hideActions` WAS DELETED IN THE SAME CHANGE — there is no action region
- * left for it to suppress, and a flag that suppresses nothing is a false
- * reassurance. `NavigationMixin` survives for ONE reason only: the "View All"
- * footer link, which genuinely is a page transition.
+ * ── 🔴 RETRACTED THE SAME DAY: THIS BUNDLE RENDERS **ONCE** ─────────────────
+ * What stood here read: *"`c/bovBrokerPanel` mounts it once with `preferred-only`
+ * (the 'Preferred Broker' card, above) and once bare (the matrix, below).
+ * `@api preferredOnly` defaults `false`, so the bare instance is unchanged by
+ * construction."*
+ *
+ * `@api preferredOnly` IS GONE. The preferred view became a hero panel, not a
+ * one-row table, so it became its own bundle — `c/bovPreferredBroker` — and this
+ * one went back to doing a single thing. The flag was driving FOUR things (the
+ * row filter, the title, the column set, and whether the card rendered at all)
+ * and three of the four were statements about a table; keeping it would have
+ * meant one template selecting between two unrelated renderings.
+ * ⚠ `@api hideActions` WAS DELETED EARLIER THE SAME DAY, for a different reason —
+ * there is no action region left for it to suppress, and a flag that suppresses
+ * nothing is a false reassurance. `NavigationMixin` survives for ONE reason only:
+ * the "View All" footer link, which genuinely is a page transition.
  */
 export default class BovComparisonMatrix extends NavigationMixin(LightningElement) {
     @api recordId;
-
-    /**
-     * Renders the PREFERRED-BROKER card instead of the comparison matrix (2026-08-24).
-     *
-     * Changes four things and nothing else: which rows are shown (`isPreferred === true` instead
-     * of `!== true`), the card title, the column set (no Status) and whether the card renders at
-     * all (it does not, when there is no preferred broker).
-     *
-     * ⚠ DEFAULT `false` IS THE WHOLE SAFETY ARGUMENT. Every branch below reads
-     * `this.preferredOnly === true`, so the existing bare `<c-bov-comparison-matrix>` tag in
-     * `c/bovBrokerPanel` takes the same path it always did.
-     */
-    @api preferredOnly = false;
 
     _wired;
     _data;
@@ -177,72 +168,60 @@ export default class BovComparisonMatrix extends NavigationMixin(LightningElemen
     // ─────────────────────────────────────────────────────────────────────────
 
     /**
-     * The subset of the wire payload THIS instance renders.
+     * The rows this card renders: every submission EXCEPT the preferred broker's.
+     *
+     * 🔴 UNCONDITIONAL SINCE 2026-08-24, AND THAT IS THE POINT. It used to be a ternary on
+     * `preferredOnly` — `isPreferred === true` for the preferred card, `!== true` here. The
+     * preferred card is now `c/bovPreferredBroker`, which reads a firm name handed down by
+     * `c/bovBrokerPanel` and does not query at all, so only this half survives. Excluding the
+     * preferred row is a fact about the MATRIX (it compares SCORED responses; the preferred
+     * broker is shown above, in its own panel, precisely because it usually has no numbers to
+     * compare) rather than a mode of it.
      *
      * 🔴 ONE WIRE, FILTERED HERE — NOT A SECOND APEX METHOD. `getSubmissions` already returns
-     * every submission for the disposition, so both cards are drawn from the SAME payload and
-     * cannot disagree about the same broker's numbers. A `preferredOnly` Apex method would cost a
-     * second SOQL, a second LDS cache entry, and a second chance to diverge.
+     * every submission for the disposition, and `c/bovBrokerPanel` reads the SAME payload from
+     * the same LDS cache entry to find the preferred row. A `matrixOnly` Apex method would cost
+     * a second SOQL, a second cache entry, and a second chance for the two to disagree about the
+     * same broker.
      *
-     * ⚠ `=== true` / `!== true`, NOT TRUTHINESS. `isPreferred` is a `Boolean` on
-     * `BovController.BovRow`, so an Apex `null` arrives as JS `null` — not `false`. Under
-     * `!== true` a null lands in the MATRIX, which is the safe side: an unflagged row is an
-     * ordinary broker response. Under `=== true` it stays out of the preferred card, so a null
-     * can never populate a card whose entire purpose is "this one is flagged".
+     * ⚠ `!== true`, NOT `=== false` AND NOT TRUTHINESS. `isPreferred` is a `Boolean` on
+     * `BovController.BovRow`, so an Apex `null` arrives as JS `null` — not `false` — and the key
+     * is ABSENT entirely until `Is_Preferred_Broker__c` and its FLS grant are deployed. Under
+     * `!== true` both land in the matrix, which is the safe side: an unflagged row is an ordinary
+     * broker response, and the alternative silently empties this card.
      */
     get _visible() {
-        const all = this._data || [];
-        return this.preferredOnly === true
-            ? all.filter((r) => r.isPreferred === true)
-            : all.filter((r) => r.isPreferred !== true);
+        return (this._data || []).filter((r) => r.isPreferred !== true);
     }
 
-    /**
-     * Whether ANY submission on this disposition is flagged preferred.
+    /*
+     * ══════════════════════════════════════════════════════════════════════════════
+     * 🔴 `hasPreferredBroker` AND `isVisible` WERE DELETED HERE ON 2026-08-24.
+     * ══════════════════════════════════════════════════════════════════════════════
+     * `isVisible` was `preferredOnly !== true || hasPreferredBroker`, and it wrapped this whole
+     * card in an `lwc:if`. Its entire job was letting the PREFERRED instance withhold itself when
+     * no broker was flagged. On the matrix instance it evaluated `true` in every state, so
+     * deleting it is behaviour-preserving for the card that survives — and `hasPreferredBroker`
+     * had no other consumer left once it went.
      *
-     * ⚠ READS `_data`, NOT `_visible`, AND THAT IS THE POINT. The matrix instance filters
-     * preferred rows OUT of `_visible`, so a `_visible`-based test would always be false there —
-     * and `isVisible` on the preferred instance would go false the moment it mattered.
+     * ⚠ THE "RENDERS NOTHING WHEN THERE IS NO PREFERRED BROKER" REQUIREMENT DID NOT GO WITH THEM.
+     * It moved UP: `c/bovBrokerPanel` gates the `<c-bov-preferred-broker>` TAG with
+     * `lwc:if={hasPreferredBroker}`. It has to be gated there rather than inside the child — a
+     * child that renders nothing is still a flex item and still takes one step of the stack's
+     * `gap`, which is the defect that arrangement exists to fix.
      *
-     * 🔴 RETRACTED IN PLACE 2026-08-24: this used to end *"and 'Add Preferred Broker' would never
-     * hide, which is the one behaviour the user asked for by name."* THAT BUTTON IS NO LONGER
-     * HERE — `c/bovBrokerPanel` owns it and derives its own `hasPreferredBroker` from its own
-     * wire. This getter's remaining consumer is `isVisible` below. The `_data`-not-`_visible`
-     * rule is unchanged and still load-bearing for that consumer; only the example moved.
+     * 🔴 THIS CARD IS NOW VISIBLE IN EVERY STATE, INCLUDING THE TWO EMPTY ONES, AND THAT IS
+     * DELIBERATE: on an empty disposition and on the wire's error branch its error banner is what
+     * tells the user the read failed, and `c/bovBrokerPanel`'s "Add Broker Response" button —
+     * which renders unconditionally, above it — is how they recover.
      */
-    get hasPreferredBroker() {
-        return (this._data || []).some((r) => r.isPreferred === true);
-    }
-
-    /**
-     * 🔴 THE PREFERRED CARD DOES NOT RENDER AT ALL WHEN THERE IS NO PREFERRED BROKER.
-     * Not an empty card with an empty-state line — nothing. (User decision, 2026-08-24.)
-     * The matrix instance is always visible, including on an empty disposition and on the wire's
-     * error branch, because its error banner is what tells the user the read failed.
-     *
-     * ⚠ RETRACTED IN PLACE 2026-08-24: that sentence used to add "and its 'Add Broker Response'
-     * button are how the user recovers from both". The button now lives on
-     * `c/bovBrokerPanel`'s header — which renders unconditionally, ABOVE this card, so the
-     * recovery affordance still sits beside the banner. The conclusion is unchanged; the
-     * component that owns half of it is not.
-     *
-     * 🔴 THE PANEL ALSO GATES THE PREFERRED TAG WITH `lwc:if={hasPreferredBroker}`, so on that
-     * instance this getter is now belt-and-braces rather than the only gate. Keep it: it is what
-     * makes this bundle safe to mount from anywhere, and deleting it would make the card's
-     * correctness depend on every future parent remembering to gate.
-     */
-    get isVisible() {
-        return this.preferredOnly !== true || this.hasPreferredBroker;
-    }
 
     get cardTitle() {
-        return this.preferredOnly === true
-            ? 'Preferred Broker'
-            : `BOV Comparison Matrix (${this.count})`;
+        return `BOV Comparison Matrix (${this.count})`;
     }
 
     get columns() {
-        return this.preferredOnly === true ? PREFERRED_COLUMNS : COLUMNS;
+        return COLUMNS;
     }
 
     get count() {

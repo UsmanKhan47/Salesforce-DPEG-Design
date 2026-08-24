@@ -59,15 +59,24 @@
  * set.
  *
  * ─────────────────────────────────────────────────────────────────────────────
- * THE BUNDLE RENDERS TWICE ON THE PAGE (2026-08-24)
+ * 🔴 RETRACTED LATER THE SAME DAY — THE BUNDLE RENDERS **ONCE** (2026-08-24)
  * ─────────────────────────────────────────────────────────────────────────────
- * `preferredOnly` turns this same component into the "Preferred Broker" card
- * that `c/bovBrokerPanel` mounts above the matrix. It defaults false, so every
- * existing test above exercises the matrix instance unchanged; the preferred
- * instance is created explicitly, with its props passed to `createComponent`.
- * ⚠ `createComponent()` WITH NO ARGUMENT USES ITS DEFAULT PARAMETER — passing
- * `undefined` does NOT clear it. Preferred-instance tests must pass the full
- * props object including `recordId`.
+ * What stood here read: *"THE BUNDLE RENDERS TWICE ON THE PAGE … `preferredOnly`
+ * turns this same component into the 'Preferred Broker' card that
+ * `c/bovBrokerPanel` mounts above the matrix … the preferred instance is created
+ * explicitly, with its props passed to `createComponent`."*
+ *
+ * `@api preferredOnly` WAS DELETED. The user's design turned the preferred view
+ * into a hero panel — a green fill, a shield, a label, a firm name and a YES pill
+ * — so it became its own bundle, `c/bovPreferredBroker`, and this one went back
+ * to doing a single thing. The flag had been driving FOUR things (the row filter,
+ * the title, the column set, and whether the card rendered at all) and three of
+ * those four were statements about a TABLE.
+ *
+ * ⚠ THE `createComponent()` NOTE SURVIVES THE DELETION AND IS STILL LOAD-BEARING:
+ * calling it with NO argument uses its default parameter, and passing `undefined`
+ * explicitly does NOT clear it — so any test needing different props must pass a
+ * full object including `recordId`.
  *
  * ═════════════════════════════════════════════════════════════════════════════
  * 🔴 TWENTY-FIVE TESTS LEFT THIS FILE ON 2026-08-24. THEY MOVED, THEY DID NOT DIE.
@@ -76,15 +85,17 @@
  * moved to `lwc/bovBrokerPanel/__tests__/bovBrokerPanel.test.js` together with
  * the buttons themselves, and so did the fixtures only they used
  * (`NONE_SELECTED`, `PREFERRED_APPOINTED`, `DUPLICATE_BROKERS`,
- * `DUPLICATE_BROKERS_WITH_INCUMBENT`) and both modal mocks. Look there before
- * concluding a behaviour lost its pin.
+ * `DUPLICATE_BROKERS_WITH_INCUMBENT`) and both modal mocks. FOUR MORE left later
+ * the same day when `preferredOnly` went — see the retirement note beside the
+ * "renders in EVERY state" test below for where each one went. Look in both
+ * places before concluding a behaviour lost its pin.
  *
- * 🔴 WHAT REPLACED THEM HERE IS AN ABSENCE PIN OVER **BOTH** MODES. A
- * preferred-instance-only "no buttons" assertion — which is what this file used
- * to carry — became VACUOUSLY GREEN the moment the matrix instance lost its
- * buttons too: it asserts nothing this template can now get wrong. The
- * `it.each` version below runs over both instances and reds if any
- * `lightning-button` or `[slot="actions"]` comes back.
+ * 🔴 THE "NO BUTTONS" PIN NO LONGER NEEDS TWO MODES, BUT IT DOES NEED ITS GUARD.
+ * It was widened from one instance to an `it.each` over both, because a
+ * preferred-instance-only absence assertion went VACUOUSLY GREEN the moment the
+ * matrix instance lost its buttons too. With one instance left, what keeps it
+ * honest is the guard-the-guard line: the card is asserted PRESENT first, so the
+ * emptiness that follows is an absence of buttons rather than an absence of card.
  *
  * 🔴 THE WIRE IS STILL HELD AS A WHOLE RESULT, and it still matters — it now
  * backs `@api refreshData()`, which the panel calls after every write it makes.
@@ -285,14 +296,6 @@ describe('c-bov-comparison-matrix', () => {
         return table ? table.columns.map((c) => c.label) : null;
     };
 
-    const preferredInstance = (props = {}) =>
-        createComponent({
-            recordId: RECORD_ID,
-            preferredOnly: true,
-
-            ...props
-        });
-
     it('renders a zero count and an empty datatable before the wire emits', async () => {
         const element = createComponent();
 
@@ -439,165 +442,176 @@ describe('c-bov-comparison-matrix', () => {
     });
 
     // ─────────────────────────────────────────────────────────────────────────
-    // THE PREFERRED-BROKER CARD — the second instance of this same bundle
+    // 🔴 RETIRED 2026-08-24: THERE IS NO "PREFERRED" INSTANCE OF THIS BUNDLE.
     // ─────────────────────────────────────────────────────────────────────────
+    // FOUR TESTS STOOD HERE and they are gone because the thing they described
+    // is gone, not because they stopped being useful:
+    //   • "PREFERRED CARD: renders NOTHING when no broker is flagged" — the
+    //     "renders nothing" requirement MOVED UP. `c/bovBrokerPanel` gates the
+    //     `<c-bov-preferred-broker>` tag with `lwc:if={hasPreferredBroker}` and
+    //     its suite pins presence-then-absence on ONE instance. It has to be
+    //     gated there: a child that renders nothing is still a flex item and
+    //     still takes one step of the stack's `gap`.
+    //   • "PREFERRED CARD: appears once a broker is flagged, titled 'Preferred
+    //     Broker'" — that title is now the eyebrow label INSIDE
+    //     `c/bovPreferredBroker`, pinned in that bundle's suite.
+    //   • "PREFERRED CARD: NO STATUS COLUMN" — there is no table on that card
+    //     any more, so there is no column set to assert. Its surviving half (the
+    //     matrix KEEPS Status) is now a first-class test below, on its own.
+    //   • "PREFERRED CARD is accessible" — replaced by two a11y tests in
+    //     `lwc/bovPreferredBroker/__tests__/`, one of them on the blank-firm-name
+    //     fixture, which is the state this org's live data was actually in.
+    //
+    // 🔴 WHAT REPLACED THEM IS THE FIRST TEST BELOW, AND IT IS NOT DECORATION.
+    // Deleting `isVisible` deleted the only reason this card could ever fail to
+    // render. Every remaining test in this file creates a component and then
+    // reads something out of it, so all of them would keep passing if the card
+    // came back with a gate that was true for their fixtures and false for an
+    // empty or failed read — the two states a user actually needs it in.
 
-    it('🔴 PREFERRED CARD: renders NOTHING when no broker is flagged preferred', async () => {
-        const element = preferredInstance();
+    /**
+     * ══════════════════════════════════════════════════════════════════════════
+     * 🔴 THIS CARD RENDERS IN EVERY STATE. THE `isVisible` GATE IS GONE.
+     * ══════════════════════════════════════════════════════════════════════════
+     * `isVisible` was `preferredOnly !== true || hasPreferredBroker` and it
+     * wrapped the whole `lightning-card`. On this instance it was `true` in every
+     * state, so removing it is behaviour-preserving — but the two states that
+     * matter are the ones no other test in this file covers as a VISIBILITY
+     * claim: an empty disposition, and a wire that failed. In both, this card's
+     * presence is the point — the error banner lives inside it, and
+     * `c/bovBrokerPanel`'s "Add Broker Response" button above it is the recovery.
+     *
+     * ⚠ ONE INSTANCE, RE-EMITTED, NOT THREE FIXTURES. `getSubmissions.emit`
+     * pushes to every live adapter, so each step below is a DATA CHANGE on the
+     * component that just rendered — not a fresh mount that might be rendering
+     * for some unrelated reason.
+     */
+    it('🔴 renders in EVERY state — with rows, with none, and after the wire errors', async () => {
+        const element = createComponent();
+        const card = () => element.shadowRoot.querySelector('lightning-card');
 
         getSubmissions.emit(SUBMISSIONS);
         await Promise.resolve();
+        expect(card()).not.toBeNull();
 
-        // 🔴 THE WHOLE CARD IS ABSENT — not an empty card, not a header with a
-        // "(0)". The user asked for it to be hidden entirely.
-        expect(element.shadowRoot.querySelector('lightning-card')).toBeNull();
-        expect(element.shadowRoot.querySelector('c-list-datatable')).toBeNull();
+        // An empty disposition. A gate keyed on "has any row" would fail here.
+        getSubmissions.emit([]);
+        await Promise.resolve();
+        expect(card()).not.toBeNull();
         expect(
-            element.shadowRoot.querySelector('span[slot="title"]')
-        ).toBeNull();
+            element.shadowRoot.querySelector('span[slot="title"]').textContent
+        ).toBe('BOV Comparison Matrix (0)');
 
-        // ⚠ GUARD THE GUARD: the matrix instance on the SAME payload does render,
-        // so the absence above is the `preferredOnly` gate and not a component
-        // that failed to mount at all.
-        const control = createComponent();
-        getSubmissions.emit(SUBMISSIONS);
+        // A disposition whose ONLY row is the preferred broker — every row this
+        // card renders is filtered out, and it must still be on screen.
+        getSubmissions.emit([PREFERRED_ROW]);
         await Promise.resolve();
-        expect(control.shadowRoot.querySelector('lightning-card')).not.toBeNull();
+        expect(card()).not.toBeNull();
+        expect(
+            element.shadowRoot.querySelector('c-list-datatable').data
+        ).toEqual([]);
+
+        // The wire's error branch. The banner is INSIDE the card, so a card that
+        // withheld itself would take the only report of the failure with it.
+        getSubmissions.error();
+        await Promise.resolve();
+        expect(card()).not.toBeNull();
+        expect(element.shadowRoot.querySelector('.matrix-error')).not.toBeNull();
     });
 
-    it('🔴 PREFERRED CARD: appears once a broker is flagged, titled "Preferred Broker" (singular)', async () => {
-        const element = preferredInstance();
+    /**
+     * 🔴 THE PIN FOR THE WHOLE BUTTON MOVE. Re-add any `lightning-button` to this
+     * template and this reds.
+     *
+     * ⚠ IT USED TO RUN OVER TWO INSTANCES (`it.each`), because a
+     * preferred-instance-only absence assertion went vacuous the moment the
+     * matrix instance lost its buttons too. There is only one instance now, and
+     * the guard-the-guard line below is what keeps it honest: the card is
+     * asserted PRESENT first, so the emptiness that follows is an absence of
+     * buttons rather than an absence of card.
+     */
+    it('🔴 NO BUTTONS AND NO ACTION REGION (the buttons live on c-bov-broker-panel)', async () => {
+        const element = createComponent();
 
         getSubmissions.emit(WITH_PREFERRED);
         await Promise.resolve();
 
         expect(element.shadowRoot.querySelector('lightning-card')).not.toBeNull();
-        // SINGULAR, AND NO COUNT. Exactly one preferred broker exists per
-        // disposition, so "(1)" would be the only number it could ever show.
-        const title = element.shadowRoot.querySelector('span[slot="title"]');
-        expect(title.textContent).toBe('Preferred Broker');
-        expect(title.textContent).not.toContain('(');
 
-        // ONLY the preferred row — the two ordinary responses stay in the matrix.
-        const table = element.shadowRoot.querySelector('c-list-datatable');
-        expect(table.data.map((r) => r.id)).toEqual([PREFERRED_ROW.id]);
-        expect(table.data[0].brokerFirm).toBe('Cushman & Wakefield');
-        expect(table.data[0].contactName).toBe('Ada Lin');
+        // 🔴 ZERO. Not "no Replace Broker" — zero buttons of any kind, and none
+        // of the four historical class hooks.
+        expect(buttonLabels(element)).toEqual([]);
+        expect(addBtn(element)).toBeNull();
+        expect(replaceBtn(element)).toBeNull();
+        expect(preferredBtn(element)).toBeNull();
+        expect(selectBtn(element)).toBeNull();
+
+        // ⚠ THE SLOT ITSELF IS GONE, NOT JUST ITS CONTENTS. An empty
+        // `<div slot="actions">` still occupies lightning-card's header action
+        // region and still renders an empty button-group inside it.
+        expect(element.shadowRoot.querySelector('[slot="actions"]')).toBeNull();
+        expect(
+            element.shadowRoot.querySelector('lightning-button-group')
+        ).toBeNull();
     });
 
     /**
-     * ══════════════════════════════════════════════════════════════════════════
-     * 🔴 WIDENED FROM ONE MODE TO BOTH ON 2026-08-24 — OR IT WOULD BE VACUOUS.
-     * ══════════════════════════════════════════════════════════════════════════
-     * This test was `PREFERRED CARD: NO BUTTONS AT ALL`, and it proved something
-     * real while the MATRIX instance carried three buttons and only the preferred
-     * instance suppressed them with `hide-actions`. All three buttons have now
-     * moved to `c/bovBrokerPanel`, so a preferred-instance-only assertion passes
-     * whatever this template does — it is exactly the "deleting an element
-     * vacuates the absence pin" trap: green, and blind.
+     * 🔴 THE PUBLIC API IS TWO MEMBERS. `preferredOnly` IS NOT ONE OF THEM.
      *
-     * Run over BOTH modes it is falsifiable again, and it is now the pin for the
-     * whole button move: re-add any `lightning-button` to this template, in
-     * either mode, and this reds.
+     * ⚠ READ OFF THE ELEMENT'S PROTOTYPE, and the element is built WITHOUT
+     * `Object.assign`. MEASURED, because the obvious form is wrong:
+     * `Object.assign(element, { preferredOnly: true })` defines a plain OWN
+     * property whatever the component declares, so `expect(element.preferredOnly)
+     * .toBeUndefined()` reads back `true` and reds on a component that has no
+     * such `@api` at all.
+     *
+     * WHY BOTH ABSENCES ARE PINNED HERE:
+     *   - `hideActions` suppressed an action region that no longer exists;
+     *   - `preferredOnly` selected between a table and — after the design change
+     *     — a hero panel, which is two unrelated renderings in one template. It
+     *     was DELETED rather than defaulted, and the preferred view became
+     *     `c/bovPreferredBroker`. Reinstating either reds this test.
      */
-    it.each([
-        ['MATRIX instance', () => createComponent()],
-        ['PREFERRED instance', () => preferredInstance()]
-    ])(
-        '🔴 NO BUTTONS AND NO ACTION REGION — %s (the buttons live on c-bov-broker-panel)',
-        async (_label, make) => {
-            const element = make();
-
-            getSubmissions.emit(WITH_PREFERRED);
-            await Promise.resolve();
-
-            // Guard the guard first: the card really is on screen, so the
-            // emptiness below is an absence of buttons and not of card.
-            expect(
-                element.shadowRoot.querySelector('lightning-card')
-            ).not.toBeNull();
-
-            // 🔴 ZERO. Not "no Replace Broker" — zero buttons of any kind, and
-            // none of the four historical class hooks.
-            expect(buttonLabels(element)).toEqual([]);
-            expect(addBtn(element)).toBeNull();
-            expect(replaceBtn(element)).toBeNull();
-            expect(preferredBtn(element)).toBeNull();
-            expect(selectBtn(element)).toBeNull();
-
-            // ⚠ THE SLOT ITSELF IS GONE, NOT JUST ITS CONTENTS. An empty
-            // `<div slot="actions">` still occupies lightning-card's header
-            // action region and still renders an empty button-group inside it.
-            expect(
-                element.shadowRoot.querySelector('[slot="actions"]')
-            ).toBeNull();
-            expect(
-                element.shadowRoot.querySelector('lightning-button-group')
-            ).toBeNull();
-        }
-    );
-
-    it('🔴 the bundle no longer HAS a hideActions input — the flag went with the buttons', () => {
-        // ⚠ THE PUBLIC API IS READ OFF THE ELEMENT'S PROTOTYPE, and the element
-        // is built WITHOUT `Object.assign`. MEASURED, because the obvious form
-        // is wrong: `Object.assign(element, { hideActions: true })` defines a
-        // plain OWN property whatever the component declares, so
-        // `expect(element.hideActions).toBeUndefined()` reads back `true` and
-        // reds on a component that has no such `@api` at all.
-        //
-        // The point is not that the flag was unnecessary: it is that a flag
-        // which suppresses a region that no longer exists is a false
-        // reassurance. If `@api hideActions` is reinstated, this reds.
+    it('🔴 the bundle has NO preferredOnly and NO hideActions input', () => {
         const element = createElement('c-bov-comparison-matrix', {
             is: BovComparisonMatrix
         });
         const proto = Object.getPrototypeOf(element);
 
+        expect('preferredOnly' in proto).toBe(false);
         expect('hideActions' in proto).toBe(false);
-        // Guard the guard: two `@api` members that DO survive, read the same
-        // way. Without these the assertion above passes on a typo in the
-        // property name, or on a component that failed to define any API.
-        expect('preferredOnly' in proto).toBe(true);
+        // Guard the guard: the two `@api` members that DO survive, read the same
+        // way. Without these the assertions above pass on a typo in the property
+        // name, or on a component that failed to define any API at all.
+        expect('recordId' in proto).toBe(true);
         expect('refreshData' in proto).toBe(true);
     });
 
-    it('🔴 PREFERRED CARD: NO STATUS COLUMN — and the matrix still has one', async () => {
-        const element = preferredInstance();
+    /**
+     * 🔴 ALL SEVEN COLUMNS, STATUS INCLUDED — the surviving half of the old
+     * "PREFERRED CARD: NO STATUS COLUMN" test.
+     *
+     * `PREFERRED_COLUMNS` (`COLUMNS` minus Status) was deleted with the flag, and
+     * the danger in deleting a derived constant is that the DERIVATION quietly
+     * takes the source with it. This asserts the full set, in order, off the
+     * RENDERED `columns` property — not off the getter, which could be right
+     * while the template bound something else.
+     */
+    it('🔴 renders all seven columns, in order, Status included', async () => {
+        const element = createComponent();
 
         getSubmissions.emit(WITH_PREFERRED);
         await Promise.resolve();
 
-        // ⚠ READ OFF THE RENDERED `c-list-datatable`'s `columns` PROPERTY, not
-        // off the component's getter. The getter could be right while the
-        // template still bound the module constant.
         expect(columnLabels(element)).toEqual([
             'Broker Firm',
             'Contact',
             'Valuation',
             'Days to Mkt',
             'Cap Rate',
-            'Score'
+            'Score',
+            'Status'
         ]);
-        expect(columnLabels(element)).not.toContain('Status');
-
-        // 🔴 THE OTHER HALF, WITHOUT WHICH THIS PROVES NOTHING: the matrix
-        // instance on the same payload KEEPS its Status column. An assertion
-        // that only checked the preferred card would stay green if Status were
-        // deleted from COLUMNS outright.
-        const control = createComponent();
-        getSubmissions.emit(WITH_PREFERRED);
-        await Promise.resolve();
-        expect(columnLabels(control)).toContain('Status');
-        expect(columnLabels(control)).toHaveLength(7);
-    });
-
-    it('PREFERRED CARD is accessible', async () => {
-        const element = preferredInstance();
-
-        getSubmissions.emit(WITH_PREFERRED);
-        await Promise.resolve();
-
-        await expect(element).toBeAccessible();
     });
 
     it('is accessible', async () => {

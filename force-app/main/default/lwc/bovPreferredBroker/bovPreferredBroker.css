@@ -1,0 +1,161 @@
+/*
+  ═════════════════════════════════════════════════════════════════════════════
+  🔴 THE GREEN IS `success-base-95` + `success-base-30`. NOT `-container-1`.
+  ═════════════════════════════════════════════════════════════════════════════
+  MEASURED 2026-08-24 against
+  `node_modules/@salesforce-ux/sds-metadata/current/globalStylingHooks.metadata.json`,
+  which is the file the repo's own `slds-linter` reads:
+
+      --slds-g-color-success-container-1   slds: #2e844a   <- A SOLID MID-GREEN
+      --slds-g-color-success-base-95       slds: #ebf7e6   cosmos: light-dark(#def9f3, #010502)
+      --slds-g-color-success-base-80       slds: #91db8b   cosmos: light-dark(#04e1cb, #023434)
+      --slds-g-color-success-base-30       slds: #194e31   cosmos: light-dark(#024d4c, #01c3b3)
+      --slds-g-color-neutral-base-30       slds: #444      cosmos: light-dark(#444,     #aeaeae)
+
+  The natural-reading pairing — `background: ...-container-1` with `color:
+  ...-base-30` — is DARK GREEN TEXT ON A SOLID MID-GREEN FILL wherever the SLDS 2
+  base theme is active. The pale literal beside it in a `var()` fallback
+  describes only the hook-UNDEFINED case, so a file shipping that pairing reads
+  as correct. `c/callForOffersPanel` still ships it; `c/brokerListing` fixed it
+  earlier today, and this file follows `c/brokerListing`.
+
+  ⚠ NOTHING ELSE IN THIS PIPELINE CATCHES IT. The SLDS linter only checks that a
+  hook was USED, Jest asserts class names, and axe's colour-contrast rule is
+  INERT in jsdom. The Jest suite therefore pins these rules as SOURCE TEXT, with
+  the comments stripped first — otherwise this very paragraph, which names the
+  forbidden token, satisfies the absence search and the pin is vacuously green.
+
+  -- CONTRAST, COMPUTED FROM THE VALUES ABOVE --------------------------------
+      firm name  base-30 on base-95          8.72 (slds) · 8.74 (cosmos light) · 9.24 (dark)
+      pill       base-30 on base-80          5.84        · 5.83                · 6.13
+      eyebrow    neutral-base-30 on base-95  8.80        · ~8.8                · 9.24
+  🔴 `--slds-g-color-on-surface-1` — this repo's usual "secondary text" hook — was
+  REJECTED for the eyebrow after measuring it: #757575 on #ebf7e6 is 4.16:1,
+  under AA for text this small, and it passes every gate we have. `neutral-base-30`
+  is the muted grey that also inverts (#444 light / #aeaeae dark).
+*/
+
+/*
+  -- THE PANEL ---------------------------------------------------------------
+  🔴 `gap` IS MARKUP HERE. The LWC template compiler discards whitespace-only
+  text nodes between sibling elements, so without it the shield sits flush
+  against the firm name with literally nothing between them, and no rendered
+  text changes to show it. jsdom performs no layout, so a DOM-only test is
+  completely blind to this file — the pins are on its source.
+
+  ⚠ THE RING IS AN INSET `box-shadow`, NOT A `border`. A border adds to the
+  panel's box and would push it out of alignment with the divider and the matrix
+  card below it, neither of which has a border of its own. Same recipe as
+  `c/brokerListing`'s pills.
+*/
+.pref-panel {
+    display: flex;
+    align-items: center;
+    gap: var(--slds-g-spacing-4, 1rem);
+    padding: var(--slds-g-spacing-4, 1rem);
+    border-radius: var(--slds-g-radius-border-2, 0.25rem);
+    background: var(--slds-g-color-success-base-95, #ebf7e6);
+    box-shadow: inset 0 0 0 var(--slds-g-sizing-border-1, 1px)
+        var(--slds-g-color-success-base-80, #91db8b);
+}
+
+/*
+  🔴 `flex: none` IS LOAD-BEARING. Flex items shrink, and this panel sits beside
+  an unbounded free-text firm name — without it a long name squashes the shield
+  to a sliver instead of wrapping, which is the exact overflow behaviour the
+  layout rules below exist to prevent.
+
+  ⚠ THE ICON IS COLOURED FROM THIS STYLESHEET, NOT WITH AN INLINE `style=`.
+  `--slds-c-icon-color-foreground-default` is `lightning-icon`'s own component
+  hook and custom properties inherit ACROSS the shadow boundary, so setting it on
+  the icon's host element reaches the svg inside. `--slds-c-*` in a `.css` file
+  is not flagged by `no-slds-namespace-for-custom-hooks`. Same technique as
+  `c/brokerListing`'s `.row-icon_nda`.
+*/
+.pref-icon {
+    flex: none;
+    --slds-c-icon-color-foreground-default: var(
+        --slds-g-color-success-base-30,
+        #194e31
+    );
+}
+
+/*
+  🔴 `min-width: 0` IS WHAT LETS A LONG FIRM NAME WRAP INSTEAD OF OVERFLOWING.
+  A flex item defaults to `min-width: auto` and REFUSES to shrink below its
+  longest unbreakable token, so one long firm name would force this panel wider
+  than its container and the card would scroll sideways. Paired with
+  `overflow-wrap: anywhere` on `.pref-firm` below — `anywhere`, not
+  `break-word`, because only `anywhere` affects min-content sizing, which is
+  what makes this line take effect. Same pair, same reasoning, as
+  `c/bovBrokerChangeHistory`'s layout rules.
+  ⚠ `min-width: 0` NOT `max-width: 100%` — the percentage is flagged by
+  `slds/no-hardcoded-values-slds2` and is the wrong tool besides.
+*/
+.pref-detail {
+    display: flex;
+    flex-direction: column;
+    gap: var(--slds-g-spacing-1, 0.25rem);
+    min-width: 0;
+}
+
+/*
+  ⚠ `margin: 0` ON BOTH PARAGRAPHS IS A RESET, NOT SPACING. A paragraph carries a
+  default block margin that would stack ON TOP of `.pref-detail`'s `gap` and
+  space the three lines unevenly. All spacing in this panel comes from `gap`.
+*/
+.pref-eyebrow {
+    margin: 0;
+    font-size: var(--slds-g-font-scale-neg-1, 0.75rem);
+    color: var(--slds-g-color-neutral-base-30, #444);
+}
+
+.pref-firm {
+    margin: 0;
+    font-size: var(--slds-g-font-scale-2, 1rem);
+    font-weight: var(--slds-g-font-weight-7, 700);
+    color: var(--slds-g-color-success-base-30, #194e31);
+    overflow-wrap: anywhere;
+}
+
+/*
+  ⚠ `align-self: flex-start` KEEPS THE PILL THE WIDTH OF ITS TEXT. Flex items
+  stretch across the cross axis by default, so without it the pill spans the
+  whole detail column and reads as a green bar rather than a badge.
+  ⚠ `inline-block`, NOT `inline-flex`: an `inline-flex` badge turns its own text
+  into an anonymous flex item, which defeats any future ellipsis and is
+  unverifiable from jsdom either way.
+*/
+.pref-pill {
+    align-self: flex-start;
+    display: inline-block;
+    padding: var(--slds-g-spacing-1, 0.25rem) var(--slds-g-spacing-2, 0.5rem);
+    border-radius: var(--slds-g-radius-border-pill, 15rem);
+    background: var(--slds-g-color-success-base-80, #91db8b);
+    color: var(--slds-g-color-success-base-30, #194e31);
+    font-size: var(--slds-g-font-scale-neg-2, 0.625rem);
+    font-weight: var(--slds-g-font-weight-7, 700);
+    letter-spacing: 0.0625rem;
+}
+
+/*
+  -- THE VISUALLY-HIDDEN SUBJECT OF THE PILL ---------------------------------
+  🔴 LOCAL, NOT THE GLOBAL `slds-assistive-text`. That class lives in a
+  document-level SLDS stylesheet and under NATIVE shadow DOM it does not reach
+  into this component — the words "Preferred broker:" would then render VISIBLY
+  inside the pill. A local rule cannot fail that way. Copied from
+  `c/bovBrokerChangeHistory`'s `.bbc-sr-only`, which made the same call for the
+  same reason.
+  ⚠ NOT `display: none` AND NOT `visibility: hidden` — both remove the text from
+  the accessibility tree, which is the one thing this span exists to add to it.
+*/
+.pref-sr-only {
+    position: absolute;
+    width: var(--slds-g-sizing-border-1, 1px);
+    height: var(--slds-g-sizing-border-1, 1px);
+    margin: calc(-1 * var(--slds-g-sizing-border-1, 1px));
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+}

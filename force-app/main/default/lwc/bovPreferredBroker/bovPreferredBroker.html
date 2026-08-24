@@ -1,0 +1,76 @@
+<!--
+  ══════════════════════════════════════════════════════════════════════════════
+  c-bov-preferred-broker — the highlighted preferred-broker panel (2026-08-24).
+  ══════════════════════════════════════════════════════════════════════════════
+  🔴 THIS REPLACED A SECOND COPY OF `c/bovComparisonMatrix`. Until today the
+  "Preferred Broker" card was the SAME bundle as the BOV Comparison Matrix,
+  mounted with a bare `preferred-only` attribute and filtered down to one row.
+  The user's design turns that card into a hero panel — an icon, a label, a firm
+  name and a pill — which shares NO rendering with a datatable, so the flag was
+  retired rather than widened. See this bundle's `.js` header for what came out
+  of `c/bovComparisonMatrix` in the same change.
+
+  ⚠ THERE IS NO `lightning-card` HERE, DELIBERATELY. `c/bovBrokerPanel` already
+  renders the "Brokers" card and its three buttons; this panel is a filled block
+  INSIDE that card's body, above the divider. A card inside a card inside a card
+  is what the old arrangement did, and the design explicitly asks for a filled
+  panel rather than a second titled card.
+
+  ⚠ NO WIRE AND NO APEX. This is a presentational component per ARCHITECTURE.md
+  §5 — props in, nothing out. `c/bovBrokerPanel` already holds the BOV rows (its
+  buttons' visibility rules need them) and already gates this tag with
+  `lwc:if={hasPreferredBroker}`, so a wire here would be a third consumer of the
+  same LDS cache entry for a value the parent has already computed.
+
+  🔴 THE PANEL RENDERS ONLY WHEN A PREFERRED BROKER EXISTS, AND THAT GATE IS THE
+  PARENT'S `lwc:if`, NOT A GETTER HERE. It has to be: an unrendered tag is not a
+  flex item, and a self-gating child that renders nothing STILL takes one step of
+  `.panel-stack`'s `gap`. That is the accepted defect `dispositionMain.css` used
+  to document, and the reason the gate lives one level up.
+-->
+<template>
+    <div class="pref-panel">
+        <!-- ⚠ DECORATIVE, SO `aria-hidden` AND NO `alternative-text`. The shield
+             says nothing the "Preferred Broker" label and the pill do not
+             already say; announced, it is noise on every visit. Passing an
+             `alternative-text` would make `lightning-icon` announce it. -->
+        <lightning-icon
+            class="pref-icon"
+            icon-name="utility:shield"
+            size="large"
+            aria-hidden="true"
+        ></lightning-icon>
+
+        <!-- ⚠ THE THREE TEXT LINES ARE SPACED BY `.pref-detail`'s `gap`, WHICH IS
+             MARKUP, NOT POLISH. The LWC template compiler discards whitespace-only
+             text nodes between sibling elements, and `.pref-eyebrow` /
+             `.pref-firm` carry `margin: 0` to stop the default paragraph margins
+             fighting it — so with the gap gone the three lines butt together. -->
+        <div class="pref-detail">
+            <p class="pref-eyebrow">Preferred Broker</p>
+            <p class="pref-firm">{displayName}</p>
+
+            <!--
+                🔴 "YES" ALONE NAMES NOTHING. Read out of context a screen reader
+                announces the word "YES" with no subject, so the pill carries its
+                own subject in a visually-hidden span and its accessible name
+                reads "Preferred broker: YES".
+
+                ⚠ A LOCAL `.pref-sr-only`, **NOT** THE GLOBAL `slds-assistive-text`.
+                That class lives in a document-level SLDS stylesheet; under native
+                shadow DOM it does not reach into this component, and the subject
+                would then render VISIBLY beside the pill. Same call, same reason,
+                as `c/bovBrokerChangeHistory`'s `.bbc-sr-only`.
+
+                ⚠ ALSO NOT `aria-label`. A bare <span> is `role="generic"`, which
+                prohibits an accessible name — the label would be silently dropped
+                by conforming assistive technology. Hidden text always works.
+
+                ⚠ ONE LINE ON PURPOSE. Split across lines the compiler leaves the
+                indentation inside the text node and the rendered name gains stray
+                whitespace, which the Jest pin then has to normalise away.
+            -->
+            <span class="pref-pill"><span class="pref-sr-only">Preferred broker: </span>YES</span>
+        </div>
+    </div>
+</template>

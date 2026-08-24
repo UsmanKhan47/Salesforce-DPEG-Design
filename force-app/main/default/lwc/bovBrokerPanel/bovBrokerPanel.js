@@ -74,7 +74,7 @@ const replacedMessage = (outgoing) =>
  * with no `targetConfigs`, so it is not placeable in App Builder and never was.
  *
  * ⚠ THIS COMPONENT WIRES `getSubmissions` ITSELF, AND THAT IS NOT A THIRD SERVER
- * ROUND TRIP. All three wires (this one and both children) call the SAME
+ * ROUND TRIP. BOTH wires (this one and the matrix child's) call the SAME
  * `cacheable=true` method with the SAME parameter, so LDS serves them from ONE
  * cache entry — the property `dispositionMain.html` already relied on and
  * documented when the two children were siblings.
@@ -84,7 +84,7 @@ const replacedMessage = (outgoing) =>
  * once one exists; and "Replace Broker" now BRANCHES on whether a preferred
  * broker exists. Pushing those facts up from the children through events would
  * make the buttons' correctness depend on render ordering.
- * ⚠ AND IT IS WHAT LETS THE PREFERRED CARD BE GATED FROM HERE — see the template
+ * ⚠ AND IT IS WHAT LETS THE PREFERRED PANEL BE GATED FROM HERE — see the template
  * for why that is the fix to the accepted `gap` defect, not a refactor.
  *
  * ══════════════════════════════════════════════════════════════════════════════
@@ -95,10 +95,13 @@ const replacedMessage = (outgoing) =>
  * a wire from a `{ data, error }` pair. Every action below ends in a refresh, and
  * a "tidying" edit back to `wired({ data, error })` compiles, passes every render
  * test, and silently turns those refreshes into no-ops.
- * ⚠ THE CHILDREN ARE REFRESHED EXPLICITLY TOO (`_refreshAll` below). Invalidating
- * the shared LDS cache entry SHOULD re-provision them, but that is an assumption
- * about LDS internals that no Jest stub models; calling each child's
+ * ⚠ THE MATRIX CHILD IS REFRESHED EXPLICITLY TOO (`_refreshAll` below). Invalidating
+ * the shared LDS cache entry SHOULD re-provision it, but that is an assumption
+ * about LDS internals that no Jest stub models; calling its
  * `@api refreshData()` makes the outcome true by construction and observable.
+ * ⚠ `c/bovPreferredBroker` HAS NO WIRE AND SO HAS NO `refreshData()`. It renders
+ * `preferredBrokerFirm`, derived from this component's own `_data`, so the
+ * `refreshApex` above IS its refresh path.
  *
  * ══════════════════════════════════════════════════════════════════════════════
  * 🔴 NOTHING HERE NAVIGATES.
@@ -106,9 +109,9 @@ const replacedMessage = (outgoing) =>
  * Every action opens a `LightningModal` over the disposition page and refreshes
  * in place. That is the 2026-08-21 UAT fix ("once we save broker response it
  * redirects to that record page instead of staying on the same page") and it is
- * the reason this class does NOT mix in `NavigationMixin` at all. The children
- * keep it for their own "View All" footer links, which genuinely are page
- * transitions.
+ * the reason this class does NOT mix in `NavigationMixin` at all. The matrix child
+ * keeps it for its own "View All" footer link, which genuinely is a page
+ * transition.
  *
  * ══════════════════════════════════════════════════════════════════════════════
  * 🔴 THE SERVER CONTRACT THIS COMPONENT DEPENDS ON.
@@ -177,6 +180,31 @@ export default class BovBrokerPanel extends LightningElement {
 
     get hasPreferredBroker() {
         return this._preferredRow !== undefined;
+    }
+
+    /**
+     * The preferred broker's firm name, handed to `c/bovPreferredBroker`.
+     *
+     * ══════════════════════════════════════════════════════════════════════════
+     * 🔴 RETURNS `''`, NEVER `undefined` OR `null`.
+     * ══════════════════════════════════════════════════════════════════════════
+     * This value is bound to an attribute on a custom element. A getter bound to
+     * an attribute is written UNCONDITIONALLY, so `undefined` is capable of
+     * reaching the DOM as the literal string "undefined" — measured in this repo
+     * on a different component, and the same reason `outgoingPreferredLabel`
+     * below returns `''`. Returning a string in every branch removes the
+     * question rather than relying on the child to answer it.
+     *
+     * ⚠ THE *USER-FACING* FALLBACK IS THE CHILD'S, NOT THIS ONE. `''` here means
+     * "there is no firm name"; `c/bovPreferredBroker.displayName` turns that into
+     * "Unnamed broker". Splitting it that way keeps the child safe to mount from
+     * anywhere instead of making every future caller remember the placeholder —
+     * and `Broker_Firm__c` is legitimately nullable, so this is a live path, not
+     * a defensive one.
+     */
+    get preferredBrokerFirm() {
+        const row = this._preferredRow;
+        return (row && row.brokerFirm) || '';
     }
 
     /**
@@ -515,13 +543,22 @@ export default class BovBrokerPanel extends LightningElement {
     }
 
     /**
-     * Re-provision this component's wire AND both children's.
+     * Re-provision this component's wire AND the matrix child's.
      *
-     * ⚠ THE CHILD CALLS ARE NOT REDUNDANT BELT-AND-BRACES FOR ITS OWN SAKE. All
-     * three wires share one LDS cache entry, so invalidating it here *should*
-     * re-provision the children — but that is an assumption about LDS internals
+     * ⚠ THE CHILD CALL IS NOT REDUNDANT BELT-AND-BRACES FOR ITS OWN SAKE. Both
+     * wires share one LDS cache entry, so invalidating it here *should*
+     * re-provision the child — but that is an assumption about LDS internals
      * which no Jest stub models and which nothing on this page would report if it
      * became false. `@api refreshData()` makes it true by construction.
+     *
+     * 🔴 THERE IS NOTHING TO CALL ON `c/bovPreferredBroker`, AND THAT IS NOT AN
+     * OMISSION. It has no wire: it renders `preferredBrokerFirm`, which is
+     * derived from THIS component's `_data`, so the `refreshApex` on the line
+     * below is already its whole refresh path. It used to be a second
+     * `c-bov-comparison-matrix` with a wire of its own, which is why the loop
+     * below still reads as though it might match more than one element — it is
+     * `querySelectorAll` because the selector is a class of child, not because
+     * two are expected.
      */
     _refreshAll() {
         refreshApex(this._wired);

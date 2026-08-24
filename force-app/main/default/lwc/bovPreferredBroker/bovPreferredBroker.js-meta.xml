@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<LightningComponentBundle xmlns="http://soap.sforce.com/2006/04/metadata">
+    <apiVersion>67.0</apiVersion>
+    <!--
+        isExposed=false, MATCHING c/bovComparisonMatrix and c/bovBrokerPanel.
+        This panel is composed into c/bovBrokerPanel in MARKUP: it renders only
+        when that component's wire says a preferred broker exists, and it has no
+        data of its own to fetch. Exposing it would let an admin drop a green
+        "Preferred Broker" panel onto a page with nothing behind it.
+    -->
+    <isExposed>false</isExposed>
+</LightningComponentBundle>

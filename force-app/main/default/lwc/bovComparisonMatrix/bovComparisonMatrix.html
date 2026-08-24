@@ -1,11 +1,30 @@
 <!--
   ══════════════════════════════════════════════════════════════════════════════
-  🔴 THIS TEMPLATE IS RENDERED TWICE ON THE SAME PAGE (2026-08-24).
+  🔴 RETRACTED 2026-08-24 (SECOND REVISION) — THIS TEMPLATE RENDERS **ONCE**.
   ══════════════════════════════════════════════════════════════════════════════
+  What stood here read: *"THIS TEMPLATE IS RENDERED TWICE ON THE SAME PAGE …
   `c/bovBrokerPanel` mounts this bundle twice: once with `preferred-only` (the
-  "Preferred Broker" card, ABOVE) and once bare (the "BOV Comparison Matrix"
-  card, BELOW). `preferredOnly` defaults `false`, so the second tag's behaviour is
-  unchanged by construction — every branch added for the preferred card is opt-in.
+  'Preferred Broker' card, ABOVE) and once bare … `preferredOnly` defaults
+  `false`, so the second tag's behaviour is unchanged by construction."*
+
+  THE PREFERRED CARD IS NO LONGER THIS BUNDLE. The user's design turned it into a
+  highlighted hero panel — a green fill, a shield, a label, a firm name and a YES
+  pill — which shares no rendering with a datatable, so it became its own bundle,
+  `c/bovPreferredBroker`, and `@api preferredOnly` was DELETED rather than kept as
+  a mode. A flag selecting between two unrelated renderings inside one template is
+  worse than two components; that is the whole argument, and it is recorded in
+  `c/bovPreferredBroker`'s `.js` header along with the full list of what came out.
+
+  WHAT WENT WITH THE FLAG, AND MUST NOT COME BACK HERE:
+    - the `lwc:if={isVisible}` wrapper that used to sit around this whole card,
+      and the `isVisible` / `hasPreferredBroker` getters behind it. They existed
+      ONLY so the preferred instance could withhold itself. This card is visible
+      in every state — including on an empty disposition and on the wire's error
+      branch, because its error banner is what tells the user the read failed;
+    - the `cardTitle` branch — the title is unconditional again;
+    - `PREFERRED_COLUMNS` and the `columns` branch that chose between them.
+  ⚠ WHAT STAYED: the row filter. This card still excludes the preferred row, but
+  unconditionally — that is a fact about the MATRIX, not a mode of it.
 
   ⚠ THE MOUNT POINT MOVED ON 2026-08-24 AND THE PARENT'S NAME IS NOT COSMETIC.
   It used to be `dispositionMain.html`, directly under `if:true={isBovOutreach}`.
@@ -13,68 +32,54 @@
   buttons and the BOV rows those buttons' visibility rules read.
 
   ══════════════════════════════════════════════════════════════════════════════
-  🔴 THERE ARE NO BUTTONS IN THIS TEMPLATE, IN EITHER MODE. DO NOT ADD ONE.
+  🔴 THERE ARE NO BUTTONS IN THIS TEMPLATE. DO NOT ADD ONE.
   ══════════════════════════════════════════════════════════════════════════════
   A `<div slot="actions">` holding "Add Broker Response", "Replace Broker" and
   "Add Preferred Broker" stood between the title and the error banner below until
   2026-08-24. All three MOVED — with their getters, their handlers, their modal
   imports and their toasts — to `c/bovBrokerPanel`, so that ONE header carries
-  them above BOTH cards instead of the matrix card carrying them for both.
+  them above BOTH sections instead of this card carrying them for both.
 
   ⚠ THAT IS ALSO WHY `hideActions` IS GONE RATHER THAN DEFAULTED. The preferred
   instance used to be silenced with `hide-actions`; there is now no action region
-  for either instance to suppress, so an `@api` flag that suppresses nothing would
-  be a false reassurance to the next reader. The Jest suite pins the absence
-  directly: NO `lightning-button` and NO `[slot="actions"]` in either mode.
-
-  🔴 THE WHOLE CARD IS STILL GATED ON `isVisible` HERE, EVEN THOUGH THE PANEL NOW
-  GATES THE TAG TOO. The redundancy is deliberate — it keeps this bundle correct
-  if it is ever mounted somewhere that does not hold the BOV rows.
+  to suppress, so an `@api` flag that suppresses nothing would be a false
+  reassurance to the next reader. The Jest suite pins the absence directly: NO
+  `lightning-button` and NO `[slot="actions"]`.
   ══════════════════════════════════════════════════════════════════════════════
 -->
 <template>
-    <template lwc:if={isVisible}>
-        <lightning-card icon-name="standard:contract">
-            <!-- ⚠ THE TITLE IS A GETTER, NOT A LITERAL, because two instances of this
-                 template are on screen at once and two cards both reading "BOV
-                 Comparison Matrix (n)" would be unreadable. The preferred card's title
-                 is SINGULAR ("Preferred Broker") and carries NO count: exactly one
-                 preferred broker exists per disposition, so a count would only ever
-                 render "(1)". -->
-            <span slot="title">{cardTitle}</span>
+    <lightning-card icon-name="standard:contract">
+        <!-- ⚠ THE TITLE IS A GETTER, NOT A LITERAL, because it carries the row
+             COUNT. The count follows the RENDERED rows, not the wire payload: a
+             title reading "(3)" over a two-row table is the defect a
+             `_data.length` count would produce, and the preferred row is
+             filtered out of the rows below. -->
+        <span slot="title">{cardTitle}</span>
 
-            <!-- 🔴 NO `slot="actions"` REGION HERE — see the file header. The three
-                 broker buttons live on `c/bovBrokerPanel`'s single header, above
-                 BOTH cards. A `<div slot="actions">` re-added here would reserve
-                 lightning-card's header action region on every instance, including
-                 the preferred card, which by requirement has no actions of its own. -->
+        <!-- 🔴 NO `slot="actions"` REGION HERE — see the file header. The three
+             broker buttons live on `c/bovBrokerPanel`'s single header, above
+             BOTH sections. A `<div slot="actions">` re-added here would reserve
+             lightning-card's header action region for a card that by requirement
+             has no actions of its own. -->
 
-            <template lwc:if={loadError}>
-                <div class="matrix-error" role="alert">{loadError}</div>
-            </template>
+        <template lwc:if={loadError}>
+            <div class="matrix-error" role="alert">{loadError}</div>
+        </template>
 
-            <!-- ⚠ `columns` IS A GETTER, NOT THE MODULE CONSTANT. The preferred card
-                 drops the Status column: the pill is a CONSTANT on that card, so it
-                 costs a column's width to say nothing.
-                 🔴 THE CONSTANT FLIPPED ON 2026-08-24, THE DECISION DID NOT. This read
-                 "a preferred row is never Selected, so that pill would read Backup on
-                 every row forever". The user then decided a preferred broker IS the
-                 appointed broker, so it now reads SELECTED on every row forever.
-                 ⚠ Showing it would also put TWO green "Selected" pills on one page —
-                 one per card — for a disposition that has exactly ONE appointed
-                 broker, which reads as the duplicate-Selected defect the exclusivity
-                 guard exists to prevent. See PREFERRED_COLUMNS in the JS. -->
-            <c-list-datatable
-                key-field="id"
-                data={rows}
-                columns={columns}
-                column-widths-mode="auto"
-                hide-checkbox-column>
-            </c-list-datatable>
+        <!-- ⚠ `columns` IS A GETTER OVER THE MODULE CONSTANT, and the Jest suite
+             reads the RENDERED `columns` property off this element rather than
+             the getter — a getter can be right while the template binds
+             something else. -->
+        <c-list-datatable
+            key-field="id"
+            data={rows}
+            columns={columns}
+            column-widths-mode="auto"
+            hide-checkbox-column>
+        </c-list-datatable>
 
-            <div slot="footer" class="view-all-footer">
-                <a href={listUrl} onclick={viewAll}>View All</a>
-            </div>
-        </lightning-card>
-    </template>
+        <div slot="footer" class="view-all-footer">
+            <a href={listUrl} onclick={viewAll}>View All</a>
+        </div>
+    </lightning-card>
 </template>
