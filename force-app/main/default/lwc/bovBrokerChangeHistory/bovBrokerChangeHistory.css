@@ -47,6 +47,27 @@
    No media queries: a media query measures the VIEWPORT, but the constraint here is CONTAINER
    width — the same viewport yields a ~340px sidebar or a ~900px main region.
 
+   ═══════════════════════════════════════════════════════════════════════════════════════════
+   🔴 THIS CARD SHARES ITS ENTRY VOCABULARY WITH c/dispositionBuyerTimeline. KEEP THEM IN STEP.
+   ═══════════════════════════════════════════════════════════════════════════════════════════
+   The two cards sit one directly above the other in the same ~340px disposition sidebar, so a
+   difference between them is not a difference a user reads as "two components" — it is one they
+   read as "this page was built twice". The rail (`.bbc-rail` / `.bbc-dot` / `.bbc-track`) went
+   the OTHER way on 2026-08-24: the timeline's `.dbt-rail` was ported FROM here. On 2026-08-25 the
+   traffic reversed and this card took the timeline's entry register: its head/facts rhythm
+   (`.bbc-body`, `.bbc-tile-head`, `.bbc-facts`), its micro-label (`.bbc-logged-label`), its value
+   colour (`.bbc-when`, `.bbc-reason`, `.bbc-notes-txt`), its badge geometry (`.bbc-badge`) and
+   its two quiet-state sizes (`.bbc-empty`, `.bbc-unavailable`).
+   ⚠ THREE THINGS ARE DELIBERATELY *NOT* THE TIMELINE'S, and each is pinned by a test or by an
+   earlier decision on this card — read the rule's own comment before "finishing the job":
+     1. no `<dl>` label/value GRID. This card had dt/dd tiles on 2026-08-21 and they were
+        removed; T-TIMELINE now asserts `dl` and `dt` are absent from the shadow root;
+     2. no `justify-content: space-between` on `.bbc-tile-head`. T-CSS bans the property outright
+        (it held the 2026-08-20 two-column row apart, which collided at 340px);
+     3. no explanatory sub-line under the empty state. `.bbc-state-sub` was deleted in the
+        2026-08-21 UAT prose removal and is pinned absent, so the timeline's `.dbt-empty-sub`
+        has no counterpart here.
+
    ⚠ --slds-g-color-on-surface-1 is the GREY one (#757575); -2 (#2e2e2e) and -3 (#181818) are
    progressively DARKER. The numbering reads like an ascending emphasis scale and is the reverse.
    Do not reach for --slds-g-color-neutral-base-60 for muted text either: it is #939393, roughly
@@ -103,7 +124,11 @@
     padding-bottom: 0;
 }
 
-/* ===== The rail: a filled dot per entry, joined by a line ===== */
+/* ===== The rail: a filled dot per entry, joined by a line =====
+   🔴 THE SAME RAIL AS c/dispositionBuyerTimeline's `.dbt-rail` / `.dbt-dot` / `.dbt-track` —
+   same column width, same gap, same dot size, same hooks. That card ported it FROM here on
+   2026-08-24. Change one and change the other, or the two cards' lines stop lining up in the
+   sidebar where they are read together. */
 .bbc-rail {
     display: flex;
     flex-direction: column;
@@ -139,11 +164,48 @@
     display: none;
 }
 
-/* ===== Entry body: three text lines (four with a note) ===== */
+/* ===== Entry body: the head, then the facts =====
+   🔴 THE VERTICAL RHYTHM IS c/dispositionBuyerTimeline'S, NOT THIS CARD'S OWN (2026-08-25).
+   That card sits DIRECTLY BENEATH this one in the same sidebar and the two read as one family or
+   they read as two products. Its entry is head → 0.75rem → facts, with 0.5rem between fact rows
+   (`.dbt-tile-head { margin-bottom }` + `.dbt-facts { gap }`). This body was a flat 0.25rem stack,
+   which is what made the two cards' entries look like different components at a glance: the same
+   four lines, packed tighter and with no break after the headline.
+   The 0.75rem lives HERE (the body's gap, between `.bbc-tile-head` and `.bbc-facts`) and the
+   0.5rem lives on `.bbc-facts`. Splitting it that way is what lets one number change without
+   touching the other — the timeline splits it the same way, just across a margin and a gap.
+   ⚠ `min-width: 0` on this element is load-bearing (rule 3 in the header) and pinned by T-CSS. */
 .bbc-body {
     display: flex;
     flex-direction: column;
-    gap: var(--slds-g-spacing-1, 0.25rem);
+    gap: var(--slds-g-spacing-3, 0.75rem);
+    min-width: 0;
+}
+
+/* The headline's row. MIRRORS `.dbt-tile-head` in c/dispositionBuyerTimeline — same display, same
+   wrap, same gap — so that when this card grows a second element beside the name (a status pill,
+   the way the timeline carries "DECLINED" / "CHECK DATES") it lands in an already-correct row
+   rather than in a new one invented on the day.
+   ⚠ DIVERGES FROM THE TIMELINE IN ONE DECLARATION, DELIBERATELY: no
+   `justify-content: space-between`. That property is BANNED in this stylesheet by T-CSS — it is
+   what held the 2026-08-20 two-column row apart, and that row collided at 340px. A second child
+   here follows the name inline and wraps under it; it is not pushed to the far edge. */
+.bbc-tile-head {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--slds-g-spacing-2, 0.5rem);
+    min-width: 0;
+}
+
+/* The fact rows (when | why, who, notes). This is this card's answer to the timeline's
+   `.dbt-facts`, and it is a SINGLE-COLUMN STACK rather than that card's
+   `grid-template-columns: max-content 1fr` label/value grid — see the comment on `.bbc-facts`'s
+   markup in the template. The row gap is the timeline's row gap. */
+.bbc-facts {
+    display: flex;
+    flex-direction: column;
+    gap: var(--slds-g-spacing-2, 0.5rem);
     min-width: 0;
 }
 
@@ -200,9 +262,15 @@
     );
 }
 
+/* 🔴 THE VALUE COLOUR IS THE TIMELINE'S `.dbt-c`, NOT THE LINE'S OWN (2026-08-25). `.bbc-meta`
+   above stays on-surface-1 so the calendar icon and the pipe — which are chrome, not facts —
+   inherit the muted colour; the timestamp and the reason are the FACTS and step up to
+   on-surface-2, exactly as `.dbt-c` does against `.dbt-label` in c/dispositionBuyerTimeline.
+   ⚠ on-surface-1 (#757575) is the GREY one and -2 (#2e2e2e) the darker — see the header. */
 .bbc-when,
 .bbc-reason {
     min-width: 0;
+    color: var(--slds-g-color-on-surface-2, #2e2e2e);
 }
 
 /* The pipe between the timestamp and the reason. Decorative (aria-hidden in the template) and
@@ -223,10 +291,24 @@
     font-size: var(--slds-g-font-scale-base, 0.8125rem);
 }
 
-/* Muted label, normal-weight name — the design's own emphasis, and the reverse of the usual
-   bold-label pattern. The name is the fact; "Logged By:" is just its handle. */
+/* 🔴 THIS IS c/dispositionBuyerTimeline'S `.dbt-label` MICRO-LABEL, ADOPTED WHOLE (2026-08-25):
+   0.625rem, 700, 0.05em tracking, uppercase, on-surface-1. It is the single most recognisable
+   signal of that card's entry vocabulary, and it was the biggest thing this card did differently.
+   THE INTENT OF THE OLD RULE IS UNCHANGED, ONLY ITS MECHANISM. That rule read "muted label,
+   normal-weight name — the reverse of the usual bold-label pattern", and that is still exactly
+   what renders: the label is bold but two steps SMALLER (0.625rem against the name's 0.8125rem)
+   and grey against on-surface-2, so the name is still the emphasised half of the line. The
+   timeline's labels win the same way.
+   ⚠ THE TEXT KEEPS ITS COLON ("Logged By:" → "LOGGED BY:"). The timeline's labels have none,
+   because they are `<dt>`s in a two-column grid where the column edge does the separating; here
+   the label and the name share one wrapping line and the colon is what separates them. Content
+   the user settled — do not drop it to match the timeline more closely. */
 .bbc-logged-label {
     flex: none;
+    font-size: var(--slds-g-font-scale-neg-2, 0.625rem);
+    font-weight: var(--slds-g-font-weight-7, 700);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
     color: var(--slds-g-color-on-surface-1, #757575);
 }
 
@@ -239,7 +321,11 @@
 /* ===== Line 4 — notes (RETAINED; the supplied design does not show it) =====
    See the template comment: this is the only reader of Notes__c in the application, so it is
    kept as a quieter fourth line rather than dropped to match a three-line mock. The preview and
-   its View button share the line; the button never shrinks, so the text is what gives way. */
+   its View button share the line; the button never shrinks, so the text is what gives way.
+   ⚠ RAISED FROM 0.75rem TO THE FACT REGISTER ON 2026-08-25. A note is a FACT here, and in
+   c/dispositionBuyerTimeline notes render as `.dbt-c dbt-notes` — the same 0.8125rem as every
+   other value. Keeping this line a size smaller than the two above it was the other half of why
+   the two cards' entries read differently: four lines in three sizes against four in two. */
 .bbc-notes {
     display: flex;
     align-items: center;
@@ -247,12 +333,14 @@
     gap: var(--slds-g-spacing-1, 0.25rem);
     min-width: 0;
     margin: 0;
-    font-size: var(--slds-g-font-scale-neg-1, 0.75rem);
+    font-size: var(--slds-g-font-scale-base, 0.8125rem);
     color: var(--slds-g-color-on-surface-1, #757575);
 }
 
+/* Same split as `.bbc-when` / `.bbc-reason`: the icon stays muted, the note itself is a value. */
 .bbc-notes-txt {
     min-width: 0;
+    color: var(--slds-g-color-on-surface-2, #2e2e2e);
 }
 
 /* See rule 2 in the header: this is the ONE deliberate single-line clip on the card, and it is
@@ -263,17 +351,45 @@
     white-space: nowrap;
 }
 
+/* ===== The pill =====
+   MIRRORS `.dbt-badge` in c/dispositionBuyerTimeline — same geometry, same type register, same
+   pill token. That card uses it for "DECLINED", "CHECK DATES" and the response method; this card
+   has exactly one small inline affordance, and giving it the neighbour's badge shape is what
+   stops it reading as a stray hyperlink dropped into a card that has none. Kept as a base class
+   with a variant beside it so a genuine status pill can be added here later without redefining
+   the geometry. */
+.bbc-badge {
+    display: inline-flex;
+    align-items: center;
+    min-width: 0;
+    padding: var(--slds-g-spacing-1, 0.25rem) var(--slds-g-spacing-2, 0.5rem);
+    border-radius: var(--slds-g-radius-border-pill, 15rem);
+    font-size: var(--slds-g-font-scale-neg-2, 0.625rem);
+    font-weight: var(--slds-g-font-weight-7, 700);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+/* ⚠ DIVERGES FROM THE TIMELINE'S BADGES IN ONE RESPECT, DELIBERATELY: brand-coloured text.
+   Every `.dbt-badge` is inert — it states a fact. This one is a BUTTON, and the outlined pill
+   alone does not say so. The brand colour (and the hover) is the only thing left telling a user
+   the note can be opened, so it stays; the surface, the border and the type are the timeline's.
+   `flex: none` keeps it from shrinking — the preview text beside it is what gives way. */
 .bbc-notes-view {
     flex: none;
-    border: none;
-    background: none;
-    padding: 0;
+    /* ⚠ `font-family: inherit` IS REQUIRED, NOT TIDINESS. A native <button> does NOT inherit the
+       font family — the user agent gives it its own — so without this the pill renders in a
+       different typeface from the `.dbt-badge` spans it is meant to match. The old bare-text
+       button had the same bug; it was simply harder to see on one blue word. */
+    font-family: inherit;
+    background: var(--slds-g-color-surface-container-1, #fff);
+    border: var(--slds-g-sizing-border-1, 1px) solid
+        var(--slds-g-color-border-1, #e5e5e5);
     color: var(--slds-g-color-brand-base-50, #0176d3);
-    font-size: var(--slds-g-font-scale-neg-1, 0.75rem);
-    font-weight: var(--slds-g-font-weight-7, 700);
     cursor: pointer;
 }
 .bbc-notes-view:hover {
+    border-color: var(--slds-g-color-brand-base-50, #0176d3);
     text-decoration: underline;
 }
 
@@ -281,8 +397,14 @@
    EMPTY vs UNAVAILABLE — TWO STATES, ONE NEUTRAL TREATMENT, NEITHER OF THEM AN ERROR STYLE.
    ═══════════════════════════════════════════════════════════════════════════════════════════
    Empty is the MAJORITY state of this card (most sales never replace a broker) and must look
-   completely ordinary. Unavailable is rarer and is distinguished by its WORDING and by italics
-   only — never coloured red, never given an error surface.
+   completely ordinary. Unavailable is rarer and is distinguished by its WORDING and by TYPE
+   WEIGHT — never coloured red, never given an error surface.
+   ⚠ THE ITALIC WAS DROPPED ON 2026-08-25 AND THE DIFFERENTIATOR REPLACED, NOT REMOVED.
+   c/dispositionBuyerTimeline has no italic anywhere; it separates its own two quiet lines with
+   the same three properties instead — `.dbt-empty-text` is 0.8125rem/700/on-surface-2 and
+   `.dbt-bov-unavailable` is 0.75rem/400/on-surface-1. `.bbc-empty` and `.bbc-unavailable` below
+   are now that exact pair, so the two states are still told apart at a glance and the card no
+   longer carries the only italic on the page.
    🔴 DO NOT restyle either of these using the shared `.lv-error` look used elsewhere in this
    repo. A secondary informational card cannot read the situation well enough to raise an alarm,
    and the realistic cause of a failed read here is a missing FLS grant — an administrator's
@@ -314,9 +436,9 @@
 
 .bbc-unavailable {
     min-width: 0;
+    max-width: var(--slds-g-sizing-content-2, 45ch);
     margin: 0;
-    font-size: var(--slds-g-font-scale-base, 0.8125rem);
-    font-style: italic;
+    font-size: var(--slds-g-font-scale-neg-1, 0.75rem);
     color: var(--slds-g-color-on-surface-1, #757575);
 }
 
