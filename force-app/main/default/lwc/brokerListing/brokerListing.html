@@ -36,6 +36,99 @@
                     </c-onboarding-card-child>
                 </template>
             </div>
+
+            <!--
+                ── THE RULE ──────────────────────────────────────────────────────────────────
+                A token-driven hairline, NOT a hardcoded border colour: `--slds-g-color-border-1`
+                is `light-dark(#c9c9c9, #444)` under SLDS 2, so it inverts with the theme where a
+                literal `#eef1f4` would stay pale grey and vanish on a dark surface. It is a
+                one-pixel BOX rather than a `border-top`, because a border on the section below
+                would collapse against the grid's own padding at some widths.
+
+                ⚠ IT IS `role="presentation"` AND CARRIES NO TEXT. It divides visually only; the
+                section heading beneath it is what tells a screen reader a new group has started.
+            -->
+            <div class="cfo-rule" role="presentation"></div>
+
+            <div class="cfo-section">
+                <!--
+                    ⚠ A HEADING, NOT DECORATION. Without it the third tile's label reads a bare
+                    "Status" and could be mistaken for the status of the LISTING — which is what
+                    the traction pill at the top of this card already reports. The heading is what
+                    scopes all three tiles to the call for offers.
+
+                    ⚠ NOT AN `<h3>`. This card's own title (`.card-title`) is a `<div>`, so an
+                    `<h3>` here would be the first and only heading in the bundle and would sit
+                    UNDER a non-heading title — axe's heading-order/one-main-heading family reads
+                    that as a broken outline. The grouping is expressed by `.cfo-section` instead.
+                -->
+                <div class="cfo-heading">Call for Offers</div>
+
+                <!--
+                    ⚠ `auto-fit` + `minmax`, NOT `repeat(3, 1fr)`. This card renders in the `main`
+                    region today, but nothing pins it there, and three tiles across a narrow column
+                    truncate every value at once. The tiles reflow to 2-up then 1-up on their own.
+
+                    🔴 THE `gap` IS LOAD-BEARING MARKUP, not spacing polish. The LWC template
+                    compiler DISCARDS the whitespace between sibling elements, so with `gap`
+                    removed these tiles butt directly against each other with nothing between
+                    them — and the same is true of the value/label pair inside each tile. Measured
+                    on three separate bundles in this repo. Do not "simplify" it away.
+                -->
+                <div class="cfo-grid">
+                    <div class="cfo-tile">
+                        <lightning-icon
+                            class="cfo-tile-icon cfo-tile-icon_date"
+                            icon-name="utility:event"
+                            size="small"
+                            alternative-text="">
+                        </lightning-icon>
+                        <div class="cfo-tile-text">
+                            <span class="cfo-tile-value" title={cfoDateLabel}>{cfoDateLabel}</span>
+                            <span class="cfo-tile-label">Call For Offers Date</span>
+                        </div>
+                    </div>
+
+                    <div class="cfo-tile">
+                        <lightning-icon
+                            class="cfo-tile-icon cfo-tile-icon_countdown"
+                            icon-name="utility:clock"
+                            size="small"
+                            alternative-text="">
+                        </lightning-icon>
+                        <div class="cfo-tile-text">
+                            <!--
+                                🔴 THIS IS THE TILE THAT MUST NOT LIE WHEN THE DATE IS BLANK — which
+                                is every live disposition in the org right now. It renders an em dash
+                                there, never `0` ("due today") and never a negative number. See
+                                `_cfoState` for why `0` and `null` cannot be collapsed.
+                            -->
+                            <span class="cfo-tile-value" title={cfoCountdownLabel}>{cfoCountdownLabel}</span>
+                            <span class="cfo-tile-label">Days to Call for Offers</span>
+                        </div>
+                    </div>
+
+                    <div class="cfo-tile">
+                        <lightning-icon
+                            class="cfo-tile-icon cfo-tile-icon_status"
+                            icon-name="utility:flag"
+                            size="small"
+                            alternative-text="">
+                        </lightning-icon>
+                        <div class="cfo-tile-text">
+                            <!--
+                                The pill's treatment is `c/callForOffersPanel`'s `.cfo-badge` — the
+                                acquisition module's own call-for-offers urgency pill — right down to
+                                the muted/green/amber/red theme names. See the stylesheet for the ONE
+                                deliberate departure (the background token) and why it is not
+                                optional.
+                            -->
+                            <span class={cfoStatusClass}>{cfoStatusLabel}</span>
+                            <span class="cfo-tile-label">Status</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
     </template>
     <template if:true={error}>

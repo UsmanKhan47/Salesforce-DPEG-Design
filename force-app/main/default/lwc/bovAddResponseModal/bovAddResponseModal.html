@@ -1,7 +1,10 @@
 <template>
-    <!-- ⚠ THE LABEL IS A GETTER, NOT A LITERAL (2026-08-24). This bundle now serves TWO modes and
-         the header is one of the two things that tell them apart (the other is which fields are
-         `required`). "Add Preferred Broker" when `isPreferred`, "Add Broker Response" otherwise.
+    <!-- ⚠ THE LABEL IS A GETTER, NOT A LITERAL (2026-08-24). This bundle now serves THREE modes
+         and the header is one of the things that tell them apart (the others are which fields are
+         `required` and whether the outgoing broker line renders). "Replace Preferred Broker" when
+         `isReplacement`, "Add Preferred Broker" when `isPreferred`, "Add Broker Response"
+         otherwise — and the ORDER of those tests matters, because replacement mode is opened with
+         `isPreferred: true` as well. See `modalTitle`.
          🔴 THE OPENER PASSES ITS OWN `label` TO `LightningModal.open()` TOO, and that is a
          DIFFERENT string in a different place: `open({ label })` is what assistive technology
          announces for the dialog region, this is what is painted in the header bar. They must
@@ -59,6 +62,47 @@
                         disabled
                     ></lightning-input-field>
 
+                    <!-- ═══════════════════════════════════════════════════════════════
+                         THE OUTGOING PREFERRED BROKER — REPLACEMENT MODE ONLY
+                         (2026-08-24).
+                         ═══════════════════════════════════════════════════════════════
+                         🔴 STATIC TEXT, NOT A `lightning-input-field`, AND NOT A
+                         DISABLED ONE EITHER. This value is not part of the record being
+                         created — it identifies a DIFFERENT row, the one the opener is
+                         about to retire. A `lightning-input-field` here would put a key
+                         in the payload that `lightning-record-edit-form` FLS-checks and,
+                         for any persona without edit on it, DROPS SILENTLY behind a
+                         success toast. Static markup cannot reach the payload at all:
+                         `handleSave` gathers only rendered `lightning-input-field`s and
+                         the native (ENTER) submit carries only the form's own fields.
+
+                         ⚠ IT SITS DIRECTLY ABOVE `Broker__c` ON PURPOSE. The pair reads
+                         as "from → to": the broker being replaced, then the control that
+                         chooses the replacement. There is no second picker for the
+                         incoming broker — `Broker__c` below IS it — because a successor
+                         has usually submitted no BOV at all and so has no row to pick.
+
+                         ⚠ THE `slds-form-element__static` SHAPE IS SLDS'S OWN READ-ONLY
+                         FIELD PATTERN, so the line aligns with the real inputs around it.
+                         A `<span>` label rather than a `<label>`: there is no form
+                         control for it to point at, and an orphaned `for` is an
+                         accessibility defect, not a formality. -->
+                    <template lwc:if={showOutgoingBroker}>
+                        <div
+                            class="bar-field bar-field_full bar-field-outgoing slds-form-element"
+                        >
+                            <span class="slds-form-element__label"
+                                >Current preferred broker</span
+                            >
+                            <div class="slds-form-element__control">
+                                <span
+                                    class="slds-form-element__static bar-outgoing-value"
+                                    >{outgoingBrokerLabel}</span
+                                >
+                            </div>
+                        </div>
+                    </template>
+
                     <!-- REQUIRED BY A VALIDATION RULE (Broker_Required_On_Submission). The
                          lookup is filtered server-side to Contacts on the Broker record
                          type, so this is a broker picker, not a Contact picker.
@@ -82,15 +126,22 @@
                          The amount is the entire point of a Broker Opinion of Value: the
                          matrix ranks on it and Responses_Received__c counts the row.
 
-                         ⚠ RELAXED ON THE PREFERRED PATH (2026-08-24). A preferred broker is a
-                         firm DPEG would like to use, not a firm that has quoted — there may be
-                         no amount to type yet. 🔴 CLEARING THIS ATTRIBUTE IS NOT ENOUGH ON ITS
-                         OWN: `BOV_Amount_Required_On_Submission` is an ACTIVE, UNGUARDED
-                         validation rule (`ISBLANK(BOV_Amount__c)`) that fires on EVERY save and
-                         is not bypassed by anything the client can do. Until that rule carries
-                         a `NOT(Is_Preferred_Broker__c)` exemption, a preferred row saved with a
-                         blank amount is REFUSED SERVER-SIDE and the user sees the rule's own
-                         message inside this dialog. That amendment is separately scoped. -->
+                         ⚠ RELAXED ON THE PREFERRED PATH (2026-08-24), WHICH NOW INCLUDES THE
+                         REPLACEMENT PATH — that mode is opened with `isPreferred: true`, so it
+                         reads the same getter. A preferred broker is a firm DPEG would like to
+                         use, not a firm that has quoted; there may be no amount to type yet.
+
+                         🔴 RETRACTED IN PLACE, LATER THE SAME DAY. This warned: *"CLEARING THIS
+                         ATTRIBUTE IS NOT ENOUGH ON ITS OWN … Until that rule carries a
+                         `NOT(Is_Preferred_Broker__c)` exemption, a preferred row saved with a
+                         blank amount is REFUSED SERVER-SIDE."* THE EXEMPTION IS NOW DEPLOYED:
+                         `BOV_Amount_Required_On_Submission` reads
+                         `AND(NOT(Is_Preferred_Broker__c), ISBLANK(BOV_Amount__c))` and is still
+                         active. Client and server now agree, in both preferred modes.
+                         ⚠ THE WARNING'S GENERAL FORM STILL APPLIES to any future relaxation:
+                         clearing a `required` attribute here changes NOTHING server-side. See
+                         `Broker__c` above, whose rule has no exemption — which is why its
+                         `required` is bare in every mode. -->
                     <lightning-input-field
                         class="bar-field bar-field-amount"
                         field-name="BOV_Amount__c"

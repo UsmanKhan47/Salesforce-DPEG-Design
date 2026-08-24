@@ -23,7 +23,7 @@
         </template>
 
         <!-- Offers exist: pick one.
-             🔴 NO EXPLANATORY NOTE ABOVE THE RADIO GROUP. The `.qa-note` panel that used to sit
+             🔴 NO EXPLANATORY NOTE ABOVE THE OFFER TABLE. The `.qa-note` panel that used to sit
              here ("Selecting an offer moves this disposition to Offer Selection and sends the
              offer for principal approval…") was removed at the user's request on 2026-08-21 — it
              is the string they quoted. The button label below still says "Select and send for
@@ -31,16 +31,90 @@
              ⚠ The distinction this note drew — selecting is NOT accepting — survives in the JS
              class header, which is where developers need it. -->
         <template lwc:if={hasOffers}>
-            <lightning-radio-group
-                class="qa-offers slds-m-top_small"
-                name="dispositionOffer"
-                label="Offer to put forward"
-                options={offerOptions}
-                value={selectedOfferId}
-                onchange={handleOfferChange}
-                type="radio"
-                required
-            ></lightning-radio-group>
+            <!--
+                🔴 A HAND-ROLLED `<table>`, NOT `lightning-datatable`. THE REASON IS TESTABILITY,
+                NOT STYLE, AND IT IS THE OPPOSITE OF THE CHOICE THE REST OF THIS REPO MAKES
+                (`c/listDatatable` and its five consumers). Stated here because "harmonise this
+                with the list components" is the obvious review comment:
+
+                  1. `lightning-datatable` WOULD FIT THE SELECTION NEED CLEANLY — `max-row-selection
+                     ="1"` renders exactly this radio column. What it does NOT survive is this
+                     bundle's test contract. sfdx-lwc-jest's `lightning/datatable` stub renders an
+                     EMPTY TEMPLATE (its own suite, `listDatatable.test.js`, says so in its header),
+                     so every cell would be invisible to Jest. This file's four ABSENCE PINS —
+                     T-NO-BUYER, T-NO-FINANCING, T-NO-PROSE and the "never renders the literal
+                     string undefined" clauses — all read `shadowRoot.textContent`, and against a
+                     stub they would pass because NOTHING renders, which is exactly how they would
+                     pass if the component were deleted.
+                  2. THE SAME APPLIES TO `@sa11y/jest`. A table's accessible name and its column
+                     headers are the whole a11y story here, and axe cannot see either one inside a
+                     stub. With real markup the caption and the four `<th scope="col">` below are
+                     genuinely asserted.
+                  3. AMOUNT EXACTNESS WOULD BECOME A CONFIG CLAIM. `type: 'currency'` moves the
+                     formatting inside the datatable, so the 2026-08-21 defect (`$1,850,000` and
+                     `$1,860,000` BOTH rendering `$1.9M`) could only be fenced by asserting a
+                     column definition, never the rendered figure. Here the exact string is a text
+                     node in the DOM.
+
+                ⚠ AND IT SIDESTEPS THE ROW-ACTION PAYLOAD TRAP THIS REPO HAS ALREADY BEEN BITTEN
+                BY (`c/meterRegister`, `c/sellMeterList`): `lightning-datatable` does not resolve a
+                `fieldName` reference inside an action, so `event.detail.action.name` arrives as the
+                raw `{ fieldName: '...' }` OBJECT and a per-row handler silently matches nothing —
+                with Jest green, because the suite faked a string-shaped payload. A native
+                `<input type="radio">` has no such payload: the handler reads `data-id` off the
+                element the user actually clicked.
+
+                ⚠ SINGLE-SELECT IS ENFORCED BY THE SHARED `name="dispositionOffer"`, which is what
+                a native radio group IS — the browser unchecks the others, and only one offer Id can
+                ever reach `selectOffer`. Do not change `name` to anything row-specific.
+            -->
+            <table class="qa-offers qa-offer-table slds-m-top_small">
+                <!-- The table's accessible name. It is the string the retired
+                     `lightning-radio-group` carried as its `label`, kept verbatim. -->
+                <caption class="qa-table-caption">Offer to put forward</caption>
+                <thead>
+                    <tr>
+                        <th class="qa-col-choose" scope="col">
+                            <span class="slds-assistive-text">Choose</span>
+                        </th>
+                        <th class="qa-col-broker" scope="col">Broker</th>
+                        <th class="qa-col-amount" scope="col">Amount</th>
+                        <th class="qa-col-date" scope="col">Offer Date</th>
+                        <th class="qa-col-ref" scope="col">Offer Number</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <template for:each={offerRows} for:item="row">
+                        <tr key={row.id} class={row.rowClass} data-row={row.id}>
+                            <td class="qa-cell-choose">
+                                <!--
+                                    🔴 `aria-label` CARRIES THE WHOLE COMPOSED ROW, and that is not
+                                    decoration. A radio in a table cell is announced with its own
+                                    accessible name; without this it would announce as an unnamed
+                                    control, and the uniqueness contract the old label carried
+                                    (broker · exact amount · date · unconditional AutoNumber) would
+                                    have no rendered home at all. The JS getter that builds it
+                                    documents why each token is there.
+                                -->
+                                <input
+                                    type="radio"
+                                    class="qa-offer-radio"
+                                    name="dispositionOffer"
+                                    value={row.id}
+                                    data-id={row.id}
+                                    checked={row.selected}
+                                    aria-label={row.ariaLabel}
+                                    onchange={handleOfferChange}
+                                />
+                            </td>
+                            <th class="qa-cell-broker" scope="row">{row.broker}</th>
+                            <td class="qa-cell-amount">{row.amount}</td>
+                            <td class="qa-cell-date">{row.date}</td>
+                            <td class="qa-cell-ref">{row.offerRef}</td>
+                        </tr>
+                    </template>
+                </tbody>
+            </table>
 
             <template lwc:if={error}>
                 <div
@@ -67,7 +141,7 @@
             </div>
         </template>
 
-        <!-- No offers yet: explain rather than showing an empty radio group. -->
+        <!-- No offers yet: explain rather than showing an empty table. -->
         <template lwc:if={showNoOffers}>
             <p class="slds-m-bottom_medium">
                 No offers have been logged against this disposition yet. Log an

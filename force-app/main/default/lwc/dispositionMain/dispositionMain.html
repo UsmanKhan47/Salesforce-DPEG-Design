@@ -8,34 +8,33 @@
     <template if:true={isBovOutreach}>
         <!--
           ═══════════════════════════════════════════════════════════════════════════════
-          🔴 THE SAME BUNDLE, TWICE, DELIBERATELY (2026-08-24).
+          🔴 ONE TAG, NOT TWO — REPLACED 2026-08-24 (SAME DAY, LATER).
           ═══════════════════════════════════════════════════════════════════════════════
-          The tag below is the "Preferred Broker" card; the tag after it is the BOV
-          Comparison Matrix and is BYTE-IDENTICAL to what has always been here. Order is
-          the requirement: preferred ABOVE the matrix.
+          This branch mounted `<c-bov-comparison-matrix>` TWICE: once with
+          `preferred-only hide-actions` (the "Preferred Broker" card) and once bare (the
+          matrix), with the three broker buttons living on the matrix instance's own card
+          header. `c/bovBrokerPanel` now wraps both, so ONE header carries "Add Broker
+          Response", "Replace Broker" and "Add Preferred Broker" above BOTH cards. The two
+          children keep their own section titles — user decision.
 
-          ⚠ NOT A WRAPPER BUNDLE AND NOT A FlexiPage COMPONENT. `c/bovComparisonMatrix`
-          is `isExposed=false` with no `targetConfigs` — it is not placeable in App
-          Builder and never was — so a second instance is a second TAG here, which is
-          also the only place that can guarantee the two cards render in this order. A
-          wrapper bundle would have had to duplicate that component's column set, its
-          `getSubmissions` wire and its un-destructured wire-result invariant.
+          ⚠ THE TWO CHILD TAGS STILL EXIST; THEY MOVED INSIDE THE PANEL. Read
+          `bovBrokerPanel.html` before changing anything about which cards render here:
+          the order (preferred ABOVE the matrix) and the bare `preferred-only` attribute
+          are both requirements, and both now live there.
 
-          🔴 THE PREFERRED CARD GATES ITSELF. There is no `if:true` around it: it renders
-          nothing at all when the disposition has no preferred broker, and it knows that
-          from the BOV rows it already holds. Gating it HERE would mean this component
-          reading BOV submissions it otherwise has no reason to know about.
+          🔴 THE GAP DEFECT THIS FILE'S STYLESHEET DOCUMENTED IS FIXED BY THE MOVE, NOT
+          WORKED AROUND. The comment in dispositionMain.css read "KNOWN, ACCEPTED: … with
+          no preferred broker the matrix sits one gap lower than the top of the region",
+          because the preferred instance self-gated to nothing and a zero-height flex item
+          still takes a gap. `c/bovBrokerPanel` holds the BOV rows (its three buttons'
+          visibility rules need them anyway), so it can gate the TAG with `lwc:if` — and
+          an unrendered tag is not a flex item. This router still has no BOV data of its
+          own and still must not acquire any.
 
-          ⚠ BOTH TAGS WIRE THE SAME APEX METHOD WITH THE SAME PARAMETER, so LDS serves
-          them from ONE cache entry — this is not a second server round trip — and
-          `refreshApex` from either instance re-provisions both.
+          ⚠ THE PANEL IS `isExposed=false`, LIKE THE MATRIX BEFORE IT. It is composed here
+          in markup, not placed in App Builder.
         -->
-        <c-bov-comparison-matrix
-            record-id={recordId}
-            preferred-only
-            hide-actions
-        ></c-bov-comparison-matrix>
-        <c-bov-comparison-matrix record-id={recordId}></c-bov-comparison-matrix>
+        <c-bov-broker-panel record-id={recordId}></c-bov-broker-panel>
     </template>
     <!--
       RELEASE MATERIALS (2026-08-24). The response logger — what came back after the
@@ -89,7 +88,34 @@
         </div>
     </template>
     <template if:true={isClosing}>
+        <!--
+          ═══════════════════════════════════════════════════════════════════════════════
+          🔴 THE WIRE FIELDS ONLY. NO CLOSING CHECKLIST HERE (removed 2026-08-24).
+          ═══════════════════════════════════════════════════════════════════════════════
+          `<c-disposition-closing-tasks>` was rendered on the line below this one and was REMOVED
+          at the user's request ("drop the checklist, keep the wire fields"). It is the card
+          titled "Closing Checklist" — the PSA / Title Company / Closing Statement task list
+          backed by `DispositionTaskController`.
+
+          🔴 A RENDER REMOVAL, NOT A DELETION — SAME TREATMENT AS THE CALL-FOR-OFFERS CARD ABOVE.
+          The `lwc/dispositionClosingTasks` bundle, `DispositionTaskController` and its tests are
+          all KEPT. Re-adding the tag is a one-line mistake that nothing but the absence pin in
+          __tests__/dispositionMain.test.js would catch.
+
+          ⚠ THIS TAG WAS THE ONLY ROUTE TO THAT CARD, AND THAT IS NOW A DEAD BUNDLE, NOT A HIDDEN
+          ONE. `dispositionClosingTasks.js-meta.xml` is `isExposed=false`, so it is not placeable
+          in App Builder; a repo-wide search on 2026-08-24 found this line and its own tests as
+          the only references. Reviving it means restoring a tag, not just a FlexiPage region.
+
+          🔴 WHAT MUST NOT FOLLOW IT OUT. `c-wire-verification` below is the ONLY editable route
+          to the six `Wire__c` confirmation fields, which is what drives
+          `Disposition__c.Wire_Verification_Completed__c` (a DERIVED field, maintained by the
+          `Wire_Verification_Rollup` flow — it cannot be typed in). That flag gates the Send
+          Closing Approval action AND the `Wire_Complete_Before_Sale_Closes` validation rule on
+          the final hop. Remove this card and the Closing stage becomes a dead end with no error
+          message. FLS verified against the org on 2026-08-24: all six fields are
+          readable+EDITABLE in DPEG_Disposition_Edit.
+        -->
         <c-wire-verification record-id={recordId}></c-wire-verification>
-        <c-disposition-closing-tasks record-id={recordId}></c-disposition-closing-tasks>
     </template>
 </template>

@@ -141,6 +141,56 @@ describe('c-disposition-sidebar', () => {
         ).not.toBeNull();
     });
 
+    // ═════════════════════════════════════════════════════════════════════════
+    // 🔴 THE selected-only MODE FLAG (2026-08-24)
+    //
+    // At Offer Selection the card must render ONLY the offer that went for
+    // approval, with "+ Log Offer" disabled. This component owns that decision —
+    // see `isOfferSelection` in the JS for why it is not made in the card or on
+    // the server — so these are the falsifiers for the WIRING. The card's own
+    // behaviour under the flag is proved in lwc/dispositionOffer/__tests__.
+    //
+    // 🔴 ASSERTED ON THE RENDERED CHILD ELEMENT, NOT ON THE GETTER. Reading
+    // `element.isOfferSelection` would prove the getter computes and prove nothing
+    // about the template: deleting `selected-only={isOfferSelection}` from the tag
+    // leaves the getter perfectly correct and the feature completely dead.
+    //
+    // 🔴 `toBe(true)` / `toBe(false)`, NEVER TRUTHINESS. `selected-only=""` — one
+    // character from the correct markup — passes the EMPTY STRING, which is falsy
+    // and silently restores the old behaviour. A truthiness assertion would also
+    // pass on the string "true", which works only by accident.
+    // ═════════════════════════════════════════════════════════════════════════
+
+    it('🔴 Offer Selection puts the offers card in SELECTED-ONLY mode', async () => {
+        const element = createComponent();
+
+        getRecord.emit(recordForStage('Offer Selection'));
+        await Promise.resolve();
+
+        const card = element.shadowRoot.querySelector('c-disposition-offer');
+        expect(card).not.toBeNull();
+        expect(card.selectedOnly).toBe(true);
+    });
+
+    it.each(['Active Listing', 'Release Materials', 'LOI'])(
+        '🔴 %p leaves the offers card in its DEFAULT mode — every offer, Log Offer enabled',
+        async (stage) => {
+            const element = createComponent();
+
+            getRecord.emit(recordForStage(stage));
+            await Promise.resolve();
+
+            const card = element.shadowRoot.querySelector('c-disposition-offer');
+            expect(card).not.toBeNull();
+            // The whole scoping claim of this change, per stage. `toBe(false)` and
+            // not `toBeFalsy()`: `undefined` would ALSO be falsy and would also
+            // behave correctly today, but it is not what the binding promises, and
+            // accepting it here would hide a getter that stopped returning a
+            // boolean.
+            expect(card.selectedOnly).toBe(false);
+        }
+    );
+
     it('LOI renders the disposition-offer panel — the negotiation still lives on the offer', async () => {
         const element = createComponent();
 

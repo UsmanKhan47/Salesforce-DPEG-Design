@@ -1,0 +1,41 @@
+/*
+  ═════════════════════════════════════════════════════════════════════════════
+  🔴 THE STACK GAP BETWEEN THE TWO BROKER CARDS LIVES HERE, AND NOWHERE ELSE.
+  ═════════════════════════════════════════════════════════════════════════════
+  The LWC template compiler discards whitespace-only text nodes between sibling
+  elements, so with `display: block` the two `c-bov-comparison-matrix` cards
+  render EDGE TO EDGE with literally nothing between them. Deleting the `gap`
+  below does not "reduce spacing" — it removes ALL spacing, and no rendered text
+  changes to show it. The Jest suite pins this rule against this stylesheet's
+  SOURCE for exactly that reason: jsdom performs no layout, so a DOM-only suite
+  is completely blind to this file.
+
+  ⚠ `display: block` SILENTLY IGNORES `gap`, which looks exactly like the bug.
+  The pin asserts `display: flex` AND `flex-direction: column` AND the gap — not
+  just the gap.
+
+  🔴 WHY THIS IS ON `.panel-stack` AND NOT ON `:host`. Unlike `c/dispositionMain`
+  (a stage router whose cards are direct children of its shadow root), this
+  component's children sit inside `lightning-card`'s default slot. `:host` here
+  is the card's outer box, so a gap there would space the CARD from nothing.
+
+  ⚠ AND THIS IS WHY THERE IS NO ORPHAN GAP WHEN THERE IS NO PREFERRED BROKER.
+  `dispositionMain.css` documented the opposite arrangement as "KNOWN, ACCEPTED":
+  the preferred instance self-gated to nothing, and a zero-height flex item is
+  STILL an item, so the stack began one 1rem step low. There is no CSS escape
+  from that (a custom element with an empty template matches `:empty` whether it
+  rendered a card or not). It is fixed by NOT RENDERING THE TAG — `lwc:if=
+  {hasPreferredBroker}` in the template — which is possible here only because
+  this component holds the BOV rows. With one child there is no gap to orphan.
+
+  🔴 DO NOT ADD PER-CARD MARGINS ON TOP OF THIS. They double up with the gap and
+  a trailing margin on the last card leaves dead space above the card footer.
+*/
+.panel-stack {
+    display: flex;
+    flex-direction: column;
+    /* --slds-g-spacing-4 = 1rem, the same step `dispositionMain.css` uses for
+       the page-level card stack, so the two cards inside this panel read as
+       part of the same rhythm rather than a second, similar value. */
+    gap: var(--slds-g-spacing-4, 1rem);
+}

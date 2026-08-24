@@ -72,6 +72,12 @@ jest.mock('@salesforce/apex', () => ({ refreshApex: jest.fn() }), {
 const flushPromises = () => new Promise((resolve) => setTimeout(resolve, 0));
 const NEW_OFFER_ID = 'a0Biw000000009AAA';
 
+/**
+ * ⚠ NEITHER ROW IS FLAGGED, ON PURPOSE. This is the DEFAULT-mode fixture and it is what makes
+ * the `selected-only` tests below non-vacuous: a fixture where every row happened to be selected
+ * would render identically in both modes, so the filter could be deleted outright and every test
+ * in this file would stay green.
+ */
 const OFFERS = {
     records: [
         {
@@ -79,7 +85,8 @@ const OFFERS = {
             fields: {
                 Name: { value: 'OFFER-0001' },
                 Offer_Amount__c: { value: 2500000 },
-                Offer_Date__c: { value: '2026-03-15' }
+                Offer_Date__c: { value: '2026-03-15' },
+                Is_Selected__c: { value: false }
             }
         },
         {
@@ -87,7 +94,52 @@ const OFFERS = {
             fields: {
                 Name: { value: 'OFFER-0002' },
                 Offer_Amount__c: { value: 2350000 },
-                Offer_Date__c: { value: '2026-03-20' }
+                Offer_Date__c: { value: '2026-03-20' },
+                Is_Selected__c: { value: false }
+            }
+        }
+    ]
+};
+
+/**
+ * THREE offers, exactly ONE of them selected — the real Offer Selection shape.
+ *
+ * 🔴 THE SELECTED ROW IS THE MIDDLE ONE, DELIBERATELY. With it first, a broken filter that
+ * simply took `records[0]` would produce an identical render and pass. With it last, a `slice(-1)`
+ * bug would. Being second, neither positional accident can imitate a working filter.
+ *
+ * ⚠ IT IS ALSO NOT THE HIGHEST OFFER (2.35M against 2.50M). `Is_Selected__c` is a human choice
+ * recorded by `DispositionApprovalService.selectOffer`, not "the best number" — a fixture where
+ * the selected offer was also the largest would pass for a card that sorted by amount and took
+ * the top row.
+ */
+const OFFERS_WITH_SELECTION = {
+    records: [
+        {
+            id: 'a0E01',
+            fields: {
+                Name: { value: 'OFFER-0001' },
+                Offer_Amount__c: { value: 2500000 },
+                Offer_Date__c: { value: '2026-03-15' },
+                Is_Selected__c: { value: false }
+            }
+        },
+        {
+            id: 'a0E02',
+            fields: {
+                Name: { value: 'OFFER-0002' },
+                Offer_Amount__c: { value: 2350000 },
+                Offer_Date__c: { value: '2026-03-20' },
+                Is_Selected__c: { value: true }
+            }
+        },
+        {
+            id: 'a0E03',
+            fields: {
+                Name: { value: 'OFFER-0003' },
+                Offer_Amount__c: { value: 2100000 },
+                Offer_Date__c: { value: '2026-03-22' },
+                Is_Selected__c: { value: false }
             }
         }
     ]
@@ -313,10 +365,242 @@ describe('c-disposition-offer', () => {
         expect(config.fields).toContain('Disposition_Offer__c.Name');
     });
 
+    // ═════════════════════════════════════════════════════════════════════════
+    // 🔴 selected-only MODE (2026-08-24) — "at Offer Selection show only the
+    //    offer going for approval, and disable Log Offer"
+    //
+    // Set by c/dispositionSidebar at the Offer Selection stage; the WIRING is
+    // pinned in that bundle's tests, the BEHAVIOUR is pinned here.
+    //
+    // ⚠ EVERY TEST BELOW RUNS AGAINST `OFFERS_WITH_SELECTION` — three rows, one
+    // flagged, the flagged one neither first nor largest. A fixture where the
+    // filter's answer coincided with "the first row" or "all rows" would let the
+    // filter be deleted with the suite still green.
+    // ═════════════════════════════════════════════════════════════════════════
+
+    it('🔴 SELECTED-ONLY: renders ONLY the flagged offer, out of three', async () => {
+        const element = createComponent({
+            recordId: 'a0D5g000000DispEAG',
+            selectedOnly: true
+        });
+
+        getRelatedListRecords.emit(OFFERS_WITH_SELECTION);
+        await Promise.resolve();
+
+        const rows = element.shadowRoot.querySelectorAll('.offer-row');
+        expect(rows.length).toBe(1);
+
+        // 🔴 WHICH row, not just how many. A filter that kept the wrong single row
+        // (`records[0]`, a sort-and-take-top, an inverted predicate) renders exactly
+        // one row too, and a count-only assertion cannot tell the difference.
+        expect(
+            element.shadowRoot.querySelector('.offer-name').textContent
+        ).toBe('OFFER-0002');
+        expect(
+            element.shadowRoot.querySelector('.offer-amount').textContent
+        ).toBe('$2.35M');
+
+        // The unselected rows are gone from the RENDERED output, not merely
+        // deprioritised.
+        const rendered = element.shadowRoot.textContent;
+        expect(rendered).not.toContain('OFFER-0001');
+        expect(rendered).not.toContain('OFFER-0003');
+
+        expect(element.shadowRoot.querySelector('.empty-msg')).toBeNull();
+    });
+
+    it('🔴 CONTROL: the SAME fixture in default mode still lists all three', async () => {
+        // The other half of the falsifier. Without this, deleting the filter
+        // entirely would red only the test above; with it, the pair pins that the
+        // difference is caused by the MODE and not by the fixture.
+        const element = createComponent();
+
+        getRelatedListRecords.emit(OFFERS_WITH_SELECTION);
+        await Promise.resolve();
+
+        expect(element.shadowRoot.querySelectorAll('.offer-row').length).toBe(3);
+        expect(element.shadowRoot.textContent).toContain('OFFER-0001');
+        expect(element.shadowRoot.textContent).toContain('OFFER-0003');
+    });
+
+    it('🔴 SELECTED-ONLY: the LOG OFFER BUTTON IS DISABLED, and says why', async () => {
+        const element = createComponent({
+            recordId: 'a0D5g000000DispEAG',
+            selectedOnly: true
+        });
+
+        getRelatedListRecords.emit(OFFERS_WITH_SELECTION);
+        await Promise.resolve();
+
+        const btn = element.shadowRoot.querySelector('.log-btn');
+        // 🔴 DISABLED, NOT ABSENT — the user asked for a greyed control, because a
+        // vanished one reads as a permission problem. Both halves are asserted:
+        // a "hide it" implementation would fail the first line, not the second.
+        expect(btn).not.toBeNull();
+        expect(btn.disabled).toBe(true);
+
+        // A greyed button with no explanation is the thing "disable, don't hide"
+        // was chosen to avoid, so the tooltip is part of the requirement.
+        expect(btn.getAttribute('title')).toContain('Select Offer');
+    });
+
+    it('🔴 DEFAULT MODE: the button is enabled and carries a REAL title, not "undefined"', async () => {
+        const element = createComponent();
+
+        getRelatedListRecords.emit(OFFERS);
+        await Promise.resolve();
+
+        const btn = element.shadowRoot.querySelector('.log-btn');
+        expect(btn.disabled).toBe(false);
+
+        // ⚠ THE LWC COMPILER WRITES A BOUND ATTRIBUTE UNCONDITIONALLY. A `logTitle`
+        // that returned `undefined` in this branch would render the literal string
+        // `title="undefined"` on the page — measured in this repo on another
+        // bundle, and invisible to every other assertion in this file.
+        expect(btn.getAttribute('title')).not.toBe('undefined');
+        expect(btn.getAttribute('title')).toContain('Log an offer');
+    });
+
+    it('🔴 SELECTED-ONLY: the HANDLER refuses too, even with the button force-enabled', async () => {
+        // The second, independent guard. `disabled` is what stops the click in a
+        // browser; this is what stops the SAVE if that binding is ever dropped in a
+        // template edit. Re-enabling the button in the DOM is the only way to reach
+        // the handler, and it is precisely the state a broken template would leave
+        // the page in.
+        DispositionLogOfferModal.open.mockResolvedValue(undefined);
+        const element = createComponent({
+            recordId: 'a0D5g000000DispEAG',
+            selectedOnly: true
+        });
+        await Promise.resolve();
+
+        const btn = element.shadowRoot.querySelector('.log-btn');
+        btn.disabled = false;
+        btn.click();
+        await flushPromises();
+
+        expect(DispositionLogOfferModal.open).not.toHaveBeenCalled();
+        expect(refreshApex).not.toHaveBeenCalled();
+    });
+
+    it('🔴 SELECTED-ONLY: the card is titled for the ONE offer it shows', async () => {
+        const element = createComponent({
+            recordId: 'a0D5g000000DispEAG',
+            selectedOnly: true
+        });
+
+        getRelatedListRecords.emit(OFFERS_WITH_SELECTION);
+        await Promise.resolve();
+
+        // ⚠ "Selected Offer", NOT "Offer Sent for Approval": the flag survives a
+        // REJECTION, which parks the disposition back at Offer Selection, so a
+        // title claiming the offer is out for approval would be false in exactly
+        // the state the user most needs this card in.
+        expect(
+            element.shadowRoot.querySelector('.section-header').textContent.trim()
+        ).toBe('Selected Offer');
+    });
+
+    it('the default card keeps its original title, which another component names in its copy', async () => {
+        // `c/dispositionOfferSelect` tells the user to "Log an offer from the
+        // **Disposition Offers** card first". This is the pin that stops the two
+        // drifting apart.
+        const element = createComponent();
+
+        getRelatedListRecords.emit(OFFERS);
+        await Promise.resolve();
+
+        expect(
+            element.shadowRoot.querySelector('.section-header').textContent.trim()
+        ).toBe('Disposition Offers');
+    });
+
+    it('🔴 SELECTED-ONLY with nothing flagged says so — it does not claim there are no offers', async () => {
+        // Not reachable through the authored path (selectOffer sets the flag and
+        // moves the stage in one savepointed transaction), but reachable by data
+        // load or direct API write. "No offers yet." here would be a LIE that sends
+        // the user to log another offer — the one thing the disabled button exists
+        // to prevent.
+        const element = createComponent({
+            recordId: 'a0D5g000000DispEAG',
+            selectedOnly: true
+        });
+
+        getRelatedListRecords.emit(OFFERS); // two rows, neither flagged
+        await Promise.resolve();
+
+        expect(element.shadowRoot.querySelectorAll('.offer-row').length).toBe(0);
+        expect(
+            element.shadowRoot.querySelector('.empty-msg').textContent.trim()
+        ).toBe('No offer is currently selected for approval.');
+    });
+
+    it('🔴 THE DISABLED BUTTON IS ACTUALLY STYLED AS DISABLED — pinned on the STYLESHEET SOURCE', () => {
+        // 🔴 jsdom PERFORMS NO LAYOUT AND APPLIES NO STYLESHEET, so `btn.disabled === true`
+        // above is true whether or not anything on the page LOOKS different. A user
+        // staring at an unchanged blue button that silently ignores clicks is worse
+        // than no change at all, and not one DOM assertion in this file can see it.
+        // The stylesheet source is the only observable.
+        const css = require('fs')
+            .readFileSync(
+                require('path').join(__dirname, '..', 'dispositionOffer.css'),
+                'utf8'
+            )
+            .replace(/\/\*[\s\S]*?\*\//g, ''); // comments NAME the banned hooks
+
+        const disabled = css.match(/\.log-btn\[disabled\]\s*\{([^}]*)\}/);
+        expect(disabled).not.toBeNull();
+        const body = disabled[1];
+
+        // Tokenised, per SLDS 2 — a raw hex here is unthemeable and looks identical
+        // on the light theme, so only a source assertion catches it.
+        expect(body).toMatch(/background:\s*var\(\s*--slds-g-/);
+        expect(body).toMatch(/color:\s*var\(\s*--slds-g-/);
+        // Colour is not the only affordance the pointer gets.
+        expect(body).toMatch(/cursor:\s*not-allowed/);
+
+        // 🔴 THE BANNED PAIR. Measured against the linter's own metadata:
+        // --slds-g-color-disabled-container-1 is WHITE and --slds-g-color-on-disabled-1
+        // is pale grey, which on this white card is near-invisible. The linter passes
+        // them; nothing but this line objects.
+        expect(body).not.toMatch(/--slds-g-color-disabled-container-1/);
+        expect(body).not.toMatch(/--slds-g-color-on-disabled-1/);
+
+        // 🔴 AND THE HOVER MUST NOT PAINT OVER IT. `.log-btn:hover` unscoped would
+        // repaint the disabled button on mouse-over, undoing the whole affordance.
+        expect(css).toMatch(/\.log-btn:not\(\[disabled\]\):hover/);
+        expect(css).not.toMatch(/(^|[^)])\.log-btn:hover/);
+    });
+
+    it('🔴 THE FILTER KEY IS ACTUALLY REQUESTED FROM LDS', async () => {
+        // 🔴 THE SILENT-FAILURE PIN. Drop `Is_Selected__c` from the wire's field
+        // list and `fields.Is_Selected__c` is `undefined` on every row, so the
+        // selected-only card filters EVERYTHING out and renders its empty state
+        // forever. Nothing throws, nothing logs, and the default mode is unaffected
+        // — so this is the only assertion in the suite that would move.
+        createComponent();
+        await Promise.resolve();
+
+        const config = getRelatedListRecords.getLastConfig();
+        expect(config.fields).toContain('Disposition_Offer__c.Is_Selected__c');
+    });
+
     it('is accessible', async () => {
         const element = createComponent();
 
         getRelatedListRecords.emit(OFFERS);
+        await Promise.resolve();
+
+        await expect(element).toBeAccessible();
+    });
+
+    it('is accessible in selected-only mode (a disabled button is still announced)', async () => {
+        const element = createComponent({
+            recordId: 'a0D5g000000DispEAG',
+            selectedOnly: true
+        });
+
+        getRelatedListRecords.emit(OFFERS_WITH_SELECTION);
         await Promise.resolve();
 
         await expect(element).toBeAccessible();

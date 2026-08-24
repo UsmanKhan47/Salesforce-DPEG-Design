@@ -4,6 +4,12 @@
  * can change the ranking, and LOCKED the moment a human or an approval takes over.
  * Added 2026-08-24 (`agent-output/bov-autoselect-preferred-brokers.md`).
  *
+ * 🔴 ⚠ AND SINCE THE SAME DAY IT MAINTAINS **TWO INDEPENDENT SLOTS**, NOT ONE. A preferred broker
+ * no longer displaces the scored winner — both hold `Submission_Status__c = 'Selected'` at the same
+ * time, and `Is_System_Selected__c` is what tells them apart. Read TWO SLOTS, NOT ONE below before
+ * anything else in this file; several paragraphs written for the one-slot model are retracted in
+ * place rather than deleted, because they are quoted in other class headers and in test names.
+ *
  * It replaces the manual **Select Broker** button on `c/bovComparisonMatrix`. **Replace Broker**
  * survives untouched and remains the deliberate human override — see THE LOCK below for how the
  * two are kept from fighting.
@@ -98,37 +104,64 @@
  * `TestDataFactory.createPricedDisposition(...)`.
  *
  * ══════════════════════════════════════════════════════════════════════════════════════════
- * 🔴 A PREFERRED BROKER WINS OUTRIGHT — IT DOES NOT COMPETE, IT PRE-EMPTS
+ * 🔴 TWO SLOTS, NOT ONE. THE PREFERRED BROKER AND THE SCORED WINNER **COEXIST**.
  * ══════════════════════════════════════════════════════════════════════════════════════════
- * ⚠ RETRACTED IN PLACE 2026-08-24 (user decision, option 2). This block used to be headed
- * *"PREFERRED BROKERS NEVER PARTICIPATE"* and read: *"`Is_Preferred_Broker__c = true` rows are
- * excluded from the ranking entirely and can never be auto-Selected, whatever they score."* THAT
- * IS NOW EXACTLY BACKWARDS and is quoted rather than deleted, because the design document, the two
- * field XML comments and this class's first version all say it and a reader will meet it again.
+ * ⚠ THIS BLOCK HAS NOW BEEN RETRACTED TWICE IN ONE DAY, AND BOTH PRIOR RULES ARE QUOTED RATHER
+ * THAN DELETED, because each is still asserted somewhere a reader will meet it — in the design
+ * document, in `Is_Preferred_Broker__c`'s own field XML, and in this repo's test names:
  *
- * THE RULE NOW: **if a disposition has ANY preferred row, the preferred row IS the Selected one,
- * whatever it scores and whatever the scored responses score.** Adding a preferred broker demotes
- * the scored winner to `Backup` and takes the slot. Remove the last preferred row — unflag it or
- * delete it — and scoring RESUMES and re-ranks from the top.
+ *   V1, headed *"PREFERRED BROKERS NEVER PARTICIPATE"*: *"`Is_Preferred_Broker__c = true` rows are
+ *   excluded from the ranking entirely and can never be auto-Selected, whatever they score."*
+ *   ❌ WRONG.
  *
- * ⚠ SCORE IS IRRELEVANT ON THIS PATH, AND THAT IS DELIBERATE, NOT AN OVERSIGHT. A preferred row is
- * exempt from `BOV_Amount_Required_On_Submission`, so it legitimately carries NO `BOV_Amount__c`
- * and therefore a NULL `BOV_Score__c`. The "a null score is not a rank" rule is scoped to the
- * SCORED path ONLY — applying it to preferred rows would make the feature silently never fire for
- * the exact rows it exists to serve.
+ *   V2, headed *"A PREFERRED BROKER WINS OUTRIGHT — IT DOES NOT COMPETE, IT PRE-EMPTS"*: *"if a
+ *   disposition has ANY preferred row, the preferred row IS the Selected one... Adding a preferred
+ *   broker demotes the scored winner to `Backup` and takes the slot."*
+ *   ❌ ALSO WRONG — the demotion half specifically.
+ *
+ * 🔴 THE RULE NOW (user decision, 2026-08-24): **a Disposition has TWO independent appointment
+ * slots and this service maintains BOTH on every run.**
+ *
+ *   THE PREFERRED SLOT   the NEWEST `Is_Preferred_Broker__c = true` row, if any.
+ *                        -> `Submission_Status__c = 'Selected'`, `Is_System_Selected__c` NEVER set.
+ *                        Score is IRRELEVANT here and that is deliberate: a preferred row is exempt
+ *                        from `BOV_Amount_Required_On_Submission`, so it legitimately carries no
+ *                        `BOV_Amount__c` and therefore a NULL `BOV_Score__c`. Applying "a null
+ *                        score is not a rank" to this slot would make the feature silently never
+ *                        fire for the exact rows it exists to serve.
+ *
+ *   THE SCORED SLOT      the highest-scoring NON-preferred row, if any is scoreable.
+ *                        -> `Submission_Status__c = 'Selected'` **AND**
+ *                        `Is_System_Selected__c = true`.
+ *
+ * 🔴 NEITHER SLOT CAN EVICT THE OTHER, AND THAT IS THE ENTIRE CHANGE FROM V2. Adding a preferred
+ * broker to a sale that already has a scored winner leaves the scored winner Selected; the
+ * preferred row is promoted BESIDE it. A better-scoring response arriving on a sale that has a
+ * preferred broker moves the SCORED slot and does not touch the preferred one.
+ * `BovSubmissionSelectionGuardService` was narrowed to match on the same day and now counts the two
+ * slots separately — it still refuses TWO scored winners and still refuses TWO preferred rows.
+ *
+ * 🔴 DEMOTION MOVED WITH IT. The outgoing occupant of the SCORED slot goes to `Backup` **and has
+ * `Is_System_Selected__c` CLEARED**; the preferred row is not touched. Under V2 the demotion this
+ * service performed when a preferred row arrived was the demotion OF THE SCORED WINNER — that write
+ * is gone, and `addingAPreferredBroker_leavesTheScoredWinnerSelected` is the falsifier that fails
+ * if it ever comes back.
  *
  * ⚠ MULTIPLE PREFERRED ROWS: THE NEWEST WINS (`CreatedDate DESC, Id DESC`), which INVERTS every
- * other tie-break in this module. The argument is at `isNewer`'s own declaration; the short form is
- * that under oldest-wins a second **Add Preferred Broker** click would be a silent no-op with no
- * remedy, because Replace Broker refuses preferred rows.
+ * other tie-break in this module. The argument is at `isNewer`'s own declaration.
+ * ⚠ AT REST THERE IS NORMALLY ONLY ONE PREFERRED ROW: `BovPreferredBrokerService` DELETES the
+ * outgoing preferred row (after logging a `BOV_Broker_Change__c` history row) as soon as a new one
+ * is added. The newest-wins rule below is what keeps this service correct DURING that transaction
+ * and on any state a data load leaves behind — it is not dead code, it is the floor under a
+ * feature that can fail.
  *
  * 🔴 THIS IS A RANKING RULE, NOT A LOCK LEG, AND THE DISTINCTION IS LOAD-BEARING. A lock means
  * "stop computing and freeze whatever is there" — which would be wrong twice over: adding a
- * preferred broker to a disposition that already has a scored winner MUST change state (the
- * scored winner has to be demoted), and removing the preferred row MUST resume scoring. Both fall
- * out of ranking for free and neither is expressible as a lock. The three real lock legs
- * (approval pending / decided / manually appointed) are unchanged and still win over this: a
- * preferred broker added to a disposition with a pending or decided approval changes NOTHING.
+ * preferred broker to a disposition MUST change state (the preferred slot has to be filled), and
+ * removing the preferred row MUST empty that slot. Both fall out of ranking for free and neither is
+ * expressible as a lock. The three real lock legs (approval pending / decided / manually appointed)
+ * are unchanged and still win over this: a preferred broker added to a disposition with a pending
+ * or decided approval changes NOTHING.
  *
  * ══════════════════════════════════════════════════════════════════════════════════════════
  * 🔴 THE MODAL MUST NOT INSERT A PREFERRED ROW AS `Selected`. THE FLAG IS THE INPUT; `Selected`
@@ -137,14 +170,23 @@
  * It is tempting to have the modal simply write `Submission_Status__c = 'Selected'` alongside
  * `Is_Preferred_Broker__c = true` and skip this service entirely. **THAT INSERT IS REFUSED**, and
  * the arithmetic is `BovSubmissionSelectionGuardService`'s, traced:
- *   the disposition already has a committed `Selected` scored winner; on an INSERT that incumbent
- *   is NOT in `Trigger.new`, so PASS 2 counts it; `others = 1 + 1 - 1 = 1 > 0`; the guard
- *   `addError`s and THE USER'S OWN "ADD PREFERRED BROKER" SAVE IS ROLLED BACK with a message
- *   telling them to use Replace Broker.
+ *   the disposition already has a committed `Selected` PREFERRED broker (the one being replaced);
+ *   on an INSERT that incumbent is NOT in `Trigger.new`, so PASS 2 counts it in the PREFERRED
+ *   slot; `others = 1 + 1 - 1 = 1 > 0`; the guard `addError`s and THE USER'S OWN "ADD PREFERRED
+ *   BROKER" SAVE IS ROLLED BACK.
  * So the modal inserts the row at `Backup` (exactly as it does today — NO LWC CHANGE IS REQUIRED)
- * carrying only the flag, and THIS SERVICE promotes it and demotes the incumbent in ONE
- * `Database.update`, which is the only shape the guard permits. Pinned by
+ * carrying only the flag, and the server promotes it, which is the only shape the guard permits.
+ * Pinned by
  * `BovSubmissionSelectionGuardTest.preferredInsertedAsSelected_isRefused_soTheModalMustNotSetIt`.
+ *
+ * 🔴 ⚠ AMENDED 2026-08-24 WITH THE TWO-SLOT MODEL, AND THE AMENDMENT IS WHY THE GUARD COUNTS
+ * `Submission_Status__c` **AND** THE FLAG RATHER THAN THE FLAG ALONE. The requirement as written
+ * was "at most one preferred row", which — counted on the bare flag — would refuse the
+ * Add Preferred Broker insert ITSELF whenever a preferred broker already exists, making the
+ * replace-preferred feature (`BovPreferredBrokerService`) structurally impossible to build in a
+ * before-insert context. Counting `Selected AND preferred` leaves the new row insertable at
+ * `Backup`, which is exactly the state the modal already produces. The transient "two preferred
+ * rows" window is closed later in the SAME transaction by the retirement service's delete.
  *
  * ══════════════════════════════════════════════════════════════════════════════════════════
  * WHERE IT RUNS — ⚠ THIS SAID "BOTH HOOKS" UNTIL 2026-08-24; THERE ARE NOW FOUR CONTEXTS
@@ -152,6 +194,12 @@
  *   `BOV_Submission__c` after insert / after update  -> `reselect(newList, oldMap)`
  *   `BOV_Submission__c` after delete                 -> `reselectForDeleted(oldList)`
  *   `Disposition__c`    after update                 -> `reselectForRepricedDispositions(...)`
+ *
+ * ⚠ `BovPreferredBrokerService.retireReplacedPreferred` RUNS **BEFORE** `reselect` IN THE SAME TWO
+ * CHILD CONTEXTS, and the order is load-bearing rather than cosmetic — see that method's header.
+ * The short form: it deletes the outgoing preferred row, that delete fires `after delete` -> this
+ * service's `reselectForDeleted`, and the new preferred row is ALREADY COMMITTED by then, so the
+ * re-rank fills the preferred slot with the right row and there is never an interim winner.
  *
  * 🔴 THE PARENT HOOK IS NOT A NICETY, IT IS THE PRIMARY PATH. The score's 50-point Value term is
  * `BOV_Amount__c / Disposition__r.Asking_Price__c`, so the real sequence on a live sale is:
@@ -515,16 +563,37 @@ public with sharing class BovAutoSelectionService {
     /**
      * Decides what, if anything, to write for ONE disposition. Pure in-memory: no SOQL, no DML.
      *
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * 🔴 REWRITTEN 2026-08-24 FOR THE TWO-SLOT MODEL. THE OLD SHAPE IS NAMED SO A REVIEWER CAN SEE
+     *    WHAT WAS DELETED AND WHY IT CANNOT COME BACK.
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * It used to compute ONE `winner` — `(preferredWinner != null) ? preferredWinner : scoredWinner`
+     * — and then demote EVERY other Selected row. That single ternary is the whole of the retracted
+     * V2 rule: it is what made a preferred broker EVICT the scored winner. It is gone, and there is
+     * now one independent pass per slot.
+     *
+     * ⚠ THE TWO PASSES MUST STAY INDEPENDENT AND MUST NOT BE "SIMPLIFIED" BACK INTO ONE LOOP OVER
+     * `incumbents`. A single loop cannot express "demote this Selected row only if it is competing
+     * for the slot the winner just took", which is exactly the distinction the model now rests on.
+     *
+     * ⚠ THE SCORED PASS IS SKIPPED ENTIRELY WHEN NOTHING IS SCOREABLE, AND THAT IS NOT AN
+     * OPTIMISATION. "A null score is not a rank" means an existing scored incumbent is LEFT ALONE
+     * rather than demoted when every candidate goes unscoreable — demoting it would strip a sale of
+     * its broker the moment somebody blanked an asking price, a destructive answer to a question
+     * nobody asked. The PREFERRED pass has no such clause, deliberately: an unquoted preferred row
+     * is the normal case, so "unscoreable" says nothing about it.
+     *
      * @param siblings every submission on one disposition, ALREADY in ranked order.
-     * @return the rows to write; EMPTY when the disposition is locked, has neither a preferred row
-     *         nor a scoreable response, or is already correct.
+     * @return the rows to write; EMPTY when the disposition is locked, when both slots are already
+     *         correct, and when there is nothing to put in either.
      */
     private static List<BOV_Submission__c> planFor(List<BOV_Submission__c> siblings) {
         List<BOV_Submission__c> noWrites = new List<BOV_Submission__c>();
 
+        List<BOV_Submission__c> preferredRows = new List<BOV_Submission__c>();
+        List<BOV_Submission__c> scoredRows = new List<BOV_Submission__c>();
         BOV_Submission__c preferredWinner;
         BOV_Submission__c scoredWinner;
-        List<BOV_Submission__c> incumbents = new List<BOV_Submission__c>();
         for (BOV_Submission__c submission : siblings) {
             // THE LOCK, evaluated over ALL siblings — one locked row locks the disposition. Checked
             // FIRST on every row so a lock discovered late still discards a winner found early.
@@ -533,15 +602,14 @@ public with sharing class BovAutoSelectionService {
                 || submission.Is_Manually_Appointed__c == true) {
                 return noWrites;
             }
-            if (STATUS_SELECTED.equals(submission.Submission_Status__c)) {
-                incumbents.add(submission);
-            }
             if (submission.Is_Preferred_Broker__c == true) {
+                preferredRows.add(submission);
                 if (preferredWinner == null || isNewer(submission, preferredWinner)) {
                     preferredWinner = submission;
                 }
-                continue; // a preferred row never competes on score — see the block below
+                continue; // score is irrelevant in the preferred slot — see the class header
             }
+            scoredRows.add(submission);
             if (scoredWinner == null && submission.BOV_Score__c != null) {
                 // FIRST in ranked order = highest score, then oldest, then lowest Id. `siblings`
                 // arrives in that order from the selector and nothing here re-sorts it.
@@ -549,56 +617,75 @@ public with sharing class BovAutoSelectionService {
             }
         }
 
-        // ══════════════════════════════════════════════════════════════════════════════════════
-        // 🔴 A PREFERRED BROKER OUTRANKS EVERY SCORED RESPONSE, UNCONDITIONALLY AND WHATEVER IT
-        //    SCORES. (User decision 2026-08-24 — see the class header's PREFERRED BROKERS block.)
-        // ══════════════════════════════════════════════════════════════════════════════════════
-        BOV_Submission__c winner = (preferredWinner != null) ? preferredWinner : scoredWinner;
-
-        if (winner == null) {
-            // No preferred row, and no scoreable response either. A null score is NOT a rank —
-            // nothing is selected, and any existing incumbent is LEFT ALONE rather than demoted.
-            // Demoting it would strip a sale of its broker the moment somebody blanked an asking
-            // price, which is a destructive answer to a question nobody asked.
-            return noWrites;
-        }
-
-        Boolean winnerAlreadySelected = STATUS_SELECTED.equals(winner.Submission_Status__c);
-        if (winnerAlreadySelected && incumbents.size() == 1) {
-            // Idempotent: already exactly right.
-            // ⚠ STATED HONESTLY — THIS LINE IS A READABILITY SHORT-CIRCUIT, NOT A GUARD, AND NO
-            // TEST CAN FALSIFY IT. The code below reaches the same answer: the sole incumbent IS
-            // the winner, so the demotion loop skips it, and `winnerAlreadySelected` suppresses the
-            // promotion, leaving `writes` empty either way. It is kept because it names the
-            // intent — "the common case is that nothing needs to change" — at the point a reader
-            // asks the question. Do not add a test claiming to cover it; it would be green against
-            // both versions.
-            return noWrites;
-        }
-
         List<BOV_Submission__c> writes = new List<BOV_Submission__c>();
-        for (BOV_Submission__c incumbent : incumbents) {
-            if (incumbent.Id == winner.Id) {
-                continue;
+
+        // ── PASS A — THE PREFERRED SLOT. Score plays no part. ────────────────────────────────
+        for (BOV_Submission__c preferred : preferredRows) {
+            Boolean shouldHoldSlot = preferred.Id == preferredWinner.Id;
+            Boolean holdsSlotNow = STATUS_SELECTED.equals(preferred.Submission_Status__c);
+            if (shouldHoldSlot == holdsSlotNow) {
+                continue; // already right — the common case, and it costs zero DML
             }
-            writes.add(new BOV_Submission__c(
-                Id = incumbent.Id,
-                Submission_Status__c = STATUS_BACKUP,
-                // 🔴 BELT AND BRACES, AND PROVABLY ALREADY NULL. The lock above guarantees no row
-                // on this disposition has a non-null Approval_Status__c, so this assignment can
-                // never actually clear a real decision. It is written anyway because the guard's
-                // header is explicit that a demotion WITHOUT this clause "recreates precisely the
-                // state replaceSelectedBroker exists to prevent" — an Approved status on a broker
-                // who is no longer appointed. Costs nothing; cannot regress.
-                Approval_Status__c = null
-            ));
+            if (shouldHoldSlot) {
+                writes.add(new BOV_Submission__c(
+                    Id = preferred.Id,
+                    Submission_Status__c = STATUS_SELECTED,
+                    // 🔴 EXPLICITLY FALSE, NOT LEFT ALONE. `Is_System_Selected__c` means "the
+                    // scoring model picked this row", and a preferred broker is by definition a
+                    // human's pick. If a row ever arrived carrying both flags,
+                    // `DispositionApprovalService` and the comparison matrix would each read it as
+                    // a different kind of appointment. One line closes that permanently.
+                    Is_System_Selected__c = false
+                ));
+            } else {
+                writes.add(new BOV_Submission__c(
+                    Id = preferred.Id,
+                    Submission_Status__c = STATUS_BACKUP,
+                    // 🔴 BELT AND BRACES, AND PROVABLY ALREADY NULL. The lock above guarantees no
+                    // row on this disposition has a non-null Approval_Status__c, so this can never
+                    // clear a real decision. It is written anyway because the guard's header is
+                    // explicit that a demotion WITHOUT this clause "recreates precisely the state
+                    // replaceSelectedBroker exists to prevent" — an Approved status on a broker who
+                    // is no longer appointed. Costs nothing; cannot regress.
+                    Approval_Status__c = null,
+                    Is_System_Selected__c = false
+                ));
+            }
         }
-        if (!winnerAlreadySelected) {
-            writes.add(new BOV_Submission__c(
-                Id = winner.Id,
-                Submission_Status__c = STATUS_SELECTED
-            ));
+
+        // ── PASS B — THE SCORED SLOT. Skipped entirely when nothing is scoreable. ────────────
+        if (scoredWinner != null) {
+            for (BOV_Submission__c scored : scoredRows) {
+                Boolean shouldHoldSlot = scored.Id == scoredWinner.Id;
+                Boolean holdsSlotNow = STATUS_SELECTED.equals(scored.Submission_Status__c);
+                if (shouldHoldSlot) {
+                    // 🔴 THE FLAG IS PART OF "ALREADY CORRECT", NOT A SIDE EFFECT OF THE PROMOTION.
+                    // A row that is Selected but carries no `Is_System_Selected__c` — anything
+                    // appointed before the field existed, anything a data load promoted — must be
+                    // REPAIRED, or the approval router cannot tell it from a preferred row.
+                    if (holdsSlotNow && scored.Is_System_Selected__c == true) {
+                        continue;
+                    }
+                    writes.add(new BOV_Submission__c(
+                        Id = scored.Id,
+                        Submission_Status__c = STATUS_SELECTED,
+                        Is_System_Selected__c = true
+                    ));
+                } else if (holdsSlotNow) {
+                    // 🔴 THE DEMOTION CLEARS THE FLAG AS WELL AS THE STATUS. Leaving
+                    // `Is_System_Selected__c = true` on a Backup row would leave two rows claiming
+                    // to be the model's pick, which is the state the narrowed exclusivity guard
+                    // exists to make unreachable.
+                    writes.add(new BOV_Submission__c(
+                        Id = scored.Id,
+                        Submission_Status__c = STATUS_BACKUP,
+                        Approval_Status__c = null,
+                        Is_System_Selected__c = false
+                    ));
+                }
+            }
         }
+
         return writes;
     }
 

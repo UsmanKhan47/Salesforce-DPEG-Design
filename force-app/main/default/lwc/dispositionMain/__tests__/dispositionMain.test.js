@@ -14,9 +14,19 @@
  * never fires for a value the org can no longer produce.
  *
  * The child feature components (bov matrix, broker listing, wire verification,
- * closing tasks, ...) render idle: their un-mocked Apex resolves to the
- * transformer's default Promise.resolve() stub, so they mount in an empty state
- * rather than throwing. Assertions check WHICH child slot appears per stage.
+ * ...) render idle: their un-mocked Apex resolves to the transformer's default
+ * Promise.resolve() stub, so they mount in an empty state rather than throwing.
+ * Assertions check WHICH child slot appears per stage.
+ *
+ * ⚠ "closing tasks" WAS IN THAT LIST UNTIL 2026-08-24. `c-disposition-closing-tasks`
+ * (the "Closing Checklist" card) is no longer rendered by this component at any
+ * stage — see the Closing-stage tests below, which now pin its ABSENCE.
+ *
+ * 🔴 A CHILD'S SHADOW TEXT DOES NOT REACH THIS COMPONENT'S `shadowRoot.textContent`.
+ * Probed here on 2026-08-24: at Closing, with `c-wire-verification` mounted and
+ * rendering its own card, the parent's `shadowRoot.textContent` is `""`. Every
+ * absence assertion in this file must therefore be a TAG scan; a `.not.toContain
+ * ('some word')` text assertion is green whatever renders.
  * The accessibility assertion runs against the empty (no-stage) state, which is a
  * guaranteed axe-clean target (matches the headless c-submit-for-approval
  * precedent) and does not depend on grandchild markup.
@@ -24,6 +34,32 @@
 import { createElement } from 'lwc';
 import DispositionMain from 'c/dispositionMain';
 import { getRecord } from 'lightning/uiRecordApi';
+
+// The stylesheet, read once, WITH ITS COMMENTS STRIPPED. Stripping first is not cosmetic:
+// this stylesheet's comments NAME the values they ban ("margin-top: 16px", "32px"), so an
+// un-stripped read would satisfy — or fail — the assertions below for the wrong reason.
+//
+// 🔴 SOURCE TEXT, NOT getComputedStyle AND NOT A GETTER. jsdom performs no layout, so the
+// only observable fact about a `gap` here is that the rule exists. A DOM-only suite is
+// completely blind to this file: every stage assertion below stayed green the entire time
+// the cards were rendering flush against each other on the record page.
+const CSS_SOURCE = require('fs')
+    .readFileSync(
+        require('path').join(__dirname, '..', 'dispositionMain.css'),
+        'utf8'
+    )
+    .replace(/\/\*[\s\S]*?\*\//g, '');
+
+/**
+ * The body of a single top-level rule. Takes a REGEXP LITERAL carrying one
+ * capture group, not a selector string: a string-built RegExp needs doubled
+ * backslashes, and getting that wrong returns null for EVERY rule while the test
+ * still reads as though it were checking something.
+ */
+function ruleBody(ruleRegExp) {
+    const match = CSS_SOURCE.match(ruleRegExp);
+    return match ? match[1] : null;
+}
 
 const RECORD_ID = 'a0D5g000000DispEAG';
 
@@ -58,62 +94,73 @@ describe('c-disposition-main', () => {
         await Promise.resolve();
 
         expect(
-            element.shadowRoot.querySelector('c-bov-comparison-matrix')
+            element.shadowRoot.querySelector('c-bov-broker-panel')
         ).toBeNull();
-        expect(
-            element.shadowRoot.querySelector('c-broker-listing')
-        ).toBeNull();
+        expect(element.shadowRoot.querySelector('c-broker-listing')).toBeNull();
         expect(
             element.shadowRoot.querySelector('c-wire-verification')
         ).toBeNull();
     });
 
-    it('BOV Outreach stage renders the comparison matrix only', async () => {
+    // ═════════════════════════════════════════════════════════════════════════
+    // 🔴 BOV OUTREACH IS NOW ONE TAG, NOT TWO (2026-08-24, later the same day)
+    //
+    // This branch mounted `c-bov-comparison-matrix` TWICE — once with
+    // `preferred-only hide-actions`, once bare — and three tests here pinned that
+    // pair, its document order and its bare-attribute booleans.
+    // `c-bov-broker-panel` now wraps both cards under ONE header carrying the
+    // three broker buttons, so ALL of that moved to
+    // `lwc/bovBrokerPanel/__tests__/bovBrokerPanel.test.js`, which pins the pair,
+    // the order, `preferredOnly === true` on the top card and `=== false` on the
+    // bare one — plus the `lwc:if` that stops the preferred card orphaning a
+    // stack gap when the disposition has no preferred broker, which is the
+    // defect `dispositionMain.css` used to document as "KNOWN, ACCEPTED".
+    //
+    // ⚠ WHAT MUST STAY PINNED **HERE** is the only thing this file controls:
+    // WHICH tag this stage renders, and that the matrix bundle is no longer
+    // mounted beside it.
+    // ═════════════════════════════════════════════════════════════════════════
+
+    it('🔴 BOV Outreach renders the broker PANEL, with the record id', async () => {
         const element = createComponent();
 
         getRecord.emit(recordForStage('BOV Outreach'));
         await Promise.resolve();
 
-        expect(
-            element.shadowRoot.querySelector('c-bov-comparison-matrix')
-        ).not.toBeNull();
-        expect(
-            element.shadowRoot.querySelector('c-broker-listing')
-        ).toBeNull();
+        const panel = element.shadowRoot.querySelector('c-bov-broker-panel');
+        expect(panel).not.toBeNull();
+        // ⚠ THE PANEL HAS NO OTHER ROUTE TO THE DISPOSITION. Without record-id it
+        // wires `undefined`, its Apex returns an empty list rather than throwing,
+        // and the card renders a permanent, confident empty state with nothing on
+        // the page to contradict it.
+        expect(panel.recordId).toBe(RECORD_ID);
+
+        expect(element.shadowRoot.querySelector('c-broker-listing')).toBeNull();
     });
 
-    it('🔴 BOV Outreach renders the matrix bundle TWICE — preferred card FIRST, then the matrix', async () => {
+    it('🔴 the matrix bundle is NOT mounted by this router any more', async () => {
+        // ABSENCE PIN, AND A TAG SCAN — never a textContent search. A child's
+        // shadow text does not reach this component's shadowRoot (measured here
+        // on 2026-08-24: it is the EMPTY STRING even with children rendering), so
+        // a word-based assertion would be green whatever renders.
+        //
+        // 🔴 WHY IT MATTERS: re-adding `<c-bov-comparison-matrix>` here is a
+        // one-line mistake that puts a THIRD copy of the same table, with its own
+        // wire and no buttons, beside the panel's two. Nothing would error.
         const element = createComponent();
 
         getRecord.emit(recordForStage('BOV Outreach'));
         await Promise.resolve();
 
-        const matrices = [
-            ...element.shadowRoot.querySelectorAll('c-bov-comparison-matrix')
-        ];
+        const renderedTags = Array.from(
+            element.shadowRoot.querySelectorAll('*')
+        ).map((el) => el.tagName.toLowerCase());
 
-        // 🔴 TWO, AND THE ORDER IS THE REQUIREMENT. The preferred-broker card
-        // renders ABOVE the comparison matrix. `querySelectorAll` returns
-        // document order, so index 0 IS the top card — the test that used
-        // `querySelector` above would pass with the tags in either order, or
-        // with only one of them present.
-        expect(matrices).toHaveLength(2);
-
-        // ⚠ ASSERTED ON THE RENDERED ELEMENT'S PROPERTIES. `preferred-only` and
-        // `hide-actions` are written as BARE attributes in the template; this is
-        // the assertion that proves LWC resolves a valueless attribute on a
-        // custom element to boolean `true` and not to the empty string — which
-        // is FALSY, and would have silently turned the top card back into a
-        // second copy of the matrix, buttons and all.
-        expect(matrices[0].preferredOnly).toBe(true);
-        expect(matrices[0].hideActions).toBe(true);
-        expect(matrices[0].recordId).toBe(RECORD_ID);
-
-        // The existing tag is untouched: both flags fall back to their `false`
-        // defaults, which is what makes the second instance provably unchanged.
-        expect(matrices[1].preferredOnly).toBe(false);
-        expect(matrices[1].hideActions).toBe(false);
-        expect(matrices[1].recordId).toBe(RECORD_ID);
+        // Guard the guard: the branch really fired.
+        expect(renderedTags).toContain('c-bov-broker-panel');
+        // 🔴 THE STRONGEST FORM: this stage renders EXACTLY ONE child, so the pin
+        // also catches the matrix being re-added under a different bundle name.
+        expect(renderedTags).toEqual(['c-bov-broker-panel']);
     });
 
     // ═════════════════════════════════════════════════════════════════════════
@@ -142,7 +189,7 @@ describe('c-disposition-main', () => {
 
         // No other stage's children leak into this branch.
         expect(
-            element.shadowRoot.querySelector('c-bov-comparison-matrix')
+            element.shadowRoot.querySelector('c-bov-broker-panel')
         ).toBeNull();
         expect(element.shadowRoot.querySelector('c-broker-listing')).toBeNull();
         expect(element.shadowRoot.querySelector('c-wire-verification')).toBeNull();
@@ -194,7 +241,7 @@ describe('c-disposition-main', () => {
             element.shadowRoot.querySelector('c-backup-brokers')
         ).not.toBeNull();
         expect(
-            element.shadowRoot.querySelector('c-bov-comparison-matrix')
+            element.shadowRoot.querySelector('c-bov-broker-panel')
         ).toBeNull();
     });
 
@@ -241,32 +288,62 @@ describe('c-disposition-main', () => {
         ).toEqual([]);
     });
 
-    it('Closing stage renders wire verification + the closing checklist', async () => {
+    // ═════════════════════════════════════════════════════════════════════════
+    // 🔴 CLOSING = THE WIRE CARD, AND NOTHING ELSE (2026-08-24)
+    //
+    // `<c-disposition-closing-tasks>` (the "Closing Checklist" card) was removed
+    // from the Closing branch at the user's request. Both tests below USED TO
+    // assert it was present; they are retargeted rather than deleted, so the pair
+    // now proves the exact opposite fact on the same fixtures.
+    //
+    // ⚠ THE ABSENCE PIN IS A **TAG SCAN**, NOT A textContent SEARCH, AND THAT IS
+    // A MEASURED DECISION. Probed 2026-08-24 in this suite: at Closing,
+    // `element.shadowRoot.textContent` is the EMPTY STRING even with
+    // `c-wire-verification` mounted and rendering — a child's shadow text does not
+    // cross into the parent's shadow root under this repo's Jest setup. An
+    // `expect(text).not.toContain('checklist')` assertion here would therefore be
+    // green forever, whether the card renders or not. The tag scan is the only
+    // observable that moves. (Same shape as the call-for-offers pin above.)
+    // ═════════════════════════════════════════════════════════════════════════
+
+    it('🔴 Closing stage renders the wire card ONLY — no closing checklist', async () => {
         const element = createComponent();
 
         getRecord.emit(recordForStage('Closing'));
         await Promise.resolve();
 
-        expect(
-            element.shadowRoot.querySelector('c-wire-verification')
-        ).not.toBeNull();
+        const renderedTags = Array.from(
+            element.shadowRoot.querySelectorAll('*')
+        ).map((el) => el.tagName.toLowerCase());
+
+        // GUARD THE GUARD: the Closing branch really fired. Without this, every
+        // assertion below would also pass on a stage that renders nothing at all.
+        expect(renderedTags).toContain('c-wire-verification');
+
         expect(
             element.shadowRoot.querySelector('c-disposition-closing-tasks')
-        ).not.toBeNull();
+        ).toBeNull();
+        expect(
+            renderedTags.filter((tag) => tag.includes('closing-tasks'))
+        ).toEqual([]);
+
+        // 🔴 THE STRONGEST FORM: the branch renders EXACTLY ONE child. This is what
+        // catches a checklist re-added under a DIFFERENT bundle name, which both
+        // assertions above would miss.
+        expect(renderedTags).toEqual(['c-wire-verification']);
     });
 
-    it('Sale Closes stage still shows the closing cards (finished-deal view)', async () => {
+    it('🔴 Sale Closes shows the same single card (finished-deal view, still no checklist)', async () => {
         const element = createComponent();
 
         getRecord.emit(recordForStage('Sale Closes'));
         await Promise.resolve();
 
-        expect(
-            element.shadowRoot.querySelector('c-wire-verification')
-        ).not.toBeNull();
-        expect(
-            element.shadowRoot.querySelector('c-disposition-closing-tasks')
-        ).not.toBeNull();
+        const renderedTags = Array.from(
+            element.shadowRoot.querySelectorAll('*')
+        ).map((el) => el.tagName.toLowerCase());
+
+        expect(renderedTags).toEqual(['c-wire-verification']);
     });
 
     it('RETIRED VALUE: the old terminal stage routes NOWHERE', async () => {
@@ -274,6 +351,13 @@ describe('c-disposition-main', () => {
         // migrated off it. This is the falsifier for the isClosing rewrite: if
         // someone re-adds it to the getter "to be safe", this test reds. A test
         // that merely stopped mentioning it would not.
+        //
+        // ⚠ THE `c-disposition-closing-tasks` ASSERTION THAT USED TO SIT HERE WAS
+        // DELETED, NOT KEPT (2026-08-24). That card no longer renders at ANY stage,
+        // so asserting its absence at this one became VACUOUSLY GREEN — it would
+        // have passed with `isClosing` returning true for 'Completed', which is the
+        // single thing this test exists to catch. `c-wire-verification` is now the
+        // only observable that distinguishes the two branches.
         const element = createComponent();
 
         getRecord.emit(recordForStage('Completed'));
@@ -282,9 +366,7 @@ describe('c-disposition-main', () => {
         expect(
             element.shadowRoot.querySelector('c-wire-verification')
         ).toBeNull();
-        expect(
-            element.shadowRoot.querySelector('c-disposition-closing-tasks')
-        ).toBeNull();
+        expect(element.shadowRoot.querySelectorAll('*')).toHaveLength(0);
     });
 
     it('ERROR BRANCH: renders an inline error state and no feature child when the record wire errors', async () => {
@@ -294,7 +376,7 @@ describe('c-disposition-main', () => {
         await Promise.resolve();
 
         expect(
-            element.shadowRoot.querySelector('c-bov-comparison-matrix')
+            element.shadowRoot.querySelector('c-bov-broker-panel')
         ).toBeNull();
         expect(
             element.shadowRoot.querySelector('c-wire-verification')
@@ -302,6 +384,97 @@ describe('c-disposition-main', () => {
         expect(
             element.shadowRoot.querySelector('.wire-error')
         ).not.toBeNull();
+    });
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // 🔴 STACK SPACING (2026-08-24) — pinned against the STYLESHEET SOURCE
+    //
+    // The cards on this page rendered EDGE TO EDGE. The LWC compiler discards
+    // whitespace-only text nodes between sibling elements, so nothing separates
+    // them by default and nothing in the DOM shows the difference. The fix is a
+    // `gap` on :host — the one container every stage's cards are direct children
+    // of — and these three tests are its falsifiers.
+    // ═════════════════════════════════════════════════════════════════════════
+
+    it('🔴 :host is a column flex container with a TOKENISED gap — the whole page stack depends on it', () => {
+        const host = ruleBody(/:host\s*\{([^}]*)\}/);
+        expect(host).not.toBeNull();
+
+        // `gap` only does anything on a flex/grid container. `display: block`
+        // (what this rule used to say) silently ignores it, which looks exactly
+        // like the bug this change fixes.
+        expect(host).toMatch(/display:\s*flex\b/);
+        expect(host).toMatch(/flex-direction:\s*column\b/);
+
+        // ⚠ THE TOKEN IS PART OF THE ASSERTION. A raw `gap: 16px` looks identical
+        // on the light theme and is unthemeable; SLDS 2 requires the hook.
+        // --slds-g-spacing-4 is 1rem, the step this page already uses.
+        expect(host).toMatch(/gap:\s*var\(\s*--slds-g-spacing-4\b/);
+
+        // Nothing in the stacking rule may be a raw pixel value outside a token
+        // fallback (`var(--hook, 1rem)` is fine — the hook wins when themed).
+        expect(host.replace(/var\([^()]*\)/g, 'TOKEN')).not.toMatch(/\d+px/);
+    });
+
+    it('🔴 NOTHING doubles up on the gap — .listing-row must not carry a margin', () => {
+        // `.listing-row { margin-top: 16px }` predates the :host gap and did the
+        // same job back when Active Listing was the only multi-card stage. Left in
+        // place it reads 32px between the broker-listing card and the two-up row
+        // while every other stage reads 16px. This pin stops it being "restored",
+        // and catches the same mistake being made on a newly added card.
+        const listingRow = ruleBody(/\.listing-row\s*\{([^}]*)\}/);
+        expect(listingRow).not.toBeNull();
+        expect(listingRow).not.toMatch(/margin/);
+        expect(listingRow).toMatch(/gap:\s*var\(\s*--slds-g-spacing-/);
+
+        // Guard the guard: a stylesheet stripped of tokens would pass the
+        // not.toMatch() above vacuously.
+        expect((CSS_SOURCE.match(/var\(\s*--slds-/g) || []).length).toBeGreaterThan(3);
+    });
+
+    it('🔴 the stage cards really are DIRECT children of :host — which is why ONE gap covers every stage', async () => {
+        // :host is only the stacking container because `<template if:true=…>` is
+        // not an element. Wrap either card in a plain <div> and the gap applies to
+        // the wrapper instead — the cards inside go flush again while every other
+        // assertion in this file still passes. This is the DOM half of the fix;
+        // the stylesheet half is pinned in the two tests above.
+        //
+        // 🔴 RETARGETED 2026-08-24 FROM BOV OUTREACH TO ACTIVE LISTING, AND THE
+        // REASON IS THE WHOLE POINT OF THE TEST. BOV Outreach used to render TWO
+        // sibling cards here and was the natural fixture; it now renders ONE
+        // (`c-bov-broker-panel`, which owns the gap between its own two cards in
+        // its own stylesheet). A one-child stage cannot falsify a gap rule —
+        // there is nothing for the gap to sit between — so the fixture moved to
+        // the stage that still has two direct children. Active Listing is now the
+        // ONLY multi-card stage in this router.
+        const element = createComponent();
+
+        getRecord.emit(recordForStage('Active Listing'));
+        await Promise.resolve();
+
+        const topLevel = Array.from(element.shadowRoot.children).map((el) =>
+            el.tagName.toLowerCase()
+        );
+
+        // Two DIRECT children, in order: the broker-listing card and the two-up
+        // row. Wrapping the pair in a <div> collapses this to one entry.
+        expect(topLevel).toEqual(['c-broker-listing', 'div']);
+    });
+
+    it('🔴 BOV Outreach: the panel is a DIRECT child too — it must not acquire a wrapper', async () => {
+        // The single-child stage still needs its own pin: a wrapper <div> added
+        // here would move the :host gap off the panel and space it from nothing,
+        // and every other assertion in this file would stay green.
+        const element = createComponent();
+
+        getRecord.emit(recordForStage('BOV Outreach'));
+        await Promise.resolve();
+
+        expect(
+            Array.from(element.shadowRoot.children).map((el) =>
+                el.tagName.toLowerCase()
+            )
+        ).toEqual(['c-bov-broker-panel']);
     });
 
     it('is accessible', async () => {

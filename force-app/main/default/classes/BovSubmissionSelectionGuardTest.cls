@@ -1,5 +1,5 @@
 /**
- * @description Tests `BovSubmissionSelectionGuardService.enforceSingleSelected` — the before-context
+ * @description Tests `BovSubmissionSelectionGuardService.enforceSelectionExclusivity` — the before-context
  * trigger guard that REFUSES any save leaving a Disposition with more than one
  * `Submission_Status__c = 'Selected'` submission. Added 2026-08-20 with the disposition redesign,
  * Tranche 2 Workstream A2 (`agent-output/disposition-tranche-2-requirements.md` §1.2).
@@ -101,9 +101,30 @@ private class BovSubmissionSelectionGuardTest {
         return submission;
     }
 
+    /**
+     * An INSERTED submission at the given status, flagged as a PREFERRED broker and carrying NO BOV
+     * amount — the normal shape of a preferred broker, and the only one that proves the flag rather
+     * than the score is doing the work.
+     *
+     * ⚠ `Broker__c` is left in place: `Broker_Required_On_Submission` has no preferred exemption,
+     * so every row still needs a broker Contact. Only `BOV_Amount__c` is exempt.
+     */
+    private static BOV_Submission__c preferredSubmissionAt(Id dispositionId, String status) {
+        BOV_Submission__c submission = TestDataFactory.createBovSubmission(dispositionId, false);
+        submission.Submission_Status__c = status;
+        submission.Is_Preferred_Broker__c = true;
+        submission.BOV_Amount__c = null;
+        submission.Cap_Rate__c = null;
+        submission.Commission_Rate__c = null;
+        submission.Days_To_Market__c = null;
+        submission.Hist_Success_Rate__c = null;
+        insert submission;
+        return submission;
+    }
+
     private static Map<Id, BOV_Submission__c> statusesOn(Id dispositionId) {
         return new Map<Id, BOV_Submission__c>([
-            SELECT Id, Submission_Status__c
+            SELECT Id, Submission_Status__c, Is_Preferred_Broker__c
             FROM BOV_Submission__c
             WHERE Disposition__c = :dispositionId
         ]);
@@ -231,18 +252,31 @@ private class BovSubmissionSelectionGuardTest {
      */
     @isTest
     static void preferredInsertedAsSelected_isRefused_soTheModalMustNotSetIt() {
+        // ══════════════════════════════════════════════════════════════════════════════════════
+        // ⚠ THE FIXTURE'S INCUMBENT CHANGED ON 2026-08-24 AND THE OLD ONE WOULD NOW PASS THE GUARD.
+        // ══════════════════════════════════════════════════════════════════════════════════════
+        // It used to be a SCORED incumbent, on the retracted "at most one Selected row" invariant.
+        // Under the two-slot model a preferred row inserted as Selected beside a Selected SCORED
+        // row is a legitimate end state, so that fixture would now SUCCEED — and this test would
+        // have failed for the right reason while asserting the wrong thing. The collision that
+        // still exists, and that the modal can still cause, is inside the PREFERRED slot: adding a
+        // preferred broker to a sale that already has one.
         Disposition__c d = TestDataFactory.createPricedDisposition(assetId(), 1500000, false);
         d.Disposition_Stage__c = 'BOV Outreach';
         insert d;
-        BOV_Submission__c scored = TestDataFactory.createBovSubmission(d.Id, false);
-        scored.BOV_Amount__c = 1200000;
-        insert scored;
-        Assert.areEqual(STATUS_SELECTED, statusesOn(d.Id).get(scored.Id).Submission_Status__c,
-            'FIXTURE PRECONDITION: auto-selection appointed the scored response, so there IS a '
-            + 'committed Selected incumbent for the guard to count');
+        BOV_Submission__c incumbentPreferred = preferredSubmissionAt(d.Id, STATUS_BACKUP);
+        Assert.areEqual(STATUS_SELECTED,
+            statusesOn(d.Id).get(incumbentPreferred.Id).Submission_Status__c,
+            'FIXTURE PRECONDITION: auto-selection promoted the preferred row on insert, so there IS '
+            + 'a committed Selected PREFERRED incumbent for the guard to count');
 
         BOV_Submission__c preferred = TestDataFactory.createBovSubmission(d.Id, false);
         preferred.Is_Preferred_Broker__c = true;
+        preferred.BOV_Amount__c = null;
+        preferred.Cap_Rate__c = null;
+        preferred.Commission_Rate__c = null;
+        preferred.Days_To_Market__c = null;
+        preferred.Hist_Success_Rate__c = null;
         preferred.Submission_Status__c = STATUS_SELECTED; // 🔴 what the modal must NOT do
 
         Test.startTest();
@@ -253,15 +287,184 @@ private class BovSubmissionSelectionGuardTest {
             refused = true;
             Assert.isTrue(e.getMessage().contains('only one is allowed'),
                 'The refusal must be THIS guard, not an unrelated rule: ' + e.getMessage());
+            Assert.isTrue(e.getMessage().contains('preferred broker'),
+                '🔴 AND IT MUST BE THE PREFERRED HALF OF THE GUARD, naming the remedy that exists '
+                + 'for preferred rows. Getting the non-preferred message here means both slots '
+                + 'share one message and half the users are being sent to a button that is not '
+                + 'there: ' + e.getMessage());
         }
         Test.stopTest();
 
         Assert.isTrue(refused,
             '🔴 If this insert now SUCCEEDS the guard has been weakened, and this repo has just '
-            + 'lost the only thing preventing two Selected brokers on one disposition. That is a '
-            + 'far worse outcome than the modal being unable to set the status directly.');
-        Assert.areEqual(STATUS_SELECTED, statusesOn(d.Id).get(scored.Id).Submission_Status__c,
+            + 'lost the only thing preventing two Selected preferred brokers on one disposition. '
+            + 'That is a far worse outcome than the modal being unable to set the status directly. '
+            + 'It is also what makes BovPreferredBrokerService reachable at all: the modal MUST '
+            + 'insert at Backup, which is exactly the state that lets the retirement service run.');
+        Assert.areEqual(STATUS_SELECTED,
+            statusesOn(d.Id).get(incumbentPreferred.Id).Submission_Status__c,
             'and the incumbent is untouched — a refused save writes nothing');
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // 🔴 THE NARROWED INVARIANT — TWO SLOTS, COUNTED SEPARATELY (2026-08-24)
+    // ═════════════════════════════════════════════════════════════════════════
+
+    /**
+     * 🔴 THE ONE TEST THAT PROVES THE GUARD WAS **NARROWED** RATHER THAN DELETED, FROM THE
+     *    PERMISSIVE SIDE. One Selected preferred row and one Selected non-preferred row on the same
+     *    disposition is the NEW NORMAL and must save.
+     *
+     * A guard that still counted `Submission_Status__c` alone would refuse this — and would refuse
+     * every sale that has a preferred broker, i.e. it would disable the whole feature with a
+     * message telling the user to undo it.
+     */
+    @isTest
+    static void onePreferredAndOneScoredSelected_isPermitted() {
+        Disposition__c d = dispositionAt('BOV Outreach');
+        BOV_Submission__c scored = submissionAt(d.Id, STATUS_SELECTED);
+
+        Test.startTest();
+        BOV_Submission__c preferred = preferredSubmissionAt(d.Id, STATUS_SELECTED);
+        Test.stopTest();
+
+        Map<Id, BOV_Submission__c> after = statusesOn(d.Id);
+        Assert.areEqual(STATUS_SELECTED, after.get(preferred.Id).Submission_Status__c,
+            '🔴 A Selected PREFERRED row must be insertable beside a Selected non-preferred row. '
+            + 'A refusal here means the guard is still counting the status alone and the two-slot '
+            + 'model is dead on arrival.');
+        Assert.areEqual(STATUS_SELECTED, after.get(scored.Id).Submission_Status__c,
+            'and the non-preferred row keeps its own slot — the guard mutates nothing');
+    }
+
+    /**
+     * 🔴 HALF ONE OF THE NARROWED INVARIANT: TWO SELECTED **PREFERRED** ROWS ARE STILL REFUSED.
+     * Mutation target — deleting the preferred half of the counter must redden THIS and not the
+     * test below.
+     */
+    @isTest
+    static void twoSelectedPreferredRows_areRejected() {
+        Disposition__c d = dispositionAt('BOV Outreach');
+        preferredSubmissionAt(d.Id, STATUS_SELECTED);
+        BOV_Submission__c second = TestDataFactory.createBovSubmission(d.Id, false);
+        second.Is_Preferred_Broker__c = true;
+        second.BOV_Amount__c = null;
+        second.Cap_Rate__c = null;
+        second.Commission_Rate__c = null;
+        second.Days_To_Market__c = null;
+        second.Hist_Success_Rate__c = null;
+        second.Submission_Status__c = STATUS_SELECTED;
+
+        Test.startTest();
+        Boolean refused = false;
+        try {
+            insert second;
+        } catch (DmlException e) {
+            refused = true;
+            Assert.isTrue(e.getMessage().contains('Selected preferred broker'),
+                'It must be the PREFERRED half of the guard: ' + e.getMessage());
+        }
+        Test.stopTest();
+
+        Assert.isTrue(refused,
+            '🔴 Two Selected preferred brokers leave the approval router unable to say which broker '
+            + 'the business named. That is exactly what this guard exists to refuse, and narrowing '
+            + 'it to two slots did not relax it.');
+    }
+
+    /**
+     * 🔴 HALF TWO: TWO SELECTED **NON-PREFERRED** ROWS ARE STILL REFUSED — AND THIS IS THE TEST
+     *    THAT CATCHES THE REQUIREMENT AS LITERALLY WRITTEN.
+     *
+     * The change request said "at most ONE system-selected", i.e. count `Is_System_Selected__c`.
+     * NEITHER row below carries that flag: they were promoted by hand / by a data load, which is
+     * exactly what `BovSubmissionService.replaceSelectedBroker` also produces (it stamps
+     * `Is_Manually_Appointed__c` and NO system flag). A guard counting the system flag would be
+     * blind to both and would PERMIT this — the exact ambiguity it was written to prevent. The
+     * counter is therefore "Selected AND NOT preferred", and this test is what holds that line.
+     */
+    @isTest
+    static void twoManuallyAppointedRows_areRefusedEvenThoughNeitherIsSystemSelected() {
+        Disposition__c d = dispositionAt('BOV Outreach');
+        BOV_Submission__c first = submissionAt(d.Id, STATUS_SELECTED);
+        Assert.isFalse(
+            [SELECT Is_System_Selected__c FROM BOV_Submission__c WHERE Id = :first.Id
+             WITH SYSTEM_MODE].Is_System_Selected__c,
+            '🔴 FIXTURE PRECONDITION — AND THE WHOLE POINT OF THIS TEST. Neither row carries '
+            + 'Is_System_Selected__c, so a guard that counted THAT field would see zero collisions '
+            + 'and permit the insert below.');
+        BOV_Submission__c second = TestDataFactory.createBovSubmission(d.Id, false);
+        second.Submission_Status__c = STATUS_SELECTED;
+
+        Test.startTest();
+        Boolean refused = false;
+        try {
+            insert second;
+        } catch (DmlException e) {
+            refused = true;
+            Assert.isTrue(e.getMessage().contains('not a preferred broker'),
+                'It must be the NON-preferred half of the guard: ' + e.getMessage());
+        }
+        Test.stopTest();
+
+        Assert.isTrue(refused,
+            '🔴 Two Selected non-preferred rows must be refused however they were promoted. This is '
+            + 'the hole that counting Is_System_Selected__c would have left open, and it is a live '
+            + 'one: every Replace Broker produces a Selected row with no system flag.');
+    }
+
+    /**
+     * THE SLOT-CHANGE EXTENSION. A row that is ALREADY Selected and whose `Is_Preferred_Broker__c`
+     * FLIPS arrives in a slot it did not previously hold — the same shape as reparenting, one field
+     * over. Without that clause in the guard, this save creates two Selected preferred rows.
+     *
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * 🔴 INVOKED DIRECTLY RATHER THAN THROUGH DML, AND THE REASON IS THE INTERESTING PART.
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * `BovPreferredBrokerService.surrenderSlotOnFlagChange` runs immediately BEFORE this guard in
+     * `beforeUpdate` and drops any flag-flipping Selected row to `Backup` in memory — deliberately,
+     * because otherwise "Preferred Broker" becomes a checkbox the user cannot tick or untick. So
+     * through real DML this collision is neutralised before the guard ever sees it, and a DML-based
+     * test of this clause would pass whether the clause existed or not: **GREEN AND VACUOUS.**
+     *
+     * The clause is still needed and is NOT dead code: it is the guard's defence for the row shape
+     * the surrender step deliberately does not cover — an API call or data load that sets the flag
+     * AND `Submission_Status__c = 'Selected'` in one update, where nothing "flipped into" the slot
+     * as far as a status-only rule can tell. That shape is what this direct invocation builds.
+     */
+    @isTest
+    static void flippingAnAlreadySelectedRowIntoAnOccupiedPreferredSlot_isRejected() {
+        Disposition__c d = dispositionAt('BOV Outreach');
+        preferredSubmissionAt(d.Id, STATUS_SELECTED);
+        BOV_Submission__c scored = submissionAt(d.Id, STATUS_SELECTED);
+
+        BOV_Submission__c incoming = new BOV_Submission__c(
+            Id = scored.Id,
+            Disposition__c = d.Id,
+            Submission_Status__c = STATUS_SELECTED,
+            Is_Preferred_Broker__c = true          // flipped INTO the occupied preferred slot
+        );
+        Map<Id, BOV_Submission__c> priorById = new Map<Id, BOV_Submission__c>{
+            scored.Id => new BOV_Submission__c(
+                Id = scored.Id,
+                Disposition__c = d.Id,
+                Submission_Status__c = STATUS_SELECTED,
+                Is_Preferred_Broker__c = false
+            )
+        };
+
+        Test.startTest();
+        BovSubmissionSelectionGuardService.enforceSelectionExclusivity(
+            new List<BOV_Submission__c>{ incoming }, priorById);
+        Test.stopTest();
+
+        Assert.isTrue(incoming.hasErrors(),
+            '🔴 The status did not change on this save — only the flag did — so a guard testing '
+            + 'ONLY "became Selected" would wave it through and leave two Selected preferred rows. '
+            + 'Deleting the flag comparison from wasAlreadyHoldingThisSlot reds exactly this test.');
+        Assert.isTrue(incoming.getErrors()[0].getMessage().contains('Selected preferred broker'),
+            'and it must be the PREFERRED half of the guard: '
+            + incoming.getErrors()[0].getMessage());
     }
 
     /**
@@ -530,8 +733,8 @@ private class BovSubmissionSelectionGuardTest {
         Boolean completedWithoutThrowing = false;
 
         Test.startTest();
-        BovSubmissionSelectionGuardService.enforceSingleSelected(null, null);
-        BovSubmissionSelectionGuardService.enforceSingleSelected(
+        BovSubmissionSelectionGuardService.enforceSelectionExclusivity(null, null);
+        BovSubmissionSelectionGuardService.enforceSelectionExclusivity(
             new List<BOV_Submission__c>(), null);
         completedWithoutThrowing = true; // reached only if neither call above threw
         Test.stopTest();
@@ -566,7 +769,7 @@ private class BovSubmissionSelectionGuardTest {
 
         Test.startTest();
         Integer queriesBefore = Limits.getQueries();
-        BovSubmissionSelectionGuardService.enforceSingleSelected(newList, null);
+        BovSubmissionSelectionGuardService.enforceSelectionExclusivity(newList, null);
         Integer queriesUsed = Limits.getQueries() - queriesBefore;
         Test.stopTest();
 
@@ -613,7 +816,7 @@ private class BovSubmissionSelectionGuardTest {
 
         Test.startTest();
         Integer queriesBefore = Limits.getQueries();
-        BovSubmissionSelectionGuardService.enforceSingleSelected(newList, priorById);
+        BovSubmissionSelectionGuardService.enforceSelectionExclusivity(newList, priorById);
         Integer queriesUsed = Limits.getQueries() - queriesBefore;
         Test.stopTest();
 

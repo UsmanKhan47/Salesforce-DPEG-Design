@@ -2,6 +2,21 @@ import { LightningElement, api, wire } from 'lwc';
 import { getRecord, getFieldValue } from 'lightning/uiRecordApi';
 import STAGE_FIELD from '@salesforce/schema/Disposition__c.Disposition_Stage__c';
 
+/**
+ * The picklist value, named ONCE (2026-08-24).
+ *
+ * ⚠ IT IS READ BY TWO GETTERS — `isOfferStage` (does the card render at all?) and
+ * `isOfferSelection` (which MODE does it render in?). A second literal would let the two drift
+ * apart, and the failure mode of that drift is silent in both directions: the mode flag set at a
+ * stage the card does not render at does nothing at all, and the card rendering at Offer Selection
+ * without the flag is simply the OLD behaviour, which looks entirely normal.
+ *
+ * ⚠ EXACT MATCH ON THE PICKLIST'S OWN API VALUE — a space, not an underscore, and title case. It
+ * is a value of `objects/Disposition__c/fields/Disposition_Stage__c.field-meta.xml` and exists on
+ * BOTH record types.
+ */
+const STAGE_OFFER_SELECTION = 'Offer Selection';
+
 export default class DispositionSidebar extends LightningElement {
     @api recordId;
     _stage;
@@ -82,8 +97,32 @@ export default class DispositionSidebar extends LightningElement {
         return (
             this._stage === 'Active Listing' ||
             this._stage === 'Release Materials' ||
-            this._stage === 'Offer Selection' ||
+            this._stage === STAGE_OFFER_SELECTION ||
             this._stage === 'LOI'
         );
+    }
+
+    /**
+     * Whether the offers card renders in its SELECTED-ONLY mode (2026-08-24, user request:
+     * "at Offer Selection show only the offer going for approval, and disable Log Offer").
+     *
+     * 🔴 THE DECISION LIVES HERE, NOT IN THE CARD AND NOT ON THE SERVER. This component already
+     * holds the stage — it is the only reason it exists — so the card is told the answer instead
+     * of working it out. Putting the test inside `c/disposition-offer` would give an offers card
+     * its own stage wire and a second, drift-prone copy of the stage list; putting it in Apex
+     * would mean inventing a controller for a card that has none, purely to express a rendering
+     * choice, and a related-list read whose contents depend on a picklist value. See that
+     * component's class header for the full argument.
+     *
+     * ⚠ THIS IS A NARROWING OF `isOfferStage`, NOT A PARALLEL LIST. Both read
+     * `STAGE_OFFER_SELECTION`, so a rename cannot leave one of them behind.
+     *
+     * ⚠ THE VALUE IS BOUND AS A BOOLEAN INTO `selected-only={isOfferSelection}`, so it is `false`
+     * — not `undefined` — at the other three offer stages and before the wire emits. The child
+     * reads `=== true`, so a stray `undefined` would take the same (correct) branch, but a real
+     * boolean is what the Jest assertions can pin with `toBe(false)`.
+     */
+    get isOfferSelection() {
+        return this._stage === STAGE_OFFER_SELECTION;
     }
 }

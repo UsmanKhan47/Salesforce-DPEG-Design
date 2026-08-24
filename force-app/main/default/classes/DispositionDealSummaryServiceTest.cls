@@ -93,6 +93,8 @@ private class DispositionDealSummaryServiceTest {
         Assert.isFalse(summary.ndaUnavailable, 'A null Id is not a read failure');
         Assert.isFalse(summary.loiUnavailable, 'A null Id is not a read failure');
         Assert.isFalse(summary.psaUnavailable, 'A null Id is not a read failure');
+        Assert.isNull(summary.propertyAssetId, 'No asset link on an empty summary');
+        Assert.isNull(summary.propertyAssetName, 'No asset link text on an empty summary');
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -417,7 +419,19 @@ private class DispositionDealSummaryServiceTest {
      */
     private static User userDeniedAccessTo(String deniedSobjectType) {
         Map<String, List<String>> fieldsByObject = new Map<String, List<String>>{
-            'Disposition__c' => new List<String>{ 'NDA_Count__c', 'Signed_NDA_Count__c' },
+            // ⚠ `Disposition__c.Property_Asset__c` JOINED THIS LIST ON 2026-08-24, and
+            // `Property_Asset__c` ITSELF JOINED THE MAP. `selectDealSummaryParentById` now
+            // traverses `Property_Asset__r.Name`, which needs BOTH the lookup field's FLS on
+            // Disposition__c AND CRUD Read on the referenced object. Without both, EVERY persona
+            // built here would degrade the parent read and half this file would turn red for a
+            // reason unrelated to the row it is testing.
+            'Disposition__c' => new List<String>{
+                'NDA_Count__c', 'Signed_NDA_Count__c', 'Property_Asset__c' },
+            // 🔴 EMPTY FIELD LIST ON PURPOSE — a custom object's `Name` is not FLS-controllable and
+            // has no `FieldPermissions` row to insert. Object Read is the entire gate, which is
+            // also why denying it is a meaningful test (see
+            // `summarise_propertyAssetObjectDenied_onlyTheParentReadDegrades`).
+            'Property_Asset__c' => new List<String>(),
             'NDA__c' => new List<String>{ 'Status__c', 'Date_Signed__c', 'Disposition__c' },
             'LOI__c' => new List<String>{ 'Stage__c', 'Offer_Price__c', 'Ball_In_Court__c', 'Disposition__c' },
             'Contract_Review__c' => new List<String>{
@@ -564,7 +578,7 @@ private class DispositionDealSummaryServiceTest {
     /**
      * The NDA row's OWN catch is independent of the other three — denying NDA__c specifically must
      * degrade only `ndaUnavailable`/`hasNda`, leaving the Disposition-level counters (a DIFFERENT
-     * object, DispositionSelector.selectNdaCountsById) and LOI/PSA untouched. This is the "one catch
+     * object, DispositionSelector.selectDealSummaryParentById) and LOI/PSA untouched. This is the "one catch
      * per row" contract the service header calls out for the NDA row specifically ("four catches for
      * three rows").
      */
@@ -638,7 +652,7 @@ private class DispositionDealSummaryServiceTest {
 
     /**
      * 🔴 MEASURED FINDING, NOT THE ORIGINAL HYPOTHESIS — denying `Disposition__c` object access
-     * degrades ALL FOUR reads, not just `applyNdaCounts`'s own. This test originally asserted the
+     * degrades ALL FOUR reads, not just `applyParentFields`'s own. This test originally asserted the
      * child rows (NDA__c/LOI__c/Contract_Review__c) would be unaffected, on the theory that filtering
      * `WHERE Disposition__c = :id` only needs FLS on the child object's OWN lookup field. A direct
      * diagnostic against `usman-dpeg` disproved that: `WITH USER_MODE` on
@@ -683,6 +697,11 @@ private class DispositionDealSummaryServiceTest {
         Assert.isFalse(summary.hasLoi, 'A degraded row must not also claim to have found data');
         Assert.isTrue(summary.psaUnavailable, 'Same platform behaviour applies to the PSA read');
         Assert.isFalse(summary.hasPsa, 'A degraded row must not also claim to have found data');
+        // ⚠ ADDED 2026-08-24. The asset rides the SAME query as the counters, so denying the
+        // Disposition takes it out too — and a degraded parent read must never offer a link to a
+        // record the reader was just refused, exactly as `ndaId` must not.
+        Assert.isNull(summary.propertyAssetId, 'A degraded parent read must not offer an asset link');
+        Assert.isNull(summary.propertyAssetName, 'A degraded parent read must not invent an asset name');
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -826,7 +845,7 @@ private class DispositionDealSummaryServiceTest {
 
     /**
      * A syntactically valid Id that no longer resolves to any row (deleted after being captured).
-     * `DispositionSelector.selectNdaCountsById` returns null on the miss, and `applyNdaCounts`'s
+     * `DispositionSelector.selectDealSummaryParentById` returns null on the miss, and `applyParentFields`'s
      * `if (disposition == null) { return; }` branch is the only way to reach that path — a null
      * `dispositionId` short-circuits inside `summarise` itself before ever calling it.
      */
@@ -878,5 +897,134 @@ private class DispositionDealSummaryServiceTest {
         Assert.isTrue(queriesUsed <= 4,
             'summarise() issues exactly one LIMIT-1 query per row (4 total); it must not scale with '
             + 'sibling count. Queries used: ' + queriesUsed);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // Property Asset — the sale's SUBJECT, carried as card context (2026-08-24)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * `propertyAssetId` / `propertyAssetName` back the Property Asset link at the top of
+     * `c/dispositionDealSummary`, so IR can open the full asset record from the card.
+     *
+     * 🔴 UNLIKE THE THREE ROW IDs, THIS ONE DID CHANGE A SELECTOR'S FIELD LIST.
+     * `selectDealSummaryParentById` (renamed from `selectNdaCountsById`) now also selects
+     * `Property_Asset__c, Property_Asset__r.Name`. It is the SAME query that was already reading
+     * the parent for the NDA counters — no second read — which is what keeps
+     * `dispositionQueryCost_manyChildrenAcrossAllThreeObjects_stillFourQueries` valid. That test is
+     * the standing proof of the "no extra query" claim; this one proves the values arrive.
+     *
+     * ⚠ THE NAME IS ASSERTED AGAINST THE ROW'S OWN Name, RE-QUERIED, not against the factory's
+     * 'Test Asset 0' literal. A hard-coded expectation would pass while pointing at a different
+     * asset — the exact defect `summarise_rowIds_matchTheSameRecordEachRowsDataCameFrom` exists to
+     * prevent one level down.
+     */
+    @isTest
+    static void summarise_propertyAsset_idAndNameComeFromTheParentLookup() {
+        Property_Asset__c asset = [SELECT Id, Name FROM Property_Asset__c LIMIT 1];
+        Disposition__c d = TestDataFactory.createDisposition(asset.Id, true);
+
+        Test.startTest();
+        DispositionDealSummaryService.DealSummary summary = DispositionDealSummaryService.summarise(d.Id);
+        Test.stopTest();
+
+        Assert.areEqual(asset.Id, summary.propertyAssetId,
+            'The card links the Property Asset the Disposition actually points at');
+        Assert.areEqual(asset.Name, summary.propertyAssetName,
+            'The link TEXT is the asset name, traversed as Property_Asset__r.Name');
+        Assert.isFalse(summary.ndaCountsUnavailable,
+            'The parent read was fully granted — adding the asset must not degrade the counter line');
+    }
+
+    /**
+     * 🔴 AN ASSET-LESS SALE IS A NORMAL EMPTY STATE, NOT A DEGRADED ONE, AND IT IS REACHABLE.
+     * `Disposition__c.Property_Asset__c` is an optional Lookup carrying `deleteConstraint = SetNull`
+     * — deleting a Property Asset silently nulls the lookup on every Disposition that referenced it.
+     *
+     * ⚠ RETRACTED 2026-08-24, VERBATIM, BECAUSE IT WAS THE REASON THIS TEST WAS WRITTEN AND IT WAS
+     * WRONG: *"Reading `disposition.Property_Asset__r.Name` through an empty lookup raises a
+     * NullPointerException rather than evaluating to null ... The service guards through the lookup
+     * Id for exactly this reason; this is the test that fails if the guard is simplified to a direct
+     * traversal."* MUTATION-TESTED: removing the guard left this test GREEN. A read-only probe then
+     * measured why — Apex dereferencing a null PARENT RELATIONSHIP on a queried SObject yields null
+     * rather than throwing (`a.Parent == null` is true AND `a.Parent.Name` is null, no exception).
+     * The guard was deleted; `DispositionDealSummaryService.applyParentFields` records the probe.
+     *
+     * 🔴 WHAT THIS TEST ACTUALLY PINS, AND IT IS STILL WORTH PINNING: an asset-less sale reports
+     * NOTHING, not a placeholder. `Assert.isNull(propertyAssetName)` is falsified by the plausible
+     * "helpful" edit — defaulting the name to '—' or 'Unknown asset' so the card has something to
+     * show — which would put an em-dash where the client contract says render nothing at all. And
+     * `ndaCountsUnavailable = false` still fences the real coupling: whatever this branch does, it
+     * must not land in the parent-read catch and tell the user they have a permissions problem they
+     * do not have.
+     */
+    @isTest
+    static void summarise_propertyAssetAbsent_isEmptyNotDegraded() {
+        Disposition__c d = newDisposition();
+        d.Property_Asset__c = null;
+        update d;
+
+        Test.startTest();
+        DispositionDealSummaryService.DealSummary summary = DispositionDealSummaryService.summarise(d.Id);
+        Test.stopTest();
+
+        Assert.isNull(summary.propertyAssetId, 'No asset on the sale means no link target');
+        Assert.isNull(summary.propertyAssetName, 'No asset on the sale means no link text');
+        Assert.isFalse(summary.ndaCountsUnavailable,
+            'A null lookup is a DATA state. Whatever this branch does it must not land in the parent '
+            + 'read catch, which would tell the user they have a permissions problem they do not have.');
+    }
+
+    /**
+     * 🔴 THE DOCUMENTED COUPLING, PINNED. `Property_Asset__r.Name` is a TRAVERSAL, so it requires
+     * CRUD Read on `Property_Asset__c` — a gate NO disposition permission set grants (it arrives
+     * from `DPEG_PropertyMgmt_View`, which is in both PSGs that can open a Disposition record page).
+     * Because the asset shares the counters' single query it also shares their single catch, so a
+     * Property Asset access gap degrades the NDA COUNTER LINE.
+     *
+     * That is a knowing trade, argued at `DispositionDealSummaryService.applyParentFields`: it
+     * OVER-reports a provisioning gap rather than hiding one (the failure mode design §0 C-1 was
+     * written about), and the remedy is the same permission-set fix either way. This test exists so
+     * the trade is a MEASURED property of the code rather than a claim in a comment — and so its
+     * BLAST RADIUS is fenced: the three document rows must still populate with real values, because
+     * none of their selectors touches Property_Asset__c.
+     */
+    @isTest
+    static void summarise_propertyAssetObjectDenied_onlyTheParentReadDegrades() {
+        Disposition__c d = newDisposition();
+        NDA__c nda = TestDataFactory.createDispositionNda(d.Id, false);
+        nda.Status__c = 'Signed';
+        insert nda;
+        TestDataFactory.createDispositionLoi(d.Id, true);
+        Contract_Review__c cr = TestDataFactory.createDispositionContractReview(d.Id, false);
+        cr.Negotiation_Status__c = 'Negotiation';
+        insert cr;
+
+        User restricted = userDeniedAccessTo('Property_Asset__c');
+
+        DispositionDealSummaryService.DealSummary summary;
+        System.runAs(restricted) {
+            Test.startTest();
+            summary = DispositionDealSummaryService.summarise(d.Id);
+            Test.stopTest();
+        }
+
+        // The parent read — counters AND asset — degrades together, because it is one query.
+        Assert.isTrue(summary.ndaCountsUnavailable,
+            'Property_Asset__c carries no access for this persona, so the parent read throws and '
+            + 'the counter line degrades with it. This is the documented trade, not a defect.');
+        Assert.isNull(summary.propertyAssetId, 'A degraded parent read must not offer a link');
+        Assert.isNull(summary.propertyAssetName, 'A degraded parent read must not invent a name');
+        Assert.isNull(summary.ndaCount, 'A degraded counter read must not report an invented value');
+
+        // ... and the blast radius stops there. No document selector reads Property_Asset__c.
+        Assert.isFalse(summary.ndaUnavailable, 'The NDA__c read is untouched by the asset gate');
+        Assert.isTrue(summary.hasNda, 'The NDA read must still find the real row');
+        Assert.areEqual('Signed', summary.ndaStatus, 'The NDA row must carry its real status');
+        Assert.isFalse(summary.loiUnavailable, 'The LOI__c read is untouched by the asset gate');
+        Assert.isTrue(summary.hasLoi, 'The LOI read must still find the real row');
+        Assert.isFalse(summary.psaUnavailable, 'The Contract_Review__c read is untouched');
+        Assert.isTrue(summary.hasPsa, 'The PSA read must still find the real row');
+        Assert.areEqual('Negotiation', summary.psaStatus, 'The PSA row must carry its real status');
     }
 }

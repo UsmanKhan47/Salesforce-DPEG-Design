@@ -21,6 +21,21 @@ const SAVE_RESPONSE = 'Save response';
 const SAVE_PREFERRED = 'Save preferred broker';
 
 /**
+ * The THIRD mode's copy (2026-08-24). "Replace Preferred Broker", not "Add" — this
+ * dialog is reached from the panel's Replace Broker button when a preferred broker
+ * already exists, and calling it an appointment would mislead: something is being
+ * retired, not just recorded.
+ *
+ * ⚠ THE SAVE BUTTON NAMES THE WHOLE ACTION, NOT THE HALF THIS DIALOG PERFORMS. The
+ * form only CREATES the incoming row; the outgoing one is retired by the opener
+ * immediately afterwards. "Save replacement" would describe the form; "Replace
+ * preferred broker" describes what the user is about to cause, which is what a
+ * confirming button should say.
+ */
+const TITLE_REPLACEMENT = 'Replace Preferred Broker';
+const SAVE_REPLACEMENT = 'Replace preferred broker';
+
+/**
  * c-bov-add-response-modal — logs a new `BOV_Submission__c` against the disposition the user is
  * already looking at, WITHOUT leaving that page (2026-08-21, UAT fix).
  *
@@ -122,6 +137,33 @@ const SAVE_PREFERRED = 'Save preferred broker';
  * The two retractions above (both about `BOV_Score__c`) STAND AS WRITTEN and are deliberately
  * left in place; this one sits beside them rather than replacing them. Read all three.
  *
+ * ══════════════════════════════════════════════════════════════════════════════════════
+ * 🔴 A FOURTH RETRACTION 2026-08-24 (LATER STILL): THERE ARE **THREE** MODES NOW, NOT TWO.
+ * ══════════════════════════════════════════════════════════════════════════════════════
+ * The paragraph below and its four numbered items stand as written for the two modes they
+ * describe. `@api isReplacement` (default `false`) adds a third, opened by
+ * `c/bovBrokerPanel`'s "Replace Broker" button WHEN A PREFERRED BROKER ALREADY EXISTS:
+ *
+ *   isReplacement = true  "Replace Preferred Broker" — same create, same field set, same
+ *                         `Is_Preferred_Broker__c` injection (it is passed WITH
+ *                         `isPreferred: true`), plus ONE read-only line naming the
+ *                         outgoing broker. `Broker__c` is the control that chooses the
+ *                         incoming one; there is no second picker, because a successor has
+ *                         usually submitted no BOV at all and so has no row to offer.
+ *
+ * 🔴 THE RETIREMENT OF THE OUTGOING ROW IS NOT THIS BUNDLE'S JOB AND MUST NOT BECOME IT.
+ * This dialog creates and closes; `c/bovBrokerPanel` then calls
+ * `BovController.replacePreferredBroker(dispositionId, newSubmissionId,
+ * outgoingSubmissionId)`. Keeping the Apex out of here is what preserves the property
+ * stated at the top of this header — "this component needs no Apex of its own", so
+ * `lightning-record-edit-form` owns CRUD/FLS and validation-rule surfacing in ALL THREE
+ * modes.
+ * ⚠ CONSEQUENCE, NAMED SO IT IS A DECISION: between this dialog's success and the opener's
+ * retire call the disposition briefly carries TWO preferred rows. The opener toasts a
+ * STICKY ERROR if the retire fails, rather than showing a success and leaving the user to
+ * find two preferred cards. Creating first is deliberate — deleting first would risk
+ * leaving ZERO preferred brokers, which is worse and unrecoverable from this dialog.
+ *
  * THIS BUNDLE NOW HAS TWO MODES, driven by `@api isPreferred` (default `false`):
  *
  *   isPreferred = false  "Add Broker Response"   — 🔴 RETRACTED IN PLACE 2026-08-24 (LATER
@@ -175,13 +217,24 @@ const SAVE_PREFERRED = 'Save preferred broker';
  * permission-set question, not one this component can answer; it is named here so it is not
  * discovered in UAT. A rendered field would at least have thrown; an injected one will not.
  *
- * ⚠ TWO SERVER-SIDE REFUSALS ARE STILL LIVE ON THE PREFERRED PATH AND ARE NOT FIXED HERE.
- * `Broker_Required_On_Submission` and `BOV_Amount_Required_On_Submission` are ACTIVE, UNGUARDED
- * validation rules that fire on every save. The first is harmless (this mode keeps `Broker__c`
- * required anyway); the second REFUSES a preferred row with a blank amount until it carries a
- * `NOT(Is_Preferred_Broker__c)` exemption. Making a field optional on the client does not make
- * it optional on the server, and this dialog is honest about that: the rule's own authored
- * message renders through `<lightning-messages>` and the dialog stays open.
+ * ⚠ RETRACTED IN PLACE 2026-08-24 (LATER STILL) — ONE OF THE TWO REFUSALS IS GONE, AND THE
+ * PARAGRAPH IS KEPT BECAUSE ITS *RULE* IS STILL THE RIGHT ONE.
+ * It read: *"TWO SERVER-SIDE REFUSALS ARE STILL LIVE ON THE PREFERRED PATH AND ARE NOT FIXED
+ * HERE. `Broker_Required_On_Submission` and `BOV_Amount_Required_On_Submission` are ACTIVE,
+ * UNGUARDED validation rules … the second REFUSES a preferred row with a blank amount until it
+ * carries a `NOT(Is_Preferred_Broker__c)` exemption."*
+ * 🔴 THAT EXEMPTION HAS SINCE BEEN DEPLOYED. Verified against the checked-in metadata on
+ * 2026-08-24: `BOV_Amount_Required_On_Submission` is `<active>true</active>` with
+ * `AND(NOT(Is_Preferred_Broker__c), ISBLANK(BOV_Amount__c))`, so a preferred row — first
+ * appointment OR replacement — saves with a blank amount. The client-side relaxation in
+ * `isResponseFieldRequired` and the server rule now agree.
+ * ⚠ `Broker_Required_On_Submission` IS STILL ACTIVE AND STILL UNGUARDED (`ISBLANK(Broker__c)`),
+ * which is exactly why `Broker__c` keeps a BARE `required` in every mode. Do not "relax it for
+ * consistency" — that rule has no exemption and never should: the broker IS the row.
+ * 🔴 AND THE GENERAL RULE THE PARAGRAPH TAUGHT STANDS: making a field optional on the client does
+ * not make it optional on the server. When one is relaxed the other must be checked in the same
+ * change; this dialog stays honest either way, because the rule's own authored message renders
+ * through `<lightning-messages>` and the dialog stays open.
  *
  * ══════════════════════════════════════════════════════════════════════════════════════════
  * ⚠ BOTH SUBMIT PATHS INJECT `Disposition__c`. THERE ARE GENUINELY TWO.
@@ -209,18 +262,85 @@ export default class BovAddResponseModal extends LightningModal {
      */
     @api isPreferred = false;
 
+    /**
+     * Switches the preferred mode from "first appointment" into "REPLACEMENT"
+     * (2026-08-24). Opened by `c/bovBrokerPanel`'s Replace Broker button when the
+     * disposition already has a preferred broker.
+     *
+     * ══════════════════════════════════════════════════════════════════════════
+     * 🔴 IT CHANGES THE COPY AND ADDS ONE READ-ONLY LINE. NOTHING ELSE.
+     * ══════════════════════════════════════════════════════════════════════════
+     * Same field set, same two submit paths, same `Is_Preferred_Broker__c = true`
+     * injection, same create-only contract. The incoming broker is chosen with the
+     * SAME `Broker__c` lookup the other two modes use — there is no second picker,
+     * because the successor is usually a broker who has submitted no BOV at all
+     * and so has no row for a picker to offer.
+     *
+     * ⚠ THIS DIALOG DOES NOT RETIRE THE OUTGOING ROW AND MUST NOT LEARN HOW.
+     * It creates; the OPENER calls `BovController.replacePreferredBroker` once this
+     * resolves. That division is what keeps this bundle free of Apex — the property
+     * that lets `lightning-record-edit-form` own CRUD/FLS and validation-rule
+     * surfacing for all three modes. See `c/bovBrokerPanel._retireOutgoingPreferred`.
+     *
+     * ⚠ ALWAYS PASSED TOGETHER WITH `isPreferred: true`. `isReplacement` alone would
+     * relabel a dialog that still created an unflagged ordinary response, so every
+     * mode-keyed getter below tests `isReplacement` FIRST and the flag injection is
+     * left keyed on `isPreferred`, where it belongs.
+     */
+    @api isReplacement = false;
+
+    /**
+     * The outgoing preferred broker, already formatted for display by the opener.
+     *
+     * 🔴 A STRING, NOT AN ID, AND NOT A FIELD ON THE FORM. It is rendered as static
+     * text — never as a `lightning-input-field` — because a non-editable field put
+     * on a record-edit-form is FLS-checked like any other key and dropped SILENTLY
+     * with a success toast, which is exactly the failure this repo has measured.
+     * Static text cannot reach the payload: `handleSave` gathers only rendered
+     * `lightning-input-field`s and the native submit carries only the form's own
+     * fields.
+     *
+     * ⚠ THE OPENER FORMATS IT because the opener holds the row. Formatting it here
+     * would need this bundle to read BOV data it otherwise never touches.
+     */
+    @api outgoingBrokerLabel;
+
     _saving = false;
 
     get isSaving() {
         return this._saving;
     }
 
+    /**
+     * ⚠ `isReplacement` IS TESTED FIRST, and the order is load-bearing: the
+     * replacement mode is opened WITH `isPreferred: true`, so a `isPreferred`-first
+     * chain would label a replacement "Add Preferred Broker" and never reach the
+     * replacement string at all.
+     */
     get modalTitle() {
+        if (this.isReplacement === true) {
+            return TITLE_REPLACEMENT;
+        }
         return this.isPreferred === true ? TITLE_PREFERRED : TITLE_RESPONSE;
     }
 
     get saveLabel() {
+        if (this.isReplacement === true) {
+            return SAVE_REPLACEMENT;
+        }
         return this.isPreferred === true ? SAVE_PREFERRED : SAVE_RESPONSE;
+    }
+
+    /**
+     * Whether to render the read-only "Current preferred broker" line.
+     *
+     * ⚠ GATED ON THE LABEL BEING NON-EMPTY, NOT JUST ON THE MODE. An empty label
+     * would render a form element with a heading and no value — worse than absent,
+     * because it reads as data that failed to load. The opener returns `''` (never
+     * `undefined`) when it has no preferred row, so this is the one test needed.
+     */
+    get showOutgoingBroker() {
+        return this.isReplacement === true && !!this.outgoingBrokerLabel;
     }
 
     /**

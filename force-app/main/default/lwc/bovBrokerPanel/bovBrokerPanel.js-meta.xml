@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<LightningComponentBundle xmlns="http://soap.sforce.com/2006/04/metadata">
+    <apiVersion>67.0</apiVersion>
+    <!--
+        isExposed=false, MATCHING c/bovComparisonMatrix. This bundle is composed
+        into c/dispositionMain in MARKUP, not placed in App Builder: it needs the
+        recordId its parent already holds, and exposing it would let an admin drop
+        a second copy of the BOV Outreach broker workspace onto the page.
+    -->
+    <isExposed>false</isExposed>
+</LightningComponentBundle>

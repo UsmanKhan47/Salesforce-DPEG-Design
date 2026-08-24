@@ -188,6 +188,29 @@ public with sharing class DispositionApprovalService {
         + 'then submit for approval.';
 
     /**
+     * The same refusal for the PREFERRED slot, added 2026-08-24 with the two-slot selection model.
+     *
+     * 🔴 A SEPARATE CONSTANT BECAUSE THE REMEDY IS DIFFERENT, NOT BECAUSE THE WORDING IS. A user
+     * told to "set all but the appointed broker to Backup in the BOV comparison matrix" cannot act
+     * on it for preferred rows: they are rendered in a separate, action-free list, and the way a
+     * preferred broker is changed is Add Preferred Broker (which retires the outgoing one via
+     * `BovPreferredBrokerService`). Sharing one message would send half the users to a control that
+     * is not there.
+     *
+     * ⚠ IT IS EVEN LESS REACHABLE THAN ITS SIBLING, AND IS STILL NOT DEAD CODE. The narrowed
+     * exclusivity guard refuses a second Selected PREFERRED row, and the retirement service deletes
+     * the outgoing one — but the same three gaps the sibling's header lists apply unchanged (the
+     * undelete gap, rows predating the guard, and the guard's `with sharing` read failing OPEN),
+     * and the retirement service can be refused by a validation rule or a lookup filter. Submitting
+     * an arbitrary one of two preferred brokers into an approval is exactly the outcome this whole
+     * branch exists to prevent.
+     */
+    private static final String MULTIPLE_PREFERRED_BOV_MESSAGE =
+        'More than one preferred broker is marked Selected on this disposition, and exactly one is '
+        + 'required. Remove the preferred brokers that no longer apply, leaving one, then submit '
+        + 'for approval.';
+
+    /**
      * ⚠ RE-AUTHORED 2026-08-20. The previous wording said "Set the Selected Broker", which now names
      * the WRONG field — `Selected Broker` became a derived, read-back display value and setting it
      * by hand no longer satisfies anything. This names `Broker`, the on-screen LABEL of the lookup
@@ -311,7 +334,9 @@ public with sharing class DispositionApprovalService {
      * | stage / record type              | what is submitted                                    |
      * |----------------------------------|------------------------------------------------------|
      * | `Disposition Readiness`          | the DISPOSITION -> Sale_Decision_Approval            |
-     * | `BOV Outreach` (on-market)       | the SELECTED BOV_Submission__c -> Broker_Finalize    |
+     * | `BOV Outreach` (on-market)       | ONE Selected BOV_Submission__c -> Broker_Finalize    |
+ * |                                  | (the PREFERRED broker if there is one, else the      |
+ * |                                  | non-preferred Selected row — see that branch)        |
      * | `Broker Selection` (off-market)  | the DISPOSITION -> Broker_Selection_Approval         |
      * | `Closing`                        | the DISPOSITION -> Closing_Approval                  |
      *
@@ -391,15 +416,62 @@ public with sharing class DispositionApprovalService {
             // cannot express "exactly one", only "at most one", so the >1 case was invisible HERE
             // no matter what was written in this method. See MULTIPLE_SELECTED_BOV_MESSAGE for why
             // that branch is a live backstop rather than dead code.
+            //
+            // ══════════════════════════════════════════════════════════════════════════════════
+            // 🔴 AMENDED 2026-08-24 — **TWO** SELECTED ROWS IS NOW NORMAL, AND THIS IS WHERE THE
+            //    TIE IS BROKEN: **IF A PREFERRED BROKER EXISTS, SUBMIT THAT ROW.**
+            // ══════════════════════════════════════════════════════════════════════════════════
+            // A Disposition now holds two independent appointment slots — the preferred broker a
+            // human named, and the scored winner the model picked (`BovAutoSelectionService`'s
+            // header carries the model in full; the exclusivity guard was narrowed to match on the
+            // same day). `selectSelectedByDispositionId` therefore routinely returns TWO rows and
+            // `size() > 1` STOPPED BEING AN ERROR CONDITION. Treating it as one would refuse every
+            // sale that has a preferred broker — the feature would look broken with a message
+            // telling the user to undo it.
+            //
+            // The tie-break is the user's decision, stated plainly: A HUMAN'S NAMED PREFERENCE
+            // OUTRANKS A SCORE. The exclusivity check survives INSIDE the chosen slot, which is
+            // where it was always doing its work.
+            //
+            // ⚠ THE PARTITION KEY IS `Is_Preferred_Broker__c`, **NOT** `Is_System_Selected__c`, AND
+            // THE DIFFERENCE IS A LIVE REGRESSION RATHER THAN A STYLE CHOICE.
+            // `BovSubmissionService.replaceSelectedBroker` promotes a challenger to Selected with
+            // `Is_Manually_Appointed__c = true` and NO system flag — a manual appointment is not a
+            // scoring pick, and that field's XML names `BovAutoSelectionService` as its ONLY
+            // writer. Routing on "the system-selected row" would therefore find NOTHING after every
+            // Replace Broker, and Submit for Approval would refuse with "No broker is marked
+            // Selected yet" while the matrix plainly showed one. Routing on "the row that is not a
+            // preferred broker" covers the scored winner and the manual appointment identically,
+            // which is also exactly how the narrowed guard counts them.
+            // `submitAtBovOutreach_afterReplaceBroker_submitsTheManuallyAppointedRow` is the
+            // falsifier for that specific trap.
             List<BOV_Submission__c> selected =
                 BovSubmissionSelector.selectSelectedByDispositionId(disposition.Id);
             if (selected.isEmpty()) {
                 throw new ApprovalException(NO_SELECTED_BOV_MESSAGE);
             }
-            if (selected.size() > 1) {
-                throw new ApprovalException(MULTIPLE_SELECTED_BOV_MESSAGE);
+            List<BOV_Submission__c> preferredRows = new List<BOV_Submission__c>();
+            List<BOV_Submission__c> appointedRows = new List<BOV_Submission__c>();
+            for (BOV_Submission__c candidate : selected) {
+                if (candidate.Is_Preferred_Broker__c == true) {
+                    preferredRows.add(candidate);
+                } else {
+                    appointedRows.add(candidate);
+                }
             }
-            targetId = selected[0].Id;
+            // `selected` is non-empty, so at least one of the two lists is — no third branch is
+            // reachable here and none is written, deliberately: an unreachable `else` would be a
+            // line no test can cover and every future reader has to re-derive.
+            Boolean routeToPreferred = !preferredRows.isEmpty();
+            List<BOV_Submission__c> routed = routeToPreferred ? preferredRows : appointedRows;
+            if (routed.size() > 1) {
+                throw new ApprovalException(
+                    routeToPreferred
+                        ? MULTIPLE_PREFERRED_BOV_MESSAGE
+                        : MULTIPLE_SELECTED_BOV_MESSAGE
+                );
+            }
+            targetId = routed[0].Id;
             successMessage = SUBMITTED_BROKER_FINALIZE_MESSAGE;
         } else if (STAGE_BROKER_SELECTION.equals(stage)) {
             if (RT_ON_MARKET.equals(recordType)) {

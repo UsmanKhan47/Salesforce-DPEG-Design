@@ -2,17 +2,34 @@
   ══════════════════════════════════════════════════════════════════════════════
   🔴 THIS TEMPLATE IS RENDERED TWICE ON THE SAME PAGE (2026-08-24).
   ══════════════════════════════════════════════════════════════════════════════
-  `dispositionMain.html` mounts this bundle twice inside `if:true={isBovOutreach}`:
-  once with `preferred-only hide-actions` (the "Preferred Broker" card, ABOVE) and
-  once bare (the "BOV Comparison Matrix" card, BELOW). Both defaults are `false`,
-  so the second tag's behaviour is unchanged by construction — every branch added
-  for the preferred card is opt-in.
+  `c/bovBrokerPanel` mounts this bundle twice: once with `preferred-only` (the
+  "Preferred Broker" card, ABOVE) and once bare (the "BOV Comparison Matrix"
+  card, BELOW). `preferredOnly` defaults `false`, so the second tag's behaviour is
+  unchanged by construction — every branch added for the preferred card is opt-in.
 
-  🔴 THE WHOLE CARD IS GATED ON `isVisible`. The preferred instance renders NOTHING
-  — not an empty card, not a header — when the disposition has no preferred broker.
-  That gate lives HERE rather than in `dispositionMain` because `dispositionMain`
-  has no BOV data of its own and gating it there would mean a second Apex read of
-  the same rows.
+  ⚠ THE MOUNT POINT MOVED ON 2026-08-24 AND THE PARENT'S NAME IS NOT COSMETIC.
+  It used to be `dispositionMain.html`, directly under `if:true={isBovOutreach}`.
+  `c/bovBrokerPanel` now sits between them and owns the header, the three broker
+  buttons and the BOV rows those buttons' visibility rules read.
+
+  ══════════════════════════════════════════════════════════════════════════════
+  🔴 THERE ARE NO BUTTONS IN THIS TEMPLATE, IN EITHER MODE. DO NOT ADD ONE.
+  ══════════════════════════════════════════════════════════════════════════════
+  A `<div slot="actions">` holding "Add Broker Response", "Replace Broker" and
+  "Add Preferred Broker" stood between the title and the error banner below until
+  2026-08-24. All three MOVED — with their getters, their handlers, their modal
+  imports and their toasts — to `c/bovBrokerPanel`, so that ONE header carries
+  them above BOTH cards instead of the matrix card carrying them for both.
+
+  ⚠ THAT IS ALSO WHY `hideActions` IS GONE RATHER THAN DEFAULTED. The preferred
+  instance used to be silenced with `hide-actions`; there is now no action region
+  for either instance to suppress, so an `@api` flag that suppresses nothing would
+  be a false reassurance to the next reader. The Jest suite pins the absence
+  directly: NO `lightning-button` and NO `[slot="actions"]` in either mode.
+
+  🔴 THE WHOLE CARD IS STILL GATED ON `isVisible` HERE, EVEN THOUGH THE PANEL NOW
+  GATES THE TAG TOO. The redundancy is deliberate — it keeps this bundle correct
+  if it is ever mounted somewhere that does not hold the BOV rows.
   ══════════════════════════════════════════════════════════════════════════════
 -->
 <template>
@@ -26,59 +43,11 @@
                  render "(1)". -->
             <span slot="title">{cardTitle}</span>
 
-            <!-- Top-right actions. `slot="actions"` is lightning-card's own header
-                 action region, so the buttons sit on the card header line rather
-                 than pushing the table down.
-
-                 🔴 THE WHOLE SLOT IS SUPPRESSED ON THE PREFERRED INSTANCE. Not each
-                 button individually — an empty `<div slot="actions">` still reserves
-                 the header's action region and still renders an empty
-                 `lightning-button-group`. `hideActions` removes the region itself. -->
-            <template lwc:if={showActions}>
-                <div slot="actions">
-                    <lightning-button-group>
-                        <lightning-button
-                            class="matrix-add"
-                            label="Add Broker Response"
-                            onclick={handleAddResponse}
-                        ></lightning-button>
-                        <!-- Only rendered once a broker is Selected — there is nothing
-                             to replace before that.
-
-                             🔴 RETRACTED 2026-08-24. A "Select Broker" button
-                             (`.matrix-select`, `canSelectBroker`) used to sit ABOVE this
-                             one, and the comment here used to read "EXACTLY ONE of the
-                             next two renders … canSelectBroker is canReplaceBroker's
-                             negation". IT IS GONE, deliberately and permanently: the
-                             first appointment is now made AUTOMATICALLY from
-                             `BOV_Score__c` by the server, so there is no first-appointment
-                             button to press. Replace Broker survives as the DELIBERATE
-                             HUMAN OVERRIDE and is the only client route into
-                             `BovSubmissionService.replaceSelectedBroker`. Do not reinstate
-                             a select button "for the empty case" — an empty case now
-                             resolves itself. -->
-                        <template lwc:if={canReplaceBroker}>
-                            <lightning-button
-                                class="matrix-replace"
-                                label="Replace Broker"
-                                onclick={handleReplaceBroker}
-                            ></lightning-button>
-                        </template>
-                        <!-- ⚠ HIDDEN ONCE ONE EXISTS, NOT DISABLED. Exactly one preferred
-                             broker is permitted per disposition (user decision,
-                             2026-08-24), and the flag has no server-side uniqueness
-                             guard — so the affordance is withdrawn rather than left on
-                             screen to be refused. -->
-                        <template lwc:if={canAddPreferredBroker}>
-                            <lightning-button
-                                class="matrix-add-preferred"
-                                label="Add Preferred Broker"
-                                onclick={handleAddPreferredBroker}
-                            ></lightning-button>
-                        </template>
-                    </lightning-button-group>
-                </div>
-            </template>
+            <!-- 🔴 NO `slot="actions"` REGION HERE — see the file header. The three
+                 broker buttons live on `c/bovBrokerPanel`'s single header, above
+                 BOTH cards. A `<div slot="actions">` re-added here would reserve
+                 lightning-card's header action region on every instance, including
+                 the preferred card, which by requirement has no actions of its own. -->
 
             <template lwc:if={loadError}>
                 <div class="matrix-error" role="alert">{loadError}</div>

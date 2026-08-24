@@ -59,6 +59,17 @@
  * 🔴 The Ids are assigned INSIDE each try, after the selector returns. A degraded row therefore
  * carries a null Id and the client cannot render a link to a record the reader was just refused.
  *
+ * ═══ ⚠ THE PROPERTY ASSET RIDES THE COUNTER QUERY (2026-08-24) ═══
+ * The DTO also carries `propertyAssetId` / `propertyAssetName` so the card can link the sale's
+ * subject. Unlike the three row Ids above, this one IS a change to a selector's field list —
+ * `selectDealSummaryParentById` (renamed from `selectNdaCountsById`) now also selects
+ * `Property_Asset__c, Property_Asset__r.Name`. No new query: the parent row was already being
+ * read, and this card has a standing four-query budget test.
+ * 🔴 THE TRAVERSAL IS AN OBJECT-LEVEL CRUD GATE ON `Property_Asset__c` THAT NO DISPOSITION
+ * PERMISSION SET GRANTS (it arrives via `DPEG_PropertyMgmt_View`, present in both PSGs that can
+ * open a Disposition record page). Sharing the query means sharing the catch — an asset access gap
+ * flags `ndaCountsUnavailable`. Argued in full at `applyParentFields`.
+ *
  * ═══ WHY FOUR CATCHES FOR THREE ROWS ═══
  * The NDA row is fed by TWO reads — the parent's maintained counters and the latest child NDA —
  * which live on different objects with independent FLS. One catch across both would let a missing
@@ -176,6 +187,44 @@ public with sharing class DispositionDealSummaryService {
          * Null on a degraded row, for the reason spelled out on `ndaId`.
          */
         @AuraEnabled public String psaId;
+
+        // ── The sale's subject (card context, not a row) ───────────────────────────────────
+        /**
+         * `Disposition__c.Property_Asset__c` — the Property Asset this sale is about, and the
+         * click-through target for the asset link at the top of the card. Added 2026-08-24 so IR
+         * can open the full asset record from the Deal Summary.
+         *
+         * 🔴 THIS IS NOT A FOURTH ROW AND MUST NOT BECOME ONE. NDA / LOI / PSA are documents with a
+         * lifecycle, a status and a fail-soft state each. The Property Asset is the SUBJECT of the
+         * sale — it has no status on this card and never degrades independently — so it is rendered
+         * as a context line under the card subtitle, above the three status rows.
+         *
+         * ⚠ NULL IS A NORMAL STATE, NOT AN ERROR. `Disposition__c.Property_Asset__c` is an optional
+         * Lookup with `deleteConstraint = SetNull`, so a sale can genuinely have no asset — and a
+         * deleted asset silently nulls it on every existing Disposition. The client renders nothing
+         * at all in that case rather than a dead link or an em-dash.
+         *
+         * ⚠ IT IS ALSO NULL WHEN THE PARENT READ FAILED, for the same reason `ndaId` is: it is
+         * assigned inside `applyParentFields`'s try, AFTER the selector returns.
+         */
+        @AuraEnabled public String propertyAssetId;
+        /**
+         * `Disposition__c.Property_Asset__r.Name` — the link TEXT.
+         *
+         * 🔴 IT COMES FROM THE SAME QUERY AS THE ID AND AS THE NDA COUNTERS, DELIBERATELY (see
+         * `DispositionSelector.selectDealSummaryParentById`). The card is under a standing
+         * four-query budget test; a second `LIMIT 1` read of a row already in hand to fetch a Name
+         * would break it for nothing.
+         *
+         * ⚠ THE TRAVERSAL COSTS CRUD READ ON `Property_Asset__c`, WHICH NO DISPOSITION PERMISSION
+         * SET GRANTS — it arrives from `DPEG_PropertyMgmt_View` via both PSGs that can open a
+         * Disposition record page. Because it shares the counters' query it also shares their
+         * catch: a Property Asset access gap degrades the NDA COUNTER line as well. That
+         * over-reports rather than hides, and the remedy is the same permission-set fix; it is
+         * spelled out at the selector and at `applyParentFields` so nobody debugs the rollup flow
+         * for a Property Asset problem.
+         */
+        @AuraEnabled public String propertyAssetName;
     }
 
     /**
@@ -205,7 +254,7 @@ public with sharing class DispositionDealSummaryService {
             return summary;
         }
 
-        applyNdaCounts(summary, dispositionId);
+        applyParentFields(summary, dispositionId);
         applyLatestNda(summary, dispositionId);
         applyLatestLoi(summary, dispositionId);
         applyLatestPsa(summary, dispositionId);
@@ -214,18 +263,34 @@ public with sharing class DispositionDealSummaryService {
     }
 
     /**
-     * The parent's maintained NDA counters, failing soft.
+     * The parent Disposition's own fields: the maintained NDA counters, and the Property Asset the
+     * sale is about. Fails soft.
      *
      * ⚠ Its own catch, separate from the latest-NDA read that shares the same card row: the two
      * live on different objects with independent FLS, and a missing grant on a counter must not
      * also erase a readable NDA status.
      *
+     * ⚠ RENAMED FROM `applyNdaCounts` ON 2026-08-24, when the Property Asset joined this read. The
+     * old name would now under-describe what a failure here takes out.
+     *
+     * 🔴 ONE QUERY MEANS ONE FAILURE MODE, AND THE PROPERTY ASSET SHARES IT. The selector reads
+     * `Property_Asset__r.Name`, a traversal requiring CRUD Read on `Property_Asset__c` — a gate no
+     * disposition permission set grants (it comes from `DPEG_PropertyMgmt_View`). A persona missing
+     * it makes this whole read throw, so the NDA COUNTER LINE degrades too and the card says "NDA
+     * counts unavailable" for what is actually a Property Asset provisioning gap.
+     *
+     * That trade was made knowingly, and it is the SAFE direction: it OVER-reports a gap rather
+     * than hiding one, which is the failure mode design §0 C-1 exists to prevent, and the remedy is
+     * the same permission-set fix either way. The alternative — a second `LIMIT 1` read of a row
+     * already in hand, purely so the two could fail independently — would break this card's
+     * standing four-query budget test for a nuance in an error message.
+     *
      * @param summary       The summary being built; mutated in place.
      * @param dispositionId The Disposition to read.
      */
-    private static void applyNdaCounts(DealSummary summary, Id dispositionId) {
+    private static void applyParentFields(DealSummary summary, Id dispositionId) {
         try {
-            Disposition__c disposition = DispositionSelector.selectNdaCountsById(dispositionId);
+            Disposition__c disposition = DispositionSelector.selectDealSummaryParentById(dispositionId);
             if (disposition == null) {
                 return;
             }
@@ -237,9 +302,38 @@ public with sharing class DispositionDealSummaryService {
             summary.ndaSignedCount = (disposition.Signed_NDA_Count__c == null)
                 ? null
                 : disposition.Signed_NDA_Count__c.intValue();
+            // ══════════════════════════════════════════════════════════════════════════════
+            // 🔴 NO NULL GUARD ON THE TRAVERSAL, AND THAT IS MEASURED, NOT ASSUMED.
+            // ══════════════════════════════════════════════════════════════════════════════
+            // This line was originally written as a ternary guarded on `Property_Asset__c == null`,
+            // with a comment asserting that "`Property_Asset__r.Name` on an empty lookup throws a
+            // NullPointerException". THAT CLAIM IS FALSE. Probed read-only against `usman-dpeg`
+            // on 2026-08-24 with the same shape (`SELECT Id, ParentId, Parent.Name FROM Account
+            // WHERE ParentId = null`):
+            //
+            //     a.Parent == null   ->  true
+            //     a.Parent.Name      ->  null      (NO exception thrown)
+            //
+            // Apex special-cases dereferencing a null PARENT RELATIONSHIP on a queried SObject: it
+            // yields null instead of raising "Attempt to de-reference a null object". (This is NOT
+            // true of an ordinary null object reference, which is why the belief is so durable.)
+            //
+            // The guard was removed rather than kept "just in case" for two reasons: it was an
+            // unreachable branch inflating this method with untestable code, and a comment citing a
+            // failure mode that cannot happen is worse than no comment — the next reader trusts it
+            // instead of measuring. Confirmed by mutation: reverting to the unguarded form left
+            // `summarise_propertyAssetAbsent_isEmptyNotDegraded` GREEN, which is what exposed the
+            // claim as unfalsifiable in the first place.
+            //
+            // ⚠ THE SAME null-yielding BEHAVIOUR COVERS THE SHARING CASE: a populated
+            // `Property_Asset__c` whose ASSET ROW the reader cannot see returns a null spanned
+            // record, so the name is null while the Id is not. The client requires BOTH before it
+            // renders anything, so that combination shows no link rather than a nameless one.
+            summary.propertyAssetId = disposition.Property_Asset__c;
+            summary.propertyAssetName = disposition.Property_Asset__r.Name;
         } catch (Exception e) {
             summary.ndaCountsUnavailable = true;
-            System.debug(LoggingLevel.ERROR, 'DispositionDealSummaryService NDA counter read degraded on '
+            System.debug(LoggingLevel.ERROR, 'DispositionDealSummaryService parent read degraded on '
                 + dispositionId + ': ' + e.getMessage() + ' | ' + e.getStackTraceString());
         }
     }

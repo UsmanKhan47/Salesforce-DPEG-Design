@@ -41,13 +41,15 @@
  *     Select absence as a NAMED pin rather than an accident.
  *
  * ─────────────────────────────────────────────────────────────────────────────
- * THREE HEADER ACTIONS (2026-08-24): Add Broker Response, Replace Broker,
- * Add Preferred Broker — in that template order.
+ * 🔴 RETRACTED AGAIN, LATER THE SAME DAY — ZERO HEADER ACTIONS. NOT THREE.
  * ─────────────────────────────────────────────────────────────────────────────
- * "Add Broker Response" and "Add Preferred Broker" open the SAME
- * c/bovAddResponseModal bundle, differing only in `isPreferred`. "Replace
- * Broker" opens c/bovReplaceBrokerModal and is the only surviving client route
- * into BovSubmissionService.replaceSelectedBroker. NONE OF THE THREE NAVIGATES.
+ * What stood here read: *"THREE HEADER ACTIONS (2026-08-24): Add Broker
+ * Response, Replace Broker, Add Preferred Broker — in that template order …
+ * NONE OF THE THREE NAVIGATES."* All three MOVED to `c/bovBrokerPanel`, which
+ * wraps this card and the preferred card under one header. Every sentence about
+ * which modal each opens, and about none of them navigating, is still true —
+ * it is true THERE. This component now renders a title, a table and a footer
+ * link, and the footer link is the only thing in it that navigates.
  *
  * ⚠ BUTTON ASSERTIONS SCAN THE RENDERED `label` PROPERTY, NOT `textContent`.
  * `lightning-button`'s sfdx-lwc-jest stub renders an EMPTY template, so
@@ -59,45 +61,50 @@
  * ─────────────────────────────────────────────────────────────────────────────
  * THE BUNDLE RENDERS TWICE ON THE PAGE (2026-08-24)
  * ─────────────────────────────────────────────────────────────────────────────
- * `preferredOnly` + `hideActions` turn this same component into the "Preferred
- * Broker" card that `dispositionMain` mounts above the matrix. Both default
- * false, so every existing test above exercises the matrix instance unchanged;
- * the preferred instance is created explicitly, with its props passed to
- * `createComponent`.
+ * `preferredOnly` turns this same component into the "Preferred Broker" card
+ * that `c/bovBrokerPanel` mounts above the matrix. It defaults false, so every
+ * existing test above exercises the matrix instance unchanged; the preferred
+ * instance is created explicitly, with its props passed to `createComponent`.
  * ⚠ `createComponent()` WITH NO ARGUMENT USES ITS DEFAULT PARAMETER — passing
  * `undefined` does NOT clear it. Preferred-instance tests must pass the full
  * props object including `recordId`.
  *
- * 🔴 "ADD BROKER RESPONSE" USED TO NAVIGATE, AND THAT WAS THE UAT BUG
- * (2026-08-21). It called NavigationMixin.Navigate with `actionName: 'new'` on
- * BOV_Submission__c, and the platform's post-save behaviour for a record created
- * that way is to navigate TO the new record — so saving a response threw the
- * user off the Disposition page. `ADD RESPONSE: never navigates` below is the
- * anti-regression pin, and it is deliberately an assertion about ABSENCE:
- * asserting only that the modal opened would stay green if a Navigate call were
- * added back beside it.
+ * ═════════════════════════════════════════════════════════════════════════════
+ * 🔴 TWENTY-FIVE TESTS LEFT THIS FILE ON 2026-08-24. THEY MOVED, THEY DID NOT DIE.
+ * ═════════════════════════════════════════════════════════════════════════════
+ * Every ADD RESPONSE / ADD PREFERRED / REPLACE / three-buttons-in-order test
+ * moved to `lwc/bovBrokerPanel/__tests__/bovBrokerPanel.test.js` together with
+ * the buttons themselves, and so did the fixtures only they used
+ * (`NONE_SELECTED`, `PREFERRED_APPOINTED`, `DUPLICATE_BROKERS`,
+ * `DUPLICATE_BROKERS_WITH_INCUMBENT`) and both modal mocks. Look there before
+ * concluding a behaviour lost its pin.
  *
- * 🔴 THE WIRE IS NOW HELD AS A WHOLE RESULT so `refreshApex` can re-provision it
- * after a replace. A "tidying" edit back to `wired({ data, error })` compiles,
- * passes every render test above, and silently turns the post-replace refresh
- * into a no-op — leaving the matrix showing the OLD Selected broker until a page
- * reload. `refreshApex` is NOT auto-mocked by the sfdx-lwc-jest stub — `@salesforce/apex`
- * resolves to a real module whose `refreshApex` is a plain function, so this file carries
- * its own `jest.mock('@salesforce/apex', ...)` below to make it a spy — and the test
- * below asserts it is called with the SAME object the wire handed the component,
- * which is the only assertion that actually catches that regression.
+ * 🔴 WHAT REPLACED THEM HERE IS AN ABSENCE PIN OVER **BOTH** MODES. A
+ * preferred-instance-only "no buttons" assertion — which is what this file used
+ * to carry — became VACUOUSLY GREEN the moment the matrix instance lost its
+ * buttons too: it asserts nothing this template can now get wrong. The
+ * `it.each` version below runs over both instances and reds if any
+ * `lightning-button` or `[slot="actions"]` comes back.
  *
- * 🔴 `LightningModal.open()` IS A STATIC ON A CLASS and cannot be driven like a
- * wire adapter, so both modals are mocked wholesale here. Their own behaviour is
- * proved in lwc/bovReplaceBrokerModal/__tests__ and
- * lwc/bovAddResponseModal/__tests__.
+ * 🔴 THE WIRE IS STILL HELD AS A WHOLE RESULT, and it still matters — it now
+ * backs `@api refreshData()`, which the panel calls after every write it makes.
+ * A "tidying" edit back to `wired({ data, error })` compiles, passes every
+ * render test above, and silently turns that refresh into a no-op. `refreshApex`
+ * is NOT auto-mocked by the sfdx-lwc-jest stub — `@salesforce/apex` resolves to a
+ * real module whose `refreshApex` is a plain function — so this file carries its
+ * own `jest.mock('@salesforce/apex', ...)` below to make it a spy, and the
+ * `refreshData()` test asserts it is called with the SAME object the wire handed
+ * the component, which is the only assertion that catches that regression.
+ *
+ * ⚠ NO MODAL MOCKS REMAIN IN THIS FILE, DELIBERATELY. This bundle no longer
+ * imports `c/bovAddResponseModal` or `c/bovReplaceBrokerModal`; a mock for a
+ * module the component does not import proves nothing and would quietly make a
+ * re-added import look tested.
  */
 import { createElement } from 'lwc';
 import BovComparisonMatrix from 'c/bovComparisonMatrix';
 import getSubmissions from '@salesforce/apex/BovController.getSubmissions';
 import { refreshApex } from '@salesforce/apex';
-import BovAddResponseModal from 'c/bovAddResponseModal';
-import BovReplaceBrokerModal from 'c/bovReplaceBrokerModal';
 
 jest.mock('lightning/navigation', () => {
     const Navigate = Symbol('Navigate');
@@ -128,16 +135,6 @@ jest.mock(
     },
     { virtual: true }
 );
-
-jest.mock('c/bovReplaceBrokerModal', () => ({
-    __esModule: true,
-    default: { open: jest.fn() }
-}));
-
-jest.mock('c/bovAddResponseModal', () => ({
-    __esModule: true,
-    default: { open: jest.fn() }
-}));
 
 // ⚠ `refreshApex` IS NOT AUTO-MOCKED. `@salesforce/apex` resolves to a real module whose
 // `refreshApex` is a plain function, so `expect(refreshApex).toHaveBeenCalled()` fails with
@@ -174,10 +171,6 @@ const SUBMISSIONS = [
         capRate: 6.8
     }
 ];
-
-/** Every submission still Backup — the pre-selection state. */
-const NONE_SELECTED = SUBMISSIONS.map((s) => ({ ...s, isSelected: false }));
-
 /**
  * ⚠ NOTE WHAT `SUBMISSIONS` ABOVE DOES *NOT* CARRY: an `isPreferred` KEY AT ALL.
  * That is deliberate, and it is checked-in reality rather than a hypothetical — this component
@@ -223,36 +216,6 @@ const PREFERRED_ROW = {
 const WITH_PREFERRED = [...SUBMISSIONS, PREFERRED_ROW];
 
 /**
- * 🔴 THE STEADY STATE AFTER THE 2026-08-24 DECISION: the preferred broker HOLDS the single
- * `Selected` slot and every scored response has been demoted to `Backup` by
- * `BovAutoSelectionService`.
- *
- * This fixture is what makes the `_selected` widening falsifiable. Read against `_visible`
- * (non-preferred rows only) NOTHING here is Selected, so `canReplaceBroker` goes false and the
- * Replace Broker button disappears from the only card that has buttons — leaving no route in the
- * entire UI to replace an appointed broker, with no error anywhere.
- */
-const PREFERRED_APPOINTED = [
-    ...SUBMISSIONS.map((sub) => ({ ...sub, isSelected: false })),
-    { ...PREFERRED_ROW, isSelected: true }
-];
-
-/**
- * The duplicate-broker pair WITH an incumbent, so the Replace path can reach them.
- *
- * 🔴 WHY THIS FIXTURE EXISTS AT ALL. The em-dash and duplicate-name assertions below were
- * originally driven through "Select Broker", which offered EVERY row because nothing was
- * Selected. That button is gone, and `_backupOptions` is now only reachable through Replace —
- * which only renders once something IS Selected. Re-homing those two tests therefore needed a
- * fixture with an incumbent; deleting them instead would have quietly dropped `brokerOptionLabel`'s
- * two hardest cases, which are properties of THIS ORG'S DATA and did not go anywhere.
- */
-const DUPLICATE_BROKERS_WITH_INCUMBENT = () => [
-    { ...SUBMISSIONS[0] },
-    ...DUPLICATE_BROKERS
-];
-
-/**
  * 🔴 THE FRACTIONAL-SCORE REGRESSION TEST (added 2026-08-22,
  * manifest/bov-score-formula-conversion/, Step 3). `BOV_Score__c` is a Number(5,2) FORMULA field
  * and `BovController.BovRow.bovScore` was widened `Integer` -> `Decimal` in the same change
@@ -275,49 +238,7 @@ const FRACTIONAL_SCORE_SUBMISSION = [
     }
 ];
 
-/**
- * 🔴 THE REAL SHAPE OF THIS ORG'S DATA, NOT A CONVENIENT ONE. Six broker Contacts exist TWICE
- * with an identical name AND an identical firm, and seven Contacts on the Broker record type are
- * not brokers at all. Neither is filtered or de-duplicated — that is the user's decision — so the
- * PICKER has to be legible anyway. These two rows are the duplicate case: same firm, same contact,
- * different submission. Scores are null because these fixtures' Disposition carries no
- * Asking_Price__c — 🔴 RETRACTED 2026-08-22 (manifest/bov-score-formula-conversion/, Step 3):
- * `BOV_Score__c` IS a formula now, so "until it becomes one" is stale; a null score is a property
- * of the missing asking price, not of the field's type.
- */
-const DUPLICATE_BROKERS = [
-    {
-        id: 'a0X010000000011',
-        name: 'BOV-0011',
-        isSelected: false,
-        bovScore: null,
-        brokerFirm: 'Marcus Whitfield Realty',
-        contactName: 'Marcus Whitfield',
-        bovAmount: 9400000,
-        daysToMarket: 70,
-        capRate: 6.1
-    },
-    {
-        id: 'a0X010000000012',
-        name: 'BOV-0012',
-        isSelected: false,
-        bovScore: null,
-        brokerFirm: 'Marcus Whitfield Realty',
-        contactName: 'Marcus Whitfield',
-        bovAmount: 9400000,
-        daysToMarket: 70,
-        capRate: 6.1
-    }
-];
-
-const flushPromises = () => new Promise((resolve) => setTimeout(resolve, 0));
-
 describe('c-bov-comparison-matrix', () => {
-    beforeEach(() => {
-        BovReplaceBrokerModal.open.mockResolvedValue(undefined);
-        BovAddResponseModal.open.mockResolvedValue(undefined);
-    });
-
     afterEach(() => {
         while (document.body.firstChild) {
             document.body.removeChild(document.body.firstChild);
@@ -368,7 +289,7 @@ describe('c-bov-comparison-matrix', () => {
         createComponent({
             recordId: RECORD_ID,
             preferredOnly: true,
-            hideActions: true,
+
             ...props
         });
 
@@ -468,493 +389,7 @@ describe('c-bov-comparison-matrix', () => {
         expect(pageRef.attributes.actionName).toBe('list');
     });
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // Header actions
-    // ─────────────────────────────────────────────────────────────────────────
-
-    it('ADD RESPONSE: opens the in-place dialog for THIS disposition', async () => {
-        const element = createComponent();
-
-        getSubmissions.emit(SUBMISSIONS);
-        await Promise.resolve();
-
-        addBtn(element).click();
-        await flushPromises();
-
-        expect(BovAddResponseModal.open).toHaveBeenCalledTimes(1);
-        const args = BovAddResponseModal.open.mock.calls[0][0];
-        expect(args.dispositionId).toBe(RECORD_ID);
-        // A label and a description are what LightningModal exposes to assistive
-        // tech; a dialog with neither announces as an unnamed region.
-        expect(args.label).toBe('Add Broker Response');
-        expect(typeof args.description).toBe('string');
-        expect(args.description.length).toBeGreaterThan(0);
-    });
-
-    it('🔴 ADD RESPONSE: never navigates — this is the UAT redirect regression pin', async () => {
-        const element = createComponent();
-        const navHandler = jest.fn();
-        element.addEventListener('navigate', navHandler);
-
-        getSubmissions.emit(SUBMISSIONS);
-        await Promise.resolve();
-
-        addBtn(element).click();
-        await flushPromises();
-
-        // 🔴 THE ASSERTION IS ABOUT ABSENCE, DELIBERATELY. The previous
-        // implementation navigated to `standard__objectPage` / `actionName:
-        // 'new'`, and the platform's post-save behaviour for a record created
-        // that way is to navigate TO the new record — so the user was thrown off
-        // the Disposition page. A test that only asserted "the modal opened"
-        // would stay green if a Navigate call were reinstated beside it.
-        expect(navHandler).not.toHaveBeenCalled();
-    });
-
-    it('🔴 ADD RESPONSE SUCCESS: toasts, then refreshes THIS wire in place', async () => {
-        BovAddResponseModal.open.mockResolvedValue({
-            recordId: 'a0X010000000009AAA',
-            name: 'BOV-0021'
-        });
-
-        const element = createComponent();
-        const toastHandler = jest.fn();
-        const navHandler = jest.fn();
-        element.addEventListener('lightning__showtoast', toastHandler);
-        element.addEventListener('navigate', navHandler);
-
-        getSubmissions.emit(SUBMISSIONS);
-        await Promise.resolve();
-
-        addBtn(element).click();
-        await flushPromises();
-
-        expect(toastHandler).toHaveBeenCalledTimes(1);
-        const toast = toastHandler.mock.calls[0][0].detail;
-        expect(toast.variant).toBe('success');
-        expect(toast.message).toContain('BOV-0021');
-        // Nothing to act on later, so this one may auto-dismiss — unlike the
-        // replace flow's "a fresh approval is required" warning.
-        expect(toast.mode).toBe('dismissable');
-
-        // 🔴 The record was created by a form this cacheable wire knows nothing
-        // about, so LDS has no idea the list changed. Asserted with the WIRE
-        // RESULT OBJECT, which is what pins the un-destructured
-        // `wiredSubmissions(result)` shape — the only thing refreshApex can
-        // re-provision.
-        expect(refreshApex).toHaveBeenCalledTimes(1);
-        expect(refreshApex.mock.calls[0][0]).toHaveProperty('data');
-
-        // Still on the disposition page. This is the whole point of the change.
-        expect(navHandler).not.toHaveBeenCalled();
-    });
-
-    it('ADD RESPONSE CANCELLED: no toast and no refresh', async () => {
-        BovAddResponseModal.open.mockResolvedValue(undefined);
-
-        const element = createComponent();
-        const toastHandler = jest.fn();
-        element.addEventListener('lightning__showtoast', toastHandler);
-
-        getSubmissions.emit(SUBMISSIONS);
-        await Promise.resolve();
-
-        addBtn(element).click();
-        await flushPromises();
-
-        expect(toastHandler).not.toHaveBeenCalled();
-        expect(refreshApex).not.toHaveBeenCalled();
-    });
-
-    it('ADD RESPONSE: a modal that fails to OPEN toasts and does not refresh', async () => {
-        BovAddResponseModal.open.mockRejectedValue(
-            new Error('modal layer unavailable')
-        );
-
-        const element = createComponent();
-        const toastHandler = jest.fn();
-        element.addEventListener('lightning__showtoast', toastHandler);
-
-        getSubmissions.emit(SUBMISSIONS);
-        await Promise.resolve();
-
-        addBtn(element).click();
-        await flushPromises();
-
-        expect(toastHandler).toHaveBeenCalledTimes(1);
-        expect(toastHandler.mock.calls[0][0].detail.title).toBe(
-            'Could not open the response dialog'
-        );
-        expect(refreshApex).not.toHaveBeenCalled();
-    });
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // 🔴 THE FOUR BUTTON-VISIBILITY TESTS, REWRITTEN 2026-08-24.
-    //
-    // THREE OF THE FOUR (`…and SELECT BROKER disappears`, `NEITHER broker button
-    // renders on an EMPTY matrix`, `…on the wire ERROR branch`) ASSERTED ONLY
-    // `expect(selectBtn(element)).toBeNull()`. When the Select Broker button was
-    // deleted they did not fail — they went GREEN AND VACUOUS, and would have
-    // passed identically if this entire component had been deleted. Each is
-    // rewritten below to assert POSITIVELY what is on screen, by rendered label,
-    // in template order; the Select absence survives as ONE NAMED PIN rather
-    // than as three accidents.
-    // ─────────────────────────────────────────────────────────────────────────
-
-    it('🔴 THE THREE BUTTONS, IN ORDER — and Select Broker is gone by name', async () => {
-        const element = createComponent();
-
-        getSubmissions.emit(SUBMISSIONS);
-        await Promise.resolve();
-
-        // POSITIVE, AND ORDERED. `toEqual` on the array pins the ORDER the user
-        // asked for (Add Broker Response, Replace Broker, Add Preferred Broker)
-        // and pins the COUNT — a fourth button appearing fails here.
-        expect(buttonLabels(element)).toEqual([
-            'Add Broker Response',
-            'Replace Broker',
-            'Add Preferred Broker'
-        ]);
-
-        // 🔴 THE ABSENCE PIN, ASSERTED TWO WAYS BECAUSE ONE IS NOT ENOUGH.
-        // By class, which catches the button coming back as it was; and by
-        // rendered LABEL, which catches it coming back under a new class name —
-        // the far likelier shape of a reinstatement.
-        expect(selectBtn(element)).toBeNull();
-        expect(buttonLabels(element)).not.toContain('Select Broker');
-    });
-
-    it('REPLACE BROKER is HIDDEN until a submission is Selected — and NOTHING takes its place', async () => {
-        const element = createComponent();
-
-        getSubmissions.emit(NONE_SELECTED);
-        await Promise.resolve();
-
-        // 🔴 THIS IS THE BEHAVIOUR CHANGE, AND IT IS THE POINT OF THE WHOLE
-        // TRANCHE. Until 2026-08-24 "Select Broker" rendered here, because a
-        // disposition with no appointed broker needed a human to appoint one.
-        // Selection is automatic now, so the pre-appointment state offers NO
-        // broker button at all — the server is what fills that gap.
-        expect(replaceBtn(element)).toBeNull();
-        expect(selectBtn(element)).toBeNull();
-        expect(buttonLabels(element)).toEqual([
-            'Add Broker Response',
-            'Add Preferred Broker'
-        ]);
-    });
-
-    it('🔴 EMPTY MATRIX: no broker button, but BOTH add buttons — an empty sale is exactly when you add one', async () => {
-        const element = createComponent();
-
-        getSubmissions.emit([]);
-        await Promise.resolve();
-
-        expect(replaceBtn(element)).toBeNull();
-        expect(selectBtn(element)).toBeNull();
-        // ⚠ "Add Preferred Broker" IS OFFERED ON AN EMPTY MATRIX AND THAT IS
-        // DELIBERATE — the difference from the deleted Select Broker button,
-        // whose `count > 0` term existed because appointing from an empty list
-        // is meaningless. Recording a preferred broker before any response has
-        // arrived is not meaningless; it is the normal case.
-        expect(buttonLabels(element)).toEqual([
-            'Add Broker Response',
-            'Add Preferred Broker'
-        ]);
-    });
-
-    it('🔴 WIRE ERROR BRANCH: no broker button, and the error banner is what the user sees', async () => {
-        const element = createComponent();
-
-        getSubmissions.error();
-        await Promise.resolve();
-
-        // The error branch sets `_data = []`. Offering to replace a broker from a
-        // list that failed to load is offering to choose blind.
-        expect(replaceBtn(element)).toBeNull();
-        expect(selectBtn(element)).toBeNull();
-        // ⚠ GUARD THE GUARD: the card genuinely rendered, so the two absences
-        // above are real absences rather than an unrendered component. This is
-        // the assertion the three vacuous tests lacked.
-        expect(element.shadowRoot.querySelector('.matrix-error')).not.toBeNull();
-        expect(buttonLabels(element)).toEqual([
-            'Add Broker Response',
-            'Add Preferred Broker'
-        ]);
-    });
-
-    it('REPLACE: opens the modal with ONLY the backups and names the incumbent', async () => {
-        const element = createComponent();
-
-        getSubmissions.emit(SUBMISSIONS);
-        await Promise.resolve();
-
-        replaceBtn(element).click();
-        await flushPromises();
-
-        expect(BovReplaceBrokerModal.open).toHaveBeenCalledTimes(1);
-        const args = BovReplaceBrokerModal.open.mock.calls[0][0];
-        expect(args.dispositionId).toBe(RECORD_ID);
-        expect(args.currentBroker).toBe('Colliers International');
-        expect(args.isFirstAppointment).toBe(false);
-        // The Selected row is excluded — promoting the incumbent to itself is not
-        // an operation. Options are composed here, from the SAME payload that
-        // draws the rows, so the modal cannot show a different valuation.
-        expect(args.backupOptions).toEqual([
-            {
-                label: 'JLL — John Roe · $11.0M · Score 71 · BOV-0002',
-                value: 'a0X010000000002'
-            }
-        ]);
-    });
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // 🔴 THE EIGHT SELECT-BROKER TESTS, ACCOUNTED FOR ONE BY ONE (2026-08-24).
-    //
-    // All eight clicked `.matrix-select` and broke loudly on `null.click()`.
-    // What happened to each, so nothing is "lost" silently:
-    //
-    //  1. `SELECT: opens the SAME modal bundle in first-appointment mode with
-    //     EVERY submission`               DELETED. It asserted the behaviour of
-    //     a button that no longer exists. `isFirstAppointment: true` is still
-    //     supported by c/bovReplaceBrokerModal and by the Apex behind it — this
-    //     component simply has no route to it any more, so there is nothing here
-    //     to test. It is NOT dead server code: c/brokerListing still opens that
-    //     modal from the Active Listing stage.
-    //  2. `a null score renders an EM DASH`     RE-HOMED onto Replace, below.
-    //  3. `two brokers with an IDENTICAL name`  RE-HOMED onto Replace, below.
-    //  4. `SELECT SUCCESS … STICKY`             DELETED — `REPLACE SUCCESS`
-    //     below asserts the identical shape (server message verbatim, sticky
-    //     mode, refreshApex with the wire result) through the SAME
-    //     `_openBrokerModal`, which is now that method's only caller.
-    //  5. `SELECT CANCELLED`                    DELETED — `REPLACE CANCELLED`.
-    //  6. `SELECT: fails to OPEN`               DELETED — `REPLACE: fails to
-    //     OPEN` covers it; the distinct-title assertion it carried existed only
-    //     to prove two callers were reaching one method, and there is one now.
-    //  7. `SELECT: never navigates`             RE-HOMED onto Replace, below —
-    //     "no header action navigates" is still a live rule and was, before this
-    //     change, pinned for Add Response and Select but NOT for Replace.
-    //  8. `REPLACE BROKER is HIDDEN … SELECT BROKER takes its place` — rewritten
-    //     above with the other visibility tests.
-    // ─────────────────────────────────────────────────────────────────────────
-
-    it('🔴 REPLACE: a null score renders an EM DASH, never 0 (re-homed from SELECT)', async () => {
-        const element = createComponent();
-
-        getSubmissions.emit(DUPLICATE_BROKERS_WITH_INCUMBENT());
-        await Promise.resolve();
-
-        replaceBtn(element).click();
-        await flushPromises();
-
-        const labels = BovReplaceBrokerModal.open.mock.calls[0][0].backupOptions.map(
-            (o) => o.label
-        );
-        // `0` is a real and terrible score; printing it for "not computed" would
-        // tell the user something false about the broker on that line. Still true
-        // after the formula conversion: a null score means the parent carries no
-        // Asking_Price__c, not that the broker scored nothing.
-        expect(labels[0]).toContain('Score —');
-        expect(labels[0]).not.toContain('Score 0');
-    });
-
-    it('🔴 REPLACE: two brokers with an IDENTICAL name and firm are still distinguishable (re-homed from SELECT)', async () => {
-        const element = createComponent();
-
-        getSubmissions.emit(DUPLICATE_BROKERS_WITH_INCUMBENT());
-        await Promise.resolve();
-
-        replaceBtn(element).click();
-        await flushPromises();
-
-        const labels = BovReplaceBrokerModal.open.mock.calls[0][0].backupOptions.map(
-            (o) => o.label
-        );
-        // The falsifier for "firm alone is enough". These two rows share the firm,
-        // the contact, the amount and the cap rate — this org really does hold six
-        // such Contact pairs. The submission's own auto-number is what separates
-        // them, and without it the user picks at random between two identical lines.
-        expect(labels).toHaveLength(2);
-        expect(labels[0]).not.toBe(labels[1]);
-        expect(labels[0]).toContain('BOV-0011');
-        expect(labels[1]).toContain('BOV-0012');
-    });
-
-    it('REPLACE: never navigates (re-homed from SELECT)', async () => {
-        const element = createComponent();
-        const navHandler = jest.fn();
-        element.addEventListener('navigate', navHandler);
-
-        getSubmissions.emit(SUBMISSIONS);
-        await Promise.resolve();
-
-        replaceBtn(element).click();
-        await flushPromises();
-
-        // Every header action opens a LightningModal over this page. The one
-        // navigation this component performs is the "View All" FOOTER link.
-        expect(navHandler).not.toHaveBeenCalled();
-    });
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // ADD PREFERRED BROKER (2026-08-24)
-    // ─────────────────────────────────────────────────────────────────────────
-
-    it('🔴 ADD PREFERRED: opens the SAME add-response bundle with isPreferred TRUE', async () => {
-        const element = createComponent();
-
-        getSubmissions.emit(SUBMISSIONS);
-        await Promise.resolve();
-
-        preferredBtn(element).click();
-        await flushPromises();
-
-        // 🔴 THE SAME BUNDLE, NOT A SECOND ONE. Forking c/bovAddResponseModal
-        // would fork its field set, both of its submit paths, its
-        // validation-rule error surface and its create-only contract.
-        expect(BovAddResponseModal.open).toHaveBeenCalledTimes(1);
-        expect(BovReplaceBrokerModal.open).not.toHaveBeenCalled();
-
-        const args = BovAddResponseModal.open.mock.calls[0][0];
-        expect(args.dispositionId).toBe(RECORD_ID);
-        // 🔴 THE ONE ARGUMENT THAT MAKES IT A PREFERRED BROKER. Without it the
-        // dialog saves an ordinary Backup response into the matrix below and
-        // says "saved" — there is no other signal anywhere that it went wrong.
-        expect(args.isPreferred).toBe(true);
-        // The dialog's announced title. The user asked for this string by name.
-        expect(args.label).toBe('Add Preferred Broker');
-        expect(typeof args.description).toBe('string');
-        expect(args.description.length).toBeGreaterThan(0);
-    });
-
-    it('🔴 ADD RESPONSE passes isPreferred FALSE — the default path is not the preferred path', async () => {
-        const element = createComponent();
-
-        getSubmissions.emit(SUBMISSIONS);
-        await Promise.resolve();
-
-        addBtn(element).click();
-        await flushPromises();
-
-        const args = BovAddResponseModal.open.mock.calls[0][0];
-        // ⚠ EXPLICIT `false`, NOT `undefined`. Both produce the response mode in
-        // the modal, but asserting the value pins that the two buttons pass
-        // DIFFERENT configs through one shared `_openAddModal` — the failure
-        // this catches is a copy-paste that hardcodes `true` for both.
-        expect(args.isPreferred).toBe(false);
-        expect(args.label).toBe('Add Broker Response');
-    });
-
-    it('ADD PREFERRED SUCCESS: toasts in PREFERRED wording, then refreshes THIS wire', async () => {
-        BovAddResponseModal.open.mockResolvedValue({
-            recordId: 'a0X010000000031AAA',
-            name: 'BOV-0031'
-        });
-
-        const element = createComponent();
-        const toastHandler = jest.fn();
-        element.addEventListener('lightning__showtoast', toastHandler);
-
-        getSubmissions.emit(SUBMISSIONS);
-        await Promise.resolve();
-
-        preferredBtn(element).click();
-        await flushPromises();
-
-        expect(toastHandler).toHaveBeenCalledTimes(1);
-        const toast = toastHandler.mock.calls[0][0].detail;
-        // 🔴 NOT "Broker response logged". The two buttons put the record in
-        // DIFFERENT CARDS on this page, and telling a user their "broker
-        // response" was logged when it went to the card above is how a support
-        // ticket starts.
-        expect(toast.title).toBe('Preferred broker added');
-        expect(toast.message).toContain('BOV-0031');
-        expect(toast.message).toContain('preferred');
-        expect(toast.variant).toBe('success');
-
-        // 🔴 THE REFRESH IS WHAT MAKES THE PREFERRED CARD APPEAR AT ALL — that
-        // card is gated on there being a preferred broker, and it learns that
-        // from this wire. Without this, the user saves and watches nothing
-        // happen.
-        expect(refreshApex).toHaveBeenCalledTimes(1);
-        expect(refreshApex.mock.calls[0][0]).toHaveProperty('data');
-    });
-
-    it('ADD PREFERRED CANCELLED: no toast and no refresh', async () => {
-        BovAddResponseModal.open.mockResolvedValue(undefined);
-
-        const element = createComponent();
-        const toastHandler = jest.fn();
-        element.addEventListener('lightning__showtoast', toastHandler);
-
-        getSubmissions.emit(SUBMISSIONS);
-        await Promise.resolve();
-
-        preferredBtn(element).click();
-        await flushPromises();
-
-        expect(toastHandler).not.toHaveBeenCalled();
-        expect(refreshApex).not.toHaveBeenCalled();
-    });
-
-    it('ADD PREFERRED: a modal that fails to OPEN toasts its OWN title and does not refresh', async () => {
-        BovAddResponseModal.open.mockRejectedValue(
-            new Error('modal layer unavailable')
-        );
-
-        const element = createComponent();
-        const toastHandler = jest.fn();
-        element.addEventListener('lightning__showtoast', toastHandler);
-
-        getSubmissions.emit(SUBMISSIONS);
-        await Promise.resolve();
-
-        preferredBtn(element).click();
-        await flushPromises();
-
-        expect(toastHandler).toHaveBeenCalledTimes(1);
-        // Distinct from the add-response title. The two buttons share one
-        // implementation, so a title collision here would mean the config object
-        // is not actually reaching `_openAddModal`.
-        expect(toastHandler.mock.calls[0][0].detail.title).toBe(
-            'Could not open the preferred broker dialog'
-        );
-        expect(refreshApex).not.toHaveBeenCalled();
-    });
-
-    it('ADD PREFERRED: never navigates', async () => {
-        const element = createComponent();
-        const navHandler = jest.fn();
-        element.addEventListener('navigate', navHandler);
-
-        getSubmissions.emit(SUBMISSIONS);
-        await Promise.resolve();
-
-        preferredBtn(element).click();
-        await flushPromises();
-
-        expect(navHandler).not.toHaveBeenCalled();
-    });
-
-    it('🔴 ADD PREFERRED BROKER is HIDDEN once one exists — exactly one per disposition', async () => {
-        const element = createComponent();
-
-        getSubmissions.emit(WITH_PREFERRED);
-        await Promise.resolve();
-
-        // 🔴 HIDDEN, NOT DISABLED. There is no server-side uniqueness guard on
-        // Is_Preferred_Broker__c — no validation rule, no trigger — so this
-        // getter is the ONLY thing enforcing "exactly one". A button that is
-        // always offered and never refused would create a second one.
-        expect(preferredBtn(element)).toBeNull();
-        expect(buttonLabels(element)).not.toContain('Add Preferred Broker');
-        // The other two are untouched by the preferred row.
-        expect(buttonLabels(element)).toEqual([
-            'Add Broker Response',
-            'Replace Broker'
-        ]);
-    });
-
-    it('🔴 the preferred row is EXCLUDED from the matrix instance — rows, count and the picker', async () => {
+    it('🔴 the preferred row is EXCLUDED from the matrix instance — rows and count', async () => {
         const element = createComponent();
 
         getSubmissions.emit(WITH_PREFERRED);
@@ -972,24 +407,35 @@ describe('c-bov-comparison-matrix', () => {
             element.shadowRoot.querySelector('span[slot="title"]').textContent
         ).toBe('BOV Comparison Matrix (2)');
 
-        replaceBtn(element).click();
-        await flushPromises();
+        // 🔴 THE THIRD ASSERTION THAT USED TO BE HERE MOVED, IT WAS NOT DROPPED.
+        // This test also clicked Replace Broker and proved the preferred row was
+        // excluded from the picker's `backupOptions`. That button — and the
+        // `_backupOptions` getter behind it — now live on `c/bovBrokerPanel`,
+        // and the assertion moved to that bundle's suite verbatim. Leaving a
+        // dead copy here would have needed a modal mock in a bundle that no
+        // longer imports one.
+    });
 
-        // 🔴 AND OUT OF THE REPLACE PICKER. ⚠ THE REASON CHANGED 2026-08-24 AND
-        // THE ASSERTION DID NOT. It used to be "replaceSelectedBroker knows
-        // nothing about Is_Preferred_Broker__c and would appoint this row,
-        // putting a broker with NO BOV amount into Broker_Finalize_Approval".
-        // Appointing a preferred broker is now the INTENDED outcome, so that is
-        // no longer a hazard. The row is excluded here because this fixture is
-        // the pre-promotion / locked state — the preferred row is not the
-        // incumbent yet, and the picker's job is to offer SCORED alternatives to
-        // whoever holds the slot, not to offer the preferred broker as one of
-        // them. See the APPOINTED PREFERRED tests below for the steady state,
-        // where it is excluded as the incumbent instead.
-        const options =
-            BovReplaceBrokerModal.open.mock.calls[0][0].backupOptions;
-        expect(options.map((o) => o.value)).toEqual(['a0X010000000002']);
-        expect(options.map((o) => o.value)).not.toContain(PREFERRED_ROW.id);
+    it('🔴 refreshData() re-provisions THIS instance — and needs the UN-destructured wire result', async () => {
+        // 🔴 THE ONLY FALSIFIER FOR THE `_wired` INVARIANT. `refreshApex` cannot
+        // re-provision from a `{ data, error }` pair, so a "tidying" edit to
+        // `wiredSubmissions({ data, error })` compiles, leaves every render test
+        // in this file green, and silently turns the panel's post-save refresh
+        // into a no-op — the card keeps showing pre-save rows until a reload,
+        // which is the exact bug the in-place-modal rework exists to prevent.
+        const element = createComponent();
+
+        getSubmissions.emit(SUBMISSIONS);
+        await Promise.resolve();
+
+        element.refreshData();
+
+        expect(refreshApex).toHaveBeenCalledTimes(1);
+        // ⚠ ASSERTED ON THE ARGUMENT, NOT JUST THE CALL COUNT. A destructured
+        // wire would still call refreshApex — with `undefined`.
+        const passed = refreshApex.mock.calls[0][0];
+        expect(passed).toBeDefined();
+        expect(passed.data).toEqual(SUBMISSIONS);
     });
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -1039,29 +485,80 @@ describe('c-bov-comparison-matrix', () => {
         expect(table.data[0].contactName).toBe('Ada Lin');
     });
 
-    it('🔴 PREFERRED CARD: NO BUTTONS AT ALL, and no action region to hold one', async () => {
-        const element = preferredInstance();
+    /**
+     * ══════════════════════════════════════════════════════════════════════════
+     * 🔴 WIDENED FROM ONE MODE TO BOTH ON 2026-08-24 — OR IT WOULD BE VACUOUS.
+     * ══════════════════════════════════════════════════════════════════════════
+     * This test was `PREFERRED CARD: NO BUTTONS AT ALL`, and it proved something
+     * real while the MATRIX instance carried three buttons and only the preferred
+     * instance suppressed them with `hide-actions`. All three buttons have now
+     * moved to `c/bovBrokerPanel`, so a preferred-instance-only assertion passes
+     * whatever this template does — it is exactly the "deleting an element
+     * vacuates the absence pin" trap: green, and blind.
+     *
+     * Run over BOTH modes it is falsifiable again, and it is now the pin for the
+     * whole button move: re-add any `lightning-button` to this template, in
+     * either mode, and this reds.
+     */
+    it.each([
+        ['MATRIX instance', () => createComponent()],
+        ['PREFERRED instance', () => preferredInstance()]
+    ])(
+        '🔴 NO BUTTONS AND NO ACTION REGION — %s (the buttons live on c-bov-broker-panel)',
+        async (_label, make) => {
+            const element = make();
 
-        getSubmissions.emit(WITH_PREFERRED);
-        await Promise.resolve();
+            getSubmissions.emit(WITH_PREFERRED);
+            await Promise.resolve();
 
-        // Guard the guard first: the card really is on screen, so the emptiness
-        // below is an absence of buttons and not an absence of card.
-        expect(element.shadowRoot.querySelector('lightning-card')).not.toBeNull();
+            // Guard the guard first: the card really is on screen, so the
+            // emptiness below is an absence of buttons and not of card.
+            expect(
+                element.shadowRoot.querySelector('lightning-card')
+            ).not.toBeNull();
 
-        // 🔴 ZERO. Not "no Replace Broker" — zero buttons of any kind.
-        expect(buttonLabels(element)).toEqual([]);
-        expect(addBtn(element)).toBeNull();
-        expect(replaceBtn(element)).toBeNull();
-        expect(preferredBtn(element)).toBeNull();
-        expect(selectBtn(element)).toBeNull();
-        // ⚠ THE SLOT ITSELF IS GONE, NOT JUST ITS CONTENTS. An empty
-        // `<div slot="actions">` still occupies lightning-card's header action
-        // region and still renders an empty button-group inside it.
-        expect(element.shadowRoot.querySelector('div[slot="actions"]')).toBeNull();
-        expect(
-            element.shadowRoot.querySelector('lightning-button-group')
-        ).toBeNull();
+            // 🔴 ZERO. Not "no Replace Broker" — zero buttons of any kind, and
+            // none of the four historical class hooks.
+            expect(buttonLabels(element)).toEqual([]);
+            expect(addBtn(element)).toBeNull();
+            expect(replaceBtn(element)).toBeNull();
+            expect(preferredBtn(element)).toBeNull();
+            expect(selectBtn(element)).toBeNull();
+
+            // ⚠ THE SLOT ITSELF IS GONE, NOT JUST ITS CONTENTS. An empty
+            // `<div slot="actions">` still occupies lightning-card's header
+            // action region and still renders an empty button-group inside it.
+            expect(
+                element.shadowRoot.querySelector('[slot="actions"]')
+            ).toBeNull();
+            expect(
+                element.shadowRoot.querySelector('lightning-button-group')
+            ).toBeNull();
+        }
+    );
+
+    it('🔴 the bundle no longer HAS a hideActions input — the flag went with the buttons', () => {
+        // ⚠ THE PUBLIC API IS READ OFF THE ELEMENT'S PROTOTYPE, and the element
+        // is built WITHOUT `Object.assign`. MEASURED, because the obvious form
+        // is wrong: `Object.assign(element, { hideActions: true })` defines a
+        // plain OWN property whatever the component declares, so
+        // `expect(element.hideActions).toBeUndefined()` reads back `true` and
+        // reds on a component that has no such `@api` at all.
+        //
+        // The point is not that the flag was unnecessary: it is that a flag
+        // which suppresses a region that no longer exists is a false
+        // reassurance. If `@api hideActions` is reinstated, this reds.
+        const element = createElement('c-bov-comparison-matrix', {
+            is: BovComparisonMatrix
+        });
+        const proto = Object.getPrototypeOf(element);
+
+        expect('hideActions' in proto).toBe(false);
+        // Guard the guard: two `@api` members that DO survive, read the same
+        // way. Without these the assertion above passes on a typo in the
+        // property name, or on a component that failed to define any API.
+        expect('preferredOnly' in proto).toBe(true);
+        expect('refreshData' in proto).toBe(true);
     });
 
     it('🔴 PREFERRED CARD: NO STATUS COLUMN — and the matrix still has one', async () => {
@@ -1094,96 +591,6 @@ describe('c-bov-comparison-matrix', () => {
         expect(columnLabels(control)).toHaveLength(7);
     });
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // 🔴 THE PREFERRED BROKER HOLDS THE SELECTED SLOT (user decision, 2026-08-24)
-    //
-    // The scored field is all Backup; the appointed broker is the preferred one.
-    // These four tests exist because the FIRST implementation of `_selected`
-    // narrowed it to `_visible` and NOT ONE EXISTING TEST WENT RED when that was
-    // widened back — the suite was blind to this whole state.
-    // ─────────────────────────────────────────────────────────────────────────
-
-    it('🔴 APPOINTED PREFERRED: REPLACE BROKER still renders on the matrix — the only route to swap an appointed broker', async () => {
-        const element = createComponent();
-
-        getSubmissions.emit(PREFERRED_APPOINTED);
-        await Promise.resolve();
-
-        // 🔴 THE FALSIFIER FOR `_selected` READING `_data` RATHER THAN `_visible`.
-        // Every row the MATRIX shows is Backup here, so a `_visible`-scoped
-        // `_selected` is undefined and this button silently disappears. The
-        // preferred card above has no buttons by requirement, so that would leave
-        // no way anywhere in the UI to replace an appointed broker.
-        expect(replaceBtn(element)).not.toBeNull();
-        expect(buttonLabels(element)).toEqual([
-            'Add Broker Response',
-            'Replace Broker'
-        ]);
-        // Add Preferred Broker stays hidden — one preferred broker already exists.
-        expect(preferredBtn(element)).toBeNull();
-    });
-
-    it('🔴 APPOINTED PREFERRED: the Replace dialog NAMES the preferred broker as the incumbent', async () => {
-        const element = createComponent();
-
-        getSubmissions.emit(PREFERRED_APPOINTED);
-        await Promise.resolve();
-
-        replaceBtn(element).click();
-        await flushPromises();
-
-        const args = BovReplaceBrokerModal.open.mock.calls[0][0];
-        // The incumbent is a row this card does not display. Naming it anyway is
-        // the point: the user is being told which broker they are replacing, and
-        // "undefined" or a scored broker's name would both be lies.
-        expect(args.currentBroker).toBe('Cushman & Wakefield');
-        expect(args.isFirstAppointment).toBe(false);
-    });
-
-    it('🔴 APPOINTED PREFERRED: the picker offers the scored responses and NOT the incumbent', async () => {
-        const element = createComponent();
-
-        getSubmissions.emit(PREFERRED_APPOINTED);
-        await Promise.resolve();
-
-        replaceBtn(element).click();
-        await flushPromises();
-
-        const options =
-            BovReplaceBrokerModal.open.mock.calls[0][0].backupOptions;
-        // BOTH scored rows are offered — neither is Selected any more.
-        expect(options.map((o) => o.value)).toEqual([
-            'a0X010000000001',
-            'a0X010000000002'
-        ]);
-        // ⚠ THE PREFERRED ROW IS EXCLUDED FOR A REASON THAT CHANGED ON
-        // 2026-08-24. It is no longer "a preferred row must never be promoted to
-        // Selected" — it already IS Selected. It is excluded because it is the
-        // INCUMBENT, which is what this picker has always excluded: promoting a
-        // broker to itself is not an operation and the server refuses it.
-        expect(options.map((o) => o.value)).not.toContain(PREFERRED_ROW.id);
-    });
-
-    it('🔴 APPOINTED PREFERRED: the preferred card STILL has no buttons, even holding the slot', async () => {
-        const element = preferredInstance();
-
-        getSubmissions.emit(PREFERRED_APPOINTED);
-        await Promise.resolve();
-
-        // ⚠ THIS IS THE OTHER HALF OF WIDENING `_selected`. `canReplaceBroker` is
-        // now TRUE on this instance (a Selected row is in `_data`), so the only
-        // thing keeping the card button-free is `hideActions`. If that ever
-        // regressed, a Replace Broker button would appear on the preferred card —
-        // and its picker would be built from `_visible`, i.e. preferred rows only.
-        expect(element.shadowRoot.querySelector('lightning-card')).not.toBeNull();
-        expect(buttonLabels(element)).toEqual([]);
-        expect(element.shadowRoot.querySelector('div[slot="actions"]')).toBeNull();
-        // And it shows the appointed broker, with no Status column to say so.
-        const table = element.shadowRoot.querySelector('c-list-datatable');
-        expect(table.data.map((r) => r.id)).toEqual([PREFERRED_ROW.id]);
-        expect(columnLabels(element)).not.toContain('Status');
-    });
-
     it('PREFERRED CARD is accessible', async () => {
         const element = preferredInstance();
 
@@ -1191,78 +598,6 @@ describe('c-bov-comparison-matrix', () => {
         await Promise.resolve();
 
         await expect(element).toBeAccessible();
-    });
-
-    it('🔴 REPLACE SUCCESS: toasts the SERVER message sticky, then refreshes THIS wire', async () => {
-        const serverMessage =
-            'JLL is now the selected broker. A fresh broker approval is required.';
-        BovReplaceBrokerModal.open.mockResolvedValue({ message: serverMessage });
-
-        const element = createComponent();
-        const toastHandler = jest.fn();
-        element.addEventListener('lightning__showtoast', toastHandler);
-
-        getSubmissions.emit(SUBMISSIONS);
-        await Promise.resolve();
-
-        replaceBtn(element).click();
-        await flushPromises();
-
-        expect(toastHandler).toHaveBeenCalledTimes(1);
-        const toast = toastHandler.mock.calls[0][0].detail;
-        // Verbatim: the "fresh approval is required" warning is the SERVER's sentence.
-        expect(toast.message).toBe(serverMessage);
-        expect(toast.variant).toBe('warning');
-        // Sticky, because it describes a consequence the user must act on.
-        expect(toast.mode).toBe('sticky');
-
-        // 🔴 The swap is imperative Apex DML on records this cacheable wire already
-        // holds, so LDS has no idea they changed. Asserted with the WIRE RESULT
-        // OBJECT, which is what pins the un-destructured `wiredSubmissions(result)`
-        // shape — the only thing refreshApex can actually re-provision.
-        expect(refreshApex).toHaveBeenCalledTimes(1);
-        const passed = refreshApex.mock.calls[0][0];
-        expect(passed).toBeDefined();
-        expect(passed).toHaveProperty('data');
-    });
-
-    it('REPLACE CANCELLED: no toast and no refresh', async () => {
-        BovReplaceBrokerModal.open.mockResolvedValue(undefined);
-
-        const element = createComponent();
-        const toastHandler = jest.fn();
-        element.addEventListener('lightning__showtoast', toastHandler);
-
-        getSubmissions.emit(SUBMISSIONS);
-        await Promise.resolve();
-
-        replaceBtn(element).click();
-        await flushPromises();
-
-        expect(toastHandler).not.toHaveBeenCalled();
-        expect(refreshApex).not.toHaveBeenCalled();
-    });
-
-    it('REPLACE: a modal that fails to OPEN toasts a distinct message and does not refresh', async () => {
-        BovReplaceBrokerModal.open.mockRejectedValue(
-            new Error('modal layer unavailable')
-        );
-
-        const element = createComponent();
-        const toastHandler = jest.fn();
-        element.addEventListener('lightning__showtoast', toastHandler);
-
-        getSubmissions.emit(SUBMISSIONS);
-        await Promise.resolve();
-
-        replaceBtn(element).click();
-        await flushPromises();
-
-        expect(toastHandler).toHaveBeenCalledTimes(1);
-        expect(toastHandler.mock.calls[0][0].detail.title).toBe(
-            'Could not open the replace dialog'
-        );
-        expect(refreshApex).not.toHaveBeenCalled();
     });
 
     it('is accessible', async () => {

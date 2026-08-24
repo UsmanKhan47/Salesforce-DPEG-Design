@@ -76,6 +76,70 @@ private class BovSubmissionTriggerHandlerTest {
      * .replaceSelectedBroker` cleared the challenger's own Approval_Status__c and it was just
      * re-approved — must stamp the new broker name and NOT drag the sale backwards.
      */
+    /**
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * 🔴 THE ROUTING VERIFICATION THE TWO-SLOT MODEL MADE NECESSARY (2026-08-24).
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * `Broker_Finalize_Approval`'s entry criterion is `Submission_Status__c = 'Selected'`, and a
+     * disposition may now hold TWO Selected rows — the preferred broker and the scored winner. So
+     * the question that had to be answered before shipping was: can BOTH advance the parent, or
+     * stamp `Selected_Broker__c` with the wrong broker?
+     *
+     * **NO — AND THIS TEST IS THE PROOF RATHER THAN THE ARGUMENT.** The detection here is an
+     * `Approval_Status__c` TRANSITION, not a status: the sibling's field is never written, so it
+     * fails the `prior` test and is never even a candidate. Being Selected is necessary and never
+     * sufficient. (`DispositionApprovalService` independently submits only ONE of the two, and
+     * `handleApprovedSelections`' own header records all three reasons.)
+     *
+     * ⚠ THE FIXTURE MUST HAVE BOTH SLOTS GENUINELY FILLED, or this passes vacuously against a
+     * version that stamps every Selected row. The precondition asserts it, and the two brokers
+     * carry DIFFERENT firm names so "the right one" is distinguishable from "one of them".
+     */
+    @isTest
+    static void approvingOneOfTwoSelectedRows_stampsOnlyTheApprovedBroker() {
+        Disposition__c d = dispositionAt('BOV Outreach');
+        BOV_Submission__c scored = TestDataFactory.createBovSubmission(d.Id, false);
+        scored.Broker__c = TestDataFactory.createBrokerContactWithFirm('CBRE - Scored', true).Id;
+        scored.Submission_Status__c = 'Selected';
+        insert scored;
+        BOV_Submission__c preferred = TestDataFactory.createBovSubmission(d.Id, false);
+        preferred.Broker__c = TestDataFactory.createBrokerContactWithFirm('JLL - Preferred', true).Id;
+        preferred.Is_Preferred_Broker__c = true;
+        preferred.BOV_Amount__c = null;
+        preferred.Cap_Rate__c = null;
+        preferred.Commission_Rate__c = null;
+        preferred.Days_To_Market__c = null;
+        preferred.Hist_Success_Rate__c = null;
+        insert preferred;
+
+        Map<Id, BOV_Submission__c> before = new Map<Id, BOV_Submission__c>([
+            SELECT Id, Submission_Status__c, Is_Preferred_Broker__c
+            FROM BOV_Submission__c WHERE Disposition__c = :d.Id WITH SYSTEM_MODE
+        ]);
+        Assert.areEqual('Selected', before.get(scored.Id).Submission_Status__c,
+            '🔴 PREMISE: the non-preferred row is Selected...');
+        Assert.areEqual('Selected', before.get(preferred.Id).Submission_Status__c,
+            '🔴 ...AND SO IS THE PREFERRED ROW. Both match Broker_Finalize_Approval s entry '
+            + 'criterion, which is the whole hazard being tested. A Backup here makes this test '
+            + 'vacuous.');
+
+        Test.startTest();
+        // ONLY the preferred row is approved — exactly what DispositionApprovalService routes.
+        update new BOV_Submission__c(Id = preferred.Id, Approval_Status__c = 'Approved');
+        Test.stopTest();
+
+        Disposition__c after = reread(d.Id);
+        Assert.areEqual('JLL - Preferred', after.Selected_Broker__c,
+            '🔴 THE PARENT NAMES THE BROKER THAT WAS ACTUALLY APPROVED. "CBRE - Scored" here means '
+            + 'the handler is reacting to the Selected STATUS rather than to the approval '
+            + 'TRANSITION, and the sale would be stamped with a broker nobody approved.');
+        Assert.areEqual('Broker Selection', after.Disposition_Stage__c,
+            'and the stage advances once, for that one approval');
+        Assert.areEqual(new List<String>(),
+            BovSubmissionTriggerHandler.lastRunParentWriteFailures,
+            'with no refused parent write hiding behind the assertions above');
+    }
+
     @isTest
     static void guardBlocksAReApprovalAfterTheStageAlreadyAdvanced() {
         Disposition__c d = dispositionAt('NDA'); // already advanced well past BOV Outreach

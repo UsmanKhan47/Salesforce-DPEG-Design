@@ -8,8 +8,32 @@
     <template if:true={isBovOutreach}>
         <c-bov-outreach record-id={recordId}></c-bov-outreach>
     </template>
+    <!--
+      ═══════════════════════════════════════════════════════════════════════════════
+      🔴 ONE TAG, TWO MODES — THE STAGE DECISION IS MADE HERE (2026-08-24).
+      ═══════════════════════════════════════════════════════════════════════════════
+      At `Offer Selection` the card shows ONLY the offer that was put forward for approval
+      (`Is_Selected__c = true`) and its "+ Log Offer" button is DISABLED. At the other three
+      offer stages it lists every offer with the button enabled, exactly as before.
+
+      🔴 A BOUND GETTER, NOT A BARE ATTRIBUTE, AND NOT A SECOND `<template>` BRANCH.
+        • `selected-only` bare would pass boolean `true` unconditionally — wrong at three of
+          the four stages.
+        • `selected-only=""` passes the EMPTY STRING, which is FALSY. The child reads
+          `=== true`, so that one character silently restores the old behaviour with nothing
+          on the page to show it. Binding a real boolean getter makes both typos impossible.
+        • A second `<template if:true={isOfferSelection}>` branch would mean two tags to keep
+          in step, and `querySelector` in the tests could not tell which one rendered.
+
+      ⚠ THE STAGE LIST STAYS IN ONE PLACE. `isOfferSelection` is a NARROWING of
+      `isOfferStage`, not a parallel list — see the JS, where the shared constant is what
+      keeps the two from drifting.
+    -->
     <template if:true={isOfferStage}>
-        <c-disposition-offer record-id={recordId}></c-disposition-offer>
+        <c-disposition-offer
+            record-id={recordId}
+            selected-only={isOfferSelection}
+        ></c-disposition-offer>
     </template>
     <template if:true={isClosing}>
         <c-disposition-closing record-id={recordId}></c-disposition-closing>

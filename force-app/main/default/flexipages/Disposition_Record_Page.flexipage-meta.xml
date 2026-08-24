@@ -1327,16 +1327,40 @@
              `recordId` property, so declaring it here fails the same way bovBrokerChangeHistory
              did. recordId is still supplied implicitly (JS has `@api recordId`).
              2026-08-24: added the same Disposition Readiness visibilityRule as its sibling
-             bovBrokerChangeHistory immediately above - same shape, same reasoning. -->
+             bovBrokerChangeHistory immediately above - same shape, same reasoning.
+             2026-08-24 (later same day): EXTENDED to also hide at BOV Outreach, Broker Selection
+             and NDA, so this card now renders only from Release Materials onward. This edit is
+             SCOPED TO THIS COMPONENT ONLY - bovBrokerChangeHistory immediately above keeps its
+             original single-criteria 'NE Disposition Readiness' rule unchanged; the two cards no
+             longer share identical visibility. booleanFilter/multi-criteria shape copied from the
+             Submit_* Dynamic Actions above (e.g. Submit_Broker_Selection's "1 AND 2 AND 3 AND 4"),
+             the proven multi-criteria form on this page; each new criterion is a plain NE add
+             following the existing single criterion's operator/shape. -->
         <itemInstances>
             <componentInstance>
                 <componentName>dispositionBuyerTimeline</componentName>
                 <identifier>dispositionBuyerTimeline</identifier>
                 <visibilityRule>
+                    <booleanFilter>1 AND 2 AND 3 AND 4</booleanFilter>
                     <criteria>
                         <leftValue>{!Record.Disposition_Stage__c}</leftValue>
                         <operator>NE</operator>
                         <rightValue>Disposition Readiness</rightValue>
+                    </criteria>
+                    <criteria>
+                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
+                        <operator>NE</operator>
+                        <rightValue>BOV Outreach</rightValue>
+                    </criteria>
+                    <criteria>
+                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
+                        <operator>NE</operator>
+                        <rightValue>Broker Selection</rightValue>
+                    </criteria>
+                    <criteria>
+                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
+                        <operator>NE</operator>
+                        <rightValue>NDA</rightValue>
                     </criteria>
                 </visibilityRule>
             </componentInstance>

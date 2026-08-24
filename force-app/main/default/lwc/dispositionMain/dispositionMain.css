@@ -1,9 +1,69 @@
-:host { display: block; }
+/*
+  ═════════════════════════════════════════════════════════════════════════════
+  🔴 THE STACK GAP LIVES HERE, ON :host — ONCE, FOR EVERY STAGE.
+  ═════════════════════════════════════════════════════════════════════════════
+  This component is a stage router: each `<template if:true={isSomeStage}>` in
+  dispositionMain.html drops a DIFFERENT set of feature cards straight into the
+  shadow root. A `<template>` is NOT an element, so those cards are all DIRECT
+  children of :host — which makes :host the one and only stacking container for
+  every stage, present and future.
+
+  ⚠ THE SEPARATION IS `gap`, AND IT IS MARKUP, NOT DECORATION. The LWC template
+  compiler discards whitespace-only text nodes between sibling elements, so with
+  `display: block` the cards render EDGE TO EDGE with literally nothing between
+  them (measured twice this week on c-bov-broker-change-history and
+  c-sell-meter-initiate-modal). Deleting the `gap` line below does not "reduce
+  spacing" — it removes ALL spacing, on every stage at once, and no rendered
+  text changes to show it. __tests__/dispositionMain.test.js pins the rule
+  against this stylesheet's SOURCE for exactly that reason.
+
+  🔴 DO NOT ADD PER-CARD MARGINS ON TOP OF THIS. They double up with the gap,
+  and a trailing margin on the last card leaves dead space above the page
+  footer. `.listing-row` below carried `margin-top: 16px` for precisely this job
+  when Active Listing was the only multi-card stage; it was REMOVED when the gap
+  landed, because the two together read 32px.
+
+  ═════════════════════════════════════════════════════════════════════════════
+  🔴 RESOLVED 2026-08-24 (LATER THE SAME DAY) — THE "KNOWN, ACCEPTED" GAP IS GONE.
+  ═════════════════════════════════════════════════════════════════════════════
+  This block used to read: "KNOWN, ACCEPTED: at BOV Outreach the first child is
+  the preferred-broker instance of c-bov-comparison-matrix, which self-gates on
+  `isVisible` and can render NOTHING. A zero-height flex item still counts as an
+  item, so with no preferred broker the matrix sits one gap lower than the top of
+  the region. … the alternative — gating the card from here — would mean this
+  router reading BOV rows it has no other reason to query."
+
+  BOTH HALVES ARE STILL TRUE AND THE SITUATION NO LONGER ARISES HERE. The two
+  matrix instances moved inside `c/bovBrokerPanel`, which mounts exactly ONE tag
+  in this branch. That component holds the BOV rows already — its three header
+  buttons' visibility rules read them — so IT can gate the preferred tag with
+  `lwc:if`, and an unrendered tag is not a flex item at all. The stack gap for
+  those two cards now lives in `bovBrokerPanel.css` on `.panel-stack`.
+
+  ⚠ THE RULE THAT PRODUCED THE DEFECT IS UNCHANGED AND STILL APPLIES TO EVERY
+  FUTURE CARD ADDED TO ANY BRANCH BELOW: a child that self-gates to nothing is
+  still a flex item, and there is no CSS escape (a custom element with an empty
+  template matches :empty whether it rendered a card or not). The fix is always
+  to not render the tag, which means the parent must know — do not "fix" it with
+  :empty, and do not give this router data to gate on. Move the decision to a
+  component that already has the data, as was done here.
+*/
+:host {
+    display: flex;
+    flex-direction: column;
+    /* --slds-g-spacing-4 = 1rem. Chosen because 1rem/16px is already this
+       page's rhythm: .wire-error's padding below uses the same token, and
+       .listing-row's column gap was a raw 16px. Not -3 (0.75rem) or -5
+       (1.5rem) — those would make the stack disagree with the cards' own
+       internal spacing. */
+    gap: var(--slds-g-spacing-4, 1rem);
+}
 .listing-row {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 16px;
-    margin-top: 16px;
+    /* Tokenised to the same step as the :host stack gap, so the two-up row
+       reads as part of the same rhythm rather than a second, similar value. */
+    gap: var(--slds-g-spacing-4, 1rem);
     align-items: start;
 }
 @media (max-width: 768px) {

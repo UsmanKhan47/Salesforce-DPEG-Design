@@ -25,6 +25,90 @@
 
             <template lwc:elseif={hasSummary}>
                 <!--
+                    🔴 THE SALE'S SUBJECT, AS CONTEXT — AND SINCE 2026-08-24 IT WEARS THE SAME ROW
+                    TREATMENT AS THE THREE DOCUMENT ROWS BELOW. Icon chip, bold label, right-aligned
+                    pill: the `.row-head` / `.row-left` / `.row-icon` / `.row-label` / `.pill`
+                    composition is REUSED VERBATIM, not approximated, so it reads as the first line
+                    of one stack rather than a bare sentence bolted above one. The JS getter argues
+                    the slot assignment (label "Property", pill = the asset NAME) at length.
+
+                    🔴 IT IS STILL NOT ONE OF THE `<ul>`'s ITEMS, AND THE OUTER HOOK IS
+                    `.asset-row`, NOT `.row`. Two separate reasons, both load-bearing:
+                      1. The list is named "Deal documents"; a property is not one, and putting it
+                         inside would make that accessible name a lie.
+                      2. `.row` / `[data-row]` / `[data-pill]` / `[data-icon]` are what the suite
+                         counts to prove there are exactly THREE document rows. Reusing those hooks
+                         here would inflate every one of those counts to four and quietly turn a
+                         set of real pins into noise. `.asset-row` shares `.row`'s box by sharing
+                         its declaration block in the stylesheet — one source of truth, no copy.
+
+                    Absent (or off-stage — see below) renders NOTHING: no placeholder, no em-dash,
+                    no dead link. That is the opposite of the three rows below, where an empty state
+                    is itself the information.
+
+                    🔴 `showPropertyRow` IS STAGE-GATED (`Disposition_Stage__c = 'Closing'`) AND
+                    FAILS CLOSED. The stage arrives on a SECOND wire (`getRecord`), so for the first
+                    tick after the card's own wire lands the stage is still unknown — and unknown
+                    renders nothing, so the row can never flash in and be pulled back out.
+
+                    The `<a>` carries a REAL `href` from NavigationMixin.GenerateUrl — that is
+                    what makes it keyboard-focusable and announced as a link — with
+                    `preventDefault()` in the shared handler so an in-app click stays a SPA
+                    transition. `handleOpenRecord` is REUSED VERBATIM: it reads
+                    `data-record-id` off `currentTarget`, which is exactly what this anchor
+                    carries, so the asset needs no second navigation path to drift from the
+                    rows’.
+                -->
+                <template lwc:if={showPropertyRow}>
+                    <div class="asset-row" data-asset-line>
+                        <div class="row-head">
+                            <span class="row-left">
+                                <!--
+                                    Decorative, exactly like the three document chips: the visible
+                                    "Property" label beside it already carries the meaning, and an
+                                    alternative-text here made a screen reader announce it twice.
+                                -->
+                                <span class="row-icon row-icon_property" data-asset-icon>
+                                    <lightning-icon
+                                        icon-name="utility:company"
+                                        size="x-small"
+                                        alternative-text=""
+                                    ></lightning-icon>
+                                </span>
+
+                                <template lwc:if={assetLink.hasLink}>
+                                    <a
+                                        class="row-label row-label_link"
+                                        data-asset-label
+                                        data-asset-link
+                                        data-record-id={assetLink.recordId}
+                                        href={assetLink.url}
+                                        title={assetLink.title}
+                                        onclick={handleOpenRecord}
+                                        >Property</a
+                                    >
+                                </template>
+                                <template lwc:else>
+                                    <span class="row-label row-label_muted" data-asset-label
+                                        >Property</span
+                                    >
+                                </template>
+                            </span>
+                            <!--
+                                THE PILL SLOT CARRIES THE ASSET NAME. On a document row the pill is
+                                the row's current VALUE (a status); a property's only value is which
+                                property it is. `pill_neutral` is the one tone on this card that
+                                asserts nothing — every other tone would read as a status the asset
+                                does not have. `pill_asset` adds the truncation defence `.row-label`
+                                already has, because a name is unbounded and a pill is `nowrap`.
+                            -->
+                            <span class="pill pill_neutral pill_asset" data-asset-pill
+                                >{assetLink.name}</span
+                            >
+                        </div>
+                    </div>
+                </template>
+                <!--
                     `role="list"` is NOT redundant next to `<ul>`: `list-style: none` makes WebKit
                     drop the implicit role, and `aria-label` is only exposed on a role that supports
                     naming. axe has no rule for this, so a green `toBeAccessible()` is not evidence

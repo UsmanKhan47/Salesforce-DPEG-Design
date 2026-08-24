@@ -19,10 +19,42 @@
  *    to the same value and read as "the button did nothing".
  * 3. THREE distinct empty-ish states are separated, because collapsing them is the classic defect
  *    here: LOADING (wire has not answered), NO OFFERS (wire answered with an empty list — an
- *    explanation, not an empty radio group), and LOAD ERROR (wire rejected). A component that
- *    shows "no offers yet" on a failed wire is telling the user something false.
+ *    explanation, not an empty table), and LOAD ERROR (wire rejected). A component that shows
+ *    "no offers yet" on a failed wire is telling the user something false.
  * 4. A failed submission KEEPS THE PANEL OPEN, unlike c/sellMeterInitiateModal. The refusals
  *    reachable here can be answered by picking a DIFFERENT offer, so the form is still useful.
+ *
+ * ═════════════════════════════════════════════════════════════════════════════
+ * 🔴 2026-08-24 — THE PICKER BECAME A TABLE. WHAT THAT DID TO THIS FILE.
+ * ═════════════════════════════════════════════════════════════════════════════
+ * The `lightning-radio-group` is gone; four aligned columns (Broker / Amount / Offer Date / Offer
+ * Number) plus a native `<input type="radio">` per row replace it, so a principal can compare bids
+ * instead of reading four facts run together in one string.
+ *
+ * ⚠ 13 OF THE 18 TESTS IN THE PREVIOUS VERSION OF THIS FILE DIED LOUDLY when the radio group was
+ * deleted (`TypeError: Cannot read properties of null`), which is the safe half. THREE SURVIVED
+ * GREEN AND VACUOUS and are the reason this header exists — LOADING, NO OFFERS and LOAD ERROR each
+ * asserted `expect(radio(element)).toBeNull()`, and after the deletion they passed **because the
+ * radio group does not exist anywhere in this component any more**, exactly as they would pass if
+ * the whole component had been deleted. All three are repointed below to assert the TABLE's
+ * absence, and each keeps a guard-the-guard assertion proving the branch it is about actually
+ * rendered. They were found by grepping the `radio()` helper, not by reading the runner's output —
+ * a green test is invisible there.
+ *
+ * ⚠ THE MOVE MADE SEVERAL PINS *STRONGER*, WHICH IS THE REASON THE TABLE IS HAND-ROLLED MARKUP
+ * RATHER THAN `lightning-datatable`. The four absence pins (T-NO-BUYER, T-NO-FINANCING,
+ * T-NO-PROSE, and the "never renders the literal string undefined" clauses) read
+ * `shadowRoot.textContent`. Under the old radio group the offer text lived in the STUB's
+ * `options` property and never reached the DOM, so those clauses were only ever fencing the
+ * surrounding markup. Against a real `<table>` they now read the actual rendered cells. Against a
+ * `lightning-datatable` — whose sfdx-lwc-jest stub renders an EMPTY TEMPLATE — they would have
+ * gone fully vacuous instead. Same for `@sa11y/jest`: axe can see this table's caption and its
+ * five `<th scope="col">`; it can see nothing at all inside a stub.
+ *
+ * 🔴 THE UNIQUENESS CONTRACT DID NOT DISAPPEAR WITH THE COMPOSED LABEL — IT MOVED TO THE RADIO'S
+ * `aria-label`, and it is asserted here as a RENDERED ATTRIBUTE (`getAttribute('aria-label')`),
+ * never as a getter. A getter-only assertion has shipped a wrong rendered attribute in this repo
+ * before.
  */
 import { createElement } from 'lwc';
 import DispositionOfferSelect from 'c/dispositionOfferSelect';
@@ -138,9 +170,9 @@ const OFFERS_BROKERED = {
 };
 
 /**
- * The adversarial case the label must survive: same broker, same exact amount,
+ * The adversarial case the picker must survive: same broker, same exact amount,
  * SAME DAY. One broker re-logging a revised bid at the same price on the same
- * day is a real sequence, so every token except the AutoNumber is identical.
+ * day is a real sequence, so every column except the Offer Number is identical.
  */
 const OFFERS_COLLIDING = {
     records: [
@@ -160,11 +192,6 @@ const OFFERS_COLLIDING = {
         )
     ]
 };
-
-const labelsOf = (element) =>
-    element.shadowRoot
-        .querySelector('lightning-radio-group')
-        .options.map((o) => o.label);
 
 /** The `fields` the component actually asked LDS for, on its last wire call. */
 const getLastFields = () => getRelatedListRecords.getLastConfig().fields;
@@ -188,48 +215,190 @@ describe('c-disposition-offer-select', () => {
         return element;
     }
 
-    const radio = (el) => el.shadowRoot.querySelector('lightning-radio-group');
+    // ── Rendered-DOM accessors. Every one of these reads real markup, not a stub property. ──
+    const table = (el) => el.shadowRoot.querySelector('table.qa-offer-table');
+    const bodyRows = (el) => Array.from(el.shadowRoot.querySelectorAll('tbody tr'));
+    const radios = (el) =>
+        Array.from(el.shadowRoot.querySelectorAll('input.qa-offer-radio'));
     const confirmBtn = (el) => el.shadowRoot.querySelector('.qa-confirm');
 
+    /** One column's rendered text, top to bottom, in document order. */
+    const columnText = (el, cellSelector) =>
+        bodyRows(el).map((tr) => tr.querySelector(cellSelector).textContent);
+
+    /**
+     * The radios' RENDERED `aria-label` attributes — the composed one-line description that used
+     * to be the radio-group option label. Read off the DOM with `getAttribute`, never off a
+     * getter: a getter-only assertion has passed in this repo while the rendered attribute was
+     * wrong (`title="undefined"` shipped that way).
+     */
+    const ariaLabels = (el) =>
+        radios(el).map((input) => input.getAttribute('aria-label'));
+
+    /**
+     * Chooses an offer the way a user does — a real click on the real radio. jsdom implements the
+     * radio activation behaviour (checked flips, same-`name` siblings uncheck, `change` fires), so
+     * this exercises the component's actual `onchange` -> `dataset.id` path rather than a
+     * hand-shaped event this component would never receive.
+     */
     function chooseOffer(element, value) {
-        radio(element).dispatchEvent(
-            new CustomEvent('change', { detail: { value } })
-        );
+        element.shadowRoot
+            .querySelector(`input.qa-offer-radio[data-id="${value}"]`)
+            .click();
         return Promise.resolve();
     }
 
-    it('LOADING: spinner only — no radio group and no "no offers" copy yet', async () => {
+    it('LOADING: spinner only — no table and no "no offers" copy yet', async () => {
         const element = createComponent();
 
         await Promise.resolve();
 
+        // Guard the guard: this branch genuinely rendered something.
         expect(
             element.shadowRoot.querySelector('lightning-spinner')
         ).not.toBeNull();
-        expect(radio(element)).toBeNull();
+        // ⚠ REPOINTED 2026-08-24. This clause read `expect(radio(element)).toBeNull()` and became
+        // VACUOUS when the radio group was deleted — it would have passed for a deleted component.
+        expect(table(element)).toBeNull();
         expect(element.shadowRoot.querySelector('.qa-close')).toBeNull();
     });
 
-    it('DATA BRANCH: composes one radio option per offer — broker, exact amount, date, offer number', async () => {
+    // ─────────────────────────────────────────────────────────────────────────
+    // 🔴 THE TABLE ITSELF (2026-08-24). These are the tests that fail if the
+    //    picker regresses to one run-on string per offer.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    it('TABLE: one row per offer, with broker, amount, date and offer number in SEPARATE cells', async () => {
         const element = createComponent();
 
         getRelatedListRecords.emit(OFFERS_BROKERED);
         await Promise.resolve();
 
-        const options = radio(element).options;
-        expect(options.length).toBe(2);
-        // 🔴 THE BROKER LEADS AND THE OFFER NUMBER TRAILS (2026-08-21 UAT). The
-        // broker is what the user asked to see; the AutoNumber is what actually
-        // guarantees two rows differ, and it is appended UNCONDITIONALLY — see
-        // T-UNIQUE below.
-        expect(options[0]).toEqual({
-            label: 'Derek Simmons — $1,850,000 · Aug 21, 2026 · OFFER-0005',
-            value: OFFER_A
+        const rows = bodyRows(element);
+        expect(rows.length).toBe(2);
+
+        // 🔴 EACH FACT IS ITS OWN CELL, ASSERTED WITH `toBe` — not `toContain`. An implementation
+        // that puts the whole composed string back into one cell and leaves the others blank
+        // passes a `toContain`, and fails this.
+        expect(rows[0].querySelector('.qa-cell-broker').textContent).toBe('Derek Simmons');
+        expect(rows[0].querySelector('.qa-cell-amount').textContent).toBe('$1,850,000');
+        expect(rows[0].querySelector('.qa-cell-date').textContent).toBe('Aug 21, 2026');
+        expect(rows[0].querySelector('.qa-cell-ref').textContent).toBe('OFFER-0005');
+
+        expect(rows[1].querySelector('.qa-cell-broker').textContent).toBe('Derek Simmons');
+        expect(rows[1].querySelector('.qa-cell-amount').textContent).toBe('$1,860,000');
+        expect(rows[1].querySelector('.qa-cell-date').textContent).toBe('Aug 20, 2026');
+        expect(rows[1].querySelector('.qa-cell-ref').textContent).toBe('OFFER-0006');
+
+        // The row is addressable by the offer it represents — this is what the selection handler
+        // and the selected-row styling hang off.
+        expect(rows.map((tr) => tr.dataset.row)).toEqual([OFFER_A, OFFER_B]);
+    });
+
+    /**
+     * 🔴 T-NO-RUNON — THE ABSENCE PIN FOR THE THING THAT WAS REPLACED (2026-08-24).
+     *
+     * Every assertion about the old composed label was RETARGETED onto the columns, so nothing
+     * above would fail if the four facts were run back together into one visible string. This is
+     * that pin. The separators are the tell: ' — ' between broker and amount, ' · ' between the
+     * rest. They are still legitimately present in the radios' `aria-label` ATTRIBUTE — which is
+     * the point of asserting rendered TEXT here and not `innerHTML`.
+     */
+    it('🔴 T-NO-RUNON: the four facts never render as one run-on string in a cell', async () => {
+        const element = createComponent();
+
+        getRelatedListRecords.emit(OFFERS_BROKERED);
+        await Promise.resolve();
+
+        // Guard the guard: two real rows rendered.
+        expect(bodyRows(element).length).toBe(2);
+
+        const text = element.shadowRoot.textContent;
+        expect(text).not.toContain(' · ');
+        expect(text).not.toContain(' — ');
+        // ...and the retired component is gone, not merely unrendered.
+        expect(element.shadowRoot.querySelector('lightning-radio-group')).toBeNull();
+        // The separators ARE still in the accessible name, which is where they belong.
+        expect(ariaLabels(element)[0]).toContain(' · ');
+    });
+
+    it('TABLE: five column headers, every one scoped, in the asked-for order', async () => {
+        const element = createComponent();
+
+        getRelatedListRecords.emit(OFFERS_BROKERED);
+        await Promise.resolve();
+
+        const headers = Array.from(
+            element.shadowRoot.querySelectorAll('thead th')
+        );
+        // `toEqual` on an ordered array pins the ORDER and the COUNT together, so a sixth column
+        // or a reshuffle reds here rather than in UAT.
+        expect(headers.map((th) => th.textContent.trim())).toEqual([
+            'Choose',
+            'Broker',
+            'Amount',
+            'Offer Date',
+            'Offer Number'
+        ]);
+        // 🔴 A RENDERED ATTRIBUTE, on every header. Without `scope` a screen reader does not
+        // associate a cell with its column, which is most of what makes this a table rather than
+        // a grid of unlabelled strings.
+        headers.forEach((th) => {
+            expect(th.getAttribute('scope')).toBe('col');
         });
-        expect(options[1]).toEqual({
-            label: 'Derek Simmons — $1,860,000 · Aug 20, 2026 · OFFER-0006',
-            value: OFFER_B
+        // The Choose header carries assistive-only text: a `<th>` with no discernible text fails
+        // axe's empty-table-header rule, and a visible word above a radio column is noise.
+        expect(
+            headers[0].querySelector('.slds-assistive-text')
+        ).not.toBeNull();
+    });
+
+    it('TABLE: the accessible name is the caption the radio group used to carry as its label', async () => {
+        const element = createComponent();
+
+        getRelatedListRecords.emit(OFFERS);
+        await Promise.resolve();
+
+        const caption = element.shadowRoot.querySelector('table.qa-offer-table > caption');
+        expect(caption).not.toBeNull();
+        expect(caption.textContent).toBe('Offer to put forward');
+    });
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 🔴 SINGLE-SELECT IS THE APEX CONTRACT. `selectOffer(dispositionId, offerId)`
+    //    takes ONE Id, and the service flips `Is_Selected__c` EXCLUSIVELY.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    it('🔴 SINGLE-SELECT: one shared radio name, and choosing a second offer releases the first', async () => {
+        const element = createComponent();
+
+        getRelatedListRecords.emit(OFFERS);
+        await Promise.resolve();
+
+        const inputs = radios(element);
+        expect(inputs.length).toBe(2);
+        // 🔴 THE SHARED `name` IS WHAT MAKES THIS SINGLE-SELECT — it is not decoration, it is the
+        // mechanism. Split it per row (or switch the type to checkbox) and the browser will happily
+        // let a principal tick both bids while only one Id can ever reach Apex.
+        inputs.forEach((input) => {
+            expect(input.getAttribute('type')).toBe('radio');
+            expect(input.getAttribute('name')).toBe('dispositionOffer');
         });
+        expect(new Set(inputs.map((i) => i.getAttribute('name'))).size).toBe(1);
+
+        await chooseOffer(element, OFFER_A);
+        expect(radios(element).map((i) => i.checked)).toEqual([true, false]);
+        expect(
+            bodyRows(element).map((tr) => tr.className.includes('qa-row_selected'))
+        ).toEqual([true, false]);
+
+        await chooseOffer(element, OFFER_B);
+        expect(radios(element).map((i) => i.checked)).toEqual([false, true]);
+        expect(
+            bodyRows(element).map((tr) => tr.className.includes('qa-row_selected'))
+        ).toEqual([false, true]);
+        // Whatever the DOM did, exactly one row is selected at any moment.
+        expect(radios(element).filter((i) => i.checked).length).toBe(1);
     });
 
     it('DATA BRANCH: the org’s live rows — no broker stamped — say so rather than showing a blank', async () => {
@@ -241,19 +410,22 @@ describe('c-disposition-offer-select', () => {
         // ⚠ THIS IS THE STATE UAT IS LOOKING AT RIGHT NOW: `Broker__c` landed the
         // same day, so neither live offer carries one. The placeholder is a
         // sentence precisely so it cannot be mistaken for a broker's name.
-        expect(labelsOf(element)).toEqual([
-            'Broker not recorded — $1,850,000 · Aug 21, 2026 · OFFER-0005',
-            'Broker not recorded — $1,860,000 · Aug 20, 2026 · OFFER-0006'
+        expect(columnText(element, '.qa-cell-broker')).toEqual([
+            'Broker not recorded',
+            'Broker not recorded'
         ]);
         // Neither "undefined" nor a bare "null" may reach the screen — the broker
         // arrives as `{ displayValue: null, value: null }`, and both of those
         // stringify into something that looks like data.
+        // ⚠ THIS CLAUSE ONLY BECAME REAL ON 2026-08-24. Under the radio group the offer text lived
+        // in the stub's `options` property and never reached the DOM at all.
         const rendered = element.shadowRoot.textContent;
+        expect(rendered).toContain('Broker not recorded');
         expect(rendered).not.toContain('undefined');
         expect(rendered).not.toContain('null');
     });
 
-    it('DATA BRANCH: an offer missing every optional field still renders a usable, unique label', async () => {
+    it('DATA BRANCH: an offer missing every optional field still renders a usable, unique row', async () => {
         const element = createComponent();
 
         getRelatedListRecords.emit({
@@ -261,14 +433,20 @@ describe('c-disposition-offer-select', () => {
         });
         await Promise.resolve();
 
-        const label = radio(element).options[0].label;
+        const row = bodyRows(element)[0];
+        expect(row.querySelector('.qa-cell-broker').textContent).toBe('Broker not recorded');
+        expect(row.querySelector('.qa-cell-amount').textContent).toBe('—');
+        expect(row.querySelector('.qa-cell-date').textContent).toBe('—');
         // ⚠ A ROW WITH NO `Name` IS UNREACHABLE IN PRACTICE — it is an AutoNumber
         // the platform assigns on insert. The fallback is THE RECORD ID rather
         // than a friendly constant such as 'Unnumbered offer' (which is what this
         // asserted until 2026-08-21) for one reason: the Id is unique by
         // definition, so the uniqueness invariant survives even here, whereas two
-        // nameless rows sharing a friendly constant would render identically.
-        expect(label).toBe(`Broker not recorded — — · — · ${OFFER_A}`);
+        // nameless rows sharing a friendly constant would announce identically.
+        expect(row.querySelector('.qa-cell-ref').textContent).toBe(OFFER_A);
+        expect(ariaLabels(element)[0]).toBe(
+            `Broker not recorded — — · — · ${OFFER_A}`
+        );
         // The rendered markup must never contain the literal string "undefined".
         expect(element.shadowRoot.textContent).not.toContain('undefined');
     });
@@ -278,7 +456,10 @@ describe('c-disposition-offer-select', () => {
     //
     // Reported from live UAT: the org's two offers, $1,850,000 and $1,860,000,
     // BOTH rendered `$1.9M`. These are the tests that fail if any form of
-    // abbreviation returns to this label.
+    // abbreviation returns to this screen. ⚠ THE MOVE TO A TABLE DID NOT RETIRE
+    // THEM — a currency-formatted `lightning-datatable` column or a
+    // `lightning-formatted-number` would put the rounding right back, one step
+    // further from anything Jest can read.
     // ─────────────────────────────────────────────────────────────────────────
 
     it('🔴 T-EXACT: the two REAL offers render two DIFFERENT amounts, and never "$1.9M"', async () => {
@@ -287,73 +468,92 @@ describe('c-disposition-offer-select', () => {
         getRelatedListRecords.emit(OFFERS);
         await Promise.resolve();
 
-        const labels = labelsOf(element);
-        expect(labels.length).toBe(2);
+        const amounts = columnText(element, '.qa-cell-amount');
+        expect(amounts.length).toBe(2);
 
-        // 1. The exact figures, stated positively.
-        expect(labels[0]).toContain('$1,850,000');
-        expect(labels[1]).toContain('$1,860,000');
+        // 1. The exact figures, stated positively, as RENDERED CELL TEXT.
+        expect(amounts).toEqual(['$1,850,000', '$1,860,000']);
 
         // 2. 🔴 THE ROUNDED FORM THE DEFECT PRODUCED. Restoring `formatMillions`
         //    here — or "fixing" it with more decimals, which only moves the
         //    collision distance from $100k to $10k — fails this line.
-        labels.forEach((label) => {
-            expect(label).not.toContain('$1.9M');
-            expect(label).not.toMatch(/\$[\d.]+M\b/);
+        amounts.forEach((amount) => {
+            expect(amount).not.toContain('$1.9M');
+            expect(amount).not.toMatch(/\$[\d.]+M\b/);
         });
+        expect(element.shadowRoot.textContent).not.toMatch(/\$[\d.]+M\b/);
 
         // 3. And the invariant the two figures exist to serve.
-        expect(new Set(labels).size).toBe(2);
+        expect(new Set(amounts).size).toBe(2);
     });
 
-    it('🔴 T-UNIQUE: no two options share a label — same broker, same amount, SAME DAY', async () => {
+    it('🔴 T-UNIQUE: two offers stay distinguishable — same broker, same amount, SAME DAY', async () => {
         const element = createComponent();
 
-        // Every token identical except the AutoNumber. This is what a conditional
+        // Every column identical except the Offer Number. This is what a conditional
         // "only disambiguate when needed" implementation gets wrong.
         getRelatedListRecords.emit(OFFERS_COLLIDING);
         await Promise.resolve();
 
-        const labels = labelsOf(element);
-        expect(labels.length).toBe(2);
+        expect(bodyRows(element).length).toBe(2);
+
+        // 1. THE SIGHTED USER'S VERSION: three columns match exactly, and the fourth is what
+        //    tells the two rows apart. The Offer Number column is therefore not optional chrome.
+        expect(columnText(element, '.qa-cell-broker')).toEqual([
+            'Derek Simmons',
+            'Derek Simmons'
+        ]);
+        expect(columnText(element, '.qa-cell-amount')).toEqual([
+            '$1,850,000',
+            '$1,850,000'
+        ]);
+        expect(columnText(element, '.qa-cell-date')).toEqual([
+            'Aug 21, 2026',
+            'Aug 21, 2026'
+        ]);
+        const refs = columnText(element, '.qa-cell-ref');
+        expect(refs).toEqual(['OFFER-0005', 'OFFER-0006']);
+        expect(new Set(refs).size).toBe(2);
+
+        // 2. THE SCREEN-READER USER'S VERSION, on the RENDERED attribute. Without this the table
+        //    would be a regression for them: five radios announced with no name at all.
+        const labels = ariaLabels(element);
         expect(new Set(labels).size).toBe(2);
-        expect(labels[0]).toBe(
-            'Derek Simmons — $1,850,000 · Aug 21, 2026 · OFFER-0005'
-        );
-        expect(labels[1]).toBe(
-            'Derek Simmons — $1,850,000 · Aug 21, 2026 · OFFER-0006'
-        );
-        // 🔴 The broker discriminates NOTHING — one appointed broker per sale, so
-        // it is the same leading token on both rows. Stated as an assertion so a
-        // future edit cannot start treating it as the discriminator.
+        expect(labels[0]).toBe('Derek Simmons — $1,850,000 · Aug 21, 2026 · OFFER-0005');
+        expect(labels[1]).toBe('Derek Simmons — $1,850,000 · Aug 21, 2026 · OFFER-0006');
+
+        // 3. 🔴 The broker discriminates NOTHING — one appointed broker per sale, so
+        //    it is the same value in both rows. Stated as an assertion so a future
+        //    edit cannot start treating it as the discriminator.
         expect(labels[0].split(' — ')[0]).toBe(labels[1].split(' — ')[0]);
     });
 
     // ─────────────────────────────────────────────────────────────────────────
     // 🔴 T-NO-BUYER — THE DELIBERATE ABSENCE PIN (2026-08-21)
     //
-    // Buyer identity was retired from this feature. The label assertions above
+    // Buyer identity was retired from this feature. The column assertions above
     // were RETARGETED, so nothing in this file would fail if a buyer name were
-    // put back into the label beside the offer number. This is that pin.
+    // put back beside the offer number. This is that pin.
     // ─────────────────────────────────────────────────────────────────────────
 
-    it('🔴 T-NO-BUYER: no buyer in any radio label, and no buyer field requested', async () => {
+    it('🔴 T-NO-BUYER: no buyer column, no buyer text, and no buyer field requested', async () => {
         const element = createComponent();
 
         getRelatedListRecords.emit(OFFERS);
         await Promise.resolve();
 
-        // Guard the guard: two real options rendered.
-        expect(radio(element).options.length).toBe(2);
+        // Guard the guard: two real rows rendered.
+        expect(bodyRows(element).length).toBe(2);
 
-        // 1. 🔴 THE COMPOSED LABELS. These are the strings a human reads when
-        //    choosing the winning bid.
-        radio(element).options.forEach((option) => {
-            expect(option.label.toLowerCase()).not.toContain('buyer');
-        });
-        // ...and the rendered markup, which is where a separate buyer element
-        // would show up even if the label stayed clean.
+        // 1. 🔴 THE RENDERED TABLE. This is what a human reads when choosing the
+        //    winning bid — headers, cells and the radios' accessible names.
         expect(element.shadowRoot.textContent.toLowerCase()).not.toContain('buyer');
+        ariaLabels(element).forEach((label) => {
+            expect(label.toLowerCase()).not.toContain('buyer');
+        });
+        // A buyer arriving as a fifth COLUMN rather than as a token is the likelier
+        // shape now, so the column count is pinned too.
+        expect(element.shadowRoot.querySelectorAll('thead th').length).toBe(5);
 
         // 2. 🔴 THE WIRE REQUEST ITSELF. This catches the field returning to the
         //    LDS `fields` list — which re-adds an FLS gate on `Buyer_Name__c` for
@@ -361,11 +561,11 @@ describe('c-disposition-offer-select', () => {
         const config = getLastFields();
         expect(config).not.toContain('Disposition_Offer__c.Buyer_Name__c');
         expect(config).toContain('Disposition_Offer__c.Name');
-        // ⚠ THIS PIN USED TO CARRY A THIRD CLAUSE — `expect(config.fields)
+        // ⚠ THIS PIN USED TO CARRY A THIRD CLAUSE — `expect(config)
         // .not.toContain('Disposition_Offer__c.Broker__c')` — on the grounds that
         // the broker discriminates nothing. THE PREMISE IS STILL TRUE (see
         // T-UNIQUE) but the conclusion was overturned by UAT: the broker is now
-        // requested and leads the label, made safe by an exact amount and an
+        // requested and leads the table, made safe by an exact amount and an
         // unconditional offer number. The clause was DELETED rather than left
         // standing, because it would now be asserting the opposite of the
         // component's contract — and note it would have passed anyway, vacuously,
@@ -376,29 +576,29 @@ describe('c-disposition-offer-select', () => {
     // 🔴 T-NO-FINANCING — THE DELIBERATE ABSENCE PIN (2026-08-21 UAT:
     //    "No need to show financing not started")
     //
-    // The financing token was the 4th token in this label. Deleting it deleted
+    // The financing token was the 4th token in the old label. Deleting it deleted
     // every assertion that mentioned it, so nothing here would fail if it came
-    // back. This is that pin. Emitted on a POPULATED fixture — an absence
-    // assertion against an empty radio group passes for the wrong reason.
+    // back — now most plausibly as a fifth COLUMN. Emitted on a POPULATED
+    // fixture — an absence assertion against an empty table passes for the wrong
+    // reason.
     // ─────────────────────────────────────────────────────────────────────────
 
-    it('🔴 T-NO-FINANCING: no financing token in any label, and the field is not requested', async () => {
+    it('🔴 T-NO-FINANCING: no financing anywhere in the table, and the field is not requested', async () => {
         const element = createComponent();
 
         getRelatedListRecords.emit(OFFERS_BROKERED);
         await Promise.resolve();
 
-        // Guard the guard: two real options rendered.
-        const labels = labelsOf(element);
-        expect(labels.length).toBe(2);
+        // Guard the guard: two real rows rendered.
+        expect(bodyRows(element).length).toBe(2);
 
         // 1. Not the fallback string, and not a real picklist value either — the
-        //    ask was to drop the TOKEN, not to improve the empty case.
+        //    ask was to drop the FACT, not to improve the empty case.
         const rendered = element.shadowRoot.textContent.toLowerCase();
         expect(rendered).not.toContain('financing');
         expect(rendered).not.toContain('cash');
         expect(rendered).not.toContain('conventional');
-        labels.forEach((label) => {
+        ariaLabels(element).forEach((label) => {
             expect(label.toLowerCase()).not.toContain('financing');
         });
 
@@ -408,8 +608,8 @@ describe('c-disposition-offer-select', () => {
             'Disposition_Offer__c.Offer_Financing_Type__c'
         );
         // 🔴 THE FIELD ITSELF IS NOT RETIRED. It is still on the offer layout, on
-        // `c/dispositionLogOfferModal`'s form (whose suite pins its presence) and
-        // on the approval page. This pin is about THIS label only.
+        // `c/dispositionLogOfferModal`'s form (whose suite PINS its presence) and
+        // on the approval page. This pin is about THIS picker only.
     });
 
     it('🔴 T-BROKER-SPAN: requests `Broker__r.Name`, NOT the bare `Broker__c` lookup', async () => {
@@ -420,19 +620,19 @@ describe('c-disposition-offer-select', () => {
 
         // Measured against `usman-dpeg`: a bare `Broker__c` request returns
         // `{ displayValue: null, value: '003…' }` — the Id with NO name — so a
-        // component built on it renders an empty broker on every row. Only the
-        // traversal carries the name. This assertion is the reason that cannot be
-        // "simplified" back without a test failing.
+        // component built on it renders an empty Broker column on every row. Only
+        // the traversal carries the name. This assertion is the reason that cannot
+        // be "simplified" back without a test failing.
         expect(getLastFields()).toContain('Disposition_Offer__c.Broker__r.Name');
         expect(getLastFields()).not.toContain('Disposition_Offer__c.Broker__c');
-        expect(labelsOf(element)[0].startsWith('Derek Simmons — ')).toBe(true);
+        expect(columnText(element, '.qa-cell-broker')[0]).toBe('Derek Simmons');
     });
 
     // ─────────────────────────────────────────────────────────────────────────
     // 🔴 T-NO-PROSE — THE DELIBERATE ABSENCE PIN (2026-08-21 UAT prose removal)
     //
-    // The `.qa-note` panel above the radio group was removed at the user's
-    // request. It is THE string they quoted:
+    // The `.qa-note` panel above the picker was removed at the user's request.
+    // It is THE string they quoted:
     //
     //   "Selecting an offer moves this disposition to Offer Selection and sends
     //    the offer for principal approval. It does not accept the offer — the
@@ -444,14 +644,14 @@ describe('c-disposition-offer-select', () => {
     // real absence rather than an unrendered component.
     // ─────────────────────────────────────────────────────────────────────────
 
-    it('🔴 T-NO-PROSE: no explanatory note above the offer list — the removal must not come back', async () => {
+    it('🔴 T-NO-PROSE: no explanatory note above the offer table — the removal must not come back', async () => {
         const element = createComponent();
 
         getRelatedListRecords.emit(OFFERS);
         await Promise.resolve();
 
         // Guard the guard: the data branch genuinely rendered.
-        expect(radio(element).options.length).toBe(2);
+        expect(bodyRows(element).length).toBe(2);
         expect(confirmBtn(element)).not.toBeNull();
 
         // 1. THE OLD SELECTOR.
@@ -469,6 +669,9 @@ describe('c-disposition-offer-select', () => {
         //    ONLY by the button label, so this half of the pin is what stops a
         //    future edit shortening it to "Accept" and leaving the screen with no
         //    statement of the consequence at all.
+        //    ⚠ Read off the `label` PROPERTY, not `textContent` — sfdx-lwc-jest's
+        //    `lightning-button` stub renders an EMPTY template, so a text-node
+        //    assertion here would be vacuously green in both directions.
         expect(confirmBtn(element).label).toBe('Select and send for approval');
     });
 
@@ -479,6 +682,9 @@ describe('c-disposition-offer-select', () => {
         await Promise.resolve();
 
         expect(confirmBtn(element).disabled).toBe(true);
+        // Nothing is pre-selected — a picker that opens with a bid already chosen is a decision
+        // made for the principal.
+        expect(radios(element).filter((i) => i.checked).length).toBe(0);
         confirmBtn(element).click();
         await flushPromises();
         expect(selectOffer).not.toHaveBeenCalled();
@@ -505,6 +711,8 @@ describe('c-disposition-offer-select', () => {
         await flushPromises();
 
         expect(selectOffer).toHaveBeenCalledTimes(1);
+        // 🔴 EXACTLY ONE offerId, and it is the row the user clicked. This is the whole payload
+        // contract the table had to preserve.
         expect(selectOffer).toHaveBeenCalledWith({
             dispositionId: RECORD_ID,
             offerId: OFFER_B
@@ -552,10 +760,12 @@ describe('c-disposition-offer-select', () => {
         expect(banner.getAttribute('role')).toBe('alert');
 
         // Nothing was written, so LDS must not be told the record changed; and the
-        // panel stays open because picking a different offer is a real remedy.
+        // panel stays open because picking a different offer is a real remedy —
+        // which means the table, and the row already chosen, must both survive.
         expect(notifyRecordUpdateAvailable).not.toHaveBeenCalled();
         expect(closeHandler).not.toHaveBeenCalled();
-        expect(radio(element)).not.toBeNull();
+        expect(table(element)).not.toBeNull();
+        expect(radios(element).filter((i) => i.checked).length).toBe(1);
     });
 
     it('FAILURE: falls back to a generic message when the error carries no body', async () => {
@@ -574,13 +784,15 @@ describe('c-disposition-offer-select', () => {
         ).toContain('The offer could not be selected.');
     });
 
-    it('NO OFFERS: explains rather than showing an empty radio group', async () => {
+    it('NO OFFERS: explains rather than showing an empty table', async () => {
         const element = createComponent();
 
         getRelatedListRecords.emit({ records: [] });
         await Promise.resolve();
 
-        expect(radio(element)).toBeNull();
+        // ⚠ REPOINTED 2026-08-24 from `expect(radio(element)).toBeNull()`, which survived the
+        // radio group's deletion GREEN AND VACUOUS.
+        expect(table(element)).toBeNull();
         expect(element.shadowRoot.querySelector('.qa-close')).not.toBeNull();
         expect(element.shadowRoot.textContent).toContain(
             'No offers have been logged'
@@ -603,7 +815,8 @@ describe('c-disposition-offer-select', () => {
         expect(element.shadowRoot.textContent).not.toContain(
             'No offers have been logged'
         );
-        expect(radio(element)).toBeNull();
+        // ⚠ REPOINTED 2026-08-24 from `expect(radio(element)).toBeNull()` — vacuous survivor.
+        expect(table(element)).toBeNull();
     });
 
     it('CANCEL: closes the action without calling Apex', async () => {
@@ -621,11 +834,27 @@ describe('c-disposition-offer-select', () => {
         expect(closeHandler).toHaveBeenCalledTimes(1);
     });
 
+    /**
+     * ⚠ THIS MATTERS MORE SINCE 2026-08-24 THAN IT DID BEFORE. axe is now looking at a real
+     * `<table>` — its `<caption>` accessible name, five `<th scope="col">`, a `<th scope="row">`
+     * per row and five named radios. Under a `lightning-datatable` it would have been looking at
+     * an empty stub and passing for the same reason a deleted component passes.
+     */
     it('is accessible', async () => {
         const element = createComponent();
 
-        getRelatedListRecords.emit(OFFERS);
+        getRelatedListRecords.emit(OFFERS_BROKERED);
         await Promise.resolve();
+
+        await expect(element).toBeAccessible();
+    });
+
+    it('is accessible with a row selected', async () => {
+        const element = createComponent();
+
+        getRelatedListRecords.emit(OFFERS_BROKERED);
+        await Promise.resolve();
+        await chooseOffer(element, OFFER_A);
 
         await expect(element).toBeAccessible();
     });

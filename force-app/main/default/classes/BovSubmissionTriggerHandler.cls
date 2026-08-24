@@ -206,7 +206,7 @@ public with sharing class BovSubmissionTriggerHandler extends TriggerHandler {
             (List<BOV_Submission__c>) newList,
             null
         );
-        BovSubmissionSelectionGuardService.enforceSingleSelected(
+        BovSubmissionSelectionGuardService.enforceSelectionExclusivity(
             (List<BOV_Submission__c>) newList,
             null
         );
@@ -226,8 +226,25 @@ public with sharing class BovSubmissionTriggerHandler extends TriggerHandler {
      * previously nothing after-fired on insert at all. The cost is bounded by
      * `BovAutoSelectionService`'s own budget — ONE query and AT MOST ONE `Database.update` PER
      * CHUNK, constant in the number of submissions.
+     *
+     * ── 🔴 TWO JOBS SINCE 2026-08-24, AND THE ORDER IS PART OF THE MECHANISM ────────────────────
+     * `BovPreferredBrokerService.retireReplacedPreferred` RUNS FIRST. When a new preferred broker
+     * is added it logs a `BOV_Broker_Change__c` row and then DELETES the outgoing preferred
+     * submission — and that delete fires this same trigger's `after delete` context, which re-ranks
+     * the sale and promotes the survivor. Because the new row is already committed by then, the
+     * slot is never empty and no interim winner is ever appointed.
+     * ⚠ RUNNING IT SECOND WOULD NOT BE MERELY UNTIDY: `reselect` would first DEMOTE the outgoing
+     * preferred row (a write) and the retirement would then delete the row it had just written to.
+     * Wasted DML on a doomed record, and one more refusal surface. That service's class header
+     * carries the full argument, including the delete-then-insert sequence that WOULD fight.
+     * ⚠ Both are keyed on a change and both return at zero query cost when it did not happen, so an
+     * ordinary BOV insert still costs exactly what it did before.
      */
     protected override void afterInsert() {
+        BovPreferredBrokerService.retireReplacedPreferred(
+            (List<BOV_Submission__c>) newList,
+            null
+        );
         BovAutoSelectionService.reselect((List<BOV_Submission__c>) newList, null);
     }
 
@@ -250,7 +267,18 @@ public with sharing class BovSubmissionTriggerHandler extends TriggerHandler {
             (List<BOV_Submission__c>) newList,
             (Map<Id, BOV_Submission__c>) oldMap
         );
-        BovSubmissionSelectionGuardService.enforceSingleSelected(
+        // 🔴 ADDED 2026-08-24, AND IT MUST STAY AHEAD OF THE GUARD BELOW — THIS ORDER **IS**
+        // LOAD-BEARING, unlike the stamp/guard pair above it. A row whose Is_Preferred_Broker__c
+        // flips moves between the two appointment slots, and if it is Selected while it does so it
+        // lands in a slot the other broker occupies. The guard would then addError on the user's
+        // own save and make "Preferred Broker" a checkbox that cannot be unticked. This step
+        // surrenders the slot in memory (zero SOQL, zero DML) and lets the after-context re-rank
+        // decide both slots afresh. Read the method's own header before reordering.
+        BovPreferredBrokerService.surrenderSlotOnFlagChange(
+            (List<BOV_Submission__c>) newList,
+            (Map<Id, BOV_Submission__c>) oldMap
+        );
+        BovSubmissionSelectionGuardService.enforceSelectionExclusivity(
             (List<BOV_Submission__c>) newList,
             (Map<Id, BOV_Submission__c>) oldMap
         );
@@ -270,6 +298,15 @@ public with sharing class BovSubmissionTriggerHandler extends TriggerHandler {
      * why it goes second.
      */
     protected override void afterUpdate() {
+        // ⚠ THIRD JOB, ADDED 2026-08-24, AND IT GOES FIRST FOR THE SAME REASON IT DOES IN
+        // `afterInsert` — it may DELETE a row the two jobs below would otherwise write to. The modal
+        // only ever INSERTS a preferred row, but `Is_Preferred_Broker__c` is granted EDIT on
+        // `DPEG_Disposition_Edit`, so a hand edit or an API call can flag an existing response; see
+        // that service's javadoc for why the update half is wired even though no UI reaches it.
+        BovPreferredBrokerService.retireReplacedPreferred(
+            (List<BOV_Submission__c>) newList,
+            (Map<Id, BOV_Submission__c>) oldMap
+        );
         handleApprovedSelections(
             (List<BOV_Submission__c>) newList,
             (Map<Id, BOV_Submission__c>) oldMap
@@ -313,12 +350,39 @@ public with sharing class BovSubmissionTriggerHandler extends TriggerHandler {
      * `replaceSelectedBroker` does), and appointing a broker the business has since replaced is the
      * one outcome this handler must never produce.
      *
+     * ══════════════════════════════════════════════════════════════════════════════
+     * 🔴 VERIFIED 2026-08-24 AGAINST THE TWO-SLOT MODEL: THIS METHOD STAMPS THE PARENT **ONLY FOR
+     *    THE ROW THAT WAS ACTUALLY APPROVED**, AND THE SECOND SELECTED ROW CANNOT RIDE ALONG.
+     * ══════════════════════════════════════════════════════════════════════════════
+     * A Disposition may now hold TWO `Submission_Status__c = 'Selected'` rows — the preferred broker
+     * and the scored winner — so `Broker_Finalize_Approval`'s entry criterion
+     * (`Submission_Status__c = 'Selected'`) now MATCHES BOTH. That was the risk worth checking, and
+     * the answer is that nothing here changes, for three independent reasons, ANY ONE SUFFICIENT:
+     *
+     *   1. THE DETECTION IS AN `Approval_Status__c` **TRANSITION**, not a status. Only the row an
+     *      approval actually completed on has that field written; the sibling's stays exactly as it
+     *      was and fails the `prior` test below. Being Selected is necessary, never sufficient.
+     *   2. SUBMISSION IS PER-RECORD. `Approval.ProcessSubmitRequest` names ONE target Id;
+     *      `Broker_Finalize_Approval`'s entry criterion VALIDATES that record, it does not select
+     *      records. Matching two rows means "either row would be accepted if submitted", not "both
+     *      are submitted".
+     *   3. `DispositionApprovalService` SUBMITS EXACTLY ONE OF THE TWO — the preferred row when
+     *      there is one, the non-preferred row otherwise — and refuses when the chosen slot holds
+     *      more than one row. So the second Selected row is never in flight at the same time.
+     *
+     * ⇒ THE PARENT ADVANCE AND THE `Selected_Broker__c` STAMP FIRE FOR THE APPROVED BROKER AND FOR
+     * NOBODY ELSE. `approvingOneOfTwoSelectedRows_stampsOnlyTheApprovedBroker` is the falsifier.
+     *
      * ── LAST-WRITER-WINS ON A CONTRIVED CHUNK, STATED HONESTLY ──────────────
      * If two submissions on the SAME disposition became Approved-and-Selected in one chunk, the map
-     * keeps the last one. That state is already broken upstream (only one submission may be
-     * Selected — `BovSubmissionService` enforces exclusivity in a single DML) and no ordering choice
-     * here repairs it; picking deterministically and moving on beats a partial write or a throw
-     * that would roll back the approval.
+     * keeps the last one. ⚠ THE OLD REASON GIVEN FOR TOLERATING THAT — *"that state is already
+     * broken upstream (only one submission may be Selected)"* — IS RETRACTED, because two Selected
+     * rows is now a legitimate state. The TOLERATION still stands on a different and stronger
+     * footing: two approvals cannot COMPLETE in one chunk, because an approval field update fires
+     * per record and per decision, and the router above never has both rows in flight at once. If
+     * that ever changes, the fix is to stamp per-submission rather than per-disposition — and no
+     * ordering choice here repairs it, so picking deterministically still beats a partial write or
+     * a throw that would roll back the approval.
      *
      * @param submissions Trigger.new
      * @param priorById   Trigger.oldMap

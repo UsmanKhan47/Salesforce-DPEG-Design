@@ -683,4 +683,180 @@ describe('c-bov-add-response-modal', () => {
 
         await expect(element).toBeAccessible();
     });
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 🔴 T-REPLACEMENT — "Replace Preferred Broker" mode (2026-08-24)
+    //
+    // The THIRD mode. `c/bovBrokerPanel`'s Replace Broker button opens this
+    // dialog instead of the backup picker when the disposition already has a
+    // preferred broker: the successor is usually a broker who has submitted no
+    // BOV at all, and so has no row for a picker to offer.
+    //
+    // 🔴 IT IS ALWAYS OPENED WITH `isPreferred: true` AS WELL, and every test
+    // below passes both flags for that reason. A test that passed
+    // `isReplacement` alone would be exercising a combination the opener never
+    // produces, and would hide the fact that the flag injection is keyed on
+    // `isPreferred`.
+    //
+    // ⚠ THIS DIALOG STILL ONLY CREATES. The outgoing row is retired by the
+    // opener afterwards, through `BovController.replacePreferredBroker`. Keeping
+    // the Apex out of this bundle is what preserves the property that
+    // `lightning-record-edit-form` owns CRUD/FLS and validation-rule surfacing
+    // for all three modes.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    const OUTGOING_LABEL = 'Cushman & Wakefield — Ada Lin';
+
+    const replacementComponent = (props = {}) =>
+        createComponent({
+            dispositionId: DISPOSITION_ID,
+            isPreferred: true,
+            isReplacement: true,
+            outgoingBrokerLabel: OUTGOING_LABEL,
+            ...props
+        });
+
+    const outgoingLine = (el) =>
+        el.shadowRoot.querySelector('.bar-field-outgoing');
+
+    it('🔴 T-REPLACEMENT-TITLE: the header and Save button name the REPLACEMENT, not an appointment', () => {
+        // ALL THREE MODES IN ONE TEST, so each assertion is a DIFFERENCE and not
+        // a coincidence. A getter hardcoded to the replacement string would pass
+        // a replacement-only test and break the other two.
+        expect(modalHeader(createComponent()).label).toBe('Add Broker Response');
+        expect(modalHeader(preferredComponent()).label).toBe(
+            'Add Preferred Broker'
+        );
+
+        const replacement = replacementComponent();
+        // 🔴 THE ORDER OF THE GETTER'S TESTS IS WHAT THIS CATCHES. Replacement
+        // mode carries `isPreferred: true` too, so an `isPreferred`-first chain
+        // labels this dialog "Add Preferred Broker" and never reaches the
+        // replacement string at all — a title promising an addition over a form
+        // that is about to retire a row.
+        expect(modalHeader(replacement).label).toBe('Replace Preferred Broker');
+        expect(replacement.shadowRoot.querySelector('.bar-save').label).toBe(
+            'Replace preferred broker'
+        );
+    });
+
+    it('🔴 T-REPLACEMENT-OUTGOING: the existing preferred broker is shown, READ-ONLY', () => {
+        const element = replacementComponent();
+
+        const line = outgoingLine(element);
+        expect(line).not.toBeNull();
+        // ⚠ THE RENDERED TEXT, not the getter. A getter-only assertion has passed
+        // in this repo while the rendered output was wrong.
+        expect(line.textContent).toContain('Current preferred broker');
+        expect(line.textContent).toContain(OUTGOING_LABEL);
+
+        // 🔴 STATIC MARKUP, NOT A `lightning-input-field` — not even a disabled
+        // one. A field here would put a key in the payload that
+        // `lightning-record-edit-form` FLS-checks and, for a persona without edit
+        // on it, DROPS SILENTLY behind a success toast.
+        expect(line.querySelector('lightning-input-field')).toBeNull();
+        expect(fieldNames(element)).not.toContain('Broker_Firm__c');
+        expect(fieldNames(element)).not.toContain('Contact_Name__c');
+    });
+
+    it('🔴 T-REPLACEMENT-OUTGOING: the line renders in NEITHER other mode', () => {
+        // ABSENCE PIN WITH ITS GUARD. Without the positive test above this would
+        // be green on a component that renders nothing at all.
+        expect(outgoingLine(createComponent())).toBeNull();
+        expect(outgoingLine(preferredComponent())).toBeNull();
+        expect(outgoingLine(replacementComponent())).not.toBeNull();
+    });
+
+    it('🔴 T-REPLACEMENT-OUTGOING: an EMPTY label renders nothing rather than an empty heading', () => {
+        // A form element with a heading and no value reads as data that failed to
+        // load — worse than absent. The opener returns `''` (never `undefined`)
+        // when it holds no preferred row, so this is the state to handle.
+        const element = replacementComponent({ outgoingBrokerLabel: '' });
+
+        expect(outgoingLine(element)).toBeNull();
+        // Guard the guard: the dialog itself still rendered.
+        expect(element.shadowRoot.querySelector('.bar-save')).not.toBeNull();
+    });
+
+    it('🔴 T-REPLACEMENT-CHOOSER: Broker__c is the control that picks the INCOMING broker, and it is required', () => {
+        const element = replacementComponent();
+
+        const broker = element.shadowRoot.querySelector('.bar-field-broker');
+        expect(broker).not.toBeNull();
+        expect(broker.fieldName).toBe('Broker__c');
+        // ⚠ REQUIRED IN THIS MODE TOO. `Broker_Firm__c` and `Contact_Name__c` are
+        // STAMPED from this lookup, so a blank one produces a preferred-broker
+        // card whose Firm and Contact columns both render "—": a row identifying
+        // nobody, replacing a row that identified somebody.
+        expect(broker.required).toBe(true);
+
+        // 🔴 AND THERE IS NO SECOND PICKER. A `lightning-combobox` or
+        // `lightning-radio-group` here would mean the successor had to be an
+        // existing BOV submission — which is exactly what this mode exists to
+        // avoid.
+        expect(
+            element.shadowRoot.querySelector('lightning-radio-group')
+        ).toBeNull();
+        expect(
+            element.shadowRoot.querySelector('lightning-combobox')
+        ).toBeNull();
+    });
+
+    it('🔴 T-REPLACEMENT-PAYLOAD: the flag is still forced, the status is still absent, and the outgoing broker is NOT sent', () => {
+        const element = replacementComponent();
+        const submit = jest.spyOn(form(element), 'submit');
+
+        element.shadowRoot.querySelector('.bar-save').click();
+
+        expect(submit).toHaveBeenCalledTimes(1);
+        const payload = submit.mock.calls[0][0];
+
+        // The incoming row is a preferred broker, created exactly as the
+        // first-appointment path creates one.
+        expect(payload.Is_Preferred_Broker__c).toBe(true);
+        expect(payload.Disposition__c).toBe(DISPOSITION_ID);
+        // `BovAutoSelectionService` remains the sole writer of the status.
+        expect(payload).not.toHaveProperty('Submission_Status__c');
+
+        // 🔴 THE READ-ONLY LINE CANNOT REACH THE PAYLOAD. `handleSave` gathers
+        // only rendered `lightning-input-field`s, so static markup is structurally
+        // incapable of contributing a key — this asserts that structure, and it
+        // is the assertion that reds if the line is ever "upgraded" to a disabled
+        // input field for the sake of alignment.
+        expect(payload).not.toHaveProperty('Broker_Firm__c');
+        expect(payload).not.toHaveProperty('Contact_Name__c');
+        expect(
+            Object.keys(payload).some((k) => /outgoing/i.test(k))
+        ).toBe(false);
+    });
+
+    it('🔴 T-REPLACEMENT-PAYLOAD-ENTER: the native (ENTER) submit path carries the same three facts', () => {
+        // THERE ARE GENUINELY TWO SUBMIT PATHS. The footer button never fires
+        // `onsubmit`; ENTER inside a text input does, and only `withParent()` is
+        // on both. A fix applied to `handleSave` alone leaves this path creating
+        // an UNFLAGGED row under a "Replace Preferred Broker" header.
+        const element = replacementComponent();
+        const submit = jest.spyOn(form(element), 'submit');
+
+        form(element).dispatchEvent(
+            new CustomEvent('submit', {
+                detail: { fields: { Broker__c: '003000000000001' } }
+            })
+        );
+
+        expect(submit).toHaveBeenCalledTimes(1);
+        const payload = submit.mock.calls[0][0];
+        expect(payload.Is_Preferred_Broker__c).toBe(true);
+        expect(payload.Disposition__c).toBe(DISPOSITION_ID);
+        expect(payload.Broker__c).toBe('003000000000001');
+        expect(payload).not.toHaveProperty('Submission_Status__c');
+    });
+
+    it('T-REPLACEMENT: is accessible', async () => {
+        const element = replacementComponent();
+
+        await flushPromises();
+
+        await expect(element).toBeAccessible();
+    });
 });

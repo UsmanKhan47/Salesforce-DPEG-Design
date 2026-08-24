@@ -758,14 +758,21 @@ private class BovSubmissionSelectorTest {
     static void selectSelectionContextByDispositionIds_ordersHighestScoreFirst() {
         Disposition__c priced = TestDataFactory.createPricedDisposition(
             [SELECT Id FROM Property_Asset__c LIMIT 1].Id, 1500000, true);
+        // ══════════════════════════════════════════════════════════════════════════════════════
+        // ⚠ THE PREFERRED FLAG WAS REMOVED FROM BOTH ROWS ON 2026-08-24, AND THE REASON MATTERS.
+        // ══════════════════════════════════════════════════════════════════════════════════════
+        // It was originally here to keep auto-selection from interfering, then kept when a
+        // preferred row started WINNING because the SELECTED row was irrelevant to an ORDER BY
+        // assertion. Neither reasoning survives `BovPreferredBrokerService`: TWO preferred rows on
+        // one disposition now means the older one is RETIRED — logged and DELETED — so the second
+        // assertion below was reading a one-row result and the "both rows are returned" line was
+        // failing for a reason that had nothing to do with the query's order.
+        // Two ORDINARY scored rows exercise the ORDER BY exactly as well and are not touched by
+        // the retirement path at all.
         BOV_Submission__c low = TestDataFactory.createBovSubmission(priced.Id, false);
         low.BOV_Amount__c = 900000;
-        low.Is_Preferred_Broker__c = true;  // ⚠ 2026-08-24: this no longer keeps auto-selection
-        // out of the test — a preferred row now WINS. It is kept because this test asserts the
-        // QUERY's order, which is unaffected by which row ends up Selected.
         BOV_Submission__c high = TestDataFactory.createBovSubmission(priced.Id, false);
         high.BOV_Amount__c = 1400000;
-        high.Is_Preferred_Broker__c = true;
         insert new List<BOV_Submission__c>{ low, high };
 
         Test.startTest();

@@ -95,6 +95,45 @@
  * `dealDocStatus` occupies. `.row-head` wraps and the pill drops to its own line rather than
  * overflowing — see the stylesheet. Do not re-tighten that.
  *
+ * ═══ 🔴 THE PROPERTY ASSET: A ROW-SHAPED CONTEXT LINE, AT CLOSING ONLY (2026-08-24) ═══
+ * The card links the sale's Property Asset by name, so IR can open the full asset record. It
+ * renders ABOVE the three document rows, because it is the SUBJECT of the deal rather than another
+ * piece of its paperwork. Absent (a null lookup, which `deleteConstraint = SetNull` makes
+ * reachable) renders NOTHING AT ALL rather than a placeholder.
+ *
+ * 🔴 IT WEARS THE DOCUMENT ROWS' TREATMENT (second pass, same day). It first shipped as a bare
+ * `Property  <name>` line above the rows and read as bolted on, so it now reuses `.row-head` /
+ * `.row-left` / `.row-icon` / `.row-label` / `.pill` verbatim: icon chip, bold label, right-aligned
+ * pill. THE SLOT ASSIGNMENT IS THE ONLY JUDGEMENT CALL IN IT — label "Property", pill = the asset
+ * NAME:
+ *   - The left column then reads NDA / LOI / PSA / Property — one vocabulary, "what this row is
+ *     about" — and the right column reads "the current value of that thing", which for a property
+ *     is WHICH property. Inverting the two (name on the left, "Property" in the pill) breaks the
+ *     left-column scan and puts a type tag among status words.
+ *   - The pill tone is `neutral`, the only tone on this card that asserts nothing. Every other
+ *     tone is a status the asset does not have.
+ *   - THE MUTED META SLOT IS LEGITIMATELY EMPTY. The payload carries an Id and a name and nothing
+ *     else, and the idiom already renders rows with zero meta lines (an empty NDA row has none; the
+ *     LOI row drops its price line when null). Inventing a sentence to fill it would be inventing
+ *     data.
+ *   - It is NOT one of the `<ul>`'s items and its outer hook is `.asset-row`, not `.row` — the
+ *     list's accessible name is "Deal documents", and `.row` is what the suite counts to prove
+ *     there are exactly three of them. The stylesheet shares one declaration block between the two
+ *     selectors so they cannot drift.
+ *
+ * 🔴 IT RENDERS ONLY AT `Disposition_Stage__c = 'Closing'` (user requirement, 2026-08-24). The
+ * stage comes from a SECOND wire — `getRecord` on the one field — and NOT from the Apex payload:
+ * widening `DispositionDealSummaryService` for a rendering decision would put a picklist value the
+ * client tests into the server's DTO and its test fixtures, and LDS already holds this record's
+ * stage in cache for the record page it is sitting on. See `wiredStage` for why an unknown stage
+ * and a wrong one are the same answer.
+ *
+ * ⚠ NO SECOND SERVER READ WAS ADDED. `propertyAssetId` / `propertyAssetName` come from the query
+ * that was ALREADY reading the parent Disposition for the NDA counters
+ * (`DispositionSelector.selectDealSummaryParentById`, renamed from `selectNdaCountsById`). The
+ * consequence is recorded at `DispositionDealSummaryService.applyParentFields`: one query means
+ * one catch, so a `Property_Asset__c` CRUD gap degrades the NDA COUNTER line too.
+ *
  * ═══ FAIL-SOFT IS PER ROW, AND A DEGRADED ROW SAYS SO ═══
  * The service catches per read and flags the row (`ndaUnavailable`, `loiUnavailable`,
  * `psaUnavailable`, `ndaCountsUnavailable`) instead of failing the card, because this card is
@@ -108,8 +147,25 @@
  */
 import { LightningElement, api, wire } from 'lwc';
 import { NavigationMixin } from 'lightning/navigation';
+import { getRecord, getFieldValue } from 'lightning/uiRecordApi';
+import STAGE_FIELD from '@salesforce/schema/Disposition__c.Disposition_Stage__c';
 import { formatLongDate, formatMoney } from 'c/utils';
 import getDealSummary from '@salesforce/apex/DispositionDealSummaryController.getDealSummary';
+
+/**
+ * The stage at which the Property row renders — named ONCE.
+ *
+ * ⚠ EXACT MATCH ON THE PICKLIST'S OWN API VALUE. It is a value of
+ * `objects/Disposition__c/fields/Disposition_Stage__c.field-meta.xml` (position 10 of 11) and
+ * exists on BOTH record types — On_Market step 10, Off_Market step 8 — so no record-type wire is
+ * needed to decide whether the gate can ever open.
+ *
+ * 🔴 A SECOND LITERAL WOULD FAIL SILENTLY IN BOTH DIRECTIONS, which is why this is a constant and
+ * not an inline string: a typo'd value renders the row NEVER (indistinguishable from a sale with
+ * no asset, which renders nothing by design) and a widened one renders it ALWAYS (indistinguishable
+ * from the pre-2026-08-24 behaviour). Neither throws, and neither looks wrong on screen.
+ */
+const STAGE_CLOSING = 'Closing';
 
 // Row status -> pill tone. Anything unmapped falls back to 'neutral' so a picklist value added
 // later renders its own text on a defined style rather than an unstyled pill.
@@ -210,6 +266,12 @@ export default class DispositionDealSummary extends NavigationMixin(LightningEle
     loadError;
 
     /**
+     * `Disposition__c.Disposition_Stage__c`, or `undefined` while it is unknown.
+     * ⚠ UNKNOWN AND WRONG ARE THE SAME ANSWER HERE — see `wiredStage` and `showPropertyRow`.
+     */
+    _stage;
+
+    /**
      * Resolved record-page URLs, keyed by the RECORD Id rather than by row key.
      *
      * ⚠ Keying by Id is what makes this self-invalidating. If the wire re-emits with a different
@@ -221,6 +283,35 @@ export default class DispositionDealSummary extends NavigationMixin(LightningEle
      * ASSIGNMENT; `this._urlsById[id] = url` would resolve the URL and render nothing.
      */
     _urlsById = {};
+
+    /**
+     * The parent's stage, and the ONLY thing this second wire exists for.
+     *
+     * 🔴 IT STAYS `undefined` UNTIL THE WIRE EMITS, AND THAT IS THE FEATURE. `showPropertyRow`
+     * tests for equality with `STAGE_CLOSING`, so an unknown stage is indistinguishable from a
+     * wrong one and the row renders NOTHING. The alternative — defaulting to "show, then hide once
+     * the stage arrives" — is exactly the flash the requirement forbids, and it would be invisible
+     * in Jest (both states are green one microtask apart) while being obvious to a user.
+     *
+     * ⚠ A WIRE ERROR ALSO LEAVES IT `undefined` — FAIL CLOSED, DELIBERATELY. `Disposition__c` is
+     * OWD Private and a reader who cannot see the parent record cannot see its stage; the honest
+     * rendering there is no row at all, not a row at every stage. It is NOT surfaced as the
+     * card-level error either: this card renders ungated on all 11 stages and the three document
+     * rows are unaffected by a stage read, so a banner would be a permanent fixture over a working
+     * card (the same argument as the service's per-row catches).
+     *
+     * ⚠ ONE FIELD, ON PURPOSE. `getRecord` with an explicit `fields` list — never `layoutTypes` —
+     * so the wire cannot start dragging a layout's worth of fields (and a layout's worth of FLS
+     * exposure) behind a rendering decision.
+     */
+    @wire(getRecord, { recordId: '$recordId', fields: [STAGE_FIELD] })
+    wiredStage({ data, error }) {
+        if (data) {
+            this._stage = getFieldValue(data, STAGE_FIELD);
+        } else if (error) {
+            this._stage = undefined;
+        }
+    }
 
     @wire(getDealSummary, { dispositionId: '$recordId' })
     wired({ data, error }) {
@@ -249,7 +340,10 @@ export default class DispositionDealSummary extends NavigationMixin(LightningEle
      * @param {object} data The wire payload.
      */
     resolveRecordUrls(data) {
-        [data.ndaId, data.loiId, data.psaId].forEach((id) => {
+        // ⚠ `propertyAssetId` IS IN THIS LIST, NOT IN A SECOND RESOLVER. It is a record Id like
+        // any other, its URL is cached in the same Id-keyed map, and a rejected `GenerateUrl` for
+        // it degrades the same way — the asset renders as plain text instead of a link.
+        [data.ndaId, data.loiId, data.psaId, data.propertyAssetId].forEach((id) => {
             if (!id || this._urlsById[id]) {
                 return;
             }
@@ -288,6 +382,75 @@ export default class DispositionDealSummary extends NavigationMixin(LightningEle
             return;
         }
         this[NavigationMixin.Navigate](recordPageRef(targetId));
+    }
+
+    /**
+     * Whether the Property row renders at all: BOTH gates, in one place.
+     *
+     * 🔴 THE STAGE GATE IS SEPARATE FROM `assetLink.exists` ON PURPOSE. They answer different
+     * questions — "should this card be showing the subject right now?" and "is there a subject to
+     * show?" — and folding the stage into `assetLink` would make a getter documented as "is there
+     * an asset" quietly return false on a sale that has one. The template asks this getter and
+     * nothing else, so there is exactly one place to read to know when the row appears.
+     *
+     * ⚠ THE STAGE IS THE OUTER TEST AND THE ASSET THE INNER ONE, which is also the evaluation
+     * order: at the ten non-Closing stages the asset never has to be considered.
+     *
+     * @returns {boolean} True only at `Closing`, with a readable asset, and only once the stage
+     *   wire has actually answered.
+     */
+    get showPropertyRow() {
+        return this._stage === STAGE_CLOSING && this.assetLink.exists;
+    }
+
+    /**
+     * The sale's SUBJECT — the Property Asset — as a link, or nothing at all.
+     *
+     * 🔴 RETRACTED 2026-08-24, SECOND PASS — DO NOT RESTORE IT FROM THE GIT HISTORY. This block
+     * used to read: "Rendering it as a fourth `.row` would give it a pill it has no value for."
+     * The user's judgement is that a value slot with nothing status-like in it is not a reason to
+     * abandon the card's own visual language — the line read as bolted-on precisely because it
+     * refused the treatment. The row treatment is now worn in full and the pill DOES have a value:
+     * see `showPropertyRow` and the template.
+     * WHAT SURVIVES THE RETRACTION: it is still not one of the `<ul>`'s items (the list is named
+     * "Deal documents" and a property is not one), it still has no empty state, no status and no
+     * independent degraded state, and it still sits ABOVE the three document rows because it is
+     * what the deal is ABOUT rather than another piece of its paperwork.
+     *
+     * ⚠ ABSENT MEANS NOTHING RENDERS — NOT AN EM-DASH, NOT A MUTED PLACEHOLDER, NOT A DEAD LINK.
+     * `Disposition__c.Property_Asset__c` is an optional Lookup with `deleteConstraint = SetNull`, so
+     * a sale genuinely can have no asset (and deleting an asset nulls it on every Disposition that
+     * referenced it). A placeholder would be a claim that something is missing; there is nothing to
+     * miss. This differs from the three document rows on purpose — for those, 'No LOI yet' IS the
+     * information.
+     *
+     * ⚠ `hasLink` IS SEPARATE FROM `exists` FOR THE SAME REASON IT IS ON THE ROWS: `GenerateUrl`
+     * returns a Promise, so for the first tick after the wire emits there is a name but no URL. The
+     * name still renders — it is real context — as a plain span rather than a bare `<a>` with no
+     * destination. `url` is `''` and never `undefined`, because a getter bound to an element's
+     * ATTRIBUTE is written unconditionally and `undefined` renders as the literal text "undefined"
+     * in an `href`.
+     *
+     * @returns {object} `{ exists, name, hasLink, url, recordId, title }`. Every string member is
+     *   a string, never undefined.
+     */
+    get assetLink() {
+        const s = this.summary || {};
+        const name = s.propertyAssetName;
+        // Both halves are required. An Id with no readable name would render a link with no text;
+        // a name with no Id has nothing to navigate to.
+        if (!s.propertyAssetId || !name) {
+            return { exists: false, name: '', hasLink: false, url: '', recordId: '', title: '' };
+        }
+        const url = this._urlsById[s.propertyAssetId];
+        return {
+            exists: true,
+            name: name,
+            hasLink: !!url,
+            url: url || '',
+            recordId: s.propertyAssetId,
+            title: `Open ${name}`
+        };
     }
 
     /**

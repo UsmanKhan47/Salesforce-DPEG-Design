@@ -92,7 +92,16 @@
     list-style: none;
 }
 
-.row {
+/*
+ * 🔴 ONE DECLARATION BLOCK, TWO SELECTORS — DELIBERATE, AND NOT A CANDIDATE FOR SPLITTING.
+ * `.asset-row` is the Property row (2026-08-24). It must be pixel-identical to a document row —
+ * same padding, same separator — but it must NOT answer to `.row`, because `.row` is what the Jest
+ * suite counts to prove the document list is exactly three items. Sharing the block is what keeps
+ * the two in step without a copy that can drift; giving `.asset-row` its own rules would be the
+ * drift. See the template comment for the second half of that argument.
+ */
+.row,
+.asset-row {
     padding: var(--slds-g-spacing-3, 0.75rem) 0;
     border-bottom: var(--slds-g-sizing-border-1, 1px) solid var(--slds-g-color-border-1, #e5e5e5);
 }
@@ -175,6 +184,20 @@
 .row-icon_psa {
     background: var(--slds-g-color-palette-purple-95, #f6f2fb);
     --slds-c-icon-color-foreground-default: var(--slds-g-color-palette-purple-30, #5a1ba9);
+}
+
+/*
+ * The Property row's chip (2026-08-24). Teal is the only remaining tone on the SLDS palette that
+ * is not already spoken for on this card AND carries no status meaning: brand-blue, success-green
+ * and error-red are the pill tones, and purple is the PSA chip. The asset is the deal's SUBJECT,
+ * so its chip must not read as a state.
+ * ⚠ `-95` for the tint and `-30` for the glyph, matching the three chips above — measured against
+ * `@salesforce-ux/sds-metadata/current/globalStylingHooks.metadata.json` (teal-95 #def9f3,
+ * teal-30 #024d4c), not guessed.
+ */
+.row-icon_property {
+    background: var(--slds-g-color-palette-teal-95, #def9f3);
+    --slds-c-icon-color-foreground-default: var(--slds-g-color-palette-teal-30, #024d4c);
 }
 
 /*
@@ -298,4 +321,44 @@
     color: var(--slds-g-color-on-surface-2, #2e2e2e);
     box-shadow: inset 0 0 0 var(--slds-g-sizing-border-1, 1px)
         var(--slds-g-color-neutral-base-90, #e5e5e5);
+}
+
+/*
+ * ── THE PROPERTY ROW'S PILL (2026-08-24, restyled from a bare `.asset-line`) ─────────────────
+ * The Property row carries the SAME `.pill pill_neutral` as a document row; this modifier adds the
+ * one thing the document pills do not need.
+ *
+ * 🔴 IT IS A TRUNCATION DEFENCE, NOT A LOOK. `.pill` is `white-space: nowrap` on purpose (a
+ * two-line pill looks broken) and every document status is a short, BOUNDED picklist value — 13
+ * characters at worst. An asset NAME is unbounded free text, so in the ~340px sidebar (≈276px of
+ * content) a long one would burst the column rather than wrap. `.row-head`'s `flex-wrap` drops the
+ * pill onto its own full-width line first, and only past roughly 45 characters does this ellipsis
+ * engage. The whole name stays reachable from the anchor's `title` ("Open <name>").
+ *
+ * ⚠ `display: inline-block` OVERRIDES `.pill`'s `inline-flex` AND THAT IS THE POINT — `text-overflow`
+ * has no effect on a flex container's anonymous text item. (As a flex item of `.row-head` it is
+ * blockified to `block` either way; what matters is that it stops being a flex CONTAINER.)
+ *
+ * ⚠ `min-width: 0`, NOT `max-width: 100%`. Same pairing as `.row-left`/`.row-label` above: a flex
+ * item refuses to shrink below its content until its automatic minimum size is released, so
+ * `min-width: 0` is what lets the ellipsis engage at all. `max-width: 100%` was the first draft and
+ * the SLDS linter rejects it — `slds/no-hardcoded-values-slds2` flags a bare `%` the same way it
+ * flags a hex, and this bundle is held at ZERO violations.
+ *
+ * ⚠ `overflow: hidden` — NEVER `auto` or `scroll`. A scroll container hides an overflow instead of
+ * fixing it, and a Jest source-text fence rejects both values file-wide.
+ *
+ * 🔴 THE FORMER `.asset-line` / `.asset-label` / `.asset-name*` RULES ARE GONE, NOT ORPHANED. The
+ * Property line used to be a standalone flex `<p>` with its own label and name typography; it now
+ * reuses `.row-head` / `.row-left` / `.row-icon` / `.row-label` / `.pill`, so those five rules had
+ * no remaining user. Their `display: flex` + `gap` note lives on where it still applies: the LWC
+ * compiler drops the whitespace between two sibling inline elements, so the chip / label / pill
+ * separation on this row comes from `.row-left`'s and `.row-head`'s `gap`, never from source
+ * whitespace and never from an `&nbsp;`.
+ */
+.pill_asset {
+    display: inline-block;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }

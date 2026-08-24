@@ -16,15 +16,17 @@
  *   - DispositionApprovalService.submitForApproval / selectOffer
  *                                             -> selectApprovalContextById (redesign, 2026-08-19)
  *   - DispositionApprovalAdvanceService.advance -> selectStageAndTypeByIds (redesign, 2026-08-19)
- *   - DispositionDealSummaryService.summarise -> selectNdaCountsById (Tranche 2 Workstream C,
- *                                              2026-08-20)
+ *   - DispositionDealSummaryService.summarise -> selectDealSummaryParentById (Tranche 2
+ *                                              Workstream C, 2026-08-20; renamed from
+ *                                              selectNdaCountsById 2026-08-24 when the Property
+ *                                              Asset joined the same read)
  *   - DispositionOfferFormService.getFormContext -> selectBrokerContextById (Log Offer modal,
  *                                              2026-08-21)
  *
  * ⚠ MIXED MODES SINCE 2026-08-09 (Tranche 3C) — READ THE METHOD, NEVER THIS HEADER. SIX
  * controller-backed reads are `WITH USER_MODE` (selectMostRecentByPropertyAssetId,
- * selectClosingSummaryById, selectOutreachById, selectApprovalContextById, selectNdaCountsById and,
- * since 2026-08-21, selectBrokerContextById);
+ * selectClosingSummaryById, selectOutreachById, selectApprovalContextById, selectDealSummaryParentById
+ * and, since 2026-08-21, selectBrokerContextById);
  * four are
  * `WITH SYSTEM_MODE` under the ARCHITECTURE.md §2 automation-path exception (selectStagesByIds,
  * selectListingClockByIds, selectStageRequiredById, selectStageAndTypeByIds), each justified at
@@ -54,10 +56,14 @@
  * MODE (the six USER_MODE reads) — Disposition__c is a custom object; P3 proved the custom-field
  * FLS gap is 0, so USER_MODE is safe and enforces the running user's sharing + FLS. USER_MODE also
  * covers the Wires__r relationship subquery (Wire__c is likewise custom, FLS gap 0).
- * ⚠ `selectBrokerContextById` traverses `Broker__r.Name` to `Contact`, which adds an OBJECT-level
- * gate no Disposition permission set grants — it comes from `DPEG_Contact_View` / `DPEG_Contact_Edit`
- * in the same permission-set GROUPS. That is a gate of a different KIND from the custom-field one
- * P3 measured, so "the FLS gap is 0" does not cover it. Argued at the method.
+ * ⚠ TWO OF THE SIX TRAVERSE TO A SECOND OBJECT, WHICH ADDS AN OBJECT-LEVEL GATE NO DISPOSITION
+ * PERMISSION SET GRANTS — a gate of a different KIND from the custom-FIELD one P3 measured, so
+ * "the FLS gap is 0" does not cover either of them. Each is argued at its own method:
+ *   - `selectBrokerContextById` traverses `Broker__r.Name` to `Contact` (granted by
+ *     `DPEG_Contact_View` / `DPEG_Contact_Edit` in the same permission-set GROUPS);
+ *   - `selectDealSummaryParentById` traverses `Property_Asset__r.Name` to `Property_Asset__c`
+ *     (granted by `DPEG_PropertyMgmt_View`, which is in both PSGs that can open a Disposition
+ *     record page) — added 2026-08-24.
  *
  * NOT-FOUND CONTRACT is per-caller and encoded in the method shape:
  *   - read-for-display  (selectMostRecentByPropertyAssetId) -> a missing
@@ -171,18 +177,24 @@ public with sharing class DispositionSelector {
     }
 
     /**
-     * The two maintained NDA counters for one Disposition — backs the NDA row of the Deal Summary
-     * card (`DispositionDealSummaryService` -> `c/dispositionDealSummary`), which renders them as
-     * "3 of 4 signed". Added 2026-08-20, Tranche 2 Workstream C (design D5).
+     * The parent-level fields the Deal Summary card needs — the two maintained NDA counters, and
+     * the Property Asset this sale is about — for ONE Disposition. Backs
+     * `DispositionDealSummaryService` -> `c/dispositionDealSummary`. Added 2026-08-20, Tranche 2
+     * Workstream C (design D5).
+     *
+     * ⚠ RENAMED FROM `selectNdaCountsById` ON 2026-08-24, WHEN THE PROPERTY ASSET WAS ADDED. The
+     * old name would now be a lie — a method called "NDA counts" returning a Property Asset is
+     * exactly the kind of name a later reader trusts instead of reading. One production caller
+     * moved with it.
      *
      * ⚠ THIS METHOD IS NOT IN THE D5 DELIVERABLE LIST AND WAS ADDED DELIBERATELY. D5 names the
      * counters as card content and names only three selectors to edit, none of which owns
      * `Disposition__c`. The alternatives were both worse: SOQL in the service or the controller
      * violates `.claude/rules/apex-layering-rule.md` outright, and a `getRecord` wire for these
-     * two fields alone would give one card two data sources with two independent refresh clocks
-     * and two different failure shapes (D5 itself floats that hybrid only as "an alternative if
-     * the user prefers LDS", while directing that the Apex version ship). One selector method is
-     * the smallest correct answer.
+     * fields alone would give one card two data sources with two independent refresh clocks and
+     * two different failure shapes (D5 itself floats that hybrid only as "an alternative if the
+     * user prefers LDS", while directing that the Apex version ship). One selector method is the
+     * smallest correct answer.
      *
      * 🔴 BOTH COUNTERS ARE `DERIVED - DO NOT HAND-EDIT` AND ARE NULL, NOT ZERO, ON PRE-EXISTING
      * ROWS. They are maintained by the `NDA_Signed_Rollup` AFTER-SAVE FLOW — not a roll-up summary
@@ -193,6 +205,30 @@ public with sharing class DispositionSelector {
      * (`dispositionDealSummary.js`), so that the Apex DTO cannot quietly report a real null as a
      * confident "0 of 0". Do not "helpfully" coalesce here as well.
      *
+     * ── 🔴 `Property_Asset__r.Name` IS A TRAVERSAL, AND IT COSTS A SECOND OBJECT'S CRUD GATE ──
+     * Added 2026-08-24 so the card can link the sale's Property Asset. It is deliberately part of
+     * THIS query rather than a new one: `Disposition__c` is already being read here, and a second
+     * `LIMIT 1` read of the same row to fetch two more fields would add a query to a card that has
+     * a standing four-query budget test (`dispositionQueryCost_manyChildrenAcrossAllThreeObjects_
+     * stillFourQueries`).
+     *
+     * ⚠ AND THE COST IS REAL, SO IT IS STATED RATHER THAN DISCOVERED. `Property_Asset__c.Name` has
+     * no `FieldPermissions` row (a custom object's Name field is not FLS-gated), but the traversal
+     * still requires CRUD Read on `Property_Asset__c` itself — a gate NO disposition permission set
+     * grants. It arrives from `DPEG_PropertyMgmt_View`, which is in BOTH PSGs that can open a
+     * Disposition record page (`DPEG_Principal_PSG`, `DPEG_Junior_Analyst_PSG` — verified against
+     * the permission-set files 2026-08-24). This is the same KIND of gate `selectBrokerContextById`
+     * documents for its `Broker__r.Name` -> Contact traversal, and it is NOT covered by "the
+     * custom-FIELD FLS gap is 0" that the class header's USER_MODE argument rests on.
+     *
+     * 🔴 THE CONSEQUENCE OF THAT GATE FAILING IS SHARED WITH THE NDA COUNTERS, BY CONSTRUCTION.
+     * One query means one exception: a persona without Property Asset Read makes this whole read
+     * throw, and the caller's single catch flags `ndaCountsUnavailable`. So the NDA row would
+     * report "NDA counts unavailable" for a Property Asset provisioning gap. That OVER-reports —
+     * it never hides a gap, which is the failure mode design §0 C-1 was written about — and the
+     * remedy is the same permission-set fix either way. It is recorded here, and at the caller, so
+     * nobody debugs the counter flow for a Property Asset problem.
+     *
      * READ-FOR-DISPLAY, null on miss — and that is a DEPARTURE from the two fetch-for-use reads
      * above it (`selectClosingSummaryById` / `selectOutreachById`), which throw. Those back cards
      * whose entire content is the Disposition. This one backs ONE ROW of a card that must survive
@@ -201,23 +237,26 @@ public with sharing class DispositionSelector {
      * swallow anyway.
      *
      * ── FLS: `WITH USER_MODE` — a read the user asked for by opening the record page ──
-     * ARCHITECTURE.md §2's automation-path exception does not apply. Both fields are granted in
-     * `DPEG_Disposition_View` and `DPEG_Disposition_Edit` (verified 2026-08-20); a PermissionSet
-     * deploy REPLACES its whole `<fieldPermissions>` set, so the caller's narrow fail-soft catch
-     * stands behind the grant rather than instead of it.
+     * ARCHITECTURE.md §2's automation-path exception does not apply. All three Disposition fields
+     * are granted in `DPEG_Disposition_View` and `DPEG_Disposition_Edit` (the two counters verified
+     * 2026-08-20, `Property_Asset__c` verified 2026-08-24); a PermissionSet deploy REPLACES its
+     * whole `<fieldPermissions>` set, so the caller's narrow fail-soft catch stands behind the
+     * grant rather than instead of it.
      *
-     * @param dispositionId Disposition__c Id to read the NDA counters for; null-safe.
-     * @return The Disposition__c with Id, NDA_Count__c and Signed_NDA_Count__c populated — either
-     *         may be null — or null when the input is null or the row is not visible.
+     * @param dispositionId Disposition__c Id to read; null-safe.
+     * @return The Disposition__c with Id, NDA_Count__c, Signed_NDA_Count__c, Property_Asset__c and
+     *         Property_Asset__r.Name populated — any of them may be null — or null when the input
+     *         is null or the row is not visible.
      * @example
-     * Disposition__c d = DispositionSelector.selectNdaCountsById(dispositionId);
+     * Disposition__c d = DispositionSelector.selectDealSummaryParentById(dispositionId);
      */
-    public static Disposition__c selectNdaCountsById(Id dispositionId) {
+    public static Disposition__c selectDealSummaryParentById(Id dispositionId) {
         if (dispositionId == null) {
             return null;
         }
         List<Disposition__c> rows = [
-            SELECT Id, NDA_Count__c, Signed_NDA_Count__c
+            SELECT Id, NDA_Count__c, Signed_NDA_Count__c,
+                   Property_Asset__c, Property_Asset__r.Name
             FROM Disposition__c
             WHERE Id = :dispositionId
             WITH USER_MODE

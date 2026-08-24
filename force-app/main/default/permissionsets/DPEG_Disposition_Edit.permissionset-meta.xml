@@ -1370,6 +1370,22 @@
         <field>BOV_Submission__c.Is_Manually_Appointed__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!--
+        ADDED 2026-08-24. Granted at the TAIL of the BOV_Submission__c run, next to
+        Is_Manually_Appointed__c, following this file's convention of appending later additions
+        rather than reflowing the alphabetical block.
+
+        Is_System_Selected__c: readable only, editable=false. Copies Is_Manually_Appointed__c's
+        grant shape and reasoning exactly — this is a SYSTEM field written only by
+        BovAutoSelectionService (marks the scoring model's pick, distinct from the human-appointed
+        Is_Preferred_Broker__c). A user who could hand-edit it could corrupt which broker the
+        approval routes to. Do NOT grant editable=true on either disposition permission set.
+    -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>BOV_Submission__c.Is_System_Selected__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
         <field>Broker_Listing__c.Broker_Firm__c</field>

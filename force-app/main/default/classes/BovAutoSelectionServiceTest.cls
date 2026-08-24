@@ -163,11 +163,86 @@ private class BovAutoSelectionServiceTest {
     private static Map<Id, BOV_Submission__c> stateOf(Id dispositionId) {
         return new Map<Id, BOV_Submission__c>([
             SELECT Id, Submission_Status__c, Approval_Status__c, Approval_Pending__c,
-                   Is_Preferred_Broker__c, Is_Manually_Appointed__c, BOV_Score__c, BOV_Amount__c
+                   Is_Preferred_Broker__c, Is_System_Selected__c, Is_Manually_Appointed__c,
+                   BOV_Score__c, BOV_Amount__c
             FROM BOV_Submission__c
             WHERE Disposition__c = :dispositionId
             WITH SYSTEM_MODE
         ]);
+    }
+
+    /**
+     * The Id holding the PREFERRED slot, or null when nothing does.
+     *
+     * 🔴 ADDED 2026-08-24 WITH THE TWO-SLOT MODEL, AND IT IS WHY `assertExactlyOneSelected` COULD
+     * NOT SIMPLY BE RELAXED TO "ONE OR TWO". A disposition may now legitimately hold two Selected
+     * rows, so an assertion that counts them proves almost nothing — the question that matters is
+     * WHICH ROW IS IN WHICH SLOT. Every preferred test below asserts both slots by identity.
+     * Fails loudly rather than returning an arbitrary row if the invariant is broken.
+     */
+    private static Id preferredSlotOn(Id dispositionId) {
+        List<Id> held = new List<Id>();
+        for (BOV_Submission__c s : stateOf(dispositionId).values()) {
+            if (SELECTED.equals(s.Submission_Status__c) && s.Is_Preferred_Broker__c == true) {
+                held.add(s.Id);
+            }
+        }
+        Assert.isTrue(held.size() <= 1,
+            '🔴 TWO SELECTED PREFERRED ROWS on one disposition (' + held + '). That is the half of '
+            + 'the narrowed exclusivity invariant this slot exists to hold, so a failure here is a '
+            + 'guard defect, not an assertion problem.');
+        return held.isEmpty() ? null : held[0];
+    }
+
+    /**
+     * The Id holding the APPOINTED (non-preferred) slot, or null when nothing does. See
+     * `preferredSlotOn` for why the two are read separately.
+     */
+    private static Id appointedSlotOn(Id dispositionId) {
+        List<Id> held = new List<Id>();
+        for (BOV_Submission__c s : stateOf(dispositionId).values()) {
+            if (SELECTED.equals(s.Submission_Status__c) && s.Is_Preferred_Broker__c != true) {
+                held.add(s.Id);
+            }
+        }
+        Assert.isTrue(held.size() <= 1,
+            '🔴 TWO SELECTED NON-PREFERRED ROWS on one disposition (' + held + '). The other half of '
+            + 'the narrowed exclusivity invariant.');
+        return held.isEmpty() ? null : held[0];
+    }
+
+    /**
+     * Asserts BOTH slots by identity in one call. Pass null for a slot that must be EMPTY.
+     *
+     * ⚠ IT ALSO ASSERTS `Is_System_Selected__c`, WHICH IS THE POINT OF THE FIELD. The scored
+     * winner must carry it and the preferred row must not — that is what
+     * `DispositionApprovalService` and the comparison matrix use to tell two Selected rows apart,
+     * and a test that only checked `Submission_Status__c` would pass against a version that never
+     * wrote the flag at all.
+     */
+    private static void assertSlots(Id dispositionId, Id expectedPreferred, Id expectedAppointed,
+                                    String why) {
+        Assert.areEqual(expectedPreferred, preferredSlotOn(dispositionId),
+            why + ' — PREFERRED SLOT');
+        Assert.areEqual(expectedAppointed, appointedSlotOn(dispositionId),
+            why + ' — APPOINTED (scored / manual) SLOT');
+        Map<Id, BOV_Submission__c> rows = stateOf(dispositionId);
+        for (BOV_Submission__c s : rows.values()) {
+            Boolean shouldCarryFlag = s.Id == expectedAppointed
+                && s.Is_Preferred_Broker__c != true
+                && s.BOV_Score__c != null;
+            if (shouldCarryFlag) {
+                Assert.isTrue(s.Is_System_Selected__c,
+                    why + ' — the SCORED winner must carry Is_System_Selected__c. Without it the '
+                    + 'approval router cannot tell it from a preferred row, and every row selected '
+                    + 'before the field existed stays unrepaired.');
+            } else {
+                Assert.isFalse(s.Is_System_Selected__c,
+                    why + ' — only the scored winner may carry Is_System_Selected__c; ' + s.Id
+                    + ' must not. A preferred row carrying it, or a demoted row keeping it, is the '
+                    + 'two-rows-claiming-one-slot state the guard exists to make unreachable.');
+            }
+        }
     }
 
     private static List<Id> selectedIdsOn(Id dispositionId) {
@@ -594,12 +669,13 @@ private class BovAutoSelectionServiceTest {
      * edge case. If this test is ever "fixed" by giving the row an amount it stops proving anything.
      */
     @isTest
-    static void addingAPreferredBroker_demotesTheScoredWinnerAndTakesTheSlot() {
+    static void addingAPreferredBroker_leavesTheScoredWinnerSelected() {
         Disposition__c d = pricedDispositionAt('BOV Outreach');
         BOV_Submission__c scoredWinner = bov(d.Id, 1400000);
         insert scoredWinner;
-        Assert.areEqual(new List<Id>{ scoredWinner.Id }, selectedIdsOn(d.Id),
-            'precondition: scoring appointed the strongest response before any preferred row exists');
+        assertSlots(d.Id, null, scoredWinner.Id,
+            'precondition: scoring appointed the strongest response, and the PREFERRED slot is '
+            + 'empty because no preferred row exists yet');
 
         Test.startTest();
         BOV_Submission__c preferred = unquotedPreferredBov(d.Id);
@@ -609,16 +685,19 @@ private class BovAutoSelectionServiceTest {
         Map<Id, BOV_Submission__c> after = stateOf(d.Id);
         Assert.isNull(after.get(preferred.Id).BOV_Score__c,
             'precondition: the preferred row is UNSCOREABLE — it has no BOV amount, which is the '
-            + 'normal shape of a preferred broker and the case this decision had to accommodate');
+            + 'normal shape of a preferred broker and the case this decision had to accommodate. '
+            + 'A preferred row that HAPPENED to score would be appointed by the scored path too, '
+            + 'so a test built on one could not tell the flag from the score.');
         Assert.isNotNull(after.get(scoredWinner.Id).BOV_Score__c,
-            'precondition: the row it displaces IS scoreable, so score genuinely lost to the flag');
-        assertExactlyOneSelected(d.Id, preferred.Id,
-            '🔴 A preferred broker outranks every scored response, whatever it scores. Still '
-            + 'pointing at the scored winner means the flag is being treated as an EXCLUSION from '
-            + 'the ranking — which is what this feature used to do and no longer does.');
-        Assert.areEqual(BACKUP, after.get(scoredWinner.Id).Submission_Status__c,
-            'and the scored winner must be demoted IN THE SAME STATEMENT, or the exclusivity guard '
-            + 'refuses the Add Preferred Broker save itself');
+            'precondition: the row beside it IS scoreable, so the two really are in different slots');
+        assertSlots(d.Id, preferred.Id, scoredWinner.Id,
+            '🔴 THE CENTRAL ASSERTION OF THE TWO-SLOT MODEL. Adding a preferred broker fills the '
+            + 'PREFERRED slot and LEAVES THE SCORED WINNER SELECTED. A null appointed slot here '
+            + 'means the retracted V2 rule is back — the preferred row EVICTING the scored winner '
+            + '— which is the one line planFor was rewritten to delete.');
+        Assert.areEqual(SELECTED, after.get(scoredWinner.Id).Submission_Status__c,
+            'stated again directly on the row, because this is the exact value the deleted '
+            + 'demotion write used to change to Backup');
     }
 
     /**
@@ -634,13 +713,15 @@ private class BovAutoSelectionServiceTest {
         Assert.areEqual(new List<Id>{ preferred.Id }, selectedIdsOn(d.Id), 'precondition');
 
         Test.startTest();
-        insert bov(d.Id, 1450000); // the strongest possible scored response
+        BOV_Submission__c strongest = bov(d.Id, 1450000); // the strongest possible scored response
+        insert strongest;
         Test.stopTest();
 
-        assertExactlyOneSelected(d.Id, preferred.Id,
-            '🔴 An unquoted preferred broker must keep the appointment against the highest-scoring '
-            + 'response on the sale. This is the assertion that fails if the preferred branch is '
-            + 'ever reordered below the scored branch in planFor.');
+        assertSlots(d.Id, preferred.Id, strongest.Id,
+            '🔴 An unquoted preferred broker must KEEP the preferred slot against the '
+            + 'highest-scoring response on the sale, and that response must take the SCORED slot '
+            + 'beside it. A preferred slot pointing at the scored row means the two passes in '
+            + 'planFor have been collapsed back into one winner.');
     }
 
     /** The parent-reprice path must not displace a preferred broker either. */
@@ -650,17 +731,20 @@ private class BovAutoSelectionServiceTest {
         BOV_Submission__c preferred = unquotedPreferredBov(d.Id);
         BOV_Submission__c strong = bov(d.Id, 1400000);
         insert new List<BOV_Submission__c>{ preferred, strong };
-        Assert.areEqual(new List<Id>{ preferred.Id }, selectedIdsOn(d.Id),
-            'precondition: the preferred row is appointed even while the sale is unpriced — score '
-            + 'is irrelevant on this path');
+        assertSlots(d.Id, preferred.Id, null,
+            'precondition: the preferred row holds its slot even while the sale is unpriced (score '
+            + 'is irrelevant on that path), and the SCORED slot is EMPTY because nothing is '
+            + 'scoreable yet — which is what makes the reprice below observable');
 
         Test.startTest();
         update new Disposition__c(Id = d.Id, Asking_Price__c = ASKING_PRICE);
         Test.stopTest();
 
-        assertExactlyOneSelected(d.Id, preferred.Id,
-            'Pricing the sale materialises every scored response, and NONE of them may take the '
-            + 'appointment away from a preferred broker');
+        assertSlots(d.Id, preferred.Id, strong.Id,
+            'Pricing the sale materialises every scored response. None of them may touch the '
+            + 'PREFERRED slot — and the parent hook must still fill the SCORED slot, which is the '
+            + 'whole reason that hook exists (a sale priced after its BOV responses arrived gets '
+            + 'no scored appointment at all without it).');
     }
 
     /**
@@ -675,7 +759,7 @@ private class BovAutoSelectionServiceTest {
      * disagree deliberately: `older` is older by ten minutes but may hold either Id.
      */
     @isTest
-    static void twoPreferredBrokers_theNewestOneIsAppointed() {
+    static void twoPreferredBrokers_theNewestOneIsAppointedAndTheOlderIsRetired() {
         Disposition__c d = pricedDispositionAt('BOV Outreach');
         BOV_Submission__c older = unquotedPreferredBov(d.Id);
         insert older;
@@ -686,14 +770,25 @@ private class BovAutoSelectionServiceTest {
         insert newer;
         Test.stopTest();
 
-        assertExactlyOneSelected(d.Id, newer.Id,
-            '🔴 The MOST RECENTLY ADDED preferred broker must hold the appointment. Pointing at the '
-            + 'older row means isNewer() has been "harmonised" to the CreatedDate ASC tie-break the '
-            + 'rest of the module uses — which would make a second Add Preferred Broker click a '
-            + 'SILENT NO-OP, with no remedy, because Replace Broker refuses preferred rows.');
-        Assert.areEqual(BACKUP, stateOf(d.Id).get(older.Id).Submission_Status__c,
-            'and the superseded preferred broker drops to Backup — it stays on the preferred list, '
-            + 'it just no longer holds the appointment');
+        assertSlots(d.Id, newer.Id, null,
+            '🔴 The MOST RECENTLY ADDED preferred broker must hold the preferred slot. Pointing at '
+            + 'the older row means isNewer() has been "harmonised" to the CreatedDate ASC tie-break '
+            + 'the rest of the module uses — which would make a second Add Preferred Broker click a '
+            + 'SILENT NO-OP with no remedy.');
+        // ⚠ AMENDED 2026-08-24: this used to assert the older row dropped to `Backup` and STAYED on
+        // the preferred list. It no longer exists at all — `BovPreferredBrokerService` retires it,
+        // which is the user's "the outgoing row is removed from the list" decision. The state
+        // assertion is kept rather than deleted because "it is gone" and "it is Backup" are one
+        // `continue` apart in the retirement loop and only one of them is correct.
+        Assert.isNull(stateOf(d.Id).get(older.Id),
+            '🔴 The superseded preferred broker must be REMOVED FROM THE LIST, not merely demoted. '
+            + 'Finding it at Backup means BovPreferredBrokerService did not run — check the call '
+            + 'ORDER in BovSubmissionTriggerHandler.afterInsert, which puts it before reselect.');
+        Assert.areEqual(1, [
+            SELECT COUNT() FROM BOV_Broker_Change__c WHERE Disposition__c = :d.Id
+        ], '🔴 AND THE HISTORY ROW IS THE OTHER HALF OF THAT DECISION. A delete with no history row '
+            + 'destroys the only record the broker was ever appointed — BOV_Submission__c has '
+            + 'enableHistory false and the row itself is gone.');
     }
 
     /**
@@ -714,9 +809,10 @@ private class BovAutoSelectionServiceTest {
         BOV_Submission__c preferred = preferredBov(d.Id, 950000); // quoted, so it CAN be unflagged
         BOV_Submission__c strong = bov(d.Id, 1400000);
         insert new List<BOV_Submission__c>{ preferred, strong };
-        Assert.areEqual(new List<Id>{ preferred.Id }, selectedIdsOn(d.Id),
-            'precondition: the preferred row holds the appointment DESPITE scoring below `strong` '
-            + '— which is what makes the re-rank below observable');
+        assertSlots(d.Id, preferred.Id, strong.Id,
+            'precondition: the preferred row holds the PREFERRED slot despite scoring below '
+            + '`strong`, which holds the SCORED slot beside it — the coexistence that makes the '
+            + 're-rank below observable');
 
         Test.startTest();
         update new BOV_Submission__c(Id = preferred.Id, Is_Preferred_Broker__c = false);
@@ -756,7 +852,7 @@ private class BovAutoSelectionServiceTest {
         BOV_Submission__c preferred = unquotedPreferredBov(d.Id);
         BOV_Submission__c strong = bov(d.Id, 1400000);
         insert new List<BOV_Submission__c>{ preferred, strong };
-        Assert.areEqual(new List<Id>{ preferred.Id }, selectedIdsOn(d.Id), 'precondition');
+        assertSlots(d.Id, preferred.Id, strong.Id, 'precondition');
 
         Test.startTest();
         Boolean refused = false;
@@ -775,10 +871,10 @@ private class BovAutoSelectionServiceTest {
             + 'test documents is gone — which would be good news. Re-point this test at the new '
             + 'behaviour and update the "delete, not unflag" note on '
             + 'BovAutoSelectionService.reselectForDeleted; do not simply delete it.');
-        assertExactlyOneSelected(d.Id, preferred.Id,
+        assertSlots(d.Id, preferred.Id, strong.Id,
             'and because the save was refused, NOTHING changed — the preferred broker still holds '
-            + 'the appointment. The user clicked, saw an error about a field they were told was '
-            + 'optional, and the sale is unchanged.');
+            + 'its slot and the scored winner still holds its own. The user clicked, saw an error '
+            + 'about a field they were told was optional, and the sale is unchanged.');
     }
 
     /**
@@ -793,7 +889,9 @@ private class BovAutoSelectionServiceTest {
         BOV_Submission__c strong = bov(d.Id, 1400000);
         BOV_Submission__c weak = bov(d.Id, 900000);
         insert new List<BOV_Submission__c>{ preferred, strong, weak };
-        Assert.areEqual(new List<Id>{ preferred.Id }, selectedIdsOn(d.Id), 'precondition');
+        assertSlots(d.Id, preferred.Id, strong.Id,
+            'precondition: BOTH slots are filled, which is what makes "deleting the preferred row '
+            + 'empties ONLY the preferred slot" a falsifiable claim');
 
         Test.startTest();
         delete preferred;
@@ -1186,51 +1284,75 @@ private class BovAutoSelectionServiceTest {
     }
 
     /**
-     * 🔴 THE NON-OWNER TWIN FOR THE PREFERRED PATH. The sibling being demoted is the ADMIN-owned
-     * scored winner; the running user is a Minimum-Access principal who can SEE it and cannot EDIT
-     * it. Fails RED if `SelectionWrites`' `without sharing` escape is removed.
+     * 🔴 THE NON-OWNER TWIN FOR THE PREFERRED PATH — REPOINTED 2026-08-24, AND THE REASON IT HAD TO
+     *    BE IS ITSELF A FINDING WORTH KEEPING.
      *
-     * ⚠ NOT A DUPLICATE of `nonOwnerSaver_swapsAnUnownedSiblingAcrossTheSharingBoundary`. That one
-     * drives the SCORED path via an update; this one drives the PREFERRED path via an update to the
-     * flag. They reach `planFor` through different branches, and the preferred branch is the one
-     * every real Add Preferred Broker click will use.
+     * ⚠ WHAT THIS TEST USED TO DO NO LONGER CROSSES THE SHARING BOUNDARY AT ALL. It flagged a
+     * saver-owned row as preferred and asserted that the ADMIN-owned scored winner was demoted.
+     * Under the two-slot model there IS no such demotion — the preferred row is promoted BESIDE the
+     * scored winner and the only row written is the saver's own. Left as it was, the test would
+     * have gone GREEN AND VACUOUS: deleting `SelectionWrites`' `without sharing` escape would not
+     * have reddened it, because nothing unowned is written on that path any more.
+     *
+     * 🔴 SO IT NOW DRIVES THE ONE PREFERRED-SLOT BRANCH THAT STILL WRITES AN UNOWNED ROW: THE
+     * PREFERRED **DEMOTION**. Reaching it needs a superseded preferred row that is still Selected,
+     * which `BovPreferredBrokerService` normally makes unreachable by deleting it — so the fixture
+     * uses the UNDELETE GAP, exactly as
+     * `DispositionApprovalServiceTest.submitAtBovOutreach_twoSelectedSubmissions...` does, and for
+     * the same reason: the platform has no `before undelete` context and this trigger declares no
+     * `after undelete` one, so a restored row arrives with no automation having seen it. That is a
+     * real production path, not a contrivance.
+     *
+     * ⚠ NOT A DUPLICATE of `nonOwnerSaver_swapsAnUnownedSiblingAcrossTheSharingBoundary`, which
+     * covers the SCORED demotion. Two branches, two falsifiers.
      */
     @isTest
-    static void nonOwnerSaver_preferredPathAlsoCrossesTheSharingBoundary() {
+    static void nonOwnerSaver_preferredDemotionCrossesTheSharingBoundary() {
         Disposition__c d = pricedDispositionAt('BOV Outreach');
-        BOV_Submission__c scoredWinner = bov(d.Id, 1400000);
-        // ⚠ QUOTED, and it must be. An UNQUOTED row cannot be inserted unflagged —
-        // BOV_Amount_Required_On_Submission only exempts rows that ARE preferred, so the
-        // not-yet-flagged insert below would be refused. See
-        // unflaggingAnUnquotedPreferredBroker_isRefusedByTheValidationRule for the same rule
-        // biting from the other direction.
-        BOV_Submission__c candidate = bov(d.Id, 900000);
-        insert new List<BOV_Submission__c>{ scoredWinner, candidate };
-        Assert.areEqual(new List<Id>{ scoredWinner.Id }, selectedIdsOn(d.Id),
-            'precondition: the ADMIN-owned scored row holds the appointment');
+
+        // ── The undelete gap, step by step. Reordering these breaks the fixture. ──
+        BOV_Submission__c stale = unquotedPreferredBov(d.Id);
+        insert stale;                       // promoted into the preferred slot
+        Test.setCreatedDate(stale.Id, System.now().addMinutes(-10));
+        delete stale;                       // SOQL stops seeing it, so the retirement service does too
+        BOV_Submission__c current = unquotedPreferredBov(d.Id);
+        insert current;                     // retirement finds ONE preferred row: nothing to retire
+        undelete stale;                     // no undelete context anywhere on this trigger
+
+        Assert.areEqual(2, [
+            SELECT COUNT() FROM BOV_Submission__c
+            WHERE Disposition__c = :d.Id AND Submission_Status__c = 'Selected'
+              AND Is_Preferred_Broker__c = TRUE
+        ], 'PREMISE — two Selected preferred rows must really exist, or the demotion branch below '
+            + 'is never entered and this test passes vacuously. If BovSubmissionTrigger ever gains '
+            + 'an after-undelete context this line fails FIRST and says why.');
 
         User saver = TestDataFactory.createNonOwnerDispositionApprover('bas2');
-        // Only the CANDIDATE changes hands. The row that must be DEMOTED stays with the admin.
-        update new BOV_Submission__c(Id = candidate.Id, OwnerId = saver.Id);
+        // Only the CURRENT row changes hands. The row that must be DEMOTED stays with the admin.
+        update new BOV_Submission__c(Id = current.Id, OwnerId = saver.Id);
 
         System.runAs(saver) {
-            assertReadableButNotEditable(scoredWinner.Id);
+            assertReadableButNotEditable(stale.Id);
             Test.startTest();
+            // Any change key on a row the saver owns re-ranks the sale. `Days_To_Market__c` is a
+            // scoring input and therefore a key; it touches neither slot directly, so the demotion
+            // below is unambiguously auto-selection's own work.
             Database.update(
-                new BOV_Submission__c(Id = candidate.Id, Is_Preferred_Broker__c = true),
+                new BOV_Submission__c(Id = current.Id, Days_To_Market__c = 45),
                 AccessLevel.SYSTEM_MODE);
             Test.stopTest();
         }
 
         Assert.areEqual(new List<String>(),
             BovAutoSelectionService.lastRunSelectionFailures,
-            '🔴 THE SWAP WAS REFUSED — read the StatusCode above. INSUFFICIENT_ACCESS_OR_READONLY '
-            + 'means the `without sharing` escape has been removed or bypassed.');
-        assertExactlyOneSelected(d.Id, candidate.Id,
-            'Flagging a broker as preferred must take the appointment even when the row being '
-            + 'demoted belongs to someone else');
-        Assert.areEqual(BACKUP, stateOf(d.Id).get(scoredWinner.Id).Submission_Status__c,
-            'and the unowned scored winner is the row that actually had to be written');
+            '🔴 THE DEMOTION WAS REFUSED — read the StatusCode above. '
+            + 'INSUFFICIENT_ACCESS_OR_READONLY means the `without sharing` escape on '
+            + 'SelectionWrites has been removed or bypassed.');
+        assertSlots(d.Id, current.Id, null,
+            'The NEWEST preferred row keeps the slot and the superseded one is demoted — even '
+            + 'though the row that had to be written belongs to somebody else');
+        Assert.areEqual(BACKUP, stateOf(d.Id).get(stale.Id).Submission_Status__c,
+            'and the unowned superseded row is the one that actually had to be written');
     }
 
     /**
@@ -1241,9 +1363,27 @@ private class BovAutoSelectionServiceTest {
      * created in the same transaction and every one is unscoreable, so `CreatedDate` ties across
      * the whole set and the `Id` tie-break decides ALONE. If that leg were non-deterministic the
      * two chunks could disagree and leave two Selected rows — which the end-state assertion catches.
+     *
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * 🔴 AMENDED 2026-08-24 — AND WHAT CHANGED IS WORTH READING BEFORE ANYONE "FIXES" THE NUMBERS.
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * 251 preferred rows on ONE disposition is now **250 SUCCESSIVE REPLACEMENTS**, because
+     * `BovPreferredBrokerService` retires the outgoing preferred broker every time a new one
+     * arrives. So this insert now ends with exactly ONE surviving submission and 250
+     * `BOV_Broker_Change__c` history rows — and it costs more DML than it used to, which is a real
+     * consequence of the user's decision rather than a regression:
+     *
+     *   per chunk: 1 retirement history INSERT + 1 retirement DELETE + 1 selection UPDATE
+     *              (the delete's own `after delete` re-rank is normally free, because the survivor
+     *              is already correct by then)
+     *   plus 1 for the caller's own insert. TWO chunks -> the assertion below.
+     *
+     * ⚠ THE PROPERTY THAT MATTERS IS UNCHANGED AND IS WHAT THE ASSERTION DEFENDS: the cost is
+     * CONSTANT PER CHUNK, not per record. A per-record retirement would issue ~500 statements and
+     * blow the 150-statement limit long before the end state was reached.
      */
     @isTest
-    static void bulk251PreferredOnOneDisposition_appointsExactlyOne() {
+    static void bulk251PreferredOnOneDisposition_retiresAllButTheNewest() {
         Disposition__c d = pricedDispositionAt('BOV Outreach');
         List<BOV_Submission__c> rows = new List<BOV_Submission__c>();
         for (Integer i = 0; i < BULK_N; i++) {
@@ -1258,16 +1398,31 @@ private class BovAutoSelectionServiceTest {
         Integer dmlUsed = Limits.getDmlStatements() - dmlBefore;
         Test.stopTest();
 
-        Assert.areEqual(3, dmlUsed,
-            'ONE for this insert, plus ONE selection write PER CHUNK. A per-record write would read '
-            + 'close to 251 and exhaust the 150-statement limit.');
-        Assert.isTrue(queriesUsed <= 8,
-            'PER-CHUNK CONSTANT BUDGET, unchanged by the preferred branch. Queries used: '
-            + queriesUsed);
-        Assert.areEqual(1, selectedIdsOn(d.Id).size(),
-            '🔴 EXACTLY ONE of the 251 preferred rows may hold the appointment. Two means the two '
-            + 'chunks picked different winners, i.e. isNewer() is not a total order over rows that '
-            + 'share a CreatedDate.');
+        Assert.isTrue(dmlUsed <= 9,
+            '🔴 CONSTANT PER CHUNK, NOT PER RECORD. ONE for this insert plus at most FOUR per '
+            + 'chunk (retirement history insert, retirement delete, the delete-cascade re-rank, '
+            + 'the selection write). A per-record retirement would read close to 500 and exhaust '
+            + 'the 150-statement limit. DML used: ' + dmlUsed);
+        Assert.isTrue(queriesUsed <= 12,
+            'PER-CHUNK CONSTANT BUDGET, widened by the retirement read and the delete-cascade '
+            + 're-rank and by nothing else. Queries used: ' + queriesUsed);
+        List<BOV_Submission__c> survivors = [
+            SELECT Id, Submission_Status__c FROM BOV_Submission__c
+            WHERE Disposition__c = :d.Id WITH SYSTEM_MODE
+        ];
+        Assert.areEqual(1, survivors.size(),
+            '🔴 EXACTLY ONE of the 251 preferred rows may SURVIVE. Every other one was replaced by '
+            + 'the next, and "replaced" now means removed from the list. More than one means the '
+            + 'retirement did not run across both chunks.');
+        Assert.areEqual(SELECTED, survivors[0].Submission_Status__c,
+            'and the survivor holds the preferred slot — two chunks disagreeing on the winner would '
+            + 'show up here as a Backup survivor, i.e. isNewer() is not a total order over rows '
+            + 'that share a CreatedDate.');
+        Assert.areEqual(BULK_N - 1, [
+            SELECT COUNT() FROM BOV_Broker_Change__c WHERE Disposition__c = :d.Id
+        ], '🔴 ONE HISTORY ROW PER RETIREMENT, ACROSS BOTH CHUNKS. A count of 249 or 199 means one '
+            + 'chunk logged nothing while still deleting — the exact failure mode this feature is '
+            + 'built to make impossible.');
     }
 
     /**
@@ -1291,9 +1446,19 @@ private class BovAutoSelectionServiceTest {
         insert rows;
         Test.stopTest();
 
-        assertExactlyOneSelected(d.Id, preferred.Id,
-            '🔴 An unquoted preferred row arriving in the SECOND chunk must take the appointment '
-            + 'from the scored winner chunk 1 had already appointed. Pointing at a scored row means '
-            + 'the preferred branch does not survive re-evaluation across chunks.');
+        Assert.areEqual(preferred.Id, preferredSlotOn(d.Id),
+            '🔴 An unquoted preferred row arriving in the SECOND chunk must take the PREFERRED slot '
+            + 'on a sale chunk 1 had already given a scored winner. An empty slot means the '
+            + 'preferred branch does not survive re-evaluation across chunks.');
+        Id appointed = appointedSlotOn(d.Id);
+        Assert.isNotNull(appointed,
+            '🔴 AND THE SCORED SLOT MUST STILL BE FILLED. This is the two-slot half of the test: '
+            + 'under the retracted "preferred pre-empts" rule the preferred row arriving in chunk 2 '
+            + 'DEMOTED the scored winner, so a null here means that rule is back.');
+        Assert.areNotEqual(preferred.Id, appointed,
+            'and the two slots must be held by DIFFERENT rows');
+        Assert.isTrue(stateOf(d.Id).get(appointed).Is_System_Selected__c,
+            'the scored occupant carries Is_System_Selected__c, which is what tells the approval '
+            + 'router which of the two Selected rows is the model pick');
     }
 }

@@ -21,3 +21,104 @@
 .lv-error {
     font-size: var(--slds-g-font-scale-base, 0.8125rem);
 }
+
+/*
+ * ── THE OFFER PICKER TABLE (2026-08-24) ─────────────────────────────────────────────────────
+ * Replaces the `lightning-radio-group` whose one-string-per-option labels read as run-on prose
+ * ("Derek Simmons — $180,000 · Aug 21, 2026 · OFFER-0008"). Four aligned columns are what let a
+ * principal actually compare bids; the template's comment argues why this is hand-rolled markup
+ * rather than `lightning-datatable`.
+ *
+ * ⚠ SLDS 2 GLOBAL HOOKS ONLY — no authored hex, px, rem colour or spacing. The `var(--hook,
+ * <value>)` fallbacks are the SLDS canonical values written by `npx slds-linter lint --fix`, not
+ * hand-picked: `slds/no-slds-var-without-fallback` warns on every bare hook because styling hooks
+ * are unavailable in some Salesforce environments, where a bare hook renders as nothing at all.
+ * Re-run the fixer after adding a hook rather than guessing a value.
+ *
+ * ⚠ `--slds-g-color-on-surface-1` IS THE GREY ONE and `-3` IS THE DARKEST. The numbering reads
+ * like an emphasis scale and is not one — `c/dispositionDealSummary`'s stylesheet records an
+ * earlier draft that had the hierarchy exactly inverted with every automated check green.
+ */
+.qa-offer-table {
+    /*
+     * ⚠ `slds-linter` WARNS ON THIS 100% (`slds/no-hardcoded-values-slds2`) AND THERE IS NO FIX.
+     * Its own message says "There is no replacement styling hook for the 100% static value" — the
+     * SLDS 2 hook set has no layout-percentage scale, so the only way to silence it is to stop the
+     * table filling the panel. It is a WARNING, not an error; this bundle lints at 0 errors, and
+     * the repo gate is the error count. The other two warnings in this file (the 90px min-heights)
+     * pre-date 2026-08-24 and are untouched.
+     */
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--slds-g-font-scale-neg-1, 0.75rem);
+}
+
+/*
+ * The table's ACCESSIBLE NAME, and the only surviving home of the string the retired
+ * `lightning-radio-group` carried as its `label`. Left-aligned because a browser centres a
+ * `<caption>` by default, which would read as a heading floating above the panel rather than as
+ * the group's label.
+ */
+.qa-table-caption {
+    text-align: left;
+    padding-bottom: var(--slds-g-spacing-1, 0.25rem);
+    font-size: var(--slds-g-font-scale-neg-1, 0.75rem);
+    font-weight: var(--slds-g-font-weight-7, 700);
+    color: var(--slds-g-color-on-surface-3, #181818);
+}
+
+.qa-offer-table th,
+.qa-offer-table td {
+    padding: var(--slds-g-spacing-1, 0.25rem) var(--slds-g-spacing-2, 0.5rem);
+    text-align: left;
+    vertical-align: top;
+    border-bottom: var(--slds-g-sizing-border-1, 1px) solid var(--slds-g-color-border-1, #e5e5e5);
+}
+
+.qa-offer-table thead th {
+    font-weight: var(--slds-g-font-weight-7, 700);
+    color: var(--slds-g-color-on-surface-1, #757575);
+}
+
+/*
+ * 🔴 THE THREE FACT COLUMNS DO NOT WRAP, AND THAT IS THE POINT OF THE WHOLE CHANGE.
+ * `.qa-body` sets `overflow-wrap: anywhere`, which is right for a broker's name and catastrophic
+ * for a figure: it would break `$1,850,000` across two lines mid-number, in a quick-action panel,
+ * on the screen where DPEG picks the winning bid. The Broker column deliberately keeps the
+ * inherited wrapping — a long name should take two lines rather than widen the panel.
+ */
+.qa-cell-amount,
+.qa-col-amount,
+.qa-cell-date,
+.qa-col-date,
+.qa-cell-ref,
+.qa-col-ref {
+    white-space: nowrap;
+}
+
+/* Figures right-align so digit counts line up — the comparison the table exists to support. */
+.qa-cell-amount,
+.qa-col-amount {
+    text-align: right;
+}
+
+.qa-cell-broker {
+    font-weight: var(--slds-g-font-weight-6, 600);
+    color: var(--slds-g-color-on-surface-3, #181818);
+}
+
+/* The radio column carries no visible header text, so it takes only the control's width. */
+.qa-col-choose,
+.qa-cell-choose {
+    width: var(--slds-g-spacing-6, 1.5rem);
+    vertical-align: middle;
+}
+
+/*
+ * The chosen row. A tint AND the bolder broker cell it already has, rather than tint alone: the
+ * radio itself is the primary indicator and this is confirmation, so it does not need to carry
+ * meaning on colour alone.
+ */
+.qa-row_selected {
+    background: var(--slds-g-color-brand-base-95, #eef4ff);
+}

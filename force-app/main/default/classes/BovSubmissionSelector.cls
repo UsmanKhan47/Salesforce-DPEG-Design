@@ -11,7 +11,7 @@
  *     (2026-08-19 flow redesign)                      -> selectSelectedByDispositionId
  *   - BovSubmissionService.replaceSelectedBroker
  *     (2026-08-19 flow redesign)                      -> selectStatusesByDispositionId
- *   - BovSubmissionSelectionGuardService.enforceSingleSelected, the before-context
+ *   - BovSubmissionSelectionGuardService.enforceSelectionExclusivity, the before-context
  *     single-Selected trigger guard (2026-08-20,
  *     Tranche 2 Workstream A2)                        -> selectSelectedByDispositionIds
  *   - DispositionOfferFormService.getFormContext, the Log Offer modal's read-only
@@ -216,9 +216,37 @@ public with sharing class BovSubmissionSelector {
      * one is `WITH SYSTEM_MODE` on grounds that are explicitly about ITS caller (a before-trigger),
      * and borrowing it here would invalidate its own justification.
      *
+     * ══════════════════════════════════════════════════════════════════════════════
+     * 🔴 ⚠ AMENDED 2026-08-24 — "EVERY SELECTED ROW" NOW ROUTINELY MEANS **TWO**, AND size() > 1 IS
+     *    NO LONGER AUTOMATICALLY AN ERROR. THE CALLER CHANGED WITH IT.
+     * ══════════════════════════════════════════════════════════════════════════════
+     * The paragraph above still describes the query correctly, and the reason it lost its `LIMIT 1`
+     * is unchanged. What changed is the INVARIANT behind it: a disposition may now hold ONE Selected
+     * PREFERRED broker AND ONE Selected non-preferred broker at the same time
+     * (`BovSubmissionSelectionGuardService`'s header carries the retraction in full). So:
+     *
+     *   `Is_Preferred_Broker__c` WAS ADDED TO THE SELECT and it is the ROUTING KEY.
+     *   `DispositionApprovalService`'s BOV Outreach branch submits the PREFERRED row when there is
+     *   one and the non-preferred row otherwise, so this column is not decoration — without it the
+     *   caller cannot tell the two Selected rows apart and would submit an arbitrary one.
+     *
+     *   `Is_Preferred_Broker__c DESC` WAS ADDED AS THE **FIRST** ORDER BY KEY, so the preferred row
+     *   is row [0] whenever one exists. The caller does not depend on that (it partitions
+     *   explicitly), but a reader debugging from a screenshot of the two rows should see them in
+     *   routing order, and the sibling broker-resolution queries below rely on the same clause.
+     *
+     * ⚠ THE FLS QUESTION HAD TO BE ASKED AGAIN BECAUSE THIS IS THE `WITH USER_MODE` SIBLING, and
+     * `USER_MODE` THROWS rather than degrades. `Is_Preferred_Broker__c` is granted READ on BOTH
+     * `DPEG_Disposition_Edit` (read + edit) and `DPEG_Disposition_View` (read only) — measured in
+     * the org 2026-08-24 and recorded again at `selectStatusesByDispositionId`. That grant is a
+     * DEPLOY-ORDER PREREQUISITE for this line, exactly as it was for `selectByDispositionId`: on an
+     * org where the field exists without FLS, this read fails with `No such column` for everyone and
+     * Submit for Approval breaks at BOV Outreach. Do NOT add an ungranted column here.
+     *
      * @param dispositionId Disposition__c Id whose Selected submissions to read; null-safe.
-     * @return Every Selected BOV_Submission__c on that Disposition, highest-scoring first then
-     *         oldest first; an empty list when it has none (or when dispositionId is null).
+     * @return Every Selected BOV_Submission__c on that Disposition — PREFERRED FIRST, then
+     *         highest-scoring, then oldest; an empty list when it has none (or when dispositionId
+     *         is null). Up to TWO rows is now a NORMAL result, not a defect.
      * @example
      * List&lt;BOV_Submission__c&gt; selected =
      *     BovSubmissionSelector.selectSelectedByDispositionId(dispId);
@@ -228,11 +256,13 @@ public with sharing class BovSubmissionSelector {
             return new List<BOV_Submission__c>();
         }
         return [
-            SELECT Id, Broker_Firm__c, Contact_Name__c, Submission_Status__c
+            SELECT Id, Broker_Firm__c, Contact_Name__c, Submission_Status__c,
+                   Is_Preferred_Broker__c
             FROM BOV_Submission__c
             WHERE Disposition__c = :dispositionId AND Submission_Status__c = :STATUS_SELECTED
             WITH USER_MODE
-            ORDER BY BOV_Score__c DESC NULLS LAST, CreatedDate ASC, Id ASC
+            ORDER BY Is_Preferred_Broker__c DESC, BOV_Score__c DESC NULLS LAST,
+                     CreatedDate ASC, Id ASC
         ];
     }
 
@@ -298,9 +328,19 @@ public with sharing class BovSubmissionSelector {
      * @return Every Selected BOV_Submission__c on that Disposition with Id, Broker__c,
      *         Broker__r.Name and Broker_Firm__c populated, oldest first; an EMPTY LIST when it has
      *         none, or when dispositionId is null (never null).
+     * 🔴 ⚠ `Is_Preferred_Broker__c DESC` BECAME THE FIRST ORDER BY KEY ON 2026-08-24, AND THE
+     * CALLER'S "TAKE THE FIRST ROW WITH A BROKER" LOOP IS WHY IT HAD TO. A disposition may now hold
+     * TWO Selected rows — one preferred, one scored — and `DispositionOfferFormService` takes the
+     * first one that names a broker. Under the old `CreatedDate ASC` clause it would take whichever
+     * happened to be older, so the offer form could name a DIFFERENT broker from the one
+     * `DispositionApprovalService` routes the approval to. This clause makes the two agree by
+     * construction rather than by coincidence. The added column is also SELECTED so a caller (or a
+     * debugger) can see WHICH kind of row it got.
+     *
      * @throws System.QueryException when the running user lacks read on `BOV_Submission__c`, on
-     *         `Contact`, or on `Broker__c` / `Broker_Firm__c` / `Submission_Status__c`. The caller
-     *         catches it narrowly and degrades to "no broker resolved".
+     *         `Contact`, or on `Broker__c` / `Broker_Firm__c` / `Submission_Status__c` /
+     *         `Is_Preferred_Broker__c`. The caller catches it narrowly and degrades to "no broker
+     *         resolved".
      * @example
      * List&lt;BOV_Submission__c&gt; selected =
      *     BovSubmissionSelector.selectSelectedBrokerByDispositionId(dispId);
@@ -310,11 +350,11 @@ public with sharing class BovSubmissionSelector {
             return new List<BOV_Submission__c>();
         }
         return [
-            SELECT Id, Broker__c, Broker__r.Name, Broker_Firm__c
+            SELECT Id, Broker__c, Broker__r.Name, Broker_Firm__c, Is_Preferred_Broker__c
             FROM BOV_Submission__c
             WHERE Disposition__c = :dispositionId AND Submission_Status__c = :STATUS_SELECTED
             WITH USER_MODE
-            ORDER BY CreatedDate ASC, Id ASC
+            ORDER BY Is_Preferred_Broker__c DESC, CreatedDate ASC, Id ASC
         ];
     }
 
@@ -412,9 +452,17 @@ public with sharing class BovSubmissionSelector {
      *
      * @param dispositionIds Disposition__c Ids whose Selected submissions to read; null/empty-safe
      *                       and issues NO query when the set is null or empty.
+     * 🔴 ⚠ `Is_Preferred_Broker__c DESC` BECAME THE FIRST ORDER BY KEY ON 2026-08-24, for the same
+     * reason as its singular sibling above. `DispositionStageEntryService.openBuyerNdas` keeps the
+     * FIRST row it sees per disposition (`if (!containsKey)`), and a sale may now have TWO Selected
+     * rows — so without this clause the NDA would be stamped with the scored broker while the
+     * approval was routed to the preferred one. Two features naming two different brokers for one
+     * sale is exactly the ambiguity the selection guard exists to prevent, so it is closed HERE, in
+     * the shared read, rather than in each caller.
+     *
      * @return Every `Selected` submission on those dispositions that NAMES a broker, with Id,
-     *         Disposition__c and Broker__c populated, oldest first; an EMPTY LIST when there are
-     *         none (never null).
+     *         Disposition__c, Broker__c and Is_Preferred_Broker__c populated, PREFERRED FIRST then
+     *         oldest; an EMPTY LIST when there are none (never null).
      * @example
      * List&lt;BOV_Submission__c&gt; selected =
      *     BovSubmissionSelector.selectSelectedBrokerByDispositionIds(dispositionIds);
@@ -424,13 +472,13 @@ public with sharing class BovSubmissionSelector {
             return new List<BOV_Submission__c>();
         }
         return [
-            SELECT Id, Disposition__c, Broker__c
+            SELECT Id, Disposition__c, Broker__c, Is_Preferred_Broker__c
             FROM BOV_Submission__c
             WHERE Disposition__c IN :dispositionIds
               AND Submission_Status__c = :STATUS_SELECTED
               AND Broker__c != NULL
             WITH SYSTEM_MODE
-            ORDER BY CreatedDate ASC, Id ASC
+            ORDER BY Is_Preferred_Broker__c DESC, CreatedDate ASC, Id ASC
         ];
     }
 
@@ -525,7 +573,7 @@ public with sharing class BovSubmissionSelector {
 
     /**
      * Every COMMITTED `Selected` submission across a SET of Dispositions — the one query behind
-     * `BovSubmissionSelectionGuardService.enforceSingleSelected`, the before-context trigger guard
+     * `BovSubmissionSelectionGuardService.enforceSelectionExclusivity`, the before-context trigger guard
      * that refuses a save which would leave a disposition with two Selected brokers.
      *
      * 🔴 IT TAKES A SET, NOT AN ID, AND THAT IS THE WHOLE POINT. Its caller runs inside a trigger
@@ -568,9 +616,16 @@ public with sharing class BovSubmissionSelector {
      *
      * @param dispositionIds Disposition__c Ids whose Selected submissions to read; null/empty-safe
      *                       and issues NO query when the set is empty.
+     * 🔴 ⚠ `Is_Preferred_Broker__c` WAS ADDED TO THIS SELECT ON 2026-08-24 AND THE GUARD CANNOT
+     * WORK WITHOUT IT. Its invariant is no longer "at most one Selected row" but "at most one
+     * Selected PREFERRED row and at most one Selected NON-PREFERRED row", so this column is what
+     * decides WHICH counter a committed sibling increments. Removing it does not degrade the guard,
+     * it INVERTS it: every row would fall into one bucket and legitimate two-row states would be
+     * refused. It is FLS-free by construction because this read is already `WITH SYSTEM_MODE`.
+     *
      * @return Every committed submission on those dispositions whose `Submission_Status__c` is
-     *         'Selected', with Id, Disposition__c and Submission_Status__c populated; an empty list
-     *         when there are none.
+     *         'Selected', with Id, Disposition__c, Submission_Status__c and Is_Preferred_Broker__c
+     *         populated; an empty list when there are none.
      * @example
      * List&lt;BOV_Submission__c&gt; selected =
      *     BovSubmissionSelector.selectSelectedByDispositionIds(dispositionIds);
@@ -580,7 +635,7 @@ public with sharing class BovSubmissionSelector {
             return new List<BOV_Submission__c>();
         }
         return [
-            SELECT Id, Disposition__c, Submission_Status__c
+            SELECT Id, Disposition__c, Submission_Status__c, Is_Preferred_Broker__c
             FROM BOV_Submission__c
             WHERE Disposition__c IN :dispositionIds AND Submission_Status__c = :STATUS_SELECTED
             WITH SYSTEM_MODE
@@ -675,10 +730,21 @@ public with sharing class BovSubmissionSelector {
      *
      * @param dispositionIds Disposition__c Ids whose submissions to rank; null/empty-safe and
      *                       issues NO query when the set is null or empty.
+     * 🔴 ⚠ `Is_System_Selected__c` WAS ADDED TO THIS SELECT ON 2026-08-24 AND IT IS AN IDEMPOTENCY
+     * KEY, NOT A REPORT COLUMN. The caller now writes that flag alongside `Submission_Status__c` on
+     * the scored winner, so "is this row already correct?" is a TWO-field question. Without this
+     * column the caller cannot see a Selected winner that is missing its flag (every row selected
+     * before this field existed, and every row a data load promoted), so it would never repair one
+     * — and `DispositionApprovalService` would then have no way to tell the two Selected rows apart.
+     * ⚠ It is FLS-free by construction because this read is `WITH SYSTEM_MODE`; on a `USER_MODE`
+     * sibling it would be a deploy-order prerequisite, since the field is granted READ-ONLY and a
+     * missing grant reads as `No such column`.
+     *
      * @return Every submission on those dispositions with Id, Disposition__c,
      *         Submission_Status__c, BOV_Score__c, Approval_Pending__c, Approval_Status__c,
-     *         Is_Manually_Appointed__c, Is_Preferred_Broker__c and CreatedDate populated, highest score first
-     *         then oldest first then lowest Id; an EMPTY LIST when there are none (never null).
+     *         Is_Manually_Appointed__c, Is_Preferred_Broker__c, Is_System_Selected__c and
+     *         CreatedDate populated, highest score first then oldest first then lowest Id; an EMPTY
+     *         LIST when there are none (never null).
      * @example
      * List&lt;BOV_Submission__c&gt; ranked =
      *     BovSubmissionSelector.selectSelectionContextByDispositionIds(dispositionIds);
@@ -692,11 +758,84 @@ public with sharing class BovSubmissionSelector {
         return [
             SELECT Id, Disposition__c, Submission_Status__c, BOV_Score__c,
                    Approval_Pending__c, Approval_Status__c,
-                   Is_Manually_Appointed__c, Is_Preferred_Broker__c, CreatedDate
+                   Is_Manually_Appointed__c, Is_Preferred_Broker__c, Is_System_Selected__c,
+                   CreatedDate
             FROM BOV_Submission__c
             WHERE Disposition__c IN :dispositionIds
             WITH SYSTEM_MODE
             ORDER BY BOV_Score__c DESC NULLS LAST, CreatedDate ASC, Id ASC
+        ];
+    }
+    /**
+     * Every PREFERRED submission on a SET of Dispositions, carrying everything a
+     * `BOV_Broker_Change__c` history row needs — the ONE query behind
+     * `BovPreferredBrokerService.retireReplacedPreferred`, which deletes the outgoing preferred
+     * broker when a new one is added and logs the swap. Added 2026-08-24 with the two-slot
+     * selection model.
+     *
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * 🔴 AN EIGHTH METHOD RATHER THAN A WIDENING, AND THE TWO NEAREST NEIGHBOURS ARE BOTH WRONG
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     *   `selectSelectionContextByDispositionIds` is set-based, SYSTEM_MODE and already returns
+     *   `Is_Preferred_Broker__c` and `CreatedDate` — so it looks like a two-column widening. It is
+     *   not: its own header states in terms that it carries NO `Broker__c` and NO `Broker_Firm__c`
+     *   *"deliberately... the caller writes `Submission_Status__c` and nothing else"*, and that
+     *   its columns are all consumed. Adding a lookup to a hot trigger read to serve a rarer path
+     *   would break the one property that header defends.
+     *
+     *   `selectStatusesByDispositionId` returns exactly the right COLUMNS — and takes a SINGLE
+     *   disposition. Calling it per disposition from a trigger is SOQL in a loop.
+     *
+     * ── FILTERED IN THE `WHERE`, NOT IN APEX ────────────────────────────────────────────────────
+     * `Is_Preferred_Broker__c = true` is part of the query because the caller only ever acts on
+     * preferred rows. On a sale with twenty scored responses and two preferred ones this returns
+     * two rows instead of twenty-two, and it makes the caller's zero-work case visible as an empty
+     * list rather than as a loop that finds nothing.
+     *
+     * ── 🔴 THE ORDER BY IS THE RETIREMENT RULE, NOT PRESENTATION ────────────────────────────────
+     * `CreatedDate DESC, Id DESC` — **NEWEST FIRST**, the exact REVERSE of every other ranked query
+     * in this class, and it matches `BovAutoSelectionService.isNewer` deliberately. The caller takes
+     * row [0] as the SURVIVOR and retires the rest, so the newest preferred broker is the one that
+     * keeps the appointment. If this clause is ever "harmonised" with the `CreatedDate ASC` sort its
+     * neighbours use, Add Preferred Broker would delete the row the user just created and keep the
+     * old one. `Id DESC` is not decoration: two rows created in one transaction share a
+     * `CreatedDate`, and SOQL promises no order for a fully-tied sort.
+     *
+     * ── WITH SYSTEM_MODE, ON AUTOMATION-PATH GROUNDS (ARCHITECTURE.md §2) ───────────────────────
+     * The running user asked to ADD A PREFERRED BROKER; they did not ask to read its predecessor's
+     * broker lookup. This read runs inside an after-insert trigger on their behalf, and `USER_MODE`
+     * THROWS rather than degrades — one ungranted column would surface as
+     * `System.QueryException: No such column`, escape the trigger as
+     * `CANNOT_INSERT_UPDATE_ACTIVATE_ENTITY` and roll back the user's own save.
+     *
+     * ⚠ SHARING IS A SEPARATE QUESTION AND IS DELIBERATELY LEFT ALONE — this class stays
+     * `with sharing`, and `SYSTEM_MODE` lifts CRUD and FLS and NEVER sharing. A preferred row the
+     * running user cannot SEE is absent here, so it is neither logged nor deleted, and the old
+     * preferred broker simply survives. That fails SAFE (nothing is destroyed on the strength of a
+     * read the user could not make) and is bounded by `viewAllRecords = true` on the disposition
+     * child objects in both disposition permission sets. 🔴 The WRITE side is a different question
+     * with a different answer — see `BovPreferredBrokerService.PreferredRetirementWrites`.
+     *
+     * @param dispositionIds Disposition__c Ids whose preferred submissions to read; null/empty-safe
+     *                       and issues NO query when the set is null or empty.
+     * @return Every preferred submission on those dispositions with Id, Disposition__c, Broker__c,
+     *         Broker_Firm__c, Submission_Status__c, Is_Preferred_Broker__c and CreatedDate
+     *         populated, NEWEST FIRST; an EMPTY LIST when there are none (never null).
+     * @example
+     * List&lt;BOV_Submission__c&gt; preferred =
+     *     BovSubmissionSelector.selectPreferredByDispositionIds(dispositionIds);
+     */
+    public static List<BOV_Submission__c> selectPreferredByDispositionIds(Set<Id> dispositionIds) {
+        if (dispositionIds == null || dispositionIds.isEmpty()) {
+            return new List<BOV_Submission__c>();
+        }
+        return [
+            SELECT Id, Disposition__c, Broker__c, Broker_Firm__c, Submission_Status__c,
+                   Is_Preferred_Broker__c, CreatedDate
+            FROM BOV_Submission__c
+            WHERE Disposition__c IN :dispositionIds AND Is_Preferred_Broker__c = TRUE
+            WITH SYSTEM_MODE
+            ORDER BY CreatedDate DESC, Id DESC
         ];
     }
 }

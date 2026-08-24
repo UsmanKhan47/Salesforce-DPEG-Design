@@ -318,25 +318,37 @@ private class BovSubmissionServiceTest {
         Assert.areEqual('Selected', after.get(preferred.Id).Submission_Status__c,
             'The refusal changes nothing — the preferred broker keeps the appointment it holds by '
             + 'virtue of the flag');
-        Assert.areEqual('Backup', after.get(scored.Id).Submission_Status__c,
-            'and the scored response it displaced stays a Backup');
+        // ⚠ AMENDED 2026-08-24 (two-slot model). This used to read "and the scored response it
+        // DISPLACED stays a Backup" — a sentence about the retracted rule in which a preferred row
+        // evicted the scored winner. It never did displace anything: the two rows hold different
+        // slots and both are legitimately Selected. What is being asserted is unchanged in
+        // substance — a REFUSED replace changes nothing — only the expected value is now the
+        // truthful one.
+        Assert.areEqual('Selected', after.get(scored.Id).Submission_Status__c,
+            'and the scored response beside it keeps ITS slot: a refused replace writes nothing, '
+            + 'and the two slots are independent even when the write succeeds');
         Assert.areEqual(0, historyFor(d.Id).size(), 'A refused replacement records nothing');
     }
 
     /**
-     * 🔴 THE OTHER HALF OF THE REVERSAL: a preferred row that is NOT the incumbent IS now promotable
-     * through Replace Broker, and that is the DELIBERATE consequence of answering Q-5 "NO".
+     * 🔴 REPOINTED 2026-08-24 — AND THE REPOINT IS THE FINDING. This test was
+     * `replacingOntoANonIncumbentPreferredRow_succeedsAndLocksAutoSelectionOut` and PINNED A
+     * RESIDUAL: a superseded preferred row could be promoted through Replace Broker, which stamped
+     * `Is_Manually_Appointed__c` and locked auto-selection out of the sale for good. Its own
+     * comment said the trapdoor was "unreachable from the UI... and needs a deliberate API call".
      *
-     * ⚠ THIS TEST DOCUMENTS A RESIDUAL RATHER THAN A FEATURE, AND SAYS SO. The promotion also
-     * stamps `Is_Manually_Appointed__c`, which permanently locks auto-selection out — so unflagging
-     * this broker afterwards will NOT hand the sale back to scoring. That trapdoor is unreachable
-     * from the UI (the matrix's picker filters preferred rows out) and needs a deliberate API call.
-     * It is pinned here so the behaviour is VISIBLE and a future decision to close it has a test to
-     * flip, rather than being discovered in UAT. See the retraction at the top of
-     * `BovSubmissionService` for the narrow fix if it is ever wanted.
+     * **THAT RESIDUAL IS NOW CLOSED, AND NOT BY A REFUSAL.** `BovPreferredBrokerService` DELETES
+     * the outgoing preferred row when a new one is added, so a "superseded preferred row" no longer
+     * exists to be replaced onto — the API call the old test made now fails the service's own
+     * membership check (`NOT_ON_DISPOSITION_MESSAGE`), because the row is gone.
+     *
+     * ⚠ THE TEST IS REPOINTED RATHER THAN DELETED because the SCENARIO is still the one that
+     * matters, and because "the row does not exist" and "the row exists and is refused" are very
+     * different claims that would otherwise both look like a green suite. If the retirement service
+     * is ever removed or made conditional, this test goes red and the old trapdoor is back.
      */
     @isTest
-    static void replacingOntoANonIncumbentPreferredRow_succeedsAndLocksAutoSelectionOut() {
+    static void aSupersededPreferredRow_noLongerExistsToBeReplacedOnto() {
         Disposition__c d = dispositionAt('BOV Outreach');
         BOV_Submission__c older = TestDataFactory.createBovSubmission(d.Id, false);
         older.Is_Preferred_Broker__c = true;
@@ -344,26 +356,79 @@ private class BovSubmissionServiceTest {
         BOV_Submission__c newer = TestDataFactory.createBovSubmission(d.Id, false);
         newer.Is_Preferred_Broker__c = true;
         insert newer;
+
+        Map<Id, BOV_Submission__c> afterAdd = submissionsById(d.Id);
+        Assert.areEqual('Selected', afterAdd.get(newer.Id).Submission_Status__c,
+            'PRECONDITION: the NEWEST preferred row holds the preferred slot');
+        Assert.isNull(afterAdd.get(older.Id),
+            '🔴 PRECONDITION AND POINT: the superseded preferred row is GONE, retired by '
+            + 'BovPreferredBrokerService. Finding it here means the retirement did not run and the '
+            + 'promote-a-superseded-preferred-row trapdoor is open again.');
+
+        Test.startTest();
+        try {
+            BovSubmissionService.replaceSelectedBroker(
+                d.Id, older.Id, REASON, 'Deliberate API call onto a superseded preferred row.');
+            Assert.fail('A retired preferred row cannot be appointed — it does not exist');
+        } catch (BovSubmissionService.BovSubmissionException e) {
+            Assert.isTrue(e.getMessage().contains('does not belong to this disposition'),
+                'The refusal is the ordinary membership check, with no preferred-specific rule '
+                + 'anywhere: ' + e.getMessage());
+        }
+        Test.stopTest();
+
         Assert.areEqual('Selected',
             submissionsById(d.Id).get(newer.Id).Submission_Status__c,
-            'PRECONDITION: the NEWEST preferred row holds the appointment, so `older` is a '
-            + 'preferred row that is NOT the incumbent — the only shape this path can be reached '
-            + 'with');
+            'and the surviving preferred broker is untouched by the refused call');
+    }
+
+    /**
+     * 🔴 REPLACE BROKER OPERATES ON THE APPOINTED SLOT ONLY. It must NOT knock the preferred broker
+     * out of its own slot — the falsifier for the `&& Is_Preferred_Broker__c != true` clause added
+     * to the demotion loop on 2026-08-24.
+     *
+     * Without that clause a single Replace Broker click on a sale that also has a preferred broker
+     * demotes BOTH incumbents, and the history row records the WRONG one as outgoing (the single
+     * `Outgoing` slot takes whichever the selector returns first). The user asked to change the
+     * scored appointment and silently lost the preferred one, with no row naming it.
+     */
+    @isTest
+    static void replaceBroker_leavesAPreferredBrokerAlone() {
+        Disposition__c d = dispositionAt('BOV Outreach');
+        BOV_Submission__c incumbent = TestDataFactory.createBovSubmission(d.Id, false);
+        incumbent.Submission_Status__c = 'Selected';
+        BOV_Submission__c challenger = TestDataFactory.createBovSubmission(d.Id, false);
+        challenger.Submission_Status__c = 'Backup';
+        insert new List<BOV_Submission__c>{ incumbent, challenger };
+        BOV_Submission__c preferred = TestDataFactory.createBovSubmission(d.Id, false);
+        preferred.Is_Preferred_Broker__c = true;
+        insert preferred;
+
+        Map<Id, BOV_Submission__c> before = submissionsById(d.Id);
+        Assert.areEqual('Selected', before.get(preferred.Id).Submission_Status__c,
+            'PRECONDITION: the preferred broker holds its slot');
+        Assert.areEqual('Selected', before.get(incumbent.Id).Submission_Status__c,
+            'PRECONDITION: and the scored incumbent holds the other one, beside it');
 
         Test.startTest();
         BovSubmissionService.replaceSelectedBroker(
-            d.Id, older.Id, REASON, 'Deliberate API call onto a superseded preferred row.');
+            d.Id, challenger.Id, REASON, 'Swapping the appointed broker.');
         Test.stopTest();
 
         Map<Id, BOV_Submission__c> after = submissionsById(d.Id);
-        Assert.areEqual('Selected', after.get(older.Id).Submission_Status__c,
-            'It is PERMITTED since gate Q-5 was answered NO — no preferred-specific refusal remains');
-        Assert.isTrue(after.get(older.Id).Is_Manually_Appointed__c,
-            '⚠ AND IT STAMPS THE PERMANENT LOCK. This is the named residual of the reversal, not an '
-            + 'oversight: auto-selection is now locked out of this disposition for good, so '
-            + 'unflagging this broker later will NOT resume scoring.');
-        Assert.areEqual('Backup', after.get(newer.Id).Submission_Status__c,
-            'and the preferred row it displaced is demoted like any other incumbent');
+        Assert.areEqual('Selected', after.get(challenger.Id).Submission_Status__c,
+            'the challenger takes the APPOINTED slot');
+        Assert.areEqual('Backup', after.get(incumbent.Id).Submission_Status__c,
+            'and the row it replaced is demoted');
+        Assert.areEqual('Selected', after.get(preferred.Id).Submission_Status__c,
+            '🔴 AND THE PREFERRED BROKER IS UNTOUCHED. A Backup here means the demotion loop is '
+            + 'still unconditional and Replace Broker is silently retiring preferred brokers.');
+        List<BOV_Broker_Change__c> history = historyFor(d.Id);
+        Assert.areEqual(1, history.size(), 'exactly one history row for one replacement');
+        Assert.areEqual(incumbent.Id, history[0].Outgoing_BOV_Submission__c,
+            '🔴 and it names the SCORED incumbent as outgoing, not the preferred broker. This is '
+            + 'the assertion that catches the unconditional loop recording the wrong row: with two '
+            + 'incumbents the single Outgoing slot takes whichever the selector returned first.');
     }
 
     /**

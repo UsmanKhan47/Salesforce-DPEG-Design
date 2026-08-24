@@ -623,6 +623,20 @@
         <field>BOV_Submission__c.Is_Manually_Appointed__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!--
+        ADDED 2026-08-24. Granted at the TAIL of the BOV_Submission__c run, next to
+        Is_Manually_Appointed__c, following this file's convention of appending later additions
+        rather than reflowing the alphabetical block. Readable only, editable=false — this is the
+        read-only Principal persona; every other BOV_Submission__c grant in this file is read only
+        for the same reason, and Is_System_Selected__c is additionally a SYSTEM field (mirrors
+        Is_Manually_Appointed__c's own grant shape and reasoning) that must stay read-only
+        everywhere, in both disposition permission sets.
+    -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>BOV_Submission__c.Is_System_Selected__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
         <field>Broker_Listing__c.Broker_Firm__c</field>

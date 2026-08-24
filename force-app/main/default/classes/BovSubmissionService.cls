@@ -332,7 +332,25 @@ public with sharing class BovSubmissionService {
                 challenger = submission;
                 continue; // written below, after the already-selected check
             }
-            if (STATUS_SELECTED.equals(submission.Submission_Status__c)) {
+            // ══════════════════════════════════════════════════════════════════════════════════
+            // 🔴 `&& NOT PREFERRED` ADDED 2026-08-24 WITH THE TWO-SLOT MODEL, AND IT IS A BEHAVIOUR
+            //    CHANGE, NOT A TIDY. WITHOUT IT THIS METHOD SILENTLY DEMOTES THE PREFERRED BROKER.
+            // ══════════════════════════════════════════════════════════════════════════════════
+            // A Disposition now holds TWO independent appointment slots — the preferred broker a
+            // human named, and the scored/appointed one (see `BovAutoSelectionService`'s header).
+            // Replace Broker operates on the SECOND slot only: it is reached from the comparison
+            // matrix's ranked list, its `Reason__c` value set is about a broker's PERFORMANCE on the
+            // listing, and the preferred slot is changed a different way entirely (Add Preferred
+            // Broker, which retires the outgoing row via `BovPreferredBrokerService`).
+            //
+            // Under the old unconditional test this loop demoted EVERY Selected row, so a single
+            // Replace Broker click on a sale that also had a preferred broker would have knocked
+            // the preferred broker out of its slot — with no history row naming it, because the
+            // single `Outgoing` slot below would have recorded the other row. That is a change the
+            // user did not ask for and could not undo from this button.
+            // `replaceBroker_leavesAPreferredBrokerAlone` is the falsifier.
+            if (STATUS_SELECTED.equals(submission.Submission_Status__c)
+                && submission.Is_Preferred_Broker__c != true) {
                 if (outgoing == null) {
                     outgoing = submission;
                 }
@@ -341,7 +359,12 @@ public with sharing class BovSubmissionService {
                     Submission_Status__c = STATUS_BACKUP,
                     // 🔴 The incumbent's approval is REVOKED, not preserved. An 'Approved' status on
                     // a demoted broker reads as an appointment nobody made.
-                    Approval_Status__c = null
+                    Approval_Status__c = null,
+                    // The outgoing row is no longer the model's pick either. Cleared here for the
+                    // same reason `BovAutoSelectionService` clears it on its own demotions: two rows
+                    // claiming to be system-selected is the state the exclusivity guard exists to
+                    // make unreachable.
+                    Is_System_Selected__c = false
                 ));
             }
         }
@@ -382,7 +405,15 @@ public with sharing class BovSubmissionService {
             // ⚠ ZERO NEW DML AND ZERO NEW SOQL — it rides the existing bulk write below. It is
             // never cleared: `Is_Manually_Appointed__c` is READ-ONLY FLS in both disposition
             // permission sets by design, and the lock is meant to be permanent for this sale.
-            Is_Manually_Appointed__c = true
+            Is_Manually_Appointed__c = true,
+            // ── 🔴 ADDED 2026-08-24. A MANUAL APPOINTMENT IS NOT A SCORING PICK. ──
+            // `Is_System_Selected__c` names the row `BovAutoSelectionService` chose. This challenger
+            // was chosen by a human clicking Replace Broker, and the very next line above LOCKS
+            // auto-selection out of this sale permanently — so nothing will ever come along and set
+            // the flag correctly afterwards. Written as an explicit FALSE rather than left alone
+            // because the challenger may be a row that WAS system-selected on an earlier round;
+            // leaving a stale true here would leave two rows claiming to be the model's pick.
+            Is_System_Selected__c = false
         ));
 
         Savepoint beforeReplacement = Database.setSavepoint();
@@ -432,31 +463,11 @@ public with sharing class BovSubmissionService {
             // verbatim by the DmlException catch below. That is deliberately not worked around
             // here: silently nulling the lookup to get the insert through would discard the very
             // linkage the row exists to hold, and re-flagging the Contact is the real fix.
-            Database.insert(new BOV_Broker_Change__c(
-                Disposition__c = dispositionId,
-                // Null on both outgoing columns when there was no incumbent — "replace" degrading
-                // to "appoint" is a normal state, not an error, and the row still records the
-                // appointment. See this method's own no-incumbent note.
-                Outgoing_BOV_Submission__c = (outgoing == null) ? null : outgoing.Id,
-                Outgoing_Broker__c = (outgoing == null) ? null : outgoing.Broker__c,
-                // 🔴 THE FIRM IS STAMPED, NOT LEFT TO THE LOOKUP. Both Contact lookups are
-                // deleteConstraint SetNull and scripts/seed-broker-contacts.apex mass-deletes every
-                // broker Contact, so the lookups can go blank later with no error at all. This
-                // Text column is what survives that. It is sourced from the SUBMISSION's
-                // Broker_Firm__c rather than by re-querying Contact because
-                // BovSubmissionBrokerStampService keeps that column equal to
-                // `Broker__c.Broker_Firm__c` on every save — same value, no second SOQL.
-                Outgoing_Broker_Firm__c = (outgoing == null) ? null : outgoing.Broker_Firm__c,
-                Incoming_BOV_Submission__c = challenger.Id,
-                Incoming_Broker__c = challenger.Broker__c,
-                Incoming_Broker_Firm__c = challenger.Broker_Firm__c,
-                Reason__c = reason,
-                Notes__c = notes,
-                // The write time IS the event time — see the javadoc on why there is no
-                // effectiveDate parameter to disagree with it.
-                Entry_DateTime__c = System.now(),
-                Logged_By__c = UserInfo.getUserId()
-            ), true, AccessLevel.SYSTEM_MODE);
+            Database.insert(
+                buildChangeRow(dispositionId, outgoing, challenger, reason, notes),
+                true,
+                AccessLevel.SYSTEM_MODE
+            );
         } catch (DmlException e) {
             Database.rollback(beforeReplacement);
             // Surfaced verbatim: "This record is locked" and a validation rule's own text are the
@@ -477,5 +488,81 @@ public with sharing class BovSubmissionService {
         // transaction actually demoted; there is no "which button did you click" parameter and
         // there must not be one, or the sentence could disagree with the four writes above it.
         return (outgoing == null) ? APPOINTED_MESSAGE : REPLACED_MESSAGE;
+    }
+    /**
+     * Builds — and does NOT insert — the one `BOV_Broker_Change__c` row that records a broker
+     * changing hands on a Disposition. Extracted from `replaceSelectedBroker` on 2026-08-24 so the
+     * PREFERRED-broker retirement path (`BovPreferredBrokerService`) writes an IDENTICALLY SHAPED
+     * row instead of a second, drifting one.
+     *
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * 🔴 ONE BUILDER, TWO INSERTS, AND THAT SPLIT IS DELIBERATE RATHER THAN LAZY.
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * What the two callers MUST share is the ROW SHAPE — which columns are stamped, that the firm
+     * Text is copied rather than left to the lookup, that `Entry_DateTime__c` is the write time and
+     * `Logged_By__c` the running user. A second hand-rolled literal is exactly how a history log
+     * acquires rows that answer half the questions it is read to answer.
+     *
+     * What they must NOT share is the DML, because the two paths sit in different transactions with
+     * different obstacles: `replaceSelectedBroker` inserts inside its own savepoint and converts a
+     * refusal into an authored `BovSubmissionException` for a user who is standing there;
+     * `BovPreferredBrokerService` inserts from an AFTER-INSERT TRIGGER and must additionally escape
+     * SHARING, because the row it is recording belongs to somebody else. Merging the inserts would
+     * force one of those two shapes onto the other.
+     *
+     * ⚠ IT DOES NOT VALIDATE `reason`. `Reason__c` is a RESTRICTED picklist and this repo's standing
+     * rule (recorded at `REASON_INITIAL_APPOINTMENT`) is that Apex does not hold a second copy of a
+     * value set — the platform refuses an off-list value with its own message, at DML, and that
+     * refusal is louder and more correct than an assertion here would be.
+     *
+     * @param dispositionId the sale the change happened on (required)
+     * @param outgoing      the submission losing the appointment; NULL is legal and means a FIRST
+     *                      appointment — both Outgoing columns are then left blank rather than the
+     *                      row being suppressed.
+     * @param incoming      the submission gaining it (required)
+     * @param reason        a `BOV_Broker_Change__c.Reason__c` value; validated by the platform
+     * @param notes         free text; null and blank are both fine
+     * @return an UNSAVED `BOV_Broker_Change__c`. The caller owns the insert, its access level and
+     *         its failure handling.
+     * @example
+     * BOV_Broker_Change__c row = BovSubmissionService.buildChangeRow(
+     *     dispId, outgoingSubmission, incomingSubmission, 'Company Decision', 'Swapped at request.');
+     */
+    public static BOV_Broker_Change__c buildChangeRow(
+        Id dispositionId,
+        BOV_Submission__c outgoing,
+        BOV_Submission__c incoming,
+        String reason,
+        String notes
+    ) {
+        return new BOV_Broker_Change__c(
+            Disposition__c = dispositionId,
+            // Null on both outgoing columns when there was no incumbent — "replace" degrading
+            // to "appoint" is a normal state, not an error, and the row still records the
+            // appointment. See `replaceSelectedBroker`'s own no-incumbent note.
+            Outgoing_BOV_Submission__c = (outgoing == null) ? null : outgoing.Id,
+            Outgoing_Broker__c = (outgoing == null) ? null : outgoing.Broker__c,
+            // 🔴 THE FIRM IS STAMPED, NOT LEFT TO THE LOOKUP. Both Contact lookups are
+            // deleteConstraint SetNull and scripts/seed-broker-contacts.apex mass-deletes every
+            // broker Contact, so the lookups can go blank later with no error at all. This
+            // Text column is what survives that. It is sourced from the SUBMISSION's
+            // Broker_Firm__c rather than by re-querying Contact because
+            // BovSubmissionBrokerStampService keeps that column equal to
+            // `Broker__c.Broker_Firm__c` on every save — same value, no second SOQL.
+            // 🔴 IT IS ALSO THE ONLY COLUMN THAT SURVIVES THE ROW BEING **DELETED**, which the
+            // preferred-retirement path does on purpose: `Outgoing_BOV_Submission__c` goes blank
+            // the moment the submission is removed, so a history card that showed only the lookup
+            // would show an empty swap. Do not stop stamping this.
+            Outgoing_Broker_Firm__c = (outgoing == null) ? null : outgoing.Broker_Firm__c,
+            Incoming_BOV_Submission__c = (incoming == null) ? null : incoming.Id,
+            Incoming_Broker__c = (incoming == null) ? null : incoming.Broker__c,
+            Incoming_Broker_Firm__c = (incoming == null) ? null : incoming.Broker_Firm__c,
+            Reason__c = reason,
+            Notes__c = notes,
+            // The write time IS the event time — see `replaceSelectedBroker`'s javadoc on why
+            // there is no effectiveDate parameter to disagree with it.
+            Entry_DateTime__c = System.now(),
+            Logged_By__c = UserInfo.getUserId()
+        );
     }
 }

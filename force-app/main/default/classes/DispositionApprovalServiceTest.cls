@@ -294,8 +294,168 @@ private class DispositionApprovalServiceTest {
         Assert.isTrue(msg.contains('broker'), 'The confirmation must name the broker submission: ' + msg);
     }
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    // 🔴 BOV OUTREACH ROUTING UNDER THE TWO-SLOT MODEL (2026-08-24)
+    //    "IF A PREFERRED BROKER EXISTS, SUBMIT THAT ROW; OTHERWISE THE OTHER ONE."
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * 🔴 THE CENTRAL ROUTING TEST. A disposition with BOTH slots filled must submit the PREFERRED
+     * row — and must NOT refuse, which is what the pre-2026-08-24 `size() > 1` check would have
+     * done to every sale that has a preferred broker.
+     *
+     * ⚠ THE FIXTURE MUST HAVE A GENUINELY SCOREABLE COMPETITOR, or the "preferred beats scored"
+     * claim is untestable — a null-scored competitor is never appointed in the first place, so the
+     * preferred row would be the only Selected row and the routing branch would never be exercised.
+     * Hence the priced disposition and the explicit amount. The precondition asserts both slots.
+     */
+    @isTest
+    static void submitAtBovOutreach_preferredAndScored_submitsThePreferredRow() {
+        // 🔴 PRICED, AND IT IS LOAD-BEARING. `onMarketAt(stage)` leaves Asking_Price__c null, and
+        // BOV_Score__c is null without it — so the scored competitor would never be appointed and
+        // the preferred row would be the ONLY Selected row, making the routing assertion vacuous.
+        Disposition__c d = onMarketAt(STAGE_BOV_OUTREACH, ASKING_PRICE);
+        BOV_Submission__c scored = TestDataFactory.createBovSubmission(d.Id, false);
+        scored.BOV_Amount__c = 2000000;
+        insert scored;
+        BOV_Submission__c preferred = TestDataFactory.createBovSubmission(d.Id, false);
+        preferred.Is_Preferred_Broker__c = true;
+        preferred.BOV_Amount__c = null;
+        preferred.Cap_Rate__c = null;
+        preferred.Commission_Rate__c = null;
+        preferred.Days_To_Market__c = null;
+        preferred.Hist_Success_Rate__c = null;
+        insert preferred;
+
+        Map<Id, BOV_Submission__c> before = new Map<Id, BOV_Submission__c>([
+            SELECT Id, Submission_Status__c, Is_Preferred_Broker__c, Is_System_Selected__c,
+                   BOV_Score__c
+            FROM BOV_Submission__c WHERE Disposition__c = :d.Id WITH SYSTEM_MODE
+        ]);
+        Assert.areEqual('Selected', before.get(preferred.Id).Submission_Status__c,
+            'PRECONDITION: the preferred row holds the preferred slot');
+        Assert.areEqual('Selected', before.get(scored.Id).Submission_Status__c,
+            '🔴 PRECONDITION AND THE POINT OF THE TEST: the scored winner is Selected TOO. If this '
+            + 'is Backup the two-slot model is not in effect and the routing below is being asked '
+            + 'to choose between one row and nothing.');
+        Assert.isNotNull(before.get(scored.Id).BOV_Score__c,
+            'PRECONDITION: the competitor is genuinely SCOREABLE (the disposition is priced), so '
+            + '"the preferred row won" is a real outcome and not the absence of an alternative');
+        Assert.isTrue(before.get(scored.Id).Is_System_Selected__c,
+            'PRECONDITION: and it carries Is_System_Selected__c, so the two Selected rows are '
+            + 'genuinely distinguishable');
+
+        Test.startTest();
+        String msg = DispositionApprovalService.submitForApproval(d.Id);
+        Test.stopTest();
+
+        Assert.areEqual(1, pendingApprovalsFor(preferred.Id),
+            '🔴 THE PREFERRED ROW IS THE ONE SUBMITTED. A human naming a broker outranks a score, '
+            + 'and this is the only place that decision is made.');
+        Assert.areEqual(0, pendingApprovalsFor(scored.Id),
+            '🔴 AND THE SCORED WINNER IS NOT SUBMITTED. Two pending approvals on one sale would '
+            + 'let two brokers be approved for it — the ambiguity the whole branch exists to '
+            + 'prevent, now reachable because Broker_Finalize_Approval s entry criterion matches '
+            + 'BOTH rows.');
+        Assert.areEqual(0, pendingApprovalsFor(d.Id),
+            'and the Disposition itself is still never the target on this branch');
+        Assert.isTrue(msg.contains('broker'), 'The confirmation must name the broker: ' + msg);
+    }
+
+    /**
+     * 🔴 THE OTHER HALF OF THE ROUTING, AND THE TRAP THE REQUIREMENT AS LITERALLY WRITTEN WOULD
+     *    HAVE FALLEN INTO. The requirement said "otherwise submit the SYSTEM-SELECTED one".
+     *
+     * `BovSubmissionService.replaceSelectedBroker` produces a Selected row carrying
+     * `Is_Manually_Appointed__c` and NO `Is_System_Selected__c` — the field's own XML names
+     * `BovAutoSelectionService` as its only writer. A router keyed on the system flag therefore
+     * finds NOTHING after every Replace Broker and refuses with "No broker is marked Selected yet"
+     * while the matrix plainly shows one. Keying on "not preferred" covers the scored winner and
+     * the manual appointment identically.
+     */
+    @isTest
+    static void submitAtBovOutreach_afterReplaceBroker_submitsTheManuallyAppointedRow() {
+        Disposition__c d = onMarketAt(STAGE_BOV_OUTREACH);
+        BOV_Submission__c incumbent = TestDataFactory.createBovSubmission(d.Id, false);
+        incumbent.BOV_Amount__c = 2000000;
+        BOV_Submission__c challenger = TestDataFactory.createBovSubmission(d.Id, false);
+        challenger.BOV_Amount__c = 1000000;
+        insert new List<BOV_Submission__c>{ incumbent, challenger };
+
+        BovSubmissionService.replaceSelectedBroker(
+            d.Id, challenger.Id, 'Performance Issue', 'Swapped by hand.');
+
+        BOV_Submission__c appointed = [
+            SELECT Id, Submission_Status__c, Is_System_Selected__c, Is_Manually_Appointed__c
+            FROM BOV_Submission__c WHERE Id = :challenger.Id WITH SYSTEM_MODE
+        ];
+        Assert.areEqual('Selected', appointed.Submission_Status__c, 'PRECONDITION');
+        Assert.isTrue(appointed.Is_Manually_Appointed__c, 'PRECONDITION: it is a MANUAL appointment');
+        Assert.isFalse(appointed.Is_System_Selected__c,
+            '🔴 PRECONDITION AND THE WHOLE POINT: a manually appointed row carries NO system flag. '
+            + 'A router keyed on Is_System_Selected__c would find nothing at all here.');
+
+        Test.startTest();
+        String msg = DispositionApprovalService.submitForApproval(d.Id);
+        Test.stopTest();
+
+        Assert.areEqual(1, pendingApprovalsFor(challenger.Id),
+            '🔴 The manually appointed row must be submittable. A refusal here means the router is '
+            + 'keyed on Is_System_Selected__c and Replace Broker is a dead end.');
+        Assert.isTrue(msg.contains('broker'), 'The confirmation must name the broker: ' + msg);
+    }
+
+    /**
+     * TWO SELECTED **PREFERRED** ROWS ARE STILL REFUSED, with the message that names the remedy
+     * preferred rows actually have. Same undelete-gap fixture as the non-preferred twin below, for
+     * the same reason: the narrowed guard makes the state unreachable any other way.
+     */
+    @isTest
+    static void submitAtBovOutreach_twoSelectedPreferredRows_refusesWithThePreferredMessage() {
+        Disposition__c d = onMarketAt(STAGE_BOV_OUTREACH);
+
+        BOV_Submission__c first = TestDataFactory.createBovSubmission(d.Id, false);
+        first.Is_Preferred_Broker__c = true;
+        first.Submission_Status__c = 'Selected';
+        insert first;
+        delete first;                                   // the retirement service stops seeing it too
+        BOV_Submission__c second = TestDataFactory.createBovSubmission(d.Id, false);
+        second.Is_Preferred_Broker__c = true;
+        second.Submission_Status__c = 'Selected';
+        insert second;
+        undelete first;                                 // no undelete context on the trigger at all
+
+        Assert.areEqual(2, [
+            SELECT COUNT() FROM BOV_Submission__c
+            WHERE Disposition__c = :d.Id AND Submission_Status__c = 'Selected'
+              AND Is_Preferred_Broker__c = TRUE
+        ], 'PREMISE — two committed Selected PREFERRED rows must really exist, or this test passes '
+            + 'vacuously through the happy path.');
+
+        Test.startTest();
+        try {
+            DispositionApprovalService.submitForApproval(d.Id);
+            Assert.fail('Two Selected preferred brokers must refuse the submit');
+        } catch (DispositionApprovalService.ApprovalException e) {
+            Assert.isTrue(e.getMessage().contains('More than one preferred broker'),
+                '🔴 It must be the PREFERRED refusal, not the non-preferred one — the two name '
+                + 'different remedies and only one of them exists for preferred rows: '
+                + e.getMessage());
+        }
+        Test.stopTest();
+
+        Assert.areEqual(0, pendingApprovalsFor(first.Id) + pendingApprovalsFor(second.Id),
+            'and it refused rather than submitting one of them — the defect this branch exists for');
+    }
+
     /**
      * 🔴 THE ">1 SELECTED" BACKSTOP (2026-08-21). READ THE SCOPE NOTE BEFORE JUDGING THIS TEST.
+     *
+     * ⚠ RE-SCOPED 2026-08-24: it is now the backstop for the **NON-PREFERRED** slot specifically.
+     * Its fixture already builds two non-preferred Selected rows, so nothing about the test body
+     * changed — but the reason it still refuses did: it is not "only one row may be Selected" any
+     * more, it is "only one row may be Selected IN THIS SLOT". The preferred twin is immediately
+     * above.
      *
      * ── WHY THIS BRANCH EXISTS AT ALL ───────────────────────────────────────────
      * Until 2026-08-21 `BovSubmissionSelector.selectSelectedByDispositionId` carried `LIMIT 1`, so

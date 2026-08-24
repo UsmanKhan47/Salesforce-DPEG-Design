@@ -49,8 +49,14 @@ export default class DispositionMain extends LightningElement {
     get isActiveListing() { return this._stage === 'Active Listing'; }
 
     /**
-     * Show the closing cards (wire verification + checklist) through the TERMINAL stage too, so a
-     * finished deal displays its final closing state rather than an empty main area.
+     * Show the closing card through the TERMINAL stage too, so a finished deal displays its final
+     * closing state rather than an empty main area.
+     *
+     * ⚠ "CARD", SINGULAR, SINCE 2026-08-24. This used to read "the closing cards (wire
+     * verification + checklist)". The Closing Checklist (`c-disposition-closing-tasks`) was
+     * dropped from the template at the user's request; `c-wire-verification` is now the only
+     * thing this branch renders. The bundle was kept — see the template comment for why that
+     * distinction matters.
      *
      * ⚠ THE TERMINAL STAGE IS NOW 'Sale Closes'. This getter used to name 'Completed', which the
      * disposition flow redesign RETIRED, together with `Call for Offers` and `Disposition Offer`.

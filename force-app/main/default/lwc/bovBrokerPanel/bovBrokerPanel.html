@@ -1,0 +1,96 @@
+<!--
+  ══════════════════════════════════════════════════════════════════════════════
+  c-bov-broker-panel — ONE header, ONE action bar, TWO broker cards (2026-08-24).
+  ══════════════════════════════════════════════════════════════════════════════
+  This bundle exists to give the BOV Outreach stage a SINGLE header carrying the
+  three broker buttons, above two cards that keep their own section titles
+  ("Preferred Broker", "BOV Comparison Matrix (n)") — user decision.
+
+  🔴 THE THREE BUTTONS MOVED HERE OUT OF `c/bovComparisonMatrix`. That bundle no
+  longer renders `slot="actions"`, no longer imports either modal and no longer
+  raises a toast: it is a table with a title. Its Jest suite pins that it has NO
+  `lightning-button` in either mode, so a button re-added there reds immediately.
+
+  ⚠ BOTH CHILD TAGS ARE THE SAME BUNDLE, and that is unchanged from what
+  `dispositionMain.html` used to do directly. `preferred-only` is a BARE
+  attribute — LWC resolves a valueless attribute on a custom element to boolean
+  `true`, whereas `preferred-only=""` is the FALSY empty string and would turn
+  the top card into a second copy of the matrix. Pinned with `toBe(true)`.
+
+  🔴 THE PREFERRED CARD IS GATED **HERE**, WITH `lwc:if`, AND THAT IS THE GAP FIX.
+  `dispositionMain.css` documented the defect this replaces: a child that
+  self-gates to nothing is STILL a flex item, so a `gap` beside it renders one
+  1rem step of empty space with no card in it. There is no CSS escape (a custom
+  element with an empty template matches `:empty` either way). The only fix is
+  to not render the tag — which needs the BOV rows, and this component has them
+  because the three buttons' visibility rules need them anyway. `dispositionMain`
+  never did, which is why the defect was accepted there and is fixed here.
+  ⚠ The child ALSO still self-gates on `isVisible`. That redundancy is deliberate:
+  it keeps the child correct if it is ever mounted somewhere that has no data.
+-->
+<template>
+    <lightning-card icon-name="standard:contact">
+        <span slot="title">{panelTitle}</span>
+
+        <!-- Top-right actions. `slot="actions"` is lightning-card's own header
+             action region, so the buttons sit on the header line rather than
+             pushing the cards down.
+
+             🔴 THE ORDER IS THE USER'S AND IT IS UNCHANGED BY THE MOVE:
+             Add Broker Response, Replace Broker, Add Preferred Broker. -->
+        <div slot="actions">
+            <lightning-button-group>
+                <lightning-button
+                    class="panel-add"
+                    label="Add Broker Response"
+                    onclick={handleAddResponse}
+                ></lightning-button>
+
+                <!-- Only rendered once a broker is Selected — there is nothing to
+                     replace before that.
+
+                     🔴 THIS BUTTON NOW HAS TWO DESTINATIONS (2026-08-24). With a
+                     preferred broker on the disposition it opens the ADD PREFERRED
+                     BROKER dialog in replacement mode; without one it opens the
+                     ordinary backup picker exactly as it always did. The branch is
+                     in `handleReplaceBroker`, not here, so the button's own
+                     visibility rule is untouched. -->
+                <template lwc:if={canReplaceBroker}>
+                    <lightning-button
+                        class="panel-replace"
+                        label="Replace Broker"
+                        onclick={handleReplaceBroker}
+                    ></lightning-button>
+                </template>
+
+                <!-- ⚠ HIDDEN ONCE ONE EXISTS, NOT DISABLED. Exactly one preferred
+                     broker is permitted per disposition (user decision,
+                     2026-08-24) and there is no server-side uniqueness guard on
+                     `Is_Preferred_Broker__c`, so the affordance is withdrawn
+                     rather than left on screen to be refused.
+                     🔴 THIS IS ALSO WHAT MAKES "REPLACE BROKER" THE ONLY ROUTE to
+                     changing a preferred broker — the two rules are complementary
+                     by construction and must stay that way. -->
+                <template lwc:if={canAddPreferredBroker}>
+                    <lightning-button
+                        class="panel-add-preferred"
+                        label="Add Preferred Broker"
+                        onclick={handleAddPreferredBroker}
+                    ></lightning-button>
+                </template>
+            </lightning-button-group>
+        </div>
+
+        <div class="panel-stack">
+            <template lwc:if={hasPreferredBroker}>
+                <c-bov-comparison-matrix
+                    record-id={recordId}
+                    preferred-only
+                ></c-bov-comparison-matrix>
+            </template>
+            <c-bov-comparison-matrix
+                record-id={recordId}
+            ></c-bov-comparison-matrix>
+        </div>
+    </lightning-card>
+</template>

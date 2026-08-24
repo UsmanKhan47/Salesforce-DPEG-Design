@@ -22,7 +22,8 @@ const RELATED_LIST_ID = 'Disposition_Offers__r';
  * shows no broker column for the reason its own header gives.
  *
  * ── 🔴 `Broker__r.Name`, NOT `Broker__c` — MEASURED, NOT ASSUMED (2026-08-21) ─────────────────
- * UAT asked for the broker contact in the label. The obvious request — `Disposition_Offer__c
+ * UAT asked for the broker contact on this screen (it is the Broker column, and the first token of
+ * each radio's `aria-label`). The obvious request — `Disposition_Offer__c
  * .Broker__c` — DOES NOT CARRY THE NAME. Measured against `usman-dpeg` on the live
  * `related-list-records` endpoint, a plain lookup comes back with the Id and a NULL display value:
  *
@@ -54,13 +55,14 @@ const FIELDS = [
 ];
 
 /**
- * Rendered in place of the broker when the offer has none.
+ * Rendered in the Broker COLUMN when the offer has none.
  *
  * ⚠ THIS IS THE COMMON CASE TODAY, NOT AN EDGE CASE. `Broker__c` landed on 2026-08-21 and is
  * stamped only by `c/dispositionLogOfferModal`; every offer logged before it — including BOTH
  * offers live in `usman-dpeg` right now — has a null broker. Deliberately a sentence, not an
- * em dash or a blank: it must not be mistakable for a broker's name, and it must not leave the
- * label opening with a bare separator.
+ * em dash or a blank: it must not be mistakable for a broker's name, and — since the same string
+ * is also the first token of the radio's `aria-label` — it must not leave that announcement
+ * opening with a bare separator.
  */
 const NO_BROKER = 'Broker not recorded';
 
@@ -134,52 +136,59 @@ export default class DispositionOfferSelect extends LightningElement {
                 const date = formatLongDate(f.Offer_Date__c ? f.Offer_Date__c.value : null);
                 // The offer's AutoNumber, falling back to the record Id. See the uniqueness
                 // argument below — the Id fallback is what keeps the invariant true even in the
-                // unreachable case where `Name` is absent, and it also means no token in this
-                // label can ever render the literal string "undefined".
+                // unreachable case where `Name` is absent, and it also means neither the Offer
+                // Number CELL nor the `aria-label` can ever render the literal string "undefined".
                 const offerRef = f.Name?.value || r.id;
                 return {
-                    // The radio group needs ONE string per option, so the fields are composed into
-                    // the label rather than laid out in a table.
-                    //
+                    id: r.id,
+                    broker: broker,
+                    amount: amount,
+                    date: date,
+                    offerRef: offerRef,
                     // ══════════════════════════════════════════════════════════════════════════
-                    // 🔴 UNIQUENESS IS THE CONTRACT OF THIS STRING. THIS IS THE SCREEN WHERE DPEG
-                    //    PICKS THE WINNING BID — TWO OPTIONS READING THE SAME IS A WRONG
-                    //    DECISION, NOT A COSMETIC DEFECT.
+                    // 🔴 THE COMPOSED ONE-LINE DESCRIPTION SURVIVES THE MOVE TO A TABLE — AS THE
+                    //    RADIO'S `aria-label`. IT IS NOT A LEFTOVER.
                     // ══════════════════════════════════════════════════════════════════════════
-                    // That sentence is the one thing carried forward unchanged from the version of
-                    // this comment written when the buyer was retired and the AutoNumber LED the
-                    // label. What changed on 2026-08-21 is only WHICH tokens satisfy it, and why.
+                    // A sighted user now compares four ALIGNED COLUMNS, which is the whole point of
+                    // the table (2026-08-24: "so a principal can actually compare offers"). A
+                    // screen-reader user pressing Down through the radio group hears only each
+                    // control's accessible name, so without this string they would hear five
+                    // unnamed radios — the table would be a REGRESSION for them, not an
+                    // improvement. `aria-label` gives them the same row, linearised.
                     //
-                    // THE BROKER NOW LEADS, because UAT asked to see the broker contact and the
-                    // broker is the only party an offer names. 🔴 IT IS NOT A DISCRIMINATOR AND
-                    // MUST NEVER BE RELIED ON AS ONE: there is one appointed broker per sale, so
-                    // every offer on one disposition carries the SAME broker — and today, in
-                    // `usman-dpeg`, both live offers carry NONE, so the leading token is the
-                    // identical `NO_BROKER` sentence on both. The old comment's objection to
-                    // putting a broker here was therefore correct on the facts and is NOT being
-                    // waved away; it is answered by making the tokens BEHIND the broker carry the
-                    // whole burden of telling two rows apart:
+                    // 🔴 UNIQUENESS IS STILL THE CONTRACT OF THIS STRING. THIS IS THE SCREEN WHERE
+                    //    DPEG PICKS THE WINNING BID — TWO CONTROLS ANNOUNCING THE SAME IS A WRONG
+                    //    DECISION, NOT A COSMETIC DEFECT. That sentence is carried forward
+                    //    unchanged from the radio-group version of this comment; only its rendered
+                    //    home moved, from `option.label` to a DOM attribute.
                     //
-                    //   1. THE AMOUNT IS NOW EXACT (`formatExactCurrency`, not `formatMillions`).
-                    //      This is what made the broker safe to add. The live pair — $1,850,000 and
-                    //      $1,860,000 — BOTH rendered `$1.9M` under the old formatter, so the label
-                    //      was already ambiguous before a repeated broker was put in front of it.
-                    //      Any abbreviation just moves the collision distance; exact removes it.
+                    // THE BROKER LEADS, because UAT (2026-08-21) asked to see the broker contact
+                    // and the broker is the only party an offer names. 🔴 IT IS NOT A
+                    // DISCRIMINATOR AND MUST NEVER BE RELIED ON AS ONE: there is one appointed
+                    // broker per sale, so every offer on one disposition carries the SAME broker —
+                    // and today, in `usman-dpeg`, both live offers carry NONE, so the leading
+                    // token is the identical `NO_BROKER` sentence on both. The tokens BEHIND it
+                    // carry the whole burden of telling two rows apart:
+                    //
+                    //   1. THE AMOUNT IS EXACT (`formatExactCurrency`, not `formatMillions`). The
+                    //      live pair — $1,850,000 and $1,860,000 — BOTH rendered `$1.9M` under the
+                    //      old formatter. Any abbreviation just moves the collision distance;
+                    //      exact removes it. ⚠ THIS IS ALSO WHY THE `Amount` COLUMN IS FORMATTED
+                    //      HERE IN JS RATHER THAN BY A `lightning-formatted-number` OR A
+                    //      datatable `type: 'currency'` COLUMN — the exact figure has to be a text
+                    //      node this bundle's own suite can read. See the template's comment.
                     //   2. THE OFFER NUMBER IS APPENDED UNCONDITIONALLY, never "only when a
                     //      collision is detected". Broker + exact amount + date can still coincide
                     //      legitimately — one broker re-logging a revised bid on the same day at
                     //      the same price is a real sequence — and a conditional disambiguator is
                     //      a computation that can be wrong, whereas `Name` is a platform-assigned
-                    //      AutoNumber that is unique per row by construction. Unconditional means
-                    //      the guarantee does not depend on the data.
+                    //      AutoNumber that is unique per row by construction.
                     //
                     // ⚠ THE FINANCING TOKEN WAS REMOVED HERE, NOT DEFAULTED TO SOMETHING BETTER
-                    // (UAT: "No need to show financing not started"). It never contributed to
-                    // uniqueness anyway — it is a picklist of ~4 values across a handful of rows.
-                    // Token order mirrors `brokerOptionLabel` in `c/utils`: who, then the facts,
-                    // then the auto-number last as the tiebreak.
-                    label: `${broker} — ${amount} · ${date} · ${offerRef}`,
-                    value: r.id
+                    // (UAT: "No need to show financing not started"), and it did not return as a
+                    // fifth COLUMN either. It never contributed to uniqueness — a picklist of ~4
+                    // values across a handful of rows.
+                    ariaLabel: `${broker} — ${amount} · ${date} · ${offerRef}`
                 };
             });
         } else if (error) {
@@ -201,11 +210,35 @@ export default class DispositionOfferSelect extends LightningElement {
         // every displayed getter is cheaper than a per-binding judgement.
         return this._loadError || '';
     }
-    get offerOptions() {
-        return this._offers || [];
+    /**
+     * One row per offer, resolved for the table: the four displayed columns, plus the selection
+     * state the template needs.
+     *
+     * ⚠ SELECTION IS DERIVED HERE RATHER THAN LEFT TO THE BROWSER. A native radio group would keep
+     * its own checked state perfectly well on its own — but the `getRelatedListRecords` wire can
+     * re-emit at any time (a sibling card on the same page logs an offer and LDS refreshes this
+     * list), which rebuilds every `<tr>`. An unbound `checked` would then render nothing selected
+     * while `selectedOfferId` still held a value and the confirm button still read enabled — a
+     * screen that says "ready" with no visible choice. Binding it makes the DOM a projection of
+     * `selectedOfferId`, which is also the value that reaches Apex.
+     *
+     * @returns {Array<object>} `{ id, broker, amount, date, offerRef, ariaLabel, selected,
+     *   rowClass }` per offer, in the order LDS returned them.
+     */
+    get offerRows() {
+        return (this._offers || []).map((row) => {
+            const selected = row.id === this.selectedOfferId;
+            return {
+                ...row,
+                selected,
+                // Two classes rather than a toggled single one, so the selected state is
+                // assertable as a rendered attribute on the `<tr>` without reading a getter.
+                rowClass: selected ? 'qa-row qa-row_selected' : 'qa-row'
+            };
+        });
     }
     get hasOffers() {
-        return this.offerOptions.length > 0;
+        return (this._offers || []).length > 0;
     }
     /** True only once the wire has answered AND answered with nothing. */
     get showNoOffers() {
@@ -218,8 +251,22 @@ export default class DispositionOfferSelect extends LightningElement {
         return this._saving;
     }
 
+    /**
+     * Records the chosen offer.
+     *
+     * ⚠ READS `data-id` OFF THE ELEMENT THE USER CLICKED, which is the point of not using a
+     * `lightning-datatable` row action here. This repo has already shipped a per-row action that
+     * silently did nothing because `event.detail.action.name` arrived as the raw
+     * `{ fieldName: 'actionName' }` OBJECT rather than a string (`c/meterRegister`,
+     * `c/sellMeterList`) — and Jest stayed green, because the suite had hand-written a
+     * string-shaped payload the platform never sends. A native `<input type="radio">` has no
+     * such indirection: `event.target` IS the radio, and `dataset.id` is the literal the
+     * template wrote onto it.
+     *
+     * @param {Event} event The radio's change event.
+     */
     handleOfferChange(event) {
-        this.selectedOfferId = event.detail.value;
+        this.selectedOfferId = event.target.dataset.id;
         this.error = undefined;
     }
 

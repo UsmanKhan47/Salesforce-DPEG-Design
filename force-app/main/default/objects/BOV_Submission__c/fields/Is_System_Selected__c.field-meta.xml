@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY. A comment placed ABOVE
+        <CustomField> breaks `sf` deploy at source conversion with a misleading
+        "unable to find matching parent xml file" error.
+
+        ADDED 2026-08-24. SYSTEM FIELD. Marks the submission the SCORING model picked, as
+        distinct from Is_Preferred_Broker__c (a human's manual appointment). Both flags can be
+        true on DIFFERENT rows of the same Disposition at once: it is normal for the scored
+        winner and the preferred broker to both carry Submission_Status__c = 'Selected'
+        simultaneously. This flag is what tells the two "Selected" rows apart, and it becomes
+        the field the exclusivity guard counts when validating that at most one row per flag
+        type holds the Selected status for a given Disposition.
+
+        WHAT WRITES IT: BovAutoSelectionService ONLY. No user, form, or data load should ever
+        set this field.
+
+        WHAT READS IT: BovAutoSelectionService's own exclusivity guard, and any future
+        comparison/matrix logic that needs to distinguish a scored pick from a manual
+        appointment among rows sharing Submission_Status__c = 'Selected'.
+
+        FLS: READ ONLY in BOTH DPEG_Disposition_Edit and DPEG_Disposition_View, mirroring
+        Is_Manually_Appointed__c's grant shape and reasoning — a user who could hand-edit this
+        could corrupt which broker the approval routes to. Do NOT grant editable=true on either
+        set for any persona.
+    -->
+    <fullName>Is_System_Selected__c</fullName>
+    <defaultValue>false</defaultValue>
+    <description>SYSTEM FIELD. Set only by BovAutoSelectionService. Marks the submission the scoring model picked, as distinct from Is_Preferred_Broker__c which marks a human-appointed submission. Read-only FLS everywhere by design.</description>
+    <inlineHelpText>System-set by the scoring/auto-selection engine. Never edit by hand.</inlineHelpText>
+    <label>System Selected</label>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Checkbox</type>
+</CustomField>

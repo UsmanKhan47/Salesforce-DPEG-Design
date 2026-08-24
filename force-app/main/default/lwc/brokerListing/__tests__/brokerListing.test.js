@@ -167,7 +167,7 @@ describe('c-broker-listing', () => {
         ).toBe('No broker listing on record.');
     });
 
-    it('DATA BRANCH: renders the listing header and three stat tiles', async () => {
+    it('DATA BRANCH: renders the listing header and the two top stat tiles', async () => {
         const element = createComponent();
 
         getListing.emit(LISTING);
@@ -181,13 +181,16 @@ describe('c-broker-listing', () => {
             element.shadowRoot.querySelector('.card-sub').textContent
         ).toBe('CBRE · Jane Doe');
 
+        // ⚠ TWO TILES IN THE TOP GRID NOW. The Call For Offers Date tile MOVED below the
+        // rule into the call-for-offers section — it was not deleted — so it is asserted there
+        // rather than here. A bare count-of-2 assertion would stay green if the date had been dropped
+        // altogether, which is why the move is pinned in its own test below.
         const tiles = element.shadowRoot.querySelectorAll(
             'c-onboarding-card-child'
         );
-        expect(tiles.length).toBe(3);
+        expect(tiles.length).toBe(2);
         expect(tiles[0].value).toBe('30 days'); // Days On Market
         expect(tiles[1].value).toBe('Mar 15, 2026'); // List Date
-        expect(tiles[2].value).toBe('Apr 10, 2026'); // Call For Offers Date
     });
 
     /**
@@ -204,7 +207,7 @@ describe('c-broker-listing', () => {
 
         expect(
             element.shadowRoot.querySelectorAll('c-onboarding-card-child').length
-        ).toBe(3);
+        ).toBe(2);
         expect(
             element.shadowRoot.textContent.toLowerCase()
         ).not.toContain('offers received');
@@ -429,6 +432,351 @@ describe('c-broker-listing', () => {
         expect(toast.mock.calls[0][0].detail.variant).toBe('error');
         expect(toast.mock.calls[0][0].detail.message).toBe('boom');
         expect(refreshApex).not.toHaveBeenCalled();
+    });
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // THE CALL-FOR-OFFERS SECTION
+    //
+    // 🔴 EVERY ASSERTION BELOW READS A RENDERED ELEMENT — `querySelector(...).textContent` and
+    // `.className` — NEVER a getter off the element. `element.cfoStatusLabel` is undefined anyway
+    // (getters are not `@api`), but the deeper reason is that this repo has shipped a getter-only
+    // assertion that stayed green while the template rendered nothing at all.
+    //
+    // ⚠ DATES ARE BUILT RELATIVE TO THE REAL CLOCK, NOT FAKED. `jest.useFakeTimers()` was not used
+    // deliberately: it fakes `Date` for the a11y matcher too, and the component's whole job here is
+    // to compare a stored date against the machine's own today. Constructing the fixture date by
+    // walking `Date` forward N days is an INDEPENDENT computation from the component's
+    // millisecond-difference arithmetic, so the assertions are not tautological.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /** ISO `yyyy-mm-dd` for local today + `offset` days. Negative offsets are in the past. */
+    function isoOffset(offset) {
+        const d = new Date();
+        d.setDate(d.getDate() + offset);
+        const pad = (n) => String(n).padStart(2, '0');
+        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    }
+
+    function cfoTiles(element) {
+        return element.shadowRoot.querySelectorAll('.cfo-grid .cfo-tile');
+    }
+
+    /** The rendered text of the countdown tile — the SECOND tile in the section. */
+    function countdownText(element) {
+        return cfoTiles(element)[1]
+            .querySelector('.cfo-tile-value')
+            .textContent.trim();
+    }
+
+    function pill(element) {
+        return element.shadowRoot.querySelector('.cfo-grid .cfo-pill');
+    }
+
+    /** Emit a listing whose only interesting property is its call-for-offers date. */
+    async function emitWithCfoDate(element, callForOffersDate) {
+        getListing.emit({ ...LISTING, callForOffersDate });
+        await Promise.resolve();
+        return element;
+    }
+
+    /**
+     * 🔴 THE STRUCTURE, AND THE MOVE. The Call For Offers Date tile left the top grid in this
+     * change; without this test, deleting it outright would look identical to moving it — the top
+     * grid's `toBe(2)` would pass either way.
+     */
+    it('CFO: a rule, then a headed section of three tiles in a fixed order', async () => {
+        const element = createComponent();
+        await emitWithCfoDate(element, isoOffset(9));
+
+        const rule = element.shadowRoot.querySelector('.cfo-rule');
+        expect(rule).not.toBeNull();
+
+        const section = element.shadowRoot.querySelector('.cfo-section');
+        expect(section).not.toBeNull();
+        expect(
+            element.shadowRoot.querySelector('.cfo-heading').textContent.trim()
+        ).toBe('Call for Offers');
+
+        // The rule is BEFORE the section, not after it and not somewhere else on the card.
+        // eslint-disable-next-line no-bitwise
+        expect(
+            rule.compareDocumentPosition(section) &
+                Node.DOCUMENT_POSITION_FOLLOWING
+        ).toBeTruthy();
+
+        const tiles = cfoTiles(element);
+        expect(tiles.length).toBe(3);
+        expect(
+            Array.from(tiles).map((t) =>
+                t.querySelector('.cfo-tile-label').textContent.trim()
+            )
+        ).toEqual([
+            'Call For Offers Date',
+            'Days to Call for Offers',
+            'Status'
+        ]);
+
+        // The date itself renders in the section — this is the assertion that proves the tile
+        // MOVED rather than being deleted.
+        expect(
+            tiles[0].querySelector('.cfo-tile-value').textContent.trim()
+        ).toBe(
+            new Date(isoOffset(9) + 'T00:00:00').toLocaleDateString('en-US', {
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric'
+            })
+        );
+    });
+
+    it('CFO: a date well in the future counts down and reads On Track (green)', async () => {
+        const element = createComponent();
+        await emitWithCfoDate(element, isoOffset(21));
+
+        expect(countdownText(element)).toBe('21 days');
+        expect(pill(element).textContent.trim()).toBe('On Track');
+        expect(pill(element).className).toContain('cfo-pill--green');
+    });
+
+    /**
+     * 🔴 THE THRESHOLD, PINNED ON BOTH SIDES OF THE BOUNDARY. `DUE_SOON_DAYS` is 7 —
+     * `CallForOffersService.APPROACHING_DAYS`. Day 8 is the last On Track day and day 7 the first
+     * Due Soon day; asserting only one side would stay green for an off-by-one.
+     */
+    it('CFO: the Due Soon window opens at exactly 7 days, not 8 and not 6', async () => {
+        const element = createComponent();
+
+        await emitWithCfoDate(element, isoOffset(8));
+        expect(pill(element).textContent.trim()).toBe('On Track');
+        expect(pill(element).className).toContain('cfo-pill--green');
+
+        await emitWithCfoDate(element, isoOffset(7));
+        expect(countdownText(element)).toBe('7 days');
+        expect(pill(element).textContent.trim()).toBe('Due Soon');
+        expect(pill(element).className).toContain('cfo-pill--amber');
+
+        await emitWithCfoDate(element, isoOffset(6));
+        expect(pill(element).textContent.trim()).toBe('Due Soon');
+    });
+
+    it('CFO: one day out is singular — "1 day", never "1 days"', async () => {
+        const element = createComponent();
+        await emitWithCfoDate(element, isoOffset(1));
+
+        expect(countdownText(element)).toBe('1 day');
+        expect(pill(element).textContent.trim()).toBe('Due Soon');
+    });
+
+    /**
+     * 🔴 DUE TODAY. `0` is falsy in JS, so the naive `value || '—'` collapses this into the
+     * no-date case on the one day it matters most — the trap `callForOffersPanel.js` records
+     * having been hit in the acquisition module. The countdown must say "Today" in words, and the
+     * pill must NOT say Overdue: nothing has been missed yet.
+     */
+    it('CFO: a date of today reads "Today" / Due Soon — never "0", never Overdue, never a dash', async () => {
+        const element = createComponent();
+        await emitWithCfoDate(element, isoOffset(0));
+
+        const countdown = countdownText(element);
+        expect(countdown).toBe('Today');
+        expect(countdown).not.toBe('—');
+        expect(countdown).not.toMatch(/\b0\b/);
+
+        expect(pill(element).textContent.trim()).toBe('Due Soon');
+        expect(pill(element).className).toContain('cfo-pill--amber');
+        expect(element.shadowRoot.textContent).not.toContain('Overdue');
+    });
+
+    it('CFO: a date in the past reads N days ago / Overdue (red), with no minus sign', async () => {
+        const element = createComponent();
+
+        await emitWithCfoDate(element, isoOffset(-5));
+        expect(countdownText(element)).toBe('5 days ago');
+        expect(countdownText(element)).not.toMatch(/-/);
+        expect(pill(element).textContent.trim()).toBe('Overdue');
+        expect(pill(element).className).toContain('cfo-pill--red');
+
+        // Singular, and the first overdue day is day -1 — not day 0.
+        await emitWithCfoDate(element, isoOffset(-1));
+        expect(countdownText(element)).toBe('1 day ago');
+        expect(pill(element).textContent.trim()).toBe('Overdue');
+    });
+
+    /**
+     * 🔴 THE CASE THAT IS ACTUALLY ON SCREEN TODAY. Every live Disposition record has a blank
+     * `Call_For_Offers_Date__c`, so this is the branch a user sees right now — and the one where a
+     * wrong answer is a lie rather than a rounding error. "0 days" would read as "due today" and
+     * "Overdue" would accuse someone of missing a deadline nobody set.
+     */
+    it('🔴 CFO: a BLANK date renders an em dash and "Not Scheduled" — never 0, never Overdue', async () => {
+        const element = createComponent();
+        await emitWithCfoDate(element, null);
+
+        // The date tile itself.
+        expect(
+            cfoTiles(element)[0].querySelector('.cfo-tile-value').textContent.trim()
+        ).toBe('—');
+
+        // The countdown: an em dash, and provably not a number of any sign.
+        const countdown = countdownText(element);
+        expect(countdown).toBe('—');
+        expect(countdown).not.toMatch(/\d/);
+        expect(countdown).not.toBe('0');
+        expect(countdown).not.toBe('0 days');
+
+        // The status: neutral, and unmistakable in WORDS rather than by its grey alone.
+        expect(pill(element).textContent.trim()).toBe('Not Scheduled');
+        expect(pill(element).className).toContain('cfo-pill--muted');
+
+        // 🔴 The whole card, not just the pill — nothing anywhere may claim a missed deadline.
+        expect(element.shadowRoot.textContent).not.toContain('Overdue');
+        expect(element.shadowRoot.textContent).not.toContain('Due Soon');
+    });
+
+    /**
+     * ⚠ ABSENT AND NULL ARE THE SAME ANSWER. `BrokerListingController` omits the member entirely
+     * rather than sending null in some payload shapes, and a check written only against `null`
+     * would let `undefined` fall through to `NaN days`.
+     */
+    it('CFO: an ABSENT callForOffersDate behaves exactly like a null one', async () => {
+        const element = createComponent();
+        const { callForOffersDate, ...withoutDate } = LISTING;
+        expect(callForOffersDate).toBeDefined(); // the fixture really did carry one
+
+        getListing.emit(withoutDate);
+        await Promise.resolve();
+
+        expect(countdownText(element)).toBe('—');
+        expect(pill(element).textContent.trim()).toBe('Not Scheduled');
+        expect(element.shadowRoot.textContent).not.toContain('NaN');
+    });
+
+    /**
+     * 🔴 THE PILL IS ONE SOURCE, SO ITS COLOUR AND ITS WORDS CANNOT DISAGREE. This is the
+     * assertion that catches a future edit changing the threshold in only one of the two getters —
+     * a green pill reading "Due Soon", which every test above would still pass individually.
+     */
+    it('CFO: the pill theme and the pill text agree on every band', async () => {
+        const element = createComponent();
+        const expected = [
+            [null, 'Not Scheduled', 'muted'],
+            [isoOffset(-1), 'Overdue', 'red'],
+            [isoOffset(0), 'Due Soon', 'amber'],
+            [isoOffset(7), 'Due Soon', 'amber'],
+            [isoOffset(8), 'On Track', 'green']
+        ];
+
+        for (const [date, text, theme] of expected) {
+            // eslint-disable-next-line no-await-in-loop
+            await emitWithCfoDate(element, date);
+            expect(pill(element).textContent.trim()).toBe(text);
+            expect(pill(element).className).toBe(`cfo-pill cfo-pill--${theme}`);
+        }
+    });
+
+    it('CFO: the section is accessible with a blank date (the live shape)', async () => {
+        const element = createComponent();
+        getListing.emit({ ...LISTING, callForOffersDate: null });
+        getSubmissions.emit(SUBMISSIONS);
+        await Promise.resolve();
+        await Promise.resolve();
+
+        await expect(element).toBeAccessible();
+    });
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // THE STYLESHEET, ASSERTED AS SOURCE TEXT
+    //
+    // 🔴 jsdom PERFORMS NO LAYOUT AND RESOLVES NO CUSTOM PROPERTIES, so `getComputedStyle` cannot
+    // see a missing `gap`, a grid that stopped wrapping, or a token that resolves to an unreadable
+    // colour. Every one of those is a REQUIREMENT of this section, and reading the stylesheet as
+    // text is the only automated gate available for them. The alternative — asserting nothing — is
+    // how three of these regressions have shipped in this repo before.
+    // ─────────────────────────────────────────────────────────────────────────
+    describe('the call-for-offers stylesheet', () => {
+        const CSS = require('fs')
+            .readFileSync(
+                require('path').join(__dirname, '..', 'brokerListing.css'),
+                'utf8'
+            )
+            // Strip comments first — otherwise the prose ABOUT a forbidden token matches the
+            // search for that token and every absence assertion below is vacuously green.
+            .replace(/\/\*[\s\S]*?\*\//g, '');
+
+        /**
+         * The declarations of one rule, by selector.
+         *
+         * ⚠ STRING SEARCH, NOT A BUILT REGEX. Every selector here starts with `.` and several
+         * contain `--`, so a hand-built `new RegExp(selector + ...)` needs escaping that is easy
+         * to get subtly wrong — and a regex that silently fails to match makes every assertion in
+         * this block vacuous rather than red. Matching on `selector + ' {'` also stops `.cfo-tile`
+         * from matching `.cfo-tile-icon`.
+         */
+        function rule(selector) {
+            const at = CSS.indexOf(`${selector} {`);
+            expect(at).toBeGreaterThan(-1); // the rule must exist at all
+            const open = CSS.indexOf('{', at);
+            const close = CSS.indexOf('}', open);
+            expect(close).toBeGreaterThan(open);
+            return CSS.slice(open + 1, close);
+        }
+
+        /**
+         * 🔴 THE `gap` IS MARKUP, NOT POLISH. The LWC template compiler discards the whitespace
+         * between sibling elements, so with these removed the tiles butt against one another and
+         * each tile's value runs into its own label.
+         */
+        it('keeps the load-bearing gaps that replace the compiler-stripped whitespace', () => {
+            expect(rule('.cfo-grid')).toMatch(/\bgap\s*:/);
+            expect(rule('.cfo-tile')).toMatch(/\bgap\s*:/);
+            expect(rule('.cfo-tile-value')).toMatch(/\bmargin-bottom\s*:/);
+        });
+
+        /** The tiles must reflow, not sit at a fixed three-across. */
+        it('wraps: auto-fit + minmax, never a fixed three-column track', () => {
+            const grid = rule('.cfo-grid');
+            expect(grid).toMatch(/auto-fit/);
+            expect(grid).toMatch(/minmax\(/);
+            expect(grid).not.toMatch(/repeat\(\s*3\s*,/);
+        });
+
+        /** The divider is a token-driven rule, not a hardcoded border colour. */
+        it('draws the divider from a token, not a literal colour', () => {
+            const r = rule('.cfo-rule');
+            expect(r).toMatch(/background:\s*var\(--slds-g-color-/);
+            expect(r).not.toMatch(/background:\s*#[0-9a-fA-F]{3,8}\s*;/);
+        });
+
+        /**
+         * 🔴 THE DARK-ON-DARK TRAP, PINNED. `--slds-g-color-<semantic>-container-1` is a SOLID DARK
+         * fill in the SLDS 2 base theme (success is #2e844a), so pairing it with `-base-30` text
+         * yields an unreadable pill — and no other gate in this pipeline sees it (the linter only
+         * checks that a hook was used; axe's contrast rule is inert in jsdom). The pills must use
+         * the `-base-95` tint, which is pale in light and near-black in dark.
+         */
+        it('tints the pills from *-base-95, never from *-container-1', () => {
+            for (const theme of ['green', 'amber', 'red', 'muted']) {
+                const r = rule(`.cfo-pill--${theme}`);
+                expect(r).not.toMatch(/container-1/);
+                expect(r).toMatch(/background:\s*var\(--slds-g-color-/);
+                expect(r).toMatch(/color:\s*var\(--slds-g-color-/);
+            }
+            expect(rule('.cfo-pill--green')).toMatch(/success-base-95/);
+            expect(rule('.cfo-pill--amber')).toMatch(/warning-base-95/);
+            expect(rule('.cfo-pill--red')).toMatch(/error-base-95/);
+        });
+
+        /**
+         * ⚠ EVERY COLOUR IN THE NEW SECTION IS A HOOK. A literal survives the theme switch
+         * unchanged and so reads correctly in exactly one of light and dark.
+         */
+        it('uses no raw colour literal outside a var() fallback in the new section', () => {
+            const section = CSS.slice(CSS.indexOf('.cfo-rule'));
+            // Remove every `var(--hook, <fallback>)` — a fallback is allowed and required.
+            const withoutFallbacks = section.replace(/var\([^)]*\)/g, 'VAR');
+            expect(withoutFallbacks).not.toMatch(/#[0-9a-fA-F]{3,8}/);
+            expect(withoutFallbacks).not.toMatch(/\b(rgb|rgba|hsl)\(/);
+        });
     });
 
     it('is accessible', async () => {

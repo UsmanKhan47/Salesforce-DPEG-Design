@@ -1,6 +1,18 @@
 <template>
     <div class="card">
-        <div class="section-header">Disposition Offers</div>
+        <!--
+          ⚠ THE TITLE IS DERIVED, NOT LITERAL (2026-08-24). It reads "Disposition Offers" in
+          the default mode and "Selected Offer" in `selected-only` mode. See `cardTitle` in the
+          JS for why the selected-mode title is not "Offer Sent for Approval".
+
+          ⚠ THE DEFAULT STRING IS REFERENCED BY ANOTHER COMPONENT'S COPY. The Select Offer
+          screen (`c/dispositionOfferSelect`) tells the user to "Log an offer from the
+          **Disposition Offers** card first". That copy renders only when the disposition has
+          NO offers, which is a state `selected-only` mode can never be in (Offer Selection is
+          only reachable through a selection, which needs an offer), so the two cannot disagree.
+          Do not rename the DEFAULT title without changing that sentence too.
+        -->
+        <div class="section-header">{cardTitle}</div>
         <template if:true={hasOffers}>
             <div class="offer-list">
                 <template for:each={offers} for:item="o">
@@ -30,11 +42,31 @@
               last hardcoded copy of the ladder in any LWC, and this component has no server
               payload of its own to correct it from. 🔴 DO NOT REINSTATE A NUMBER HERE. The
               schedule renders once, on c/listingAlerts, from the server.
+
+              ⚠ THE STRING IS MODE-DEPENDENT (2026-08-24). In `selected-only` mode "No offers
+              yet." would be a LIE — there are offers, none of them flagged. See `emptyMessage`.
             -->
-            <div class="empty-msg">No offers yet.</div>
+            <div class="empty-msg">{emptyMessage}</div>
         </template>
+        <!--
+          ⚠ `disabled` AND `title` ARE BOTH BOUND, AND BOTH RESOLVE IN EVERY MODE. A getter
+          bound to an attribute is written UNCONDITIONALLY by the LWC compiler, so a `logTitle`
+          that returned `undefined` in the enabled state would render the literal
+          `title="undefined"` on the page (measured in this repo). `logTitle` therefore always
+          returns a non-empty string.
+
+          🔴 THE `disabled` BINDING IS ONE OF **TWO** GUARDS, DELIBERATELY. `handleLogOffer`
+          returns early in the same mode. Removing either one alone leaves the feature correct
+          and reds exactly one test — which is the point: neither test can go vacuous behind
+          the other.
+        -->
         <div class="log-btn-wrap">
-            <button class="log-btn" onclick={handleLogOffer}>+ Log Offer</button>
+            <button
+                class="log-btn"
+                onclick={handleLogOffer}
+                disabled={logDisabled}
+                title={logTitle}
+            >+ Log Offer</button>
         </div>
     </div>
 </template>

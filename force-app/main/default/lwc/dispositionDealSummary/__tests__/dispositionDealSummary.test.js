@@ -48,9 +48,25 @@
  *   7. 🔴 THE ~340px SIDEBAR LAYOUT. `flex-wrap: wrap` on `.row-head` is what stops a
  *      27-character pill bursting the column. Source-text again — jsdom does no layout, so
  *      `scrollWidth`/`clientWidth` are both 0 and the obvious measurement assertion is vacuous.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ * 🔴 THE 2026-08-24 SECOND PASS ADDED A SECOND WIRE, AND IT CHANGES HOW EVERY FIXTURE READS
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ * The Property row now renders ONLY at `Disposition_Stage__c = 'Closing'`, and the stage arrives on
+ * `getRecord`, NOT in the Apex payload. So:
+ *   8. 🔴 EMITTING `FULL_SUMMARY` ALONE NO LONGER RENDERS THE PROPERTY ROW. Every test that wants
+ *      it must also `getRecord.emit(recordForStage(STAGE_CLOSING))`. That is not test friction to
+ *      be worked around — it IS the requirement ("do not render while the stage is unknown"), and
+ *      the ~20 tests that emit only the Apex payload are now, for free, twenty proofs that the
+ *      row stays hidden until the stage answers.
+ *   9. 🔴 EVERY PROPERTY-ROW ABSENCE PIN CARRIES A PRESENCE CONTROL IN THE SAME TEST. Measured on
+ *      2026-08-24: deleting the whole row block from the template reds ALL TEN property-row tests.
+ *      The previous generation of this suite left one absence pin GREEN AND VACUOUS under exactly
+ *      that mutation. If you add an eleventh, give it a control too.
  */
 import { createElement } from 'lwc';
 import DispositionDealSummary from 'c/dispositionDealSummary';
+import { getRecord } from 'lightning/uiRecordApi';
 import getDealSummary from '@salesforce/apex/DispositionDealSummaryController.getDealSummary';
 
 /*
@@ -90,6 +106,43 @@ jest.mock(
 const NDA_RECORD_ID = 'a0N5g00000NdaOneEAG';
 const LOI_RECORD_ID = 'a0L5g00000LoiOneEAG';
 const PSA_RECORD_ID = 'a0C5g00000PsaOneEAG';
+const ASSET_RECORD_ID = 'a0P5g00000AssetOneEAG';
+const ASSET_NAME = 'Riverbend Plaza';
+const DISPOSITION_ID = 'a0D5g000000DispEAG';
+
+/**
+ * 🔴 THE STAGE GATE (2026-08-24). The Property row renders at `Closing` and nowhere else, and the
+ * stage arrives on a SECOND wire — `getRecord` on `Disposition__c.Disposition_Stage__c` — so a
+ * test that emits only the Apex payload now renders NO Property row. That is not an accident of
+ * the fixtures: it is the requirement's "do not render while the stage is unknown".
+ *
+ * ⚠ THE OTHER TEN VALUES ARE LISTED IN FULL, IN MASTER ORDER, AND NOT SAMPLED. They are the entire
+ * value set of `objects/Disposition__c/fields/Disposition_Stage__c.field-meta.xml` minus 'Closing'
+ * (11 values; On_Market walks all 11, Off_Market 9 of them). A two-stage sample would still pass if
+ * someone widened the gate to, say, "PSA or later" — enumerating the set is what makes that fail.
+ */
+const STAGE_CLOSING = 'Closing';
+const OTHER_STAGES = [
+    'Disposition Readiness',
+    'BOV Outreach',
+    'Broker Selection',
+    'NDA',
+    'Release Materials',
+    'Active Listing',
+    'Offer Selection',
+    'LOI',
+    'PSA',
+    'Sale Closes'
+];
+
+/** The single-field `getRecord` shape `getFieldValue(data, STAGE_FIELD)` reads. */
+function recordForStage(stage) {
+    return {
+        apiName: 'Disposition__c',
+        id: DISPOSITION_ID,
+        fields: { Disposition_Stage__c: { value: stage } }
+    };
+}
 
 /**
  * Every member the Apex DTO declares, in its "nothing exists yet" state.
@@ -117,12 +170,25 @@ const EMPTY_SUMMARY = {
     psaLatestVersion: null,
     hasPsa: false,
     psaUnavailable: false,
-    psaId: null
+    psaId: null,
+    // ⚠ ADDED 2026-08-24 WITH THE PROPERTY ASSET LINK. This constant is documented above as
+    // mirroring `DispositionDealSummaryService.DealSummary` FIELD FOR FIELD, and a payload
+    // the Apex cannot produce proves nothing — so DTO members and these keys move together.
+    propertyAssetId: null,
+    propertyAssetName: null
 };
 
-/** A mid-flight sale: NDAs signed, an LOI countered, a PSA in its second version. */
+/**
+ * A mid-flight sale: NDAs signed, an LOI countered, a PSA in its second version.
+ * ⚠ IT CARRIES A PROPERTY ASSET SINCE 2026-08-24, so every test using this fixture renders
+ * the asset context line. That is deliberate: the overwhelmingly common real state is a sale
+ * WITH an asset (the lookup is populated at creation from the Property Asset page), and a
+ * default fixture that omitted it would leave the new markup unexercised in 20 tests.
+ */
 const FULL_SUMMARY = {
     ...EMPTY_SUMMARY,
+    propertyAssetId: ASSET_RECORD_ID,
+    propertyAssetName: ASSET_NAME,
     ndaCount: 4,
     ndaSignedCount: 3,
     ndaStatus: 'Signed',
@@ -165,7 +231,7 @@ describe('c-disposition-deal-summary', () => {
         jest.clearAllMocks();
     });
 
-    function createComponent(props = { recordId: 'a0D5g000000DispEAG' }) {
+    function createComponent(props = { recordId: DISPOSITION_ID }) {
         const element = createElement('c-disposition-deal-summary', {
             is: DispositionDealSummary
         });
@@ -188,6 +254,19 @@ describe('c-disposition-deal-summary', () => {
      */
     function flushPromises() {
         return new Promise((r) => setTimeout(r, 0));
+    }
+
+    /**
+     * The Property row, or null.
+     *
+     * ⚠ ONE SELECTOR, USED BY EVERY PROPERTY-ROW TEST — PRESENCE AND ABSENCE ALIKE. If the hook is
+     * renamed, every one of them moves together; if the row is DELETED, the presence half of each
+     * pin below goes red. That pairing is deliberate: an absence assertion whose feature has been
+     * removed passes for the wrong reason, which is exactly what happened when the old asset block
+     * was test-deleted on 2026-08-24 (three tests died loudly, the absence pin stayed green).
+     */
+    function propertyRow(element) {
+        return element.shadowRoot.querySelector('[data-asset-line]');
     }
 
     it('renders no rows until the wire emits', async () => {
@@ -645,6 +724,367 @@ describe('c-disposition-deal-summary', () => {
         await flushPromises();
 
         expect(element.shadowRoot.querySelectorAll('a[data-label]').length).toBe(3);
+        await expect(element).toBeAccessible();
+    });
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // 🔴 THE PROPERTY ROW (2026-08-24) — THE ROW TREATMENT, AT CLOSING ONLY
+    // ═════════════════════════════════════════════════════════════════════════
+    //
+    // TWO REQUIREMENTS LANDED TOGETHER AND THEY FAIL DIFFERENTLY, SO THEY ARE PINNED SEPARATELY:
+    //   1. THE TREATMENT. The line used to render as a bare `Property  <name>` sentence above the
+    //      rows and read as bolted on. It now reuses the document rows' own composition — icon
+    //      chip, bold label, right-aligned pill. A regression here is VISUAL, so the pins are on
+    //      rendered class names and rendered structure, never on a getter: a getter-only assertion
+    //      has passed in this repo while the rendered attribute was wrong.
+    //   2. THE STAGE GATE. The row renders at `Disposition_Stage__c = 'Closing'` and nowhere else.
+    //      A regression here is INVISIBLE — a row showing at every stage looks exactly like the
+    //      pre-gate build, and a row showing at no stage looks exactly like a sale with no asset.
+    //      Nothing on screen would say either was wrong, which is why the gate is enumerated
+    //      against the full picklist below rather than sampled.
+    //
+    // 🔴 EVERY ABSENCE PIN BELOW CARRIES ITS OWN PRESENCE CONTROL, IN THE SAME TEST, ON THE SAME
+    // COMPONENT INSTANCE. That is not belt-and-braces — it is the direct fix for the hazard this
+    // file recorded on 2026-08-24: deleting the whole asset block left the old absence pin GREEN
+    // (`toBeNull()` passes when the feature is gone) while three sibling tests died loudly. Each
+    // test here asserts the row IS rendered under one condition and IS NOT under another, so
+    // deleting the feature reds all of them and widening the gate reds all of them.
+
+    /**
+     * 🔴 THE href COMES FROM `NavigationMixin.GenerateUrl`, NOT FROM A HAND-BUILT STRING, and
+     * that is what this asserts: sfdx-lwc-jest's navigation stub resolves GenerateUrl to
+     * `https://www.example.com`, a URL no hand-rolled `/lightning/r/...` builder could produce.
+     * An implementation that composed its own path would render something else and fail here.
+     *
+     * ⚠ THE ANCHOR TEXT IS "Property" AND THE NAME IS IN THE PILL — the slot assignment, asserted.
+     * On a document row the label is what the row is ABOUT ("NDA") and the pill is its current
+     * VALUE; a property's only value is which property it is. Swapping the two would still render
+     * both strings and still pass a `textContent`-only check, so both slots are pinned by hook.
+     */
+    it('ASSET: at Closing, the name is in the pill and the label links via GenerateUrl', async () => {
+        const element = createComponent();
+
+        getDealSummary.emit(FULL_SUMMARY);
+        getRecord.emit(recordForStage(STAGE_CLOSING));
+        await flushPromises();
+
+        const link = element.shadowRoot.querySelector('a[data-asset-link]');
+        expect(link).not.toBeNull();
+        expect(link.textContent).toBe('Property');
+        expect(link.getAttribute('href')).toBe('https://www.example.com');
+        expect(link.getAttribute('title')).toBe(`Open ${ASSET_NAME}`);
+        expect(link.dataset.recordId).toBe(ASSET_RECORD_ID);
+        expect(textOf(element, '[data-asset-pill]')).toBe(ASSET_NAME);
+
+        // 🔴 CALIBRATES THE ABSENCE PINS BELOW. Two of them assert the WORD "Property" is not in
+        // `shadowRoot.textContent`; this proves that instrument can see the word when it is there.
+        // (A child component's shadow text does NOT reach a parent's `shadowRoot.textContent` —
+        // this row is in this component's own template, so it does.)
+        expect(element.shadowRoot.textContent).toContain('Property');
+    });
+
+    /**
+     * 🔴 THE TREATMENT REQUIREMENT, AS RENDERED CLASS NAMES. The row must not merely LOOK similar
+     * — it must be built from the document rows' OWN hooks, so a later change to `.row-head` /
+     * `.row-left` / `.row-icon` / `.row-label` / `.pill` moves both together. Asserting the exact
+     * `className` (not `toContain`) is what makes a lookalike class fail.
+     */
+    it('ASSET: wears the document rows composition — chip, bold label, right-aligned pill', async () => {
+        const element = createComponent();
+
+        getDealSummary.emit(FULL_SUMMARY);
+        getRecord.emit(recordForStage(STAGE_CLOSING));
+        await flushPromises();
+
+        const row = propertyRow(element);
+        expect(row).not.toBeNull();
+        // 🔴 `.asset-row`, NOT `.row` — it shares the box via a shared declaration block, but it
+        //    must not answer to the selector this suite counts document rows with.
+        expect(row.className).toBe('asset-row');
+
+        const head = row.querySelector('.row-head');
+        expect(head).not.toBeNull();
+        const left = head.querySelector('.row-left');
+        expect(left).not.toBeNull();
+
+        const chip = left.querySelector('[data-asset-icon]');
+        expect(chip.className).toBe('row-icon row-icon_property');
+        const icon = chip.querySelector('lightning-icon');
+        expect(icon.iconName).toBe('utility:company');
+        // Decorative: the visible label carries the meaning (announcing both says it twice).
+        expect(icon.alternativeText).toBe('');
+
+        const label = element.shadowRoot.querySelector('[data-asset-label]');
+        expect(label.className).toBe('row-label row-label_link');
+        expect(left.contains(label)).toBe(true);
+
+        const pill = element.shadowRoot.querySelector('[data-asset-pill]');
+        expect(pill.className).toBe('pill pill_neutral pill_asset');
+        // The pill is the row head's LAST element — the right-aligned slot, as on a document row.
+        expect(head.lastElementChild).toBe(pill);
+
+        // And the document rows still use that same skeleton, which is the whole point of reusing
+        // the hooks rather than copying the look.
+        const ndaHead = element.shadowRoot.querySelector('[data-row="nda"] .row-head');
+        expect(ndaHead.querySelector('.row-left .row-icon')).not.toBeNull();
+        expect(ndaHead.lastElementChild.className).toContain('pill');
+    });
+
+    /**
+     * 🔴 THE PLACEMENT REQUIREMENT, AS AN ASSERTION. The row must come BEFORE the document list in
+     * document order, and must not be one of the list's items — the `<ul>` is named "Deal
+     * documents" and a property is not one. A comma selector queried once returns nodes in
+     * DOCUMENT order, so this reds if the row is moved below the list.
+     *
+     * ⚠ THE COUNTS ARE THE OTHER HALF. `.row` / `[data-row]` / `[data-pill]` / `[data-icon]` are
+     * what ~10 tests in this file use to mean "the three document rows". The property row carries
+     * its own hooks precisely so those counts stay 3 and keep meaning what they say — if it ever
+     * borrows them, this test says so.
+     */
+    it('ASSET: sits ABOVE the document list and is not one of its items', async () => {
+        const element = createComponent();
+
+        getDealSummary.emit(FULL_SUMMARY);
+        getRecord.emit(recordForStage(STAGE_CLOSING));
+        await flushPromises();
+
+        const ordered = Array.from(
+            element.shadowRoot.querySelectorAll('.card-sub, [data-asset-line], ul.rows')
+        );
+        expect(ordered.map((n) => n.tagName)).toEqual(['P', 'DIV', 'UL']);
+        expect(ordered[1].dataset.assetLine).toBe('');
+
+        expect(element.shadowRoot.querySelector('ul.rows [data-asset-line]')).toBeNull();
+        expect(element.shadowRoot.querySelectorAll('.row').length).toBe(3);
+        expect(
+            Array.from(element.shadowRoot.querySelectorAll('.row')).map((r) => r.dataset.row)
+        ).toEqual(['nda', 'loi', 'psa']);
+        expect(element.shadowRoot.querySelectorAll('[data-pill]').length).toBe(3);
+        expect(element.shadowRoot.querySelectorAll('[data-icon]').length).toBe(3);
+    });
+
+    /**
+     * 🔴 THE GATE, ENUMERATED AGAINST THE WHOLE PICKLIST. Closing renders the row; each of the
+     * other ten does not; then Closing again, so the gate is proven to swing BOTH ways on one
+     * instance rather than merely to have been closed once.
+     *
+     * ⚠ A TWO-STAGE SAMPLE WOULD NOT BE ENOUGH. The plausible regression is a WIDENED gate — "PSA
+     * or later", "any stage past LOI", or the constant deleted altogether — and every one of those
+     * still passes a test that only checks 'Disposition Readiness'. Ten values cost nothing here.
+     */
+    it('STAGE GATE: the Property row renders at Closing and at none of the other ten stages', async () => {
+        const element = createComponent();
+
+        getDealSummary.emit(FULL_SUMMARY);
+        getRecord.emit(recordForStage(STAGE_CLOSING));
+        await flushPromises();
+        expect(propertyRow(element)).not.toBeNull();
+
+        /* eslint-disable no-await-in-loop */
+        for (const stage of OTHER_STAGES) {
+            getRecord.emit(recordForStage(stage));
+            await flushPromises();
+            expect(propertyRow(element)).toBeNull();
+            expect(element.shadowRoot.querySelector('a[data-asset-link]')).toBeNull();
+            expect(element.shadowRoot.querySelector('[data-asset-pill]')).toBeNull();
+            // The card itself is untouched at every stage — this gate hides ONE row.
+            expect(element.shadowRoot.querySelectorAll('.row').length).toBe(3);
+        }
+        /* eslint-enable no-await-in-loop */
+
+        getRecord.emit(recordForStage(STAGE_CLOSING));
+        await flushPromises();
+        expect(propertyRow(element)).not.toBeNull();
+        expect(textOf(element, '[data-asset-pill]')).toBe(ASSET_NAME);
+    });
+
+    /**
+     * 🔴 "DO NOT FLASH THE ROW IN AND THEN REMOVE IT." The stage arrives on a SECOND wire, so the
+     * card's own data lands first and there is a real window in which the asset is known and the
+     * stage is not. Nothing may render in that window.
+     *
+     * ⚠ BOTH CLOCKS ARE CHECKED. A microtask (`Promise.resolve()`) is the first paint after the
+     * Apex wire; a macrotask (`flushPromises`) is after `GenerateUrl` settles and re-renders. A
+     * "render, then hide" implementation would be green at exactly one of the two.
+     */
+    it('STAGE GATE: nothing renders while the stage is unknown, on either clock', async () => {
+        const element = createComponent();
+
+        getDealSummary.emit(FULL_SUMMARY);
+        await Promise.resolve();
+
+        // The card genuinely rendered its data branch — the stage is what is missing, not the data.
+        expect(element.shadowRoot.querySelectorAll('.row').length).toBe(3);
+        expect(propertyRow(element)).toBeNull();
+
+        await flushPromises();
+        expect(propertyRow(element)).toBeNull();
+        expect(element.shadowRoot.querySelector('a[data-asset-link]')).toBeNull();
+        expect(element.shadowRoot.textContent).not.toContain('Property');
+
+        // CONTROL: the same instance renders it the moment the stage answers.
+        getRecord.emit(recordForStage(STAGE_CLOSING));
+        await flushPromises();
+        expect(propertyRow(element)).not.toBeNull();
+    });
+
+    /**
+     * 🔴 FAIL CLOSED, AND DO NOT ESCALATE. `Disposition__c` is OWD Private: a reader who cannot see
+     * the parent cannot read its stage. The honest rendering is no row — not a row at every stage
+     * — and NOT a card-level error banner, because the three document rows are unaffected by a
+     * stage read and this card renders ungated on all 11 stages.
+     */
+    it('STAGE GATE: a failed stage read renders no row and no card error', async () => {
+        const element = createComponent();
+
+        getDealSummary.emit(FULL_SUMMARY);
+        getRecord.error();
+        await flushPromises();
+
+        expect(propertyRow(element)).toBeNull();
+        expect(element.shadowRoot.querySelector('.error-line')).toBeNull();
+        expect(element.shadowRoot.querySelectorAll('.row').length).toBe(3);
+        expect(textOf(element, '[data-pill="nda"]')).toBe('Signed');
+
+        // CONTROL: recovery is not blocked — a later successful read renders the row.
+        getRecord.emit(recordForStage(STAGE_CLOSING));
+        await flushPromises();
+        expect(propertyRow(element)).not.toBeNull();
+    });
+
+    /**
+     * 🔴 ABSENT RENDERS NOTHING — NOT A PLACEHOLDER, NOT AN EM-DASH, NOT A DEAD LINK. This is
+     * the OPPOSITE of the three document rows, where an empty state ("No LOI on this sale yet")
+     * IS the information. `Disposition__c.Property_Asset__c` is an optional Lookup carrying
+     * `deleteConstraint = SetNull`, so deleting an asset nulls it on every Disposition that
+     * referenced it — this state is reachable in production, not theoretical.
+     *
+     * ⚠ IT OPENS WITH THE ROW RENDERED AND THEN TAKES THE ASSET AWAY, on one instance and at one
+     * stage. The old version of this test emitted only the empty payload, and was measured GREEN
+     * AND VACUOUS when the entire asset block was deleted. This shape cannot be: the first half
+     * dies the moment the feature does.
+     */
+    it('ASSET: at Closing, a sale with no Property Asset renders no row at all', async () => {
+        const element = createComponent();
+
+        getDealSummary.emit(FULL_SUMMARY);
+        getRecord.emit(recordForStage(STAGE_CLOSING));
+        await flushPromises();
+        expect(propertyRow(element)).not.toBeNull();
+
+        getDealSummary.emit(EMPTY_SUMMARY);
+        await flushPromises();
+
+        expect(propertyRow(element)).toBeNull();
+        expect(element.shadowRoot.querySelector('a[data-asset-link]')).toBeNull();
+        expect(element.shadowRoot.querySelector('[data-asset-pill]')).toBeNull();
+        expect(element.shadowRoot.querySelector('[data-asset-icon]')).toBeNull();
+        // Still a working card, and not a placeholder under a different name — the WORD is gone.
+        expect(element.shadowRoot.querySelectorAll('.row').length).toBe(3);
+        expect(element.shadowRoot.textContent).not.toContain('Property');
+    });
+
+    /**
+     * The degraded shape the server actually produces: `applyParentFields` assigns both members
+     * inside its try, so a refused parent read leaves BOTH null. Half-populated is not a state
+     * Apex can emit — but the getter requires both anyway, because an Id with no readable name
+     * would render a link with no text and a name with no Id has nothing to open.
+     */
+    it('ASSET: an Id with no name, or a name with no Id, renders nothing rather than a broken link', async () => {
+        const element = createComponent();
+
+        getDealSummary.emit(FULL_SUMMARY);
+        getRecord.emit(recordForStage(STAGE_CLOSING));
+        await flushPromises();
+        expect(propertyRow(element)).not.toBeNull();
+
+        getDealSummary.emit({
+            ...FULL_SUMMARY,
+            propertyAssetName: null
+        });
+        await flushPromises();
+        expect(propertyRow(element)).toBeNull();
+        expect(element.shadowRoot.querySelectorAll('.row').length).toBe(3);
+
+        getDealSummary.emit({
+            ...FULL_SUMMARY,
+            propertyAssetId: null
+        });
+        await flushPromises();
+        expect(propertyRow(element)).toBeNull();
+        expect(element.shadowRoot.querySelectorAll('.row').length).toBe(3);
+    });
+
+    /**
+     * 🔴 THE href IS NEVER THE LITERAL STRING "undefined", here as on the rows. `GenerateUrl`
+     * returns a Promise, so for one tick there is an asset and no URL. The row still renders —
+     * the NAME is real context and suppressing it would make the card flicker — with the label as
+     * a muted SPAN, never as a bare `<a>` pointing at a 404 relative path.
+     */
+    it('ASSET: renders the label as plain text until the generated URL resolves', async () => {
+        const element = createComponent();
+
+        getDealSummary.emit(FULL_SUMMARY);
+        getRecord.emit(recordForStage(STAGE_CLOSING));
+        await Promise.resolve(); // one microtask: both wires landed, GenerateUrl has not
+
+        expect(element.shadowRoot.querySelector('a[data-asset-link]')).toBeNull();
+        const label = element.shadowRoot.querySelector('[data-asset-label]');
+        expect(label).not.toBeNull();
+        expect(label.tagName).toBe('SPAN');
+        expect(label.className).toBe('row-label row-label_muted');
+        expect(label.textContent).toBe('Property');
+        // The name is context, not a link affordance — it renders on the first paint either way.
+        expect(textOf(element, '[data-asset-pill]')).toBe(ASSET_NAME);
+        expect(element.shadowRoot.innerHTML).not.toContain('undefined');
+    });
+
+    /**
+     * 🔴 SOURCE-TEXT FENCE ON THE SHARED BOX. `.asset-row` and `.row` share ONE declaration block
+     * so the Property row cannot drift from a document row; splitting them into two blocks is the
+     * drift. jsdom does no layout, so this is unmeasurable at runtime — `getComputedStyle().gap`
+     * is empty and `scrollWidth` is 0 — which is why it is asserted against the stylesheet, exactly
+     * like the `.row-head` wrap fence above.
+     *
+     * ⚠ THE PILL NEEDS A TRUNCATION DEFENCE THE DOCUMENT PILLS DO NOT. Their contents are bounded
+     * picklist values (13 characters at worst); an asset NAME is unbounded free text, and `.pill`
+     * is `white-space: nowrap`, so in the ~340px sidebar a long one would burst the column.
+     * `display: inline-block` is part of the fix, not a style choice — `text-overflow` does nothing
+     * to a flex container's anonymous text item, so dropping it silently disables the ellipsis.
+     */
+    it('NARROW COLUMN: the property row shares the row box and its pill can truncate', () => {
+        const shared = CSS_SOURCE.match(/\.row,\s*\.asset-row\s*\{[^}]*\}/);
+        expect(shared).not.toBeNull();
+        expect(shared[0]).toMatch(/padding:/);
+        expect(shared[0]).toMatch(/border-bottom:/);
+
+        const assetPill = CSS_SOURCE.match(/\.pill_asset\s*\{[^}]*\}/);
+        expect(assetPill).not.toBeNull();
+        expect(assetPill[0]).toMatch(/display:\s*inline-block/);
+        // ⚠ `min-width: 0`, NOT `max-width: 100%` — a flex item will not shrink below its content
+        //    until the automatic minimum size is released, AND the SLDS linter rejects a bare `%`
+        //    under `slds/no-hardcoded-values-slds2` (measured: it took this bundle off zero).
+        expect(assetPill[0]).toMatch(/min-width:\s*0/);
+        expect(assetPill[0]).toMatch(/overflow:\s*hidden/);
+        expect(assetPill[0]).toMatch(/text-overflow:\s*ellipsis/);
+
+        // 🔴 THE SEPARATION BETWEEN CHIP, LABEL AND PILL IS THE SHARED FLEX `gap`. The LWC compiler
+        //    DROPS the whitespace between two sibling inline elements, so without it the row reads
+        //    "PropertyRiverbend Plaza". `&nbsp;` works and is worse — invisible in review, and it
+        //    survives into `textContent` where it silently breaks string assertions.
+        const rowLeft = CSS_SOURCE.match(/\.row-left\s*\{[^}]*\}/);
+        expect(rowLeft[0]).toMatch(/gap:/);
+        expect(HTML_SOURCE).not.toContain('&nbsp;');
+    });
+
+    it('is accessible with the Property row and the asset link resolved', async () => {
+        const element = createComponent();
+
+        getDealSummary.emit(FULL_SUMMARY);
+        getRecord.emit(recordForStage(STAGE_CLOSING));
+        await flushPromises();
+
+        expect(propertyRow(element)).not.toBeNull();
         await expect(element).toBeAccessible();
     });
 

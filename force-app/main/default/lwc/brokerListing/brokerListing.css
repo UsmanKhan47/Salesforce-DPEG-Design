@@ -59,3 +59,202 @@
     color: var(--slds-g-color-neutral-base-60, #8a96a3);
     font-size: var(--slds-g-font-scale-neg-1, 12px);
 }
+/* ═══════════════════════════════════════════════════════════════════════════
+ * THE CALL-FOR-OFFERS SECTION
+ *
+ * ── WHERE THE PILL COMES FROM ───────────────────────────────────────────────
+ * `.cfo-pill` is `c/callForOffersPanel`'s `.cfo-badge` — the ACQUISITION module's own
+ * call-for-offers urgency pill, on the Opportunity record page sidebar — copied deliberately:
+ * geometry (inline-flex, small radius, 0.625rem/700, nowrap, never compressed) and the four theme
+ * names (muted / green / amber / red). Two modules showing the same concept must not invent two
+ * treatments for it.
+ *
+ * ── 🔴 THE ONE DELIBERATE DEPARTURE, AND IT IS A BUG FIX, NOT A PREFERENCE ──
+ * That file pairs `background: var(--slds-g-color-<semantic>-container-1, <pale literal>)` with
+ * `color: var(--slds-g-color-<semantic>-base-30, <dark literal>)`. MEASURED against
+ * `node_modules/@salesforce-ux/sds-metadata/current/globalStylingHooks.metadata.json`, which is the
+ * file the repo's own linter reads:
+ *
+ *     --slds-g-color-success-container-1   slds: #2e844a   (a SOLID DARK GREEN, not a tint)
+ *     --slds-g-color-success-base-30       slds: #194e31   (dark green text)
+ *     --slds-g-color-error-container-1     slds: #ba0517   /  base-30 #8e030f
+ *     --slds-g-color-warning-container-1   slds: #dd7a01   /  base-30 #5f3e02
+ *
+ * Dark text on its own dark fill — an effectively unreadable pill — wherever the SLDS 2 base theme
+ * is active. The pale literals in that stylesheet describe only what renders when the hook is
+ * UNDEFINED, and its own header says as much ("apart from the radius they are UNVERIFIED against a
+ * browser"). ⚠ NOTHING IN THIS PIPELINE CATCHES IT: the SLDS linter only checks that a hook was
+ * used, Jest asserts class names, and axe's colour-contrast rule is inert in jsdom.
+ *
+ * So this file uses the `*-base-95` tint for the background instead, which is a real pale tint in
+ * BOTH themes and inverts correctly:
+ *
+ *     success  #ebf7e6 light / #010502 dark   with base-30  #194e31 / #01c3b3
+ *     warning  #fff1ea       / #090200                      #5f3e02 / #e4a201
+ *     error    #fef1ee       / #0f0003                      #8e030f / #fe8aa7
+ *     neutral  #f3f3f3       / #020202        with on-surface-1  #757575 / #aeaeae
+ *
+ * 🔴 `c/callForOffersPanel` STILL HAS THE ORIGINAL PAIRING. It was left alone because it is another
+ * module's live component and outside this change's scope — it is REPORTED, not silently patched.
+ * If you fix it, fix it there; do not "restore consistency" by copying the broken pairing back here.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+/*
+ * The divider. A token-driven rule: `--slds-g-color-border-1` is `light-dark(#c9c9c9, #444)`, so it
+ * inverts with the theme. The card's older `.card-header` border above still uses a literal
+ * `#eef1f4` — that is pre-existing and out of scope, not a pattern to copy.
+ */
+.cfo-rule {
+    height: var(--slds-g-sizing-border-1, 1px);
+    background: var(--slds-g-color-border-1, #c9c9c9);
+    margin: 0 var(--slds-g-spacing-4, 1rem);
+}
+
+.cfo-section {
+    padding: var(--slds-g-spacing-3, 0.75rem) var(--slds-g-spacing-4, 1rem) var(--slds-g-spacing-4, 1rem);
+}
+
+.cfo-heading {
+    font-size: var(--slds-g-font-scale-neg-2, 0.625rem);
+    font-weight: var(--slds-g-font-weight-7, 700);
+    letter-spacing: 0.0625rem;
+    text-transform: uppercase;
+    color: var(--slds-g-color-on-surface-1, #757575);
+    margin-bottom: var(--slds-g-spacing-2, 0.5rem);
+}
+
+/*
+ * 🔴 NOT `repeat(3, 1fr)`. `auto-fit` + `minmax` reflows to 2-up and then 1-up on its own, so a
+ * narrower column never truncates all three values at once. `minmax(min(9rem, 100%), 1fr)` is the
+ * form the SLDS linter accepts — a bare `100%` is flagged as a hardcoded value, `min(9rem, 100%)`
+ * is not (measured on `competingBrokerSubmissions`).
+ *
+ * 🔴 THE `gap` IS LOAD-BEARING MARKUP. The LWC template compiler discards inter-element whitespace,
+ * so with `gap` removed these tiles butt against each other with nothing between them. The same is
+ * true of `.cfo-tile`'s gap and of `.cfo-tile-value` / `.cfo-pill`'s bottom margin.
+ */
+.cfo-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(9rem, 100%), 1fr));
+    gap: var(--slds-g-spacing-2, 0.5rem);
+}
+
+/*
+ * Tile geometry is `c/onboardingCardChild`'s `.stat-card` — the component rendering the two tiles
+ * directly above this section — so the two rows read as one card rather than as a card with a
+ * foreign strip bolted on. It is re-expressed here rather than reused because that component prints
+ * its `value` as TEXT and has no slot, so it cannot carry a pill; forking a shared bundle used
+ * across the PM onboarding module for one caller's benefit is the worse trade.
+ *
+ * ⚠ TWO DELIBERATE 2px DEVIATIONS FROM THAT SOURCE, BOTH FORCED BY "SLDS 2 TOKENS ONLY": its
+ * `0.625rem` padding and gap are between `--slds-g-spacing-2` (0.5rem) and `-3` (0.75rem), and no
+ * hook has that value, so this file uses `-2`. The rows sit STACKED, not side by side, so the 4px
+ * height difference has no edge to misalign against — border, radius, background, type scale and
+ * icon size all still match, which is what makes the two rows read as one card.
+ * ⚠ ITS `height: 100%` IS ALSO DROPPED, as redundant rather than as a change: a block-level flex
+ * container is a grid item, and grid items stretch by default.
+ * ⚠ IF `onboardingCardChild.css` CHANGES ITS CARD GEOMETRY, CHANGE IT HERE TOO OR THE ROWS DRIFT.
+ */
+.cfo-tile {
+    display: flex;
+    align-items: center;
+    /* 🔴 LOAD-BEARING: the compiler eats the whitespace between the icon and the text block. */
+    gap: var(--slds-g-spacing-2, 0.5rem);
+    box-sizing: border-box;
+    padding: var(--slds-g-spacing-2, 0.5rem) var(--slds-g-spacing-3, 0.75rem);
+    background-color: var(--slds-g-color-neutral-base-95, #f3f3f3);
+    border: var(--slds-g-sizing-border-1, 1px) solid var(--slds-g-color-border-1, #c9c9c9);
+    border-radius: var(--slds-g-radius-border-2, 0.5rem);
+}
+
+.cfo-tile-icon {
+    flex-shrink: 0;
+}
+
+/*
+ * Recolouring `lightning-icon` from OUTSIDE it. `--slds-c-icon-color-foreground-default` is the
+ * supported component hook and custom properties inherit across the shadow boundary, so setting it
+ * on the element from this stylesheet works — and keeps the template free of the inline `style=`
+ * attribute the two tiles above still use.
+ */
+.cfo-tile-icon_date,
+.cfo-tile-icon_countdown {
+    --slds-c-icon-color-foreground-default: var(--slds-g-color-brand-base-40, #0b5cab);
+}
+
+.cfo-tile-icon_status {
+    --slds-c-icon-color-foreground-default: var(--slds-g-color-on-surface-1, #757575);
+}
+
+.cfo-tile-text {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    min-width: 0;
+}
+
+.cfo-tile-value {
+    font-size: var(--slds-g-font-scale-1, 0.875rem);
+    font-weight: var(--slds-g-font-weight-7, 700);
+    color: var(--slds-g-color-on-surface-2, #2e2e2e);
+    /* 🔴 LOAD-BEARING: value and label are siblings with no whitespace between them. */
+    margin-bottom: var(--slds-g-sizing-1, 0.125rem);
+    white-space: normal;
+    overflow-wrap: break-word;
+}
+
+.cfo-tile-label {
+    font-size: var(--slds-g-font-scale-neg-2, 0.625rem);
+    text-transform: uppercase;
+    letter-spacing: 0.0625rem;
+    color: var(--slds-g-color-on-surface-1, #757575);
+    white-space: normal;
+    overflow-wrap: break-word;
+}
+
+/* ── THE STATUS PILL ────────────────────────────────────────────────────── */
+
+.cfo-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: var(--slds-g-sizing-1, 0.125rem) var(--slds-g-spacing-2, 0.5rem);
+    /*
+     * 🔴 A SMALL RADIUS — A ROUNDED RECTANGLE, NOT A CAPSULE. DO NOT reach for
+     * `--slds-g-radius-border-circle`: it resolves to a full round (50%), which on an element far
+     * wider than it is tall renders an ELLIPSE. That shipped once in `c/callForOffersPanel` and was
+     * rejected on sight; `--slds-g-radius-border-1` is what that card settled on.
+     */
+    border-radius: var(--slds-g-radius-border-1, 0.125rem);
+    font-size: var(--slds-g-font-scale-neg-2, 0.625rem);
+    font-weight: var(--slds-g-font-weight-7, 700);
+    line-height: var(--slds-g-font-lineheight-2, 1.45);
+    margin-bottom: var(--slds-g-sizing-1, 0.125rem);
+    white-space: nowrap;
+    /* It must never be compressed to fit; the grid reflows instead. */
+    flex: 0 0 auto;
+}
+
+/* No date set. Grey — and the word inside says so, so grey is never the only carrier. */
+.cfo-pill--muted {
+    background: var(--slds-g-color-neutral-base-95, #f3f3f3);
+    color: var(--slds-g-color-on-surface-1, #757575);
+    box-shadow: inset 0 0 0 var(--slds-g-sizing-border-1, 1px) var(--slds-g-color-neutral-base-80, #c9c9c9);
+}
+
+.cfo-pill--green {
+    background: var(--slds-g-color-success-base-95, #ebf7e6);
+    color: var(--slds-g-color-success-base-30, #194e31);
+    box-shadow: inset 0 0 0 var(--slds-g-sizing-border-1, 1px) var(--slds-g-color-success-base-80, #91db8b);
+}
+
+.cfo-pill--amber {
+    background: var(--slds-g-color-warning-base-95, #fff1ea);
+    color: var(--slds-g-color-warning-base-30, #5f3e02);
+    box-shadow: inset 0 0 0 var(--slds-g-sizing-border-1, 1px) var(--slds-g-color-warning-base-80, #ffba90);
+}
+
+.cfo-pill--red {
+    background: var(--slds-g-color-error-base-95, #fef1ee);
+    color: var(--slds-g-color-error-base-30, #8e030f);
+    box-shadow: inset 0 0 0 var(--slds-g-sizing-border-1, 1px) var(--slds-g-color-error-base-80, #feb8ab);
+}

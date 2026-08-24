@@ -87,6 +87,29 @@
  * build it, use `refreshApex` on the retained result below, NOT `getRecordNotifyChange` — the band
  * is an Apex computation, not a field on the Disposition record.
  *
+ * ── 🔴 THE CALL-FOR-OFFERS SECTION (2026-08-24) — THE ONE CLIENT-DERIVED BAND ON THIS CARD ──
+ * Below a token-driven rule the card now carries three tiles derived from ONE field,
+ * `Broker_Listing__c`/`Disposition__c`'s `callForOffersDate` as shipped by
+ * `BrokerListingController`: the date itself (MOVED down from the top grid, not re-added), a
+ * countdown, and a status pill. The ladder is in `_cfoState` and is stated in full there.
+ *
+ * ⚠ THIS IS THE EXCEPTION TO THIS FILE'S OWN "NO THRESHOLD AND NO BAND IS DERIVED IN THIS FILE"
+ * RULE AT THE TOP, AND THE RULE IS NOT WEAKENED BY IT. That rule is about the TRACTION band, which
+ * is a server rule a batch job and an alert also fire on — a second copy in JS would drift from the
+ * copy that sends the email. Nothing server-side computes a disposition call-for-offers countdown
+ * and nothing alerts on one; the field is a plain stored date. `_cfoState` records the full
+ * argument, including the one that would move it to Apex.
+ *
+ * 🔴 EVERY LIVE DISPOSITION HAS A BLANK `Call_For_Offers_Date__c` TODAY, so the "Not Scheduled"
+ * branch is not an edge case — it is what is on screen. It renders an em dash and the words "Not
+ * Scheduled"; it must never render `0` (which reads as "due today") or `Overdue` (which accuses
+ * someone of missing a deadline nobody set). Pinned in `brokerListing.test.js`.
+ *
+ * ⚠ THE PILL'S TREATMENT IS `c/callForOffersPanel`'s, NOT A NEW ONE — same geometry, same four
+ * theme names, and `DUE_SOON_DAYS` is that module's own `APPROACHING_DAYS`. The stylesheet records
+ * the ONE deliberate departure (the background token, which is a measured bug fix) and why it must
+ * not be "restored".
+ *
  * @see force-app/main/default/classes/BrokerListingController.cls
  * @see force-app/main/default/classes/DispositionTractionService.cls (the band ladder)
  * @see force-app/main/default/classes/BovSubmissionService.cls (replaceSelectedBroker)
@@ -100,6 +123,61 @@ import getListing from '@salesforce/apex/BrokerListingController.getListing';
 import getSubmissions from '@salesforce/apex/BovController.getSubmissions';
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+/**
+ * The Due Soon window, in DAYS.
+ *
+ * 🔴 COPIED, NOT INVENTED. This is `CallForOffersService.APPROACHING_DAYS` (7) — the acquisition
+ * module's existing "amber begins" rung for a call-for-offers deadline, the same concept this tile
+ * measures on the disposition side. Copying it means the two modules cannot disagree about when an
+ * offer deadline starts being urgent.
+ *
+ * ⚠ IT ALSO EQUALS `DispositionTractionService.WEEK_1_DAYS` (7), so it does not contradict the
+ * traction pill sitting a few pixels away either. That is a COINCIDENCE OF VALUE, not a derivation:
+ * do not "unify" the two by reading one from the other, and if acquisition changes
+ * `APPROACHING_DAYS` this constant follows THAT, not the week ladder.
+ */
+const DUE_SOON_DAYS = 7;
+
+/**
+ * Whole days from local today to an ISO `yyyy-mm-dd`. Negative when the date has passed, `0` today,
+ * and `null` when there is no parseable date at all.
+ *
+ * 🔴 `null` AND `0` ARE DIFFERENT ANSWERS AND THE CALLER MUST KEEP THEM APART. `0` is falsy in JS,
+ * so a `value || '—'` collapses "due today" into "no date" on the one day it matters most —
+ * `callForOffersPanel.js`'s header records that exact trap being hit in the acquisition module.
+ *
+ * ⚠ NO `new Date(isoString)`. That parses as UTC midnight and then renders/compares in the
+ * browser's local zone, so west of Greenwich every date lands a day early — an off-by-one on the
+ * only number this tile is about. Both operands are built as LOCAL midnights instead, and the
+ * division is ROUNDED so a DST boundary (a 23- or 25-hour day) cannot shave or add a day.
+ *
+ * @param {string} isoDate `yyyy-mm-dd`, or null/undefined.
+ * @param {Date} now The clock. Injected rather than read here so the caller owns "today".
+ * @returns {number|null} Whole days, or null when there is no date.
+ */
+function daysUntil(isoDate, now) {
+    if (!isoDate) {
+        return null;
+    }
+    const parts = String(isoDate).split('-');
+    if (parts.length !== 3) {
+        return null;
+    }
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10);
+    const day = parseInt(parts[2], 10);
+    if (!year || !month || !day) {
+        return null;
+    }
+    const target = new Date(year, month - 1, day);
+    if (isNaN(target.getTime())) {
+        return null;
+    }
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    return Math.round((target.getTime() - today.getTime()) / 86400000);
+}
+
 
 export default class BrokerListing extends LightningElement {
     @api recordId;
@@ -152,11 +230,123 @@ export default class BrokerListing extends LightningElement {
     get cfoDateLabel()  { return this._fmtDate(this.listing?.callForOffersDate); }
 
     /**
-     * ⚠ THREE TILES, NOT FOUR — the "Offers Received" tile was REMOVED at UAT on 2026-08-21 ("No
-     * need to show count of disposition offers as well"). `BrokerListingController.ListingRow` lost
-     * its `offersReceived` member in the same change, so there is nothing left to render here; the
-     * controller still COUNTS offers, because the count is an input to the traction band and to the
-     * clock pause, and it still travels in the one aggregate that also yields `firstOfferDate`.
+     * ── THE CALL-FOR-OFFERS SECTION: ONE STATE OBJECT, THREE RENDERED FACTS ──
+     *
+     * 🔴 ONE GETTER DERIVES THE BAND; the three below only read from it. Splitting the ladder across
+     * `cfoCountdownLabel` / `cfoStatusLabel` / `cfoStatusClass` would let a future edit change the
+     * threshold in one of them, producing a GREEN pill beside the words "Due Soon" — a card that
+     * contradicts itself and that no single assertion catches.
+     *
+     * ── THE LADDER, STATED IN FULL ──────────────────────────────────────────
+     *   no date        countdown `—`          status `Not Scheduled`  neutral grey
+     *   in the past    countdown `N days ago` status `Overdue`        error red
+     *   today          countdown `Today`      status `Due Soon`       warning amber
+     *   1..7 days      countdown `N days`     status `Due Soon`       warning amber
+     *   8+ days        countdown `N days`     status `On Track`       success green
+     *
+     * ── 🔴 WHY THIS IS COMPUTED HERE AND NOT IN APEX ────────────────────────
+     * `c/listingAlerts` and `c/callForOffersPanel` both carry a rule saying the OPPOSITE — no
+     * threshold in JS — and both are right for what they render: the traction band and the
+     * acquisition urgency band are SERVER rules that a batch job and an alert also fire on, so a
+     * second copy in JS would drift from the copy that sends the email. THIS is not that. Nothing
+     * server-side computes a disposition call-for-offers countdown, nothing alerts on one, and
+     * `Call_For_Offers_Date__c` is a plain stored date that `BrokerListingController` already ships.
+     *
+     * ⚠ AND THE CACHE IS A POSITIVE REASON, not just an absence of one. `getListing` is
+     * `cacheable=true` and this card is documented above as able to serve a stale payload; a
+     * server-computed countdown would go stale with it and be wrong about TODAY. Derived in the
+     * browser from the stored date, it is right on every render whatever the cache holds. The tile
+     * beside it, "Days On Market", is server-computed and does carry that staleness — deliberately,
+     * because the pause that freezes it is a server rule.
+     *
+     * 🔴 IF AN ALERT OR A ROLL-UP IS EVER BUILT ON THIS DATE, THIS LADDER MOVES TO APEX AND THIS
+     * GETTER BECOMES A READER OF THE PAYLOAD — exactly as `badgeLabel` is in `c/callForOffersPanel`.
+     * Do not leave two copies.
+     *
+     * @returns {{days: (number|null), countdown: string, status: string, theme: string}}
+     */
+    get _cfoState() {
+        const days = daysUntil(this.listing?.callForOffersDate, new Date());
+
+        // 🔴 NOT SCHEDULED — the live-data case today, and the one this card must not lie about.
+        // Every disposition in the org currently has a blank Call_For_Offers_Date__c, so this is
+        // what is actually on screen. A `0` here would read as "due today" and an `Overdue` here
+        // would accuse someone of missing a deadline that was never set.
+        if (days === null) {
+            return {
+                days: null,
+                countdown: '—',
+                status: 'Not Scheduled',
+                theme: 'muted'
+            };
+        }
+
+        if (days < 0) {
+            const past = -days;
+            return {
+                days,
+                countdown: past === 1 ? '1 day ago' : `${past} days ago`,
+                status: 'Overdue',
+                theme: 'red'
+            };
+        }
+
+        // ⚠ `days === 0` IS "Due Soon", NOT A FIFTH BAND. `CallForOffersService` splits DUE_TODAY
+        // out and paints it red; that split is not reproduced here because the countdown tile
+        // BESIDE this pill already reads "Today" in words, so a fifth colour would add a
+        // distinction with no information behind it. This is the same argument
+        // `callForOffersPanel.js`'s BAND_THEME uses for collapsing CRITICAL into amber, applied to
+        // a card that likewise renders exactly one band at a time.
+        if (days === 0) {
+            return { days, countdown: 'Today', status: 'Due Soon', theme: 'amber' };
+        }
+
+        const countdown = days === 1 ? '1 day' : `${days} days`;
+        return days <= DUE_SOON_DAYS
+            ? { days, countdown, status: 'Due Soon', theme: 'amber' }
+            : { days, countdown, status: 'On Track', theme: 'green' };
+    }
+
+    /** The countdown tile's value. Never `0`, never negative — see `_cfoState`. */
+    get cfoCountdownLabel() {
+        return this._cfoState.countdown;
+    }
+
+    /**
+     * The pill's text.
+     *
+     * 🔴 THE STATE IS IN THE WORDS, NOT ONLY IN THE COLOUR. `.risk-badge` on this same card is
+     * built that way for the same reason, and it is what keeps the card readable to a screen reader
+     * and to anyone who cannot tell the amber and red pills apart.
+     *
+     * ⚠ `On Track` IS THE TRACTION LADDER'S OWN WORD, reused verbatim so the two pills on this card
+     * agree about what "fine" looks like. `At Risk` and `Hard Stop` are deliberately NOT reused:
+     * those are `DispositionTractionService`'s rungs about whether the LISTING is getting traction,
+     * and wearing them here would read as a second copy of that ladder, which this is not.
+     */
+    get cfoStatusLabel() {
+        return this._cfoState.status;
+    }
+
+    /** The pill's class. Colour is reinforcement only; the label above carries the meaning. */
+    get cfoStatusClass() {
+        return `cfo-pill cfo-pill--${this._cfoState.theme}`;
+    }
+
+    /**
+     * ⚠ TWO TILES NOW, AND NEITHER REMOVAL WAS A TIDY-UP.
+     *
+     * The "Offers Received" tile went at UAT on 2026-08-21 ("No need to show count of disposition
+     * offers as well"). `BrokerListingController.ListingRow` lost its `offersReceived` member in the
+     * same change, so there is nothing left to render here; the controller still COUNTS offers,
+     * because the count is an input to the traction band and to the clock pause, and it still
+     * travels in the one aggregate that also yields `firstOfferDate`.
+     *
+     * 🔴 "Call For Offers Date" WAS NOT DELETED — IT MOVED. It now sits below the rule, in the
+     * call-for-offers section of the template, beside the countdown and the status pill that are
+     * derived from the same field. It is still rendered from `cfoDateLabel`, which is why that
+     * getter is still here; a reader who greps for the tile and finds no `key: 'cfo'` must not
+     * conclude the date stopped being shown.
      */
     get stats() {
         const l = this.listing || {};
@@ -167,8 +357,7 @@ export default class BrokerListing extends LightningElement {
         const domValue = l.daysOnMarket == null ? '—' : `${l.daysOnMarket} days`;
         return [
             { key: 'dom',    label: 'Days On Market',       value: domValue,                      iconName: 'utility:clock', iconColor: l.isAtRisk ? '#b45309' : '#5a6b7b' },
-            { key: 'list',   label: 'List Date',            value: this.listDateLabel,            iconName: 'utility:event', iconColor: '#1565c0' },
-            { key: 'cfo',    label: 'Call For Offers Date', value: this.cfoDateLabel,             iconName: 'utility:event', iconColor: '#1565c0' }
+            { key: 'list',   label: 'List Date',            value: this.listDateLabel,            iconName: 'utility:event', iconColor: '#1565c0' }
         ];
     }
 
