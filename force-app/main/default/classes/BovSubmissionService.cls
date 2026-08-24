@@ -118,6 +118,42 @@ public with sharing class BovSubmissionService {
         'That broker is already the selected broker for this disposition.';
 
     /**
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * 🔴 THE PREFERRED-BROKER REFUSAL THAT WAS HERE ON 2026-08-24 HAS BEEN **REMOVED**, SAME DAY.
+     *    RETRACTED IN PLACE RATHER THAN DELETED, BECAUSE IT WAS CORRECT TWICE AND WRONG ONCE AND
+     *    THE NEXT READER WILL OTHERWISE RE-ADD IT.
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * WHAT WAS HERE: a `PREFERRED_CANNOT_BE_APPOINTED_MESSAGE` constant and, in
+     * `replaceSelectedBroker`, an unconditional
+     * `if (challenger.Is_Preferred_Broker__c == true) throw ...` placed before the already-Selected
+     * check. Design gate Q-5 asked whether the client filter on `c/bovComparisonMatrix` should be
+     * backed by a server rule; it was first answered YES and is now answered **NO**.
+     *
+     * WHY IT WAS ADDED (and this reasoning was sound under the design as it then stood): preferred
+     * rows were EXCLUDED from ranking and could never be `Selected`, so appointing one through this
+     * method produced a state the rest of the system did not model.
+     *
+     * 🔴 WHY IT IS WRONG NOW: under the user's option-2 decision a preferred row **is** the
+     * appointed, `Selected` incumbent in the normal case. The matrix's picker excludes preferred
+     * rows not because promoting one is forbidden, but because **promoting a broker to itself is
+     * not an operation**. A blanket server refusal therefore blocked the intended STEADY STATE, not
+     * an error state — and the genuine case it was reaching for is already covered, one check
+     * below, by `ALREADY_SELECTED_MESSAGE`.
+     *
+     * ⚠ ONE RESIDUAL IS LEFT OPEN BY THE REMOVAL AND IS NAMED RATHER THAN HIDDEN, because it is the
+     * half of the original argument that did NOT depend on the retracted premise. If
+     * `replaceSelectedBroker` is called with a preferred row that is NOT currently the incumbent —
+     * an older preferred row superseded by a newer one (`BovAutoSelectionService.isNewer`) — it is
+     * now promoted AND stamped `Is_Manually_Appointed__c = true`, which is a PERMANENT lock leg. The
+     * consequence is a trapdoor: unflagging that row later will NOT hand the sale back to scoring,
+     * because the manual-appointment lock outlives the flag, and nothing explains why. It is not
+     * reachable from the UI (the picker filters preferred rows out) and it requires a deliberate
+     * API call, which is why it is accepted rather than guarded. 🔴 IF IT EVER NEEDS CLOSING, THE
+     * FIX IS THE NARROW FORM, NOT THE BLANKET ONE: refuse only when the challenger is preferred AND
+     * is not already `Selected`. Do not restore the unconditional version.
+     */
+
+    /**
      * ⚠ THE REASON IS REQUIRED BY THE SERVER, NOT ONLY BY THE MODAL'S COMBOBOX. `c/bovReplaceBrokerModal`
      * marks it required and keeps its Confirm button disabled without one, but this class's own
      * doctrine — stated two paragraphs down for the incumbent check — is that the server must not
@@ -312,6 +348,11 @@ public with sharing class BovSubmissionService {
         if (challenger == null) {
             throw new BovSubmissionException(NOT_ON_DISPOSITION_MESSAGE);
         }
+        // ⚠ NO PREFERRED-BROKER REFUSAL HERE — REMOVED 2026-08-24, gate Q-5 answered NO. The
+        // retraction and the one residual it leaves open are at the top of this class, where the
+        // deleted constant used to be. The check immediately below is what now covers the genuine
+        // case: a preferred row is normally the incumbent, and "promote a broker to itself" is not
+        // an operation.
         if (STATUS_SELECTED.equals(challenger.Submission_Status__c)) {
             // Refused rather than treated as a no-op: the user asked for a CHANGE, and silently
             // clearing this broker's own approval status would be a change they did not ask for.
@@ -330,7 +371,18 @@ public with sharing class BovSubmissionService {
             Submission_Status__c = STATUS_SELECTED,
             // 🔴 CLEARED, NOT LEFT ALONE. A challenger approved on an earlier round would otherwise
             // arrive pre-approved and appoint a broker nobody signed off this time.
-            Approval_Status__c = null
+            Approval_Status__c = null,
+            // ── 🔴 ADDED 2026-08-24, AND IT IS LOAD-BEARING FOR A FEATURE IN ANOTHER FILE ──
+            // The permanent "a human deliberately chose this broker" marker, and the third leg of
+            // `BovAutoSelectionService`'s LOCK predicate. Without it, the line IMMEDIATELY ABOVE
+            // would defeat the lock: clearing `Approval_Status__c` on both rows (which is correct,
+            // and is why the replacement needs a fresh approval) leaves every OTHER lock leg false,
+            // so automatic re-selection would UNLOCK and silently undo this user's deliberate pick
+            // on the very next BOV save. The two assignments are a pair; do not remove one.
+            // ⚠ ZERO NEW DML AND ZERO NEW SOQL — it rides the existing bulk write below. It is
+            // never cleared: `Is_Manually_Appointed__c` is READ-ONLY FLS in both disposition
+            // permission sets by design, and the lock is meant to be permanent for this sale.
+            Is_Manually_Appointed__c = true
         ));
 
         Savepoint beforeReplacement = Database.setSavepoint();

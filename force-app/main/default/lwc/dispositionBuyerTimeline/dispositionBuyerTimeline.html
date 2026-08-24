@@ -62,14 +62,22 @@
                      SERVER'S: declined NDAs come last because `NdaSelector` puts them last, not
                      because this component sorts. See the JS header — that is where it belongs.
 
-                     ⚠ THE LIST'S aria-label MATCHES THE CARD TITLE ON PURPOSE. A
+                     ⚠ THE LIST'S aria-label TRACKS THE CARD TITLE ON PURPOSE. A
                      screen-reader user hears the card name and then the list name;
                      two different names for the same region reads as two regions.
-                     Retitled with the card on 2026-08-21 and pinned by T-NARROW. -->
+                     Retitled with the card on 2026-08-21 and again on 2026-08-24, and
+                     pinned by T-NARROW.
+                     ⚠ IT IS SENTENCE CASE ("Buyer activity timeline") while the card
+                     title is "Buyer Activity timeline". That difference is PRE-EXISTING
+                     (the aria-label has been sentence case since it was added) and was
+                     left alone on 2026-08-24: only the word changed. Case is not
+                     announced by any screen reader, so the two still read as one
+                     region — but the exact strings are pinned in the suite, so do not
+                     "align" them casually. -->
                 <ul
                     class="dbt-list"
                     role="list"
-                    aria-label="Broker activity timeline"
+                    aria-label="Buyer activity timeline"
                 >
                     <template for:each={timelineRows} for:item="row">
                         <li key={row.id} class="dbt-item">
@@ -95,11 +103,14 @@
                                      the data being true, not a bug, and it is placed as a
                                      subtitle rather than a heading precisely so the
                                      repetition reads as context rather than as identity.
-                                     🔴 THE CARD IS TITLED "Broker Activity Timeline" AND IS
-                                     STILL NOT GROUPED BY BROKER. The title names the party
-                                     DPEG deals with; grouping by it would collapse a
-                                     three-NDA sale into one row and delete the timeline.
-                                     See the JS header. -->
+                                     🔴 THE CARD IS TITLED "Buyer Activity timeline"
+                                     (2026-08-24) AND THE SUBTITLE HERE IS STILL THE
+                                     BROKER. That is not an oversight to reconcile: this
+                                     module dropped the buyer concept on 2026-08-21 and
+                                     there is no buyer identity on the DTO to render. The
+                                     card is also NOT GROUPED by the broker — grouping by
+                                     it would collapse a three-NDA sale into one row and
+                                     delete the timeline. See the JS header, item 0. -->
                                 <div class="dbt-tile-head">
                                     <h3 class="dbt-nda">{row.ndaName}</h3>
                                     <template lwc:if={row.isDeclined}>

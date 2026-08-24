@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  BOV_Score__c Number -> Formula conversion, STEP 1 of 3 (SEVER + DELETE).
+  POST-destructive companion of package.xml in this same directory -- see that
+  file's header for the full wave rationale (why this is an in-place
+  delete-and-recreate rather than the repo's usual additive rename pattern).
+
+  STATUS: PREPARED, NOT AUTHORISED FOR DEPLOY. The user deploys, not this repo.
+
+  POST (not PRE): package.xml's 3 Apex edits stop reading/ordering by
+  BOV_Score__c BEFORE this file's deletion runs in the same transaction, so by
+  the time the field is dropped nothing left in the constructive payload still
+  references it. This repo has measured that validating a destructive-only
+  payload in isolation gives a FALSE "referenced elsewhere" failure (it diffs
+  against live org state, which still has the old Apex) -- the ordering claim
+  is only provable by a combined --manifest + --post-destructive-changes run,
+  which is exactly what the dry-run below does.
+
+  DELETES EXACTLY 1 CUSTOM FIELD:
+    BOV_Submission__c.BOV_Score__c  (Number(4,0), nothing writes it, null on
+    every row in the org)
+
+  WHAT THIS DOES NOT COVER (left for the org's automatic cleanup, matching
+  this repo's e931e01 8-DateTime precedent): the field's own
+  FieldPermissions rows on DPEG_Disposition_Edit / DPEG_Disposition_View are
+  dropped by the platform when the field is deleted -- no destructive member
+  needed for those, and no manifest entry exists for CustomFieldTranslation
+  either (its local file is removed from the repo in this same commit, but
+  translations are children of the field and are cleaned up automatically,
+  same as e931e01).
+
+  Deploy (only once authorised by the user; devops runs a validation-only
+  dry-run first per standing project practice):
+    sf project deploy start \
+      --manifest manifest/bov-score-formula-conversion/package.xml \
+      --post-destructive-changes manifest/bov-score-formula-conversion/destructiveChangesPost.xml \
+      --target-org usman-dpeg \
+      --test-level RunLocalTests --wait 30
+
+  Do NOT pass --purge-on-delete -- documented elsewhere in this repo
+  (manifest/portfolio-deal-a3) as non-functional on production orgs and
+  failing silently rather than erroring. The field lands in the Recycle Bin,
+  which is what Step 3's manual Erase step is for.
+
+  Rollback: see package.xml's Rollback section in this same directory.
+  -->
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <types>
+        <members>BOV_Submission__c.BOV_Score__c</members>
+        <name>CustomField</name>
+    </types>
+    <version>67.0</version>
+</Package>

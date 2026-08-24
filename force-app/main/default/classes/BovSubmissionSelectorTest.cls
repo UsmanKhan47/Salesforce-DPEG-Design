@@ -694,4 +694,138 @@ private class BovSubmissionSelectorTest {
         Assert.areEqual(BULK_N, distinctParents.size(),
             '251 DISTINCT parents, so the caller\'s map is keyed one-to-one');
     }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // selectSelectionContextByDispositionIds — the auto-selection read (2026-08-24)
+    // ═════════════════════════════════════════════════════════════════════════
+
+    /**
+     * 🔴 THE FIELD LIST IS THE CONTRACT, AND ONE OMISSION BREAKS THE FEATURE SILENTLY.
+     * `BovAutoSelectionService` reads all eight columns; a narrowed SELECT does NOT degrade to null
+     * — Apex throws `System.SObjectException: SObject row was retrieved via SOQL without querying
+     * the requested field`, inside an after-trigger, which rolls back the user's own save. This
+     * test asserts every one of them is readable off the returned row.
+     *
+     * ⚠ THE DISPOSITION IS **PRICED** ON PURPOSE. `BOV_Score__c` is null without an asking price,
+     * so on the shared `@testSetup` disposition the score assertion below could not distinguish
+     * "selected but null" from "not selected at all". This is the deferred-coverage note in this
+     * class's header coming due.
+     */
+    @isTest
+    static void selectSelectionContextByDispositionIds_populatesEverySelectedField() {
+        Disposition__c priced = TestDataFactory.createPricedDisposition(
+            [SELECT Id FROM Property_Asset__c LIMIT 1].Id, 1500000, true);
+        BOV_Submission__c row = TestDataFactory.createBovSubmission(priced.Id, false);
+        row.BOV_Amount__c = 1200000;
+        row.Is_Preferred_Broker__c = true; // ⚠ SINCE 2026-08-24 THIS MEANS IT IS AUTO-SELECTED
+        insert row;
+
+        Test.startTest();
+        List<BOV_Submission__c> result =
+            BovSubmissionSelector.selectSelectionContextByDispositionIds(new Set<Id>{ priced.Id });
+        Test.stopTest();
+
+        Assert.areEqual(1, result.size(), 'The one submission on that disposition is returned');
+        BOV_Submission__c got = result[0];
+        Assert.areEqual(priced.Id, got.Disposition__c, 'Disposition__c must be selected');
+        Assert.areEqual('Selected', got.Submission_Status__c,
+            'Submission_Status__c must be selected — it is the field the service writes');
+        Assert.isNotNull(got.BOV_Score__c,
+            '🔴 BOV_Score__c must be selected AND non-null on a priced disposition. Null here means '
+            + 'the fixture lost its Asking_Price__c and every auto-selection test is vacuous.');
+        Assert.isFalse(got.Approval_Pending__c,
+            '🔴 Approval_Pending__c must be selected — it is lock leg 1, and it is the field that '
+            + 'forces this read to WITH SYSTEM_MODE (no permission set grants it, by design)');
+        Assert.isNull(got.Approval_Status__c, 'Approval_Status__c must be selected — lock leg 2');
+        Assert.isFalse(got.Is_Manually_Appointed__c,
+            'Is_Manually_Appointed__c must be selected — lock leg 3');
+        Assert.isTrue(got.Is_Preferred_Broker__c,
+            'Is_Preferred_Broker__c must be selected — since 2026-08-24 it is what makes a row WIN '
+            + 'the appointment outright, whatever it scores');
+        Assert.isNotNull(got.CreatedDate,
+            '🔴 CreatedDate must be selected — it is the ONLY tie-break among preferred rows '
+            + '(newest wins, BovAutoSelectionService.isNewer) and it cannot be read off this '
+            + 'ORDER BY, which deliberately sorts oldest-first');
+    }
+
+    /**
+     * THE ORDER BY IS THE ALGORITHM for the SCORED path. The service takes the FIRST scoreable
+     * non-preferred row and
+     * appoints that broker, with no second sort in Apex — so if this ordering ever changes, the
+     * appointment changes with it and nothing else would notice.
+     */
+    @isTest
+    static void selectSelectionContextByDispositionIds_ordersHighestScoreFirst() {
+        Disposition__c priced = TestDataFactory.createPricedDisposition(
+            [SELECT Id FROM Property_Asset__c LIMIT 1].Id, 1500000, true);
+        BOV_Submission__c low = TestDataFactory.createBovSubmission(priced.Id, false);
+        low.BOV_Amount__c = 900000;
+        low.Is_Preferred_Broker__c = true;  // ⚠ 2026-08-24: this no longer keeps auto-selection
+        // out of the test — a preferred row now WINS. It is kept because this test asserts the
+        // QUERY's order, which is unaffected by which row ends up Selected.
+        BOV_Submission__c high = TestDataFactory.createBovSubmission(priced.Id, false);
+        high.BOV_Amount__c = 1400000;
+        high.Is_Preferred_Broker__c = true;
+        insert new List<BOV_Submission__c>{ low, high };
+
+        Test.startTest();
+        List<BOV_Submission__c> result =
+            BovSubmissionSelector.selectSelectionContextByDispositionIds(new Set<Id>{ priced.Id });
+        Test.stopTest();
+
+        Assert.areEqual(2, result.size(), 'Both rows are returned — this read is not filtered');
+        Assert.areEqual(high.Id, result[0].Id,
+            'BOV_Score__c DESC must put the higher-scoring row FIRST. The service appoints '
+            + 'result[0]; c/bovComparisonMatrix displays the same order, and if the two ever '
+            + 'diverge the green Selected pill lands on a row that is not the top row of the table.');
+    }
+
+    /** Null and empty inputs must cost ZERO queries — the service's fast path depends on it. */
+    @isTest
+    static void selectSelectionContextByDispositionIds_nullAndEmptyInput_returnEmptyWithoutQuerying() {
+        Test.startTest();
+        Integer queriesBefore = Limits.getQueries();
+        List<BOV_Submission__c> fromNull =
+            BovSubmissionSelector.selectSelectionContextByDispositionIds(null);
+        List<BOV_Submission__c> fromEmpty =
+            BovSubmissionSelector.selectSelectionContextByDispositionIds(new Set<Id>());
+        Integer queriesUsed = Limits.getQueries() - queriesBefore;
+        Test.stopTest();
+
+        Assert.areEqual(0, queriesUsed,
+            'A null or empty parent set must issue NO query — this is the zero-query fast path '
+            + 'that keeps auto-selection invisible to every unrelated feature\'s bulk test');
+        Assert.areEqual(0, fromNull.size(), 'null returns an empty list, never null');
+        Assert.areEqual(0, fromEmpty.size(), 'and so does an empty set');
+    }
+
+    /** ONE query for 251 parents — never one per disposition. */
+    @isTest
+    static void selectSelectionContextByDispositionIds_bulk251_readsAllInOneQuery() {
+        List<Disposition__c> dispositions = TestDataFactory.createPricedDispositions(
+            BULK_N, [SELECT Id FROM Property_Asset__c LIMIT 1].Id, 1500000, true);
+        Set<Id> dispositionIds = new Set<Id>();
+        List<BOV_Submission__c> submissions = new List<BOV_Submission__c>();
+        for (Disposition__c d : dispositions) {
+            dispositionIds.add(d.Id);
+            BOV_Submission__c s = TestDataFactory.createBovSubmission(d.Id, false);
+            s.BOV_Amount__c = 1200000;
+            s.Is_Preferred_Broker__c = true; // ⚠ 2026-08-24: each of these IS now auto-selected;
+            // harmless here because this test asserts only the selector's own query COUNT
+            submissions.add(s);
+        }
+        insert submissions;
+
+        Test.startTest();
+        Integer queriesBefore = Limits.getQueries();
+        List<BOV_Submission__c> result =
+            BovSubmissionSelector.selectSelectionContextByDispositionIds(dispositionIds);
+        Integer queriesUsed = Limits.getQueries() - queriesBefore;
+        Test.stopTest();
+
+        Assert.areEqual(1, queriesUsed,
+            'EXACTLY ONE query for 251 parents. One per disposition would fail at row 101 on the '
+            + 'SOQL limit, inside a trigger, taking the user\'s save with it.');
+        Assert.areEqual(BULK_N, result.size(), 'Every parent\'s submission is returned');
+    }
 }

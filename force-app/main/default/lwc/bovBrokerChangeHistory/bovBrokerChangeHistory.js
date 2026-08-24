@@ -48,12 +48,22 @@ const UNAVAILABLE =
  * unavailable state and no spinner until the wire has answered.
  *
  * ══════════════════════════════════════════════════════════════════════════════════════════
- * 🔴 DESIGNED FOR A ~340px SIDEBAR COLUMN. DO NOT REINTRODUCE THE TWO-COLUMN ROW.
+ * 🔴 A VERTICAL TIMELINE IN A ~340px SIDEBAR COLUMN. DO NOT REINTRODUCE THE TWO-COLUMN ROW.
  * ══════════════════════════════════════════════════════════════════════════════════════════
- * The rendered unit is a self-labelling TILE — see the long note in the template. `reason` and
- * `loggedBy` below are now BARE VALUES rather than the pre-composed "Reason: X" / "Logged by X"
- * strings they used to be, because the label is now a real <dt> beside them. Do not put the word
- * back into the value: it would render as "Reason  Reason: Better BOV Received".
+ * RESTYLED 2026-08-24 to a design the user supplied: a dot-and-line rail down the left, and per
+ * entry a bold "{outgoing} → {incoming}" headline, a calendar-icon/date/pipe/reason line, and a
+ * "Logged By: {name}" line. It was a self-labelling dt/dd TILE before that (2026-08-21) and a
+ * two-column flex row before that (2026-08-20).
+ *
+ * `reason` and `loggedBy` below are BARE VALUES and must stay that way. They were pre-composed
+ * strings ("Reason: X" / "Logged by X") in the original row layout; the tile promoted the wording
+ * to a real <dt>, and the timeline renders it as a visible "Logged By:" span (the name) or as a
+ * visually-hidden label (the reason, whose visible separator is a pipe). Putting the word back
+ * into the value would render "Logged By: Logged by Avery Chen".
+ *
+ * ⚠ `notesClass` NO LONGER CARRIES `bbc-value`. That class was the tile's dd; it does not exist
+ * in the stylesheet any more, so re-adding it here would be a silent no-op that outlives whoever
+ * added it.
  *
  * ⚠ THE ROWS ARE NOT RE-SORTED HERE. `BovBrokerChangeSelector` orders them
  * `Entry_DateTime__c DESC, Name DESC`, tie-break included; a client-side sort would be a second,
@@ -101,7 +111,7 @@ export default class BovBrokerChangeHistory extends LightningElement {
      * successfully.
      *
      * 🔴 THE UNAVAILABLE STATE MUST NOT SHOW A COUNT, AND NEITHER MUST THE PRE-WIRE RENDER.
-     * "Broker Change History (0)" is a claim about the SALE — that no broker was ever replaced —
+     * "Broker Replace History (0)" is a claim about the SALE — that no broker was ever replaced —
      * in exactly the words a genuinely empty card uses. On a failed read the card knows nothing
      * about the sale, which is the whole reason `isUnavailable` exists as a state separate from
      * `isEmpty`; leaking a "(0)" into the title would reintroduce the collapse that state was
@@ -109,8 +119,8 @@ export default class BovBrokerChangeHistory extends LightningElement {
      */
     get cardTitle() {
         return this.hasRows || this.isEmpty
-            ? `Broker Change History (${this._rows.length})`
-            : 'Broker Change History';
+            ? `Broker Replace History (${this._rows.length})`
+            : 'Broker Replace History';
     }
 
     /** True only once the wire has actually answered, which is what keeps the empty state honest. */
@@ -138,13 +148,14 @@ export default class BovBrokerChangeHistory extends LightningElement {
                 // meaningful state rather than missing data: the service records an APPOINTMENT
                 // (no incumbent to replace) with blank outgoing columns. Naming it beats an em dash
                 // the reader has to interpret.
-                outgoing: row.outgoingBrokerFirm || 'No previous broker',
+                outgoing: row.outgoingBrokerFirm || 'No Previous Broker',
                 incoming: row.incomingBrokerFirm || '—',
                 entryDateTime: row.entryDateTime,
-                // ⚠ BARE VALUES — the "Reason:" / "Logged by" wording now lives in the <dt>
-                // beside them (see the class header). A pair with no value is OMITTED from the
-                // markup entirely rather than rendered empty: an absent reason and a blank
-                // reason look identical on screen and mean different things.
+                // ⚠ BARE VALUES — the wording lives in the template (see the class header).
+                // A line with no value is OMITTED from the markup entirely rather than rendered
+                // empty: an absent reason and a blank reason look identical on screen and mean
+                // different things, and an empty reason would leave the separating pipe dangling
+                // after the timestamp, promising a value that is not there.
                 hasReason: !!row.reason,
                 reason: row.reason || '',
                 hasLoggedBy: !!row.loggedBy,
@@ -155,8 +166,8 @@ export default class BovBrokerChangeHistory extends LightningElement {
                     : notes,
                 notesLong,
                 notesClass: notesLong
-                    ? 'bbc-value bbc-notes bbc-notes--clip'
-                    : 'bbc-value bbc-notes'
+                    ? 'bbc-notes bbc-notes--clip'
+                    : 'bbc-notes'
             };
         });
     }
@@ -187,7 +198,7 @@ export default class BovBrokerChangeHistory extends LightningElement {
         this._note = {
             open: true,
             text: row.notes || '',
-            subtitle: `${row.outgoingBrokerFirm || 'No previous broker'} → ${
+            subtitle: `${row.outgoingBrokerFirm || 'No Previous Broker'} → ${
                 row.incomingBrokerFirm || '—'
             }`
         };

@@ -5,23 +5,39 @@
  * ⚠ CORRECTED 2026-08-20 (BOV broker-contact lookup, design C-2/D-3). This header opened
  * *"ONE context, ONE job"*. That is retracted in place rather than deleted, because the sentence
  * it introduced is still an accurate description of the after-update job below — only the count
- * changed. THERE ARE NOW THREE CONTEXTS AND THREE JOBS (⚠ this line said "TWO JOBS" until
- * 2026-08-20; the single-Selected guard is the third — corrected in place, not deleted, because the
- * retraction above is about the CONTEXT count and stays true):
+ * changed. ⚠ RE-COUNTED 2026-08-24 (BOV auto-selection): the line below said "THREE CONTEXTS AND
+ * THREE JOBS" (and "TWO JOBS" before 2026-08-20). THERE ARE NOW **FOUR CONTEXTS AND FOUR JOBS** —
+ * `after insert` was added and the automatic appointment is the fourth job. 🔴 DO NOT TRUST THIS
+ * COUNT EITHER; it has now decayed twice. Read the overrides.
  *
  *   before insert -> (1) derive `Broker_Firm__c` and `Contact_Name__c` from the `Broker__c` Contact
  *   before update        lookup, via `BovSubmissionBrokerStampService`. See LAYERING below.
  *                    (2) 🔴 REFUSE any save that would leave the parent Disposition with more than
  *                        ONE `Submission_Status__c = 'Selected'` submission, via
  *                        `BovSubmissionSelectionGuardService` (added 2026-08-20, Tranche 2 A2).
- *                        ⚠ SO THE COUNT ABOVE IS NOW THREE CONTEXTS AND **THREE** JOBS. Both before
- *                        jobs are keyed on a CHANGE and both return at zero query cost when it did
- *                        not happen, so an ordinary save still costs nothing.
+ *                        ⚠ Both before jobs are keyed on a CHANGE and both return at zero query
+ *                        cost when it did not happen, so an ordinary save still costs nothing.
  *
- *   after update  -> when `Approval_Status__c` becomes 'Approved' on a submission whose
+ *   after insert  -> (4) 🔴 AUTOMATIC BROKER APPOINTMENT, via `BovAutoSelectionService.reselect`
+ *   after update         (added 2026-08-24). The highest-scoring, non-preferred, unlocked
+ *                        submission becomes the `Selected` one. Also keyed on a change, also free
+ *                        when nothing relevant moved.
+ *
+ *   after update  -> (3) when `Approval_Status__c` becomes 'Approved' on a submission whose
  *                   `Submission_Status__c` is 'Selected', move the PARENT Disposition from
  *                   `BOV Outreach` to `Broker Selection` and stamp `Selected_Broker__c` from the
  *                   submission's `Broker_Firm__c`.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════
+ * 🔴 WHY THE APPOINTMENT IS IN AN **AFTER** CONTEXT AND THE STAMP/GUARD ARE IN **BEFORE**
+ * ══════════════════════════════════════════════════════════════════════════════
+ * It looks inconsistent and it is not. `BovSubmissionSelectionGuardService` runs BEFORE because
+ * `addError` only refuses a save from a before context. `BovAutoSelectionService` must run AFTER
+ * *because of that guard*: it promotes one row and demotes another, and the guard only tolerates
+ * that when BOTH rows arrive in the SAME `Trigger.new` — which a second, separate `Database.update`
+ * from an after context achieves and an in-memory before-context assignment structurally cannot
+ * (the committed incumbent is not in `Trigger.new` on an insert). Read that service's header before
+ * moving either one.
  *
  * This is the on-market half of the broker appointment: `Broker_Finalize_Approval` runs on the
  * SUBMISSION, and its `finalApprovalActions` field update writes `Approval_Status__c`, which
@@ -197,6 +213,25 @@ public with sharing class BovSubmissionTriggerHandler extends TriggerHandler {
     }
 
     /**
+     * ADDED 2026-08-24. 🔴 THIS CONTEXT DID NOT EXIST BEFORE, AND THE TRIGGER FILE'S OWN COMMENT
+     * SAYING SO IS RETRACTED IN PLACE IN THE SAME CHANGE. It was true of the approval hand-off it
+     * described — `Approval_Status__c` cannot CHANGE to Approved on an insert — and it is false of
+     * the automatic appointment, which is precisely a reaction to a NEW submission arriving.
+     *
+     * `oldMap` is passed as NULL rather than as `this.oldMap`, matching `beforeInsert` above and
+     * for the same reason: the platform leaves `Trigger.oldMap` null in this context, and the
+     * service's contract documents null-on-insert as "every incoming row's parent qualifies".
+     *
+     * ⚠ NOT free-standing: this fires on EVERY `BOV_Submission__c` insert in the org, where
+     * previously nothing after-fired on insert at all. The cost is bounded by
+     * `BovAutoSelectionService`'s own budget — ONE query and AT MOST ONE `Database.update` PER
+     * CHUNK, constant in the number of submissions.
+     */
+    protected override void afterInsert() {
+        BovAutoSelectionService.reselect((List<BOV_Submission__c>) newList, null);
+    }
+
+    /**
      * Derives the two broker Text fields whenever `Broker__c` changes on an existing submission.
      *
      * ⚠ This fires on EVERY `BOV_Submission__c` update in the org, including the workflow field
@@ -221,11 +256,49 @@ public with sharing class BovSubmissionTriggerHandler extends TriggerHandler {
         );
     }
 
+    /**
+     * ── 🔴 TWO JOBS, AND THE ORDER IS FIXED FOR A REASON ────────────────────────
+     * `handleApprovedSelections` STAYS FIRST AND STAYS UNTOUCHED. It reacts to an approval
+     * completing; `BovAutoSelectionService.reselect` reacts to the ranking changing, and the two
+     * cannot both fire on the same save — the approval's field update writes `Approval_Status__c`,
+     * which is DELIBERATELY NOT one of auto-selection's change keys (that service's header argues
+     * why, and `bulk251ApprovesAtConstantCost`'s stated 2-query / 3-DML budget is what pins it).
+     * So the order below cannot change what either one does. It is fixed anyway so a future reader
+     * is not left wondering whether it can, and so that the parent stage advance — which is the
+     * irreplaceable half — is never preceded by a write that could throw.
+     * ⚠ Auto-selection's write IS `allOrNone = true` and DOES throw on refusal, which is exactly
+     * why it goes second.
+     */
     protected override void afterUpdate() {
         handleApprovedSelections(
             (List<BOV_Submission__c>) newList,
             (Map<Id, BOV_Submission__c>) oldMap
         );
+        BovAutoSelectionService.reselect(
+            (List<BOV_Submission__c>) newList,
+            (Map<Id, BOV_Submission__c>) oldMap
+        );
+    }
+
+    /**
+     * ADDED 2026-08-24. Deleting a submission can change which broker should be appointed — most
+     * sharply when the deleted row IS the appointed one, which under the preferred-broker rules is
+     * the normal way a user withdraws a preferred broker.
+     *
+     * `Trigger.old` is the only place the parent Id still exists at this point; the rows themselves
+     * are already gone, which is precisely what makes the re-rank correct.
+     *
+     * ⚠ THIS FIRES ON EVERY `BOV_Submission__c` DELETE IN THE ORG, where previously nothing did.
+     * It is bounded by the service's own budget (ONE query and AT MOST ONE `Database.update` per
+     * chunk) and by the fact that neither disposition permission set grants `allowDelete` on this
+     * object — so in practice only an administrator or an automated cleanup reaches it.
+     * ⚠ NO `after undelete` COMPANION, DELIBERATELY. `BovAutoSelectionService.reselectForDeleted`'s
+     * own header explains at length which three tests and which authored refusal depend on the
+     * undelete duplicate REMAINING reachable; do not add one without changing those in the same
+     * commit.
+     */
+    protected override void afterDelete() {
+        BovAutoSelectionService.reselectForDeleted((List<BOV_Submission__c>) oldList);
     }
 
     /**

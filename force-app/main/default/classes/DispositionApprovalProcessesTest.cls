@@ -239,6 +239,87 @@ private class DispositionApprovalProcessesTest {
         Assert.areEqual('CBRE - Principal Approved', after.Selected_Broker__c);
     }
 
+    /**
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * 🔴 THE PREFERRED BROKER GOES ALL THE WAY THROUGH `Broker_Finalize_Approval`. ADDED 2026-08-24.
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * The preferred-broker-wins decision was accepted on the expectation that
+     * `handleApprovedSelections` "should need no change" because a preferred row is now `Selected`.
+     * That expectation is CORRECT, and this test is what verifies it rather than assuming it — it
+     * walks the real `Approval.process` submit and approve, exactly as the three neighbouring
+     * BOV/offer tests do, and checks all four links in the chain:
+     *
+     *   1. the row is `Selected` — put there by `BovAutoSelectionService`, NOT by the fixture;
+     *   2. `submit()` is ACCEPTED, i.e. the platform entry criterion
+     *      (`Submission_Status__c = 'Selected'`, the entire `<entryCriteria>` of that process) is
+     *      satisfied by a preferred row;
+     *   3. approving it advances the PARENT to `Broker Selection`;
+     *   4. and stamps `Selected_Broker__c`.
+     *
+     * 🔴 LINK 4 IS THE ONE THAT COULD HAVE BROKEN AND DID NOT, SO THE REASON IS RECORDED HERE.
+     * `handleApprovedSelections` stamps the parent from `BOV_Submission__c.Broker_Firm__c`, which
+     * `BovSubmissionBrokerStampService` derives from the `Broker__c` Contact lookup. A preferred row
+     * is exempt from `BOV_Amount_Required_On_Submission` but is **NOT** exempt from
+     * `Broker_Required_On_Submission` (`ISBLANK(Broker__c)`, still unguarded — verified in the org
+     * 2026-08-24), so `Broker__c` is mandatory on EVERY row and the firm is therefore always
+     * derivable. ⚠ IF ANYONE EVER ADDS A PREFERRED EXEMPTION TO THAT SECOND RULE, THIS BREAKS: the
+     * sale advances with a BLANK `Selected_Broker__c` and no error anywhere. This test is the alarm.
+     *
+     * ⚠ THE SUBMISSION HERE CARRIES NO BOV AMOUNT, DELIBERATELY — the accepted consequence of the
+     * decision. It is asserted rather than merely allowed, because a fixture that quietly gained an
+     * amount would stop testing the case the user actually signed off.
+     */
+    @isTest
+    static void brokerFinalizeApproved_preferredBroker_advancesTheParentAndStampsTheBroker() {
+        Disposition__c d = dispositionAt(TestDataFactory.DISPOSITION_RT_ON_MARKET, 'BOV Outreach');
+        // A scored response arrives first and is auto-appointed...
+        BOV_Submission__c scored = TestDataFactory.createBovSubmission(d.Id, false);
+        scored.Broker__c = TestDataFactory.createBrokerContactWithFirm('CBRE - Scored', true).Id;
+        scored.BOV_Amount__c = 1200000;
+        insert scored;
+
+        // ...then a PREFERRED broker with no quote at all takes the slot from it.
+        BOV_Submission__c preferred = TestDataFactory.createBovSubmission(d.Id, false);
+        preferred.Broker__c =
+            TestDataFactory.createBrokerContactWithFirm('JLL - Preferred', true).Id;
+        preferred.Is_Preferred_Broker__c = true;
+        preferred.BOV_Amount__c = null;
+        preferred.Cap_Rate__c = null;
+        preferred.Commission_Rate__c = null;
+        preferred.Days_To_Market__c = null;
+        preferred.Hist_Success_Rate__c = null;
+        insert preferred;
+
+        BOV_Submission__c promoted = [
+            SELECT Submission_Status__c, BOV_Amount__c, Broker_Firm__c
+            FROM BOV_Submission__c WHERE Id = :preferred.Id
+        ];
+        Assert.areEqual('Selected', promoted.Submission_Status__c,
+            'LINK 1 — the preferred row must have been promoted by BovAutoSelectionService, not by '
+            + 'this fixture. Backup here means the whole chain below is untestable.');
+        Assert.isNull(promoted.BOV_Amount__c,
+            'and it must genuinely carry NO quote — that is the accepted consequence under test');
+        Assert.isNotNull(promoted.Broker_Firm__c,
+            'LINK 4 PRECONDITION: the firm is derived from the mandatory Broker__c lookup, which is '
+            + 'what keeps the parent stamp below non-blank despite the missing quote');
+
+        // LINK 2 — the platform entry criterion. `submit()` asserts isSuccess() itself.
+        submit(preferred.Id);
+
+        Test.startTest();
+        decide(preferred.Id, 'Approve');
+        Test.stopTest();
+
+        Disposition__c after = [
+            SELECT Disposition_Stage__c, Selected_Broker__c FROM Disposition__c WHERE Id = :d.Id
+        ];
+        Assert.areEqual('Broker Selection', after.Disposition_Stage__c,
+            'LINK 3 — approving a PREFERRED broker must advance the parent exactly as approving a '
+            + 'scored one does. handleApprovedSelections needed no change, and this is the proof.');
+        Assert.areEqual('JLL - Preferred', after.Selected_Broker__c,
+            'LINK 4 — and stamp the PREFERRED broker firm, not the scored one it displaced');
+    }
+
     @isTest
     static void brokerFinalizeRejected_leavesTheParentAtBovOutreach() {
         Disposition__c d = dispositionAt(TestDataFactory.DISPOSITION_RT_ON_MARKET, 'BOV Outreach');

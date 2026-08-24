@@ -253,16 +253,20 @@ public with sharing class DispositionApprovalService {
      * every downstream score, so `<= 0` is refused with the same message. A currency of 0 is not a
      * price.
      *
-     * ⚠ IT NAMES THE ON-SCREEN LABEL `Asking Price`, NOT the API name, per this class's stated
-     * convention. Verified 2026-08-22: the field is on the Details fieldSection of
-     * `Disposition_Record_Page`, on `Disposition__c-Disposition Layout`, and editable for
-     * `DPEG_Disposition_Edit` — so the label the message names is the label the user is looking at
-     * while they read it. A gate demanding a field the user cannot see is the LOI
-     * `Final_Agreed_Price__c` dead end, and it was checked rather than assumed.
+     * ⚠ IT NAMES THE ON-SCREEN LABEL, NOT the API name, per this class's stated convention.
+     * Verified 2026-08-22: the field is on the Details fieldSection of `Disposition_Record_Page`,
+     * on `Disposition__c-Disposition Layout`, and editable for `DPEG_Disposition_Edit` — so the
+     * label the message names is the label the user is looking at while they read it. A gate
+     * demanding a field the user cannot see is the LOI `Final_Agreed_Price__c` dead end, and it
+     * was checked rather than assumed.
+     * ⚠ 2026-08-24: `Asking_Price__c`'s `<label>` was renamed to `Expected Value` (API name
+     * unchanged — the field, this constant's name, and every reference to it below stay
+     * `Asking_Price__c`/`ASKING_PRICE_REQUIRED_MESSAGE`). Only the message text below was updated
+     * to match the new on-screen label, per the rule immediately above.
      */
     private static final String ASKING_PRICE_REQUIRED_MESSAGE =
-        'An asking price is required before this sale can leave Disposition Readiness. '
-        + 'Enter the Asking Price on this disposition, then submit for approval.';
+        'An expected value is required before this sale can leave Disposition Readiness. '
+        + 'Enter the Expected Value on this disposition, then submit for approval.';
 
     /**
      * 🔴 THE AUTHORED REPLACEMENT FOR "no applicable approval process was found". See the class

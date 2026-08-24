@@ -22,6 +22,33 @@
  *    c/bovComparisonMatrix, which is what refreshes the matrix in place. A
  *    regression to any form of navigation is the original bug returning.
  *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * 🔴 A FOURTH FALSIFIER, ADDED 2026-08-24: THIS BUNDLE NOW HAS TWO MODES.
+ * ═══════════════════════════════════════════════════════════════════════════
+ * `@api isPreferred` (default false) switches it into "Add Preferred Broker".
+ * The T-PREFERRED-* block at the end of this file is the falsifier set for it,
+ * and it is written around ONE failure mode that produces NO ERROR ANYWHERE:
+ * `Is_Preferred_Broker__c` is INJECTED into the payload rather than rendered as
+ * a field, so if it is ever dropped from `withParent()` the dialog still saves,
+ * still closes, still toasts success — and creates an ordinary response that
+ * appears in the WRONG CARD. Nothing on screen says so. The payload assertions
+ * on BOTH submit paths are the only thing that catches it.
+ *
+ * ⚠ THOSE SAME ASSERTIONS ALSO PIN A SINGLE-WRITER CONTRACT (2026-08-24):
+ * `Submission_Status__c` must be ABSENT from the preferred payload, because
+ * `BovAutoSelectionService` owns that field on this path. Writing it here would
+ * be a second writer AND would be refused by
+ * `BovSubmissionSelectionGuardService` on any disposition that already has an
+ * appointed broker — a failure that happens in the ORG, never in Jest.
+ *
+ * ⚠ EVERY DEFAULT-MODE TEST ABOVE IS ALSO THE REGRESSION PIN FOR MODE ONE.
+ * `createComponent()` uses its default parameter — which does NOT set
+ * `isPreferred` — so the whole existing suite runs in response mode and fails
+ * if the preferred branch ever leaks into it. That is deliberate; do not
+ * "modernise" those tests by passing `isPreferred: false` explicitly, because
+ * the absent-prop case is the one every real opener that predates this change
+ * would produce.
+ *
  * ⚠ `LightningModal` HAS NO sfdx-lwc-jest STUB — this repo supplies its own at
  * jest-mocks/lightning/modal.js, wired in through jest.config.js's
  * moduleNameMapper. Its `close(result)` dispatches a catchable `close` event,
@@ -78,6 +105,13 @@ describe('c-bov-add-response-modal', () => {
 
         // Order is template order, and it is the layout's reading order:
         // parent, who responded, then the BOV terms.
+        // 🔴 BOV_Score__c IS NO LONGER IN THIS LIST (2026-08-22, formula conversion completed,
+        // manifest/bov-score-formula-conversion/). It was here from 2026-08-21 while the
+        // conversion was deferred and the field was hand-enterable; it is now a FORMULA field and
+        // `lightning-input-field` cannot render a formula field as an editable input at all. The
+        // dedicated "BOV_Score__c is rendered and OPTIONAL" test that used to follow this one is
+        // retired for good — see "the stamped / derived / withdrawn fields are NOT offered" below,
+        // which now asserts its absence instead.
         expect(fieldNames(element)).toEqual([
             'Disposition__c',
             'Broker__c',
@@ -86,7 +120,6 @@ describe('c-bov-add-response-modal', () => {
             'Commission_Rate__c',
             'Days_To_Market__c',
             'Hist_Success_Rate__c',
-            'BOV_Score__c',
             'Submission_Status__c'
         ]);
 
@@ -94,26 +127,6 @@ describe('c-bov-add-response-modal', () => {
         // 🔴 CREATE ONLY. A `record-id` would turn this into an edit form against
         // whatever Id leaked in.
         expect(form(element).recordId).toBeUndefined();
-    });
-
-    it('🔴 T-FIELDS: BOV_Score__c is rendered and OPTIONAL (2026-08-21, formula conversion deferred)', () => {
-        const element = createComponent();
-        const rendered = inputs(element);
-        const score = rendered.find((i) => i.fieldName === 'BOV_Score__c');
-
-        // 🔴 RETRACTED 2026-08-21 (later the same day). This test used to pin
-        // BOV_Score__c as ABSENT, on the grounds that it was removed from `BOV
-        // Submission Layout` by hand in Setup on 2026-08-20 and this dialog
-        // replaces that screen. The formula conversion that removal was clearing
-        // the way for is now evaluated and deferred (cancelled for now); the
-        // user's explicit instruction is to make the field hand-enterable here.
-        // The field is back on the layout too — see that file's own
-        // reconciliation comment.
-        expect(score).toBeDefined();
-        // Optional, not required — a broker response with no score must still
-        // save. No validation rule names this field, so nothing server-side
-        // would refuse an empty one either.
-        expect(score.required).toBeFalsy();
     });
 
     it('🔴 T-FIELDS: the stamped / derived / withdrawn fields are NOT offered', () => {
@@ -132,6 +145,11 @@ describe('c-bov-add-response-modal', () => {
         expect(rendered).not.toContain('Approval_Status__c');
         // AutoNumber (BOV-{0000}).
         expect(rendered).not.toContain('Name');
+        // 🔴 ADDED 2026-08-22 (manifest/bov-score-formula-conversion/, Step 3). BOV_Score__c is a
+        // FORMULA field again — `lightning-input-field` cannot render a formula field as an
+        // editable input at all. This is what catches a future regression if someone re-adds the
+        // input, the same protective role the retracted HTML/JS comments serve for a human reader.
+        expect(rendered).not.toContain('BOV_Score__c');
     });
 
     it('🔴 T-FIELDS: the two validation-rule fields are marked required on the client', () => {
@@ -415,6 +433,202 @@ describe('c-bov-add-response-modal', () => {
 
     it('is accessible', async () => {
         const element = createComponent();
+
+        await flushPromises();
+
+        await expect(element).toBeAccessible();
+    });
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 🔴 T-PREFERRED — "Add Preferred Broker" mode (2026-08-24)
+    //
+    // ⚠ EVERY TEST HERE PASSES THE FULL PROPS OBJECT INCLUDING `dispositionId`.
+    // `createComponent(props = {...})` has a DEFAULT PARAMETER, so passing a
+    // partial object silently drops the parent — and `undefined` would restore
+    // the default rather than clearing it.
+    //
+    // ⚠ ASSERTIONS READ RENDERED PROPERTIES (`label`, `required`, `value`) AND
+    // THE SUBMITTED PAYLOAD — never `shadowRoot.textContent`. Every base
+    // component in this template is an sfdx-lwc-jest stub that renders an EMPTY
+    // template, so the modal header's label appears in NO text node and a
+    // `textContent` assertion on it is vacuously green in both directions.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    const modalHeader = (el) =>
+        el.shadowRoot.querySelector('lightning-modal-header');
+
+    const preferredComponent = () =>
+        createComponent({
+            dispositionId: DISPOSITION_ID,
+            isPreferred: true
+        });
+
+    it('🔴 T-PREFERRED-TITLE: the header and Save button follow the mode', () => {
+        // DEFAULT MODE FIRST, so the assertion below is a DIFFERENCE and not a
+        // coincidence. Without this half, a getter hardcoded to the preferred
+        // string would pass the preferred test and break the real one.
+        const response = createComponent();
+        expect(modalHeader(response).label).toBe('Add Broker Response');
+        expect(response.shadowRoot.querySelector('.bar-save').label).toBe(
+            'Save response'
+        );
+
+        const preferred = preferredComponent();
+        // The exact string the user asked for.
+        expect(modalHeader(preferred).label).toBe('Add Preferred Broker');
+        // "Save response" is wrong wording on this path — a preferred broker is
+        // not a response to anything.
+        expect(preferred.shadowRoot.querySelector('.bar-save').label).toBe(
+            'Save preferred broker'
+        );
+    });
+
+    it('🔴 T-PREFERRED-REQUIRED: ONLY Broker__c stays required — everything else is optional', () => {
+        const element = preferredComponent();
+
+        const required = inputs(element)
+            .filter((i) => i.required)
+            .map((i) => i.fieldName);
+
+        // 🔴 EXACT EQUALITY, NOT `toContain`. The user's decision was "every
+        // field optional EXCEPT Broker__c", so the falsifier has to be the whole
+        // SET: a `toContain('Broker__c')` assertion would pass unchanged if all
+        // six stayed required, which is the pre-change behaviour this test
+        // exists to rule out.
+        expect(required).toEqual(['Broker__c']);
+
+        // ...and named individually, because `toEqual` on an array failing tells
+        // you the set is wrong but not which field regressed.
+        expect(required).not.toContain('BOV_Amount__c');
+        expect(required).not.toContain('Cap_Rate__c');
+        expect(required).not.toContain('Commission_Rate__c');
+        expect(required).not.toContain('Days_To_Market__c');
+    });
+
+    it('🔴 T-PREFERRED-REQUIRED: Broker__c is required in BOTH modes — this is the deliberate exception', () => {
+        // ⚠ THE POINT OF A SEPARATE TEST: the requiredness of Broker__c is the
+        // ONE thing the mode does NOT change, and a shared `required={getter}`
+        // binding applied to it by mistake would be invisible in the
+        // default-mode suite (where the getter is true anyway). Only the
+        // preferred-mode half of this assertion can catch it.
+        expect(
+            createComponent().shadowRoot.querySelector('.bar-field-broker')
+                .required
+        ).toBe(true);
+        expect(
+            preferredComponent().shadowRoot.querySelector('.bar-field-broker')
+                .required
+        ).toBe(true);
+    });
+
+    it('🔴 T-PREFERRED-STATUS: the Submission_Status__c input is NOT rendered on this path', () => {
+        const element = preferredComponent();
+
+        // Guard the guard: the form rendered and has fields, so the absence
+        // below is a real absence.
+        expect(form(element)).not.toBeNull();
+        expect(inputs(element).length).toBeGreaterThan(0);
+
+        // 🔴 THE REASON CHANGED 2026-08-24 (the assertion did not).
+        // It used to be: "Broker_Finalize_Approval's entry criterion is
+        // Submission_Status__c = 'Selected' AND NOTHING ELSE, so a user who
+        // picked Selected on a preferred row would enter that broker into the
+        // approval." The user has since decided a preferred broker IS the
+        // appointed broker, so that is no longer a hazard.
+        // IT STAYS HIDDEN FOR A NEW REASON: the status of a preferred row is
+        // decided by BovAutoSelectionService, not typed. An input here would
+        // offer a value the next trigger run overwrites — a control whose value
+        // is discarded with a success toast, the same test this form applies to
+        // Broker_Firm__c and Contact_Name__c.
+        expect(fieldNames(element)).not.toContain('Submission_Status__c');
+        expect(
+            element.shadowRoot.querySelector('.bar-field-status')
+        ).toBeNull();
+
+        // The default path still offers it. Without this half, deleting the
+        // control outright would pass.
+        expect(fieldNames(createComponent())).toContain('Submission_Status__c');
+    });
+
+    it('🔴 T-PREFERRED-PAYLOAD-BUTTON: the footer Save forces the flag and writes NO status', () => {
+        const element = preferredComponent();
+        const submit = jest.spyOn(form(element), 'submit');
+
+        element.shadowRoot.querySelector('.bar-save').click();
+
+        expect(submit).toHaveBeenCalledTimes(1);
+        const payload = submit.mock.calls[0][0];
+        // 🔴 THE CENTRAL ASSERTION OF THIS BLOCK. The flag has no input on the
+        // form — it IS the mode — so it can only reach the server by being
+        // injected. If this line ever goes missing the dialog still saves, still
+        // toasts success, and quietly creates an ordinary Backup response in the
+        // matrix below instead of a preferred broker above.
+        expect(payload.Is_Preferred_Broker__c).toBe(true);
+
+        // 🔴 THE STATUS KEY IS ABSENT ENTIRELY — not 'Backup', not 'Selected'.
+        // REVISED 2026-08-24 (this test asserted 'Backup' for a few hours).
+        // The user decided a preferred broker BECOMES the appointed broker, so
+        // 'Backup' is the wrong end state — but 'Selected' cannot be written
+        // from here either: BovSubmissionSelectionGuardService runs in
+        // beforeInsert with no preferred exemption and addErrors an
+        // insert-as-Selected while a committed Selected sibling exists, which
+        // under automatic selection is every priced disposition. So the field
+        // has exactly ONE writer, BovAutoSelectionService, and this assertion is
+        // what keeps it that way — a well-meaning 'Selected' added here would
+        // fail in the ORG, not in Jest, and only on dispositions that already
+        // have an appointed broker.
+        expect(payload).not.toHaveProperty('Submission_Status__c');
+
+        // The parent is still forced, exactly as on the default path.
+        expect(payload.Disposition__c).toBe(DISPOSITION_ID);
+    });
+
+    it('🔴 T-PREFERRED-PAYLOAD-ENTER: a native submit (ENTER in a field) forces it too, and still writes NO status', () => {
+        const element = preferredComponent();
+        const submit = jest.spyOn(form(element), 'submit');
+
+        // ⚠ THE SECOND SUBMIT PATH, WHICH THE FOOTER BUTTON NEVER TOUCHES.
+        // Pressing ENTER inside a text input submits the form natively and fires
+        // `onsubmit`. Injecting the flag in `handleSave` alone would leave THIS
+        // path creating unflagged rows — and a user pressing ENTER is not doing
+        // anything unusual.
+        form(element).dispatchEvent(
+            new CustomEvent('submit', {
+                detail: { fields: { BOV_Amount__c: 12500000 } }
+            })
+        );
+
+        expect(submit).toHaveBeenCalledTimes(1);
+        const payload = submit.mock.calls[0][0];
+        expect(payload.Is_Preferred_Broker__c).toBe(true);
+        // Same single-writer pin as the button path above. Both paths, because
+        // there are genuinely two and withParent() is the only shared code.
+        expect(payload).not.toHaveProperty('Submission_Status__c');
+        expect(payload.Disposition__c).toBe(DISPOSITION_ID);
+        expect(payload.BOV_Amount__c).toBe(12500000);
+    });
+
+    it('🔴 T-PREFERRED-PAYLOAD: the DEFAULT path does not send the flag AT ALL', () => {
+        const element = createComponent();
+        const submit = jest.spyOn(form(element), 'submit');
+
+        element.shadowRoot.querySelector('.bar-save').click();
+
+        const payload = submit.mock.calls[0][0];
+        // 🔴 ABSENT, NOT `false`, AND THE DIFFERENCE IS AN OUTAGE.
+        // `Is_Preferred_Broker__c` DOES NOT EXIST IN THE ORG YET. A payload key
+        // naming a field that does not exist is an error from
+        // lightning-record-edit-form — so an unconditional `false` here would
+        // break the working "Add Broker Response" dialog the moment this
+        // deploys, in order to set a flag to the value it already defaults to.
+        expect(payload).not.toHaveProperty('Is_Preferred_Broker__c');
+        // And the default path's payload is otherwise unchanged.
+        expect(payload.Disposition__c).toBe(DISPOSITION_ID);
+        expect(payload.Submission_Status__c).toBe('Backup');
+    });
+
+    it('T-PREFERRED: is accessible', async () => {
+        const element = preferredComponent();
 
         await flushPromises();
 

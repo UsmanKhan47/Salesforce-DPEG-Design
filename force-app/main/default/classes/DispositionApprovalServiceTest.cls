@@ -167,9 +167,9 @@ private class DispositionApprovalServiceTest {
             Assert.fail('A blank asking price must refuse the Sale Decision submission');
         } catch (DispositionApprovalService.ApprovalException e) {
             refused = true;
-            Assert.isTrue(e.getMessage().contains('asking price is required'),
+            Assert.isTrue(e.getMessage().contains('expected value is required'),
                 'The refusal must be the AUTHORED message, not the platform\'s: ' + e.getMessage());
-            Assert.isTrue(e.getMessage().contains('Asking Price'),
+            Assert.isTrue(e.getMessage().contains('Expected Value'),
                 'The refusal must name the ON-SCREEN LABEL so the user knows what to fill in: '
                 + e.getMessage());
         }
@@ -201,7 +201,7 @@ private class DispositionApprovalServiceTest {
             Assert.fail('An off-market sale must not leave Disposition Readiness unpriced either');
         } catch (DispositionApprovalService.ApprovalException e) {
             refused = true;
-            Assert.isTrue(e.getMessage().contains('asking price is required'),
+            Assert.isTrue(e.getMessage().contains('expected value is required'),
                 'Same authored message on both record types: ' + e.getMessage());
         }
         Test.stopTest();
@@ -230,7 +230,7 @@ private class DispositionApprovalServiceTest {
             Assert.fail('A zero asking price must be refused exactly like a blank one');
         } catch (DispositionApprovalService.ApprovalException e) {
             refused = true;
-            Assert.isTrue(e.getMessage().contains('asking price is required'),
+            Assert.isTrue(e.getMessage().contains('expected value is required'),
                 'Zero must produce the SAME authored message, not a different one: ' + e.getMessage());
         }
         Test.stopTest();

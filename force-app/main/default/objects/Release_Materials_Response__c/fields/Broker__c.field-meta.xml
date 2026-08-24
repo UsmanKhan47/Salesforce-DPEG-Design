@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY. A comment placed ABOVE
+        <CustomField> breaks `sf` deploy at source conversion with a misleading "unable to find
+        matching parent xml file" error.
+
+        ADDED 2026-08-24. Role-named Contact lookup, explicitly permitted by ARCHITECTURE.md
+        Section 1. "Response from" in the request; named Broker__c for consistency with its
+        siblings per explicit instruction.
+
+        =====================================================================================
+        XML SHAPE IS COPIED FROM NDA__c.Broker__c AND Disposition_Offer__c.Broker__c,
+        DELIBERATELY AND EXACTLY - same referenceTo, same ACTIVE non-optional lookupFilter,
+        same errorMessage string, same deleteConstraint. There is no Broker__c OBJECT in this
+        org; every "broker" in this application is a Contact on the Contact.Broker RECORD
+        TYPE.
+
+        🔴 DO NOT USE Contact.Is_Broker__c. That checkbox matches ZERO Contacts in this org -
+        confirmed by reading NDA__c.Broker__c's own comment before writing this field, per
+        explicit instruction in the request. The correct predicate is
+        Contact.RecordType.DeveloperName = 'Broker', exactly as NDA__c.Broker__c and
+        Disposition_Offer__c.Broker__c already filter.
+
+        LABEL: "Broker Contact", NOT "Broker" - matches every sibling Contact lookup on a
+        deal-adjacent object in this module (Disposition_Offer__c.Broker__c,
+        BOV_Submission__c.Broker__c, Disposition__c.Broker__c, NDA__c.Broker__c).
+
+        =====================================================================================
+        RELATIONSHIP NAME: Brokered_Release_Materials_Responses. COLLISION CHECKED, NOT
+        ASSUMED.
+        =====================================================================================
+        Every referenceTo Contact field in this repo as of this change uses one of
+        Broker_Assignments, Brokered_Dispositions, Lease_Inquiries, Brokered_Opportunities,
+        Brokered_BOV_Submissions, Incoming_Broker_Changes, Outgoing_Broker_Changes,
+        Brokered_NDAs, Buyer_NDAs, Buyer_Disposition_Offers or Brokered_Disposition_Offers.
+        Brokered_Release_Materials_Responses is free (36 characters, under the 40-character
+        relationshipName cap). The Brokered_ prefix matches the same-shaped siblings: under
+        Contact, a bare "Release Materials Responses" would read as "this Contact's own
+        responses" when the list actually means "responses this Contact BROKERS".
+        ⚠ A relationshipName is disruptive to change after deploy. Settled here, before the
+        first deploy, while it costs nothing.
+
+        deleteConstraint SetNull, matching every sibling Contact lookup in this repo - deleting
+        a broker Contact must never delete the response log that is evidence of what was said.
+
+        🔴 FLS: THIS FIELD IS INVISIBLE TO EVERYONE, ADMINS INCLUDED, UNTIL A PERMSET LANDS.
+        Read+edit is granted in DPEG_Disposition_Edit and read-only in DPEG_Disposition_View in
+        the same change - the two permission sets that carry every other field on this object.
+    -->
+    <fullName>Broker__c</fullName>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <description>The broker Contact this response came from. Only Contacts on the Broker record type can occupy this field.</description>
+    <inlineHelpText>Pick the broker Contact this response came from. Only Contacts on the Broker record type can be selected.</inlineHelpText>
+    <label>Broker Contact</label>
+    <lookupFilter>
+        <active>true</active>
+        <booleanFilter>1</booleanFilter>
+        <errorMessage>Only Broker Contacts can be selected here.</errorMessage>
+        <filterItems>
+            <field>Contact.RecordType.DeveloperName</field>
+            <operation>equals</operation>
+            <value>Broker</value>
+        </filterItems>
+        <isOptional>false</isOptional>
+    </lookupFilter>
+    <referenceTo>Contact</referenceTo>
+    <relationshipLabel>Brokered Release Materials Responses</relationshipLabel>
+    <relationshipName>Brokered_Release_Materials_Responses</relationshipName>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Lookup</type>
+</CustomField>

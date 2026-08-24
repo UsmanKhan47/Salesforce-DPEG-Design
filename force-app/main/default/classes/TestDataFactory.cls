@@ -2751,6 +2751,86 @@ public with sharing class TestDataFactory {
     }
 
     /**
+     * 🔴 DISPOSITIONS THAT CARRY AN `Asking_Price__c` — THE ONLY FIXTURE ON WHICH
+     * `BOV_Score__c` IS NON-NULL. Added 2026-08-24 with BOV auto-selection.
+     *
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * WHY IT IS A NEW METHOD AND NOT A LINE ADDED TO `createDispositions`
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * `BOV_Score__c` is a FORMULA whose 50-point Value term is
+     * `BOV_Amount__c / Disposition__r.Asking_Price__c`, guarded by an explicit `ISBLANK` that
+     * returns **null** for the whole score when the parent has no asking price or it is `<= 0`.
+     * Every Disposition `createDispositions` builds leaves that field blank, so **every BOV
+     * submission this factory has ever produced scores null** — which `createBovSubmissions`' own
+     * header states, and which is DESIGNED (it is what keeps `ORDER BY … DESC NULLS LAST`
+     * meaningful).
+     *
+     * 🔴 THAT DEFAULT MUST NOT CHANGE, AND THIS IS THE REASON THIS IS AN ADDITIVE METHOD:
+     * `DispositionApprovalService.submitForApproval`'s Readiness branch REFUSES a submit when
+     * `Asking_Price__c` is null or `<= 0`, and `submitAtReadiness_zeroAskingPrice_isRefusedLikeABlankOne`
+     * plus its blank twin are the tests holding that gate. Giving every factory Disposition a price
+     * would flip those negative fixtures into positives across the whole suite, silently. Same
+     * argument, in the opposite direction, as the "do not reintroduce a `BOV_Score__c` assignment"
+     * instruction on `createBovSubmissions`.
+     *
+     * ⚠ USE IT WITH `createBovSubmissions(count, dispositionId, ...)` — count > 1 — TO GET
+     * DIFFERING, NON-NULL SCORES, AND HERE IS EXACTLY WHY THAT WORKS. That method sets
+     * `BOV_Amount__c = 1200000 + (i * 1000)` and holds `Commission_Rate__c` (2.5) and
+     * `Days_To_Market__c` (30) CONSTANT across the rows, so with a fixed asking price the Value
+     * term — and therefore the whole score — is STRICTLY INCREASING IN `i`: the LAST row built is
+     * the highest scorer. At the default `askingPrice` below, adjacent rows differ by ~0.03, which
+     * survives the field's `scale = 2` rounding, so no two adjacent rows tie. A test that wants a
+     * DELIBERATE tie must set two rows to the SAME `BOV_Amount__c` by hand.
+     *
+     * ⚠ A test that needs a non-null score and does NOT use this method is VACUOUS — it exercises
+     * the "no scoreable candidate" branch of `BovAutoSelectionService` and nothing else, while
+     * looking like a full test. That is the single most likely way this feature ships untested.
+     *
+     * @param count           Number of Dispositions.
+     * @param propertyAssetId Parent Property_Asset__c (nullable).
+     * @param askingPrice     `Asking_Price__c` for every row. Must be > 0 — a null or `<= 0` price
+     *                        is exactly the state this method exists to avoid, so it throws rather
+     *                        than silently building the vacuous fixture above.
+     * @param doInsert        Insert when true.
+     * @return Dispositions at stage 'Disposition Readiness', record type On_Market, priced.
+     * @example
+     * Disposition__c d = TestDataFactory.createPricedDisposition(assetId, 1500000, false);
+     * d.Disposition_Stage__c = 'BOV Outreach';
+     * insert d;
+     * TestDataFactory.createBovSubmissions(3, d.Id, true); // three DIFFERING non-null scores
+     */
+    public static List<Disposition__c> createPricedDispositions(
+        Integer count,
+        Id propertyAssetId,
+        Decimal askingPrice,
+        Boolean doInsert
+    ) {
+        if (askingPrice == null || askingPrice <= 0) {
+            throw new TestDataFactoryException(
+                'createPricedDispositions requires a POSITIVE askingPrice; got ' + askingPrice
+                + '. BOV_Score__c returns null for a blank or non-positive asking price, so this '
+                + 'fixture would produce exactly the all-null scores it exists to avoid — and every '
+                + 'auto-selection assertion built on it would pass without exercising anything.');
+        }
+        List<Disposition__c> dispositions = createDispositions(
+            count, propertyAssetId, DISPOSITION_RT_ON_MARKET, false);
+        for (Disposition__c disposition : dispositions) {
+            disposition.Asking_Price__c = askingPrice;
+        }
+        insertIf(doInsert, dispositions);
+        return dispositions;
+    }
+
+    /** Single priced Disposition. @param propertyAssetId Parent asset. @param askingPrice Positive Asking_Price__c. @param doInsert Insert when true. @return The Disposition. */
+    public static Disposition__c createPricedDisposition(
+        Id propertyAssetId,
+        Decimal askingPrice,
+        Boolean doInsert
+    ) {
+        return createPricedDispositions(1, propertyAssetId, askingPrice, doInsert)[0];
+    }
+
+    /**
      * @param count         Number of Disposition Offers.
      * @param dispositionId Parent Disposition__c (nullable).
      * @param doInsert      Insert when true.

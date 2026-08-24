@@ -1,5 +1,12 @@
 <template>
-    <lightning-modal-header label="Add Broker Response"></lightning-modal-header>
+    <!-- ⚠ THE LABEL IS A GETTER, NOT A LITERAL (2026-08-24). This bundle now serves TWO modes and
+         the header is one of the two things that tell them apart (the other is which fields are
+         `required`). "Add Preferred Broker" when `isPreferred`, "Add Broker Response" otherwise.
+         🔴 THE OPENER PASSES ITS OWN `label` TO `LightningModal.open()` TOO, and that is a
+         DIFFERENT string in a different place: `open({ label })` is what assistive technology
+         announces for the dialog region, this is what is painted in the header bar. They must
+         agree, and `c/bovComparisonMatrix` passes the same two strings for that reason. -->
+    <lightning-modal-header label={modalTitle}></lightning-modal-header>
 
     <lightning-modal-body>
         <div class="bar-body slds-is-relative">
@@ -54,7 +61,17 @@
 
                     <!-- REQUIRED BY A VALIDATION RULE (Broker_Required_On_Submission). The
                          lookup is filtered server-side to Contacts on the Broker record
-                         type, so this is a broker picker, not a Contact picker. -->
+                         type, so this is a broker picker, not a Contact picker.
+
+                         🔴 THE ONE FIELD THAT STAYS REQUIRED IN BOTH MODES (2026-08-24, user
+                         decision). Every other field is optional when `isPreferred` — this one
+                         is not, because a preferred broker with no `Broker__c` Contact is an
+                         EMPTY ROW: `BovSubmissionBrokerStampService` derives `Broker_Firm__c`
+                         and `Contact_Name__c` FROM this lookup in the before-save trigger, so a
+                         blank one produces a preferred-broker card whose Firm and Contact
+                         columns both render "—" — a row identifying nobody, in a card whose
+                         entire purpose is to identify somebody. Note the bare `required`
+                         attribute below rather than a bound one: that is the difference. -->
                     <lightning-input-field
                         class="bar-field bar-field-broker bar-field_full"
                         field-name="Broker__c"
@@ -63,11 +80,21 @@
 
                     <!-- REQUIRED BY A VALIDATION RULE (BOV_Amount_Required_On_Submission).
                          The amount is the entire point of a Broker Opinion of Value: the
-                         matrix ranks on it and Responses_Received__c counts the row. -->
+                         matrix ranks on it and Responses_Received__c counts the row.
+
+                         ⚠ RELAXED ON THE PREFERRED PATH (2026-08-24). A preferred broker is a
+                         firm DPEG would like to use, not a firm that has quoted — there may be
+                         no amount to type yet. 🔴 CLEARING THIS ATTRIBUTE IS NOT ENOUGH ON ITS
+                         OWN: `BOV_Amount_Required_On_Submission` is an ACTIVE, UNGUARDED
+                         validation rule (`ISBLANK(BOV_Amount__c)`) that fires on EVERY save and
+                         is not bypassed by anything the client can do. Until that rule carries
+                         a `NOT(Is_Preferred_Broker__c)` exemption, a preferred row saved with a
+                         blank amount is REFUSED SERVER-SIDE and the user sees the rule's own
+                         message inside this dialog. That amendment is separately scoped. -->
                     <lightning-input-field
                         class="bar-field bar-field-amount"
                         field-name="BOV_Amount__c"
-                        required
+                        required={isResponseFieldRequired}
                     ></lightning-input-field>
 
                     <!-- ⚠ THE NEXT THREE ARE `required` BECAUSE THE PAGE LAYOUT MAKES THEM
@@ -84,23 +111,37 @@
                          replaced. `lightning-record-edit-form` does NOT inherit layout
                          requiredness when the fields are listed explicitly, which is why
                          each one has to say so.
-                         🔴 IF THE LAYOUT IS EVER RELAXED, RELAX THESE IN THE SAME CHANGE. -->
+                         🔴 IF THE LAYOUT IS EVER RELAXED, RELAX THESE IN THE SAME CHANGE.
+
+                         🔴 RETRACTED IN PLACE 2026-08-24 — "each one has to say so" IS NOW
+                         "each one has to say so CONDITIONALLY". The three attributes below
+                         are bound to `isResponseFieldRequired` rather than written bare, so
+                         they are required in the default (Add Broker Response) mode exactly
+                         as before and OPTIONAL in the preferred-broker mode.
+                         ⚠ THAT IS NOT A RELAXATION OF THE LAYOUT AND DOES NOT TRIGGER THE
+                         INSTRUCTION ABOVE. `BOV Submission Layout` is untouched, the default
+                         path is byte-for-byte the same demand it always made, and the fact
+                         that this template hand-writes requiredness — the fact the retracted
+                         sentence exists to record — is EXACTLY what made a second, laxer mode
+                         possible without a layout edit at all. If the layout is ever genuinely
+                         relaxed, the instruction still stands: relax the DEFAULT path here in
+                         the same change. -->
                     <lightning-input-field
                         class="bar-field bar-field-cap-rate"
                         field-name="Cap_Rate__c"
-                        required
+                        required={isResponseFieldRequired}
                     ></lightning-input-field>
 
                     <lightning-input-field
                         class="bar-field bar-field-commission"
                         field-name="Commission_Rate__c"
-                        required
+                        required={isResponseFieldRequired}
                     ></lightning-input-field>
 
                     <lightning-input-field
                         class="bar-field bar-field-days"
                         field-name="Days_To_Market__c"
-                        required
+                        required={isResponseFieldRequired}
                     ></lightning-input-field>
 
                     <!-- Optional on the layout (behavior=Edit). -->
@@ -110,34 +151,28 @@
                     ></lightning-input-field>
 
                     <!-- ═══════════════════════════════════════════════════════════════
-                         🔴 RETRACTED 2026-08-21 (later the same day). THE NOTE BELOW USED TO
-                         SAY `BOV_Score__c` IS DELIBERATELY ABSENT — DO NOT ADD IT BACK WITHOUT
-                         ASKING. It is retained here, not deleted, so both decisions stay
-                         visible: the field was removed from this screen on 2026-08-20 as part
-                         of a formula-conversion effort that has since been EVALUATED AND
-                         DEFERRED (cancelled for now). The user's explicit instruction is to
-                         make BOV_Score__c hand-enterable here until it is replaced by a
-                         formula. It is added below as OPTIONAL — no validation rule names it,
-                         and a broker response with no score still must save.
+                         🔴 RETRACTED 2026-08-22 (formula conversion completed). BOV_Score__c was
+                         hand-enterable on this form from 2026-08-21 while the formula conversion
+                         was deferred (see the two retracted paragraphs below, kept for context).
+                         It is now a FORMULA field (manifest/bov-score-formula-conversion/) and
+                         `lightning-record-edit-form` cannot render a formula field as an editable
+                         input at all — `lightning-input-field` on a non-updateable/formula field
+                         is a hard runtime error, not a soft no-op, so the field is REMOVED from
+                         this form rather than left in place with `disabled`. The score is still
+                         visible to the analyst — it now renders read-only wherever
+                         BovSubmissionSelector's queried rows are displayed (the comparison matrix),
+                         computed live from Disposition__r.Asking_Price__c, BOV_Amount__c,
+                         Commission_Rate__c and Days_To_Market__c, all of which ARE still on this
+                         form. There is nothing left to type.
                          ═══════════════════════════════════════════════════════════════
-                         ORIGINAL NOTE, KEPT FOR CONTEXT:
-                         It was on `BOV Submission Layout` and was REMOVED BY HAND in Setup
-                         on 2026-08-20 (retrieved into this repo 2026-08-21, see the
-                         reconciliation comment in the layout file). That is a recent,
-                         deliberate decision to take the score off the create/edit screen,
-                         and this dialog exists to replace that screen — reinstating the
-                         field here would silently overturn it.
-                         ⚠ THE CONSEQUENCE IS WORTH KNOWING, AND IT IS NOT A DEFECT: nothing
-                         in Apex writes BOV_Score__c (BovController only reads it) while
-                         BovSubmissionSelector orders every query `BOV_Score__c DESC NULLS
-                         LAST`, so a response logged here sorts to the BOTTOM of the
-                         comparison matrix until someone scores it. The field still exists,
-                         is still granted editable in DPEG_Disposition_Edit, and is one
-                         `lightning-input-field` away if that is not what the user wants. -->
-                    <lightning-input-field
-                        class="bar-field bar-field-score"
-                        field-name="BOV_Score__c"
-                    ></lightning-input-field>
+                         RETRACTED 2026-08-21 (later the same day), KEPT FOR CONTEXT: the note that
+                         used to sit here said `BOV_Score__c` is deliberately absent — do not add
+                         it back without asking. It was reinstated hand-enterable that same day at
+                         the user's explicit instruction, deferring the formula conversion.
+                         ORIGINAL NOTE, ALSO KEPT FOR CONTEXT: it was removed from `BOV Submission
+                         Layout` by hand in Setup on 2026-08-20 and this dialog exists to replace
+                         that screen, so reinstating it here would have silently overturned that
+                         decision. -->
 
                     <!-- ⚠ DEFAULTED TO Backup, AND THAT DEFAULT IS LOAD-BEARING.
                          "Selected" exclusivity is a SERVER invariant maintained by
@@ -147,12 +182,43 @@
                          Selected rows — a data defect. The field is still offered (the page
                          layout offers it too, so hiding it here would be a silent divergence
                          from the screen this dialog replaced), but the supported way to
-                         appoint a broker is the matrix's own Replace Broker action. -->
-                    <lightning-input-field
-                        class="bar-field bar-field-status"
-                        field-name="Submission_Status__c"
-                        value={defaultStatus}
-                    ></lightning-input-field>
+                         appoint a broker is the matrix's own Replace Broker action.
+
+                         🔴 RETRACTED IN PLACE 2026-08-24 FOR THE PREFERRED PATH ONLY. "The
+                         field is still offered" is now true only in the default mode. On the
+                         preferred path this control is NOT RENDERED.
+                         The divergence argument above (offering what the layout offers) is
+                         real, but it is about the RESPONSE screen this dialog replaced; there
+                         is no platform screen for "add a preferred broker" to diverge from.
+
+                         🔴 RE-RETRACTED THE SAME DAY — WHY IT IS NOT RENDERED HAS CHANGED, AND
+                         THE NEXT READER NEEDS BOTH REASONS OR THEY WILL "FIX" IT BACK.
+                         The first reason was: *"Broker_Finalize_Approval's entry criterion is
+                         Submission_Status__c = 'Selected' AND NOTHING ELSE, so a user who
+                         picked Selected on a preferred row — a row that may carry no BOV
+                         amount — would put that broker in front of the principals"*, and the
+                         JS forced 'Backup' to guarantee it. THE USER RESOLVED THAT CONFLICT
+                         THE OTHER WAY: a preferred broker is now MEANT to hold the Selected
+                         slot, and the scored winner is demoted to Backup instead.
+                         THE CONTROL STAYS HIDDEN ANYWAY, for a NEW reason: the status of a
+                         preferred row is now DECIDED BY THE SERVER, not typed by the user.
+                         BovAutoSelectionService promotes the row (demoting the scored
+                         incumbent in the same bulk DML, which is the only shape
+                         BovSubmissionSelectionGuardService permits). An input here would let a
+                         user set a value the next trigger run overwrites — a control whose
+                         value is discarded with a success toast, which is precisely the test
+                         this form applies to Broker_Firm__c and Contact_Name__c above.
+                         ⚠ AND THE VALUE NO LONGER REACHES THE SERVER FROM HERE AT ALL.
+                         `withParent()` does NOT send Submission_Status__c on this path — not
+                         Backup, not Selected, not the key. The picklist DEFAULT is Backup, so
+                         the row inserts guard-safe on its own. See the JS. -->
+                    <template lwc:if={isStatusRendered}>
+                        <lightning-input-field
+                            class="bar-field bar-field-status"
+                            field-name="Submission_Status__c"
+                            value={defaultStatus}
+                        ></lightning-input-field>
+                    </template>
                 </div>
 
                 <!-- 🔴 NO CLOSING NOTE. `.bar-note` ("New responses are logged as Backup. Use
@@ -174,10 +240,12 @@
             label="Cancel"
             onclick={handleCancel}
         ></lightning-button>
+        <!-- ⚠ "Save response" IS WRONG WORDING FOR A PREFERRED BROKER — a preferred row is not a
+             response to anything. The label follows the mode for the same reason the header does. -->
         <lightning-button
             class="bar-save slds-m-left_x-small"
             variant="brand"
-            label="Save response"
+            label={saveLabel}
             onclick={handleSave}
             disabled={isSaving}
         ></lightning-button>

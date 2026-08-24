@@ -899,6 +899,94 @@
         <name>Facet-0a494558-fee1-4b32-a27e-d8a2546e161e</name>
         <type>Facet</type>
     </flexiPageRegions>
+    <!-- NDA-STAGE DETAILS field bodies (2026-08-24). Two columns, matching the pre-existing
+         Details section's TwoColumnsTopToBottom-equivalent shape (flexipage:fieldSection with
+         a 2-item columns facet). Column 1: broker + status + date sent. Column 2: date signed
+         + expiry. Both read-only formula fields (Disposition__c.NDA_*__c) - see
+         NDA_Broker__c.field-meta.xml for why these mirror the primary NDA via formula rather
+         than a spanning FlexiPage reference. -->
+    <flexiPageRegions>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>readonly</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.NDA_Broker__c</fieldItem>
+                <identifier>FieldNdaBroker</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>readonly</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.NDA_Status__c</fieldItem>
+                <identifier>FieldNdaStatus</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>readonly</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.NDA_Date_Sent__c</fieldItem>
+                <identifier>FieldNdaDateSent</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <name>Facet_NdaDetailsColumn1</name>
+        <type>Facet</type>
+    </flexiPageRegions>
+    <flexiPageRegions>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>readonly</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.NDA_Date_Signed__c</fieldItem>
+                <identifier>FieldNdaDateSigned</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>readonly</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.NDA_Expiry_Date__c</fieldItem>
+                <identifier>FieldNdaExpiryDate</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <name>Facet_NdaDetailsColumn2</name>
+        <type>Facet</type>
+    </flexiPageRegions>
+    <flexiPageRegions>
+        <itemInstances>
+            <componentInstance>
+                <componentInstanceProperties>
+                    <name>body</name>
+                    <value>Facet_NdaDetailsColumn1</value>
+                </componentInstanceProperties>
+                <componentName>flexipage:column</componentName>
+                <identifier>flexipage_column_ndaDetails1</identifier>
+            </componentInstance>
+        </itemInstances>
+        <itemInstances>
+            <componentInstance>
+                <componentInstanceProperties>
+                    <name>body</name>
+                    <value>Facet_NdaDetailsColumn2</value>
+                </componentInstanceProperties>
+                <componentName>flexipage:column</componentName>
+                <identifier>flexipage_column_ndaDetails2</identifier>
+            </componentInstance>
+        </itemInstances>
+        <name>Facet_NdaDetailsColumns</name>
+        <type>Facet</type>
+    </flexiPageRegions>
     <flexiPageRegions>
         <itemInstances>
             <componentInstance>
@@ -972,8 +1060,15 @@
                 </componentInstanceProperties>
                 <componentName>flexipage:fieldSection</componentName>
                 <identifier>flexipage_fieldSection</identifier>
+                <!-- 2026-08-24 (NDA-stage Details redesign): a 5th NE criterion was ADDED to
+                     this pre-existing rule (booleanFilter extended from "1 AND 2 AND 3 AND 4"
+                     to "1 AND 2 AND 3 AND 4 AND 5") so this disposition-fields Details section
+                     also hides at the NDA stage. Its replacement -
+                     flexipage_fieldSection_ndaDetails, a few flexiPageRegions below - carries
+                     the mirror-image EQUAL rule and renders in exactly this slot only at that
+                     one stage. The four pre-existing criteria are UNTOUCHED. -->
                 <visibilityRule>
-                    <booleanFilter>1 AND 2 AND 3 AND 4</booleanFilter>
+                    <booleanFilter>1 AND 2 AND 3 AND 4 AND 5</booleanFilter>
                     <criteria>
                         <leftValue>{!Record.Disposition_Stage__c}</leftValue>
                         <operator>NE</operator>
@@ -993,6 +1088,40 @@
                         <leftValue>{!Record.Disposition_Stage__c}</leftValue>
                         <operator>NE</operator>
                         <rightValue>Sale Closes</rightValue>
+                    </criteria>
+                    <criteria>
+                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
+                        <operator>NE</operator>
+                        <rightValue>NDA</rightValue>
+                    </criteria>
+                </visibilityRule>
+            </componentInstance>
+        </itemInstances>
+        <!-- NDA-STAGE DETAILS (2026-08-24). Shows the primary NDA's OWN fields in place of the
+             disposition fields above, scoped to the NDA stage only via the mirror-image EQUAL
+             rule below. Columns facet is Facet_NdaDetailsColumns; the two column bodies are
+             Facet_NdaDetailsColumn1/2, a few flexiPageRegions below. -->
+        <itemInstances>
+            <componentInstance>
+                <componentInstanceProperties>
+                    <name>columns</name>
+                    <value>Facet_NdaDetailsColumns</value>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>horizontalAlignment</name>
+                    <value>false</value>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>label</name>
+                    <value>Details</value>
+                </componentInstanceProperties>
+                <componentName>flexipage:fieldSection</componentName>
+                <identifier>flexipage_fieldSection_ndaDetails</identifier>
+                <visibilityRule>
+                    <criteria>
+                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
+                        <operator>EQUAL</operator>
+                        <rightValue>NDA</rightValue>
                     </criteria>
                 </visibilityRule>
             </componentInstance>
@@ -1171,10 +1300,23 @@
              still reaches the component - it is a lightning__RecordPage implicit input and the
              JS exposes `@api recordId` - the platform injects it automatically without a
              FlexiPage-side declaration. -->
+        <!-- 2026-08-24: added a visibilityRule hiding this card at Disposition_Stage__c =
+             'Disposition Readiness'. Shape copied from FieldBroker's fieldInstance-level rule
+             (single <criteria>, no <booleanFilter>, further up this file) rather than the
+             multi-criteria action-level rules on the Submit_* Dynamic Actions - this is a plain
+             stage exclusion, same one-criteria case as FieldBroker's. NE, not a positive
+             allow-list of the other stages, matching that same precedent. -->
         <itemInstances>
             <componentInstance>
                 <componentName>bovBrokerChangeHistory</componentName>
                 <identifier>bovBrokerChangeHistory</identifier>
+                <visibilityRule>
+                    <criteria>
+                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
+                        <operator>NE</operator>
+                        <rightValue>Disposition Readiness</rightValue>
+                    </criteria>
+                </visibilityRule>
             </componentInstance>
         </itemInstances>
         <!-- BUYER ACTIVITY TIMELINE (Tranche 2, A6/B). MOVED main -> sidebar 2026-08-21, same
@@ -1183,11 +1325,20 @@
              NO recordId componentInstanceProperties HERE, SAME MEASURED REASON: this bundle's
              targetConfig declares only <objects><object>Disposition__c</object></objects>, no
              `recordId` property, so declaring it here fails the same way bovBrokerChangeHistory
-             did. recordId is still supplied implicitly (JS has `@api recordId`). -->
+             did. recordId is still supplied implicitly (JS has `@api recordId`).
+             2026-08-24: added the same Disposition Readiness visibilityRule as its sibling
+             bovBrokerChangeHistory immediately above - same shape, same reasoning. -->
         <itemInstances>
             <componentInstance>
                 <componentName>dispositionBuyerTimeline</componentName>
                 <identifier>dispositionBuyerTimeline</identifier>
+                <visibilityRule>
+                    <criteria>
+                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
+                        <operator>NE</operator>
+                        <rightValue>Disposition Readiness</rightValue>
+                    </criteria>
+                </visibilityRule>
             </componentInstance>
         </itemInstances>
         <!-- flexipage_tabset's `label`="Tabs" property: present in this retrieve (2026-08-21,

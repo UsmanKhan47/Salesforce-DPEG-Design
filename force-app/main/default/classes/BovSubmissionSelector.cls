@@ -19,14 +19,19 @@
  *   - DispositionStageEntryService.openBuyerNdas, stamping NDA__c.Broker__c on the
  *     auto-created buyer NDA, ON-MARKET path (2026-08-21)
  *                                                     -> selectSelectedBrokerByDispositionIds
+ *   - BovAutoSelectionService.reselect, the automatic highest-score appointment
+ *     (2026-08-24)                                    -> selectSelectionContextByDispositionIds
  *
  * ⚠ MIXED MODES SINCE 2026-08-19 — READ THE METHOD, NEVER THIS HEADER. ⚠ CORRECTED 2026-08-20: this
  * paragraph used to say "Two methods are `WITH USER_MODE`; `selectStatusesByDispositionId` is
  * `WITH SYSTEM_MODE`", which was a COUNT and counts decay. ⚠ RE-COUNTED 2026-08-21 (the Log Offer
  * modal added `selectSelectedBrokerByDispositionId`): it was then TWO of **FIVE**. ⚠ RE-COUNTED
- * AGAIN THE SAME DAY (the NDA broker stamp added `selectSelectedBrokerByDispositionIds`): it is now
- * THREE of **SIX** — `selectStatusesByDispositionId`, `selectSelectedByDispositionIds` (the trigger
- * guard's read) and `selectSelectedBrokerByDispositionIds` (the NDA stamp's read) are
+ * AGAIN THE SAME DAY (the NDA broker stamp added `selectSelectedBrokerByDispositionIds`): THREE of
+ * **SIX**. ⚠ RE-COUNTED AGAIN 2026-08-24 (auto-selection added
+ * `selectSelectionContextByDispositionIds`): it is now **FOUR of SEVEN** —
+ * `selectStatusesByDispositionId`, `selectSelectedByDispositionIds` (the trigger
+ * guard's read), `selectSelectedBrokerByDispositionIds` (the NDA stamp's read) and
+ * `selectSelectionContextByDispositionIds` (auto-selection's read) are
  * `WITH SYSTEM_MODE` under the ARCHITECTURE.md §2 automation-path exception, each justified at
  * its OWN declaration, which is where §2 says the authoritative inventory lives. 🔴 DO NOT TRUST A
  * NUMBER IN THIS HEADER — `NdaSelector`'s header records that this repo has already miscounted its
@@ -93,6 +98,25 @@ public with sharing class BovSubmissionSelector {
      * set BovController.BovRow maps, so narrowing it would reintroduce a
      * "row retrieved via SOQL without querying the requested field" defect.
      *
+     * ── 🔴 `Is_Preferred_Broker__c` WAS ADDED 2026-08-24 AND IT IS AN **FLS CHANGE** ───────────
+     * `c/bovComparisonMatrix` renders TWICE on the Disposition page since the preferred-broker
+     * work: a `preferredOnly` instance above the ranked one, both fed by THIS ONE READ and split
+     * client-side (one wire, one cache entry, so the two instances cannot disagree about the same
+     * broker's numbers). That is why the flag is on the query rather than in a second Apex method.
+     *
+     * 🔴 THIS READ IS `WITH USER_MODE`, SO EVERY ADDED FIELD IS ANOTHER WAY FOR IT TO THROW. One
+     * persona without READ on `Is_Preferred_Broker__c` gets
+     * `System.QueryException: No such column` — an FLS denial wearing a schema error — and
+     * `BovController.getSubmissions` masks it as the generic read-failure message, so **THE ENTIRE
+     * BOV COMPARISON MATRIX DISAPPEARS FOR THEM**. ⚠ THE PERMISSION-SET GRANT IS A HARD
+     * DEPLOY-ORDER PREREQUISITE: `DPEG_Disposition_Edit` and `DPEG_Disposition_View` must be LIVE
+     * before this class. A Metadata-API-deployed custom field arrives with NO FLS for anyone,
+     * System Administrator included.
+     * ⚠ CHECKED, NOT ASSUMED (2026-08-24): those two sets are the ONLY permission sets in the repo
+     * carrying any `BOV_Submission__c` field permission at all, and both grant this field
+     * `readable = true`. `DPEG_Admin_Access` carries ZERO BOV field grants, so it could not read
+     * this query before the change either — the exposure is unchanged for that persona, not widened.
+     *
      * ⚠ `Name` WAS ADDED 2026-08-21 AND IT IS NOT DECORATION — IT IS A DISAMBIGUATOR. The Select
      * Broker / Replace Broker picker composes each radio option from this payload, and this org
      * currently holds SIX broker Contacts that exist TWICE with an identical name AND an identical
@@ -125,7 +149,8 @@ public with sharing class BovSubmissionSelector {
         return [
             SELECT Id, Name, Broker_Firm__c, Contact_Name__c, BOV_Amount__c,
                    Commission_Rate__c, Days_To_Market__c, Hist_Success_Rate__c,
-                   Cap_Rate__c, BOV_Score__c, Submission_Status__c
+                   Cap_Rate__c, BOV_Score__c, Submission_Status__c,
+                   Is_Preferred_Broker__c
             FROM BOV_Submission__c
             WHERE Disposition__c = :dispositionId
             WITH USER_MODE
@@ -447,6 +472,16 @@ public with sharing class BovSubmissionSelector {
      * if that ever changes is a `private without sharing` inner class holding only this query,
      * after `DispositionOfferSelector.TractionReads`.
      *
+     * ⚠ `Is_Preferred_Broker__c` WAS ADDED TO THIS SELECT ON 2026-08-24 AND IS NOT USED BY THE SWAP
+     * EITHER — it backs `replaceSelectedBroker`'s SERVER-SIDE REFUSAL of a preferred submission
+     * (design gate Q-5). Adding it here rather than issuing a second query keeps that caller's
+     * budget at 1 SOQL, and it is FLS-free by construction because this read is already
+     * `WITH SYSTEM_MODE` for `Approval_Status__c`. 🔴 THAT LAST CLAUSE IS LOAD-BEARING AND NOT
+     * ROUTINE: `Is_Preferred_Broker__c` IS granted (read+edit on `DPEG_Disposition_Edit`, read on
+     * `DPEG_Disposition_View`, measured in the org 2026-08-24), but adding a field to a
+     * `WITH USER_MODE` sibling would still be an FLS change — see `selectByDispositionId`, which
+     * took the same field and had to argue the deploy order for it.
+     *
      * ⚠ `Broker__c` WAS ADDED TO THIS SELECT ON 2026-08-20 (Tranche 2 Workstream B, D4.3) AND IS
      * NOT USED BY THE SWAP ITSELF. Its caller now also writes a `BOV_Broker_Change__c` history row,
      * whose `Outgoing_Broker__c` / `Incoming_Broker__c` Contact lookups are stamped from this
@@ -467,9 +502,9 @@ public with sharing class BovSubmissionSelector {
      * comment has been corrected to name the second key rather than only the first.
      *
      * @param dispositionId Disposition__c Id whose submissions to read; null-safe.
-     * @return All submissions with Id, Broker__c, Broker_Firm__c, Submission_Status__c and
-     *         Approval_Status__c populated; an empty list when the Disposition has none or the
-     *         input is null.
+     * @return All submissions with Id, Broker__c, Broker_Firm__c, Submission_Status__c,
+     *         Approval_Status__c and Is_Preferred_Broker__c populated; an empty list when the
+     *         Disposition has none or the input is null.
      * @example
      * List&lt;BOV_Submission__c&gt; subs =
      *     BovSubmissionSelector.selectStatusesByDispositionId(dispId);
@@ -480,7 +515,7 @@ public with sharing class BovSubmissionSelector {
         }
         return [
             SELECT Id, Disposition__c, Broker__c, Broker_Firm__c, Submission_Status__c,
-                   Approval_Status__c
+                   Approval_Status__c, Is_Preferred_Broker__c
             FROM BOV_Submission__c
             WHERE Disposition__c = :dispositionId
             WITH SYSTEM_MODE
@@ -549,6 +584,119 @@ public with sharing class BovSubmissionSelector {
             FROM BOV_Submission__c
             WHERE Disposition__c IN :dispositionIds AND Submission_Status__c = :STATUS_SELECTED
             WITH SYSTEM_MODE
+        ];
+    }
+
+    /**
+     * EVERY submission on a SET of Dispositions, carrying BOTH the RANKING KEY and the whole LOCK
+     * STATE on each row — the ONE query behind `BovAutoSelectionService.reselect`, the automatic
+     * "highest score becomes Selected" appointment added 2026-08-24.
+     *
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * 🔴 IT IS A SEVENTH METHOD RATHER THAN A WIDENING OF ANY OF THE SIX ABOVE, AND THE ONE THAT
+     *    LOOKS CLOSEST IS THE ONE IT MUST NOT TOUCH.
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * `selectSelectedByDispositionIds` (immediately above) is already set-based and already
+     * SYSTEM_MODE, so adding four columns to it would cost nothing on FLS grounds and is the
+     * obvious "simplification". 🔴 THE BLOCKER IS THE `WHERE`, NOT THE `SELECT`. That method
+     * carries `AND Submission_Status__c = 'Selected'` and it is `BovSubmissionSelectionGuardService`'s
+     * COUNTING PREDICATE — the guard counts committed Selected siblings in order to refuse a second
+     * one. Auto-selection needs the OPPOSITE population: every sibling including the Backup rows,
+     * because the winner it is looking for is by definition NOT Selected yet. Relaxing that WHERE
+     * to serve this caller would make the guard count every submission on the disposition and turn
+     * an exclusivity guard into a blanket refusal. Two reads with different WHERE clauses are two
+     * reads — the identical argument `selectSelectedBrokerByDispositionIds` records against the
+     * same neighbour, from the other direction.
+     *
+     * `selectStatusesByDispositionId` has the right population but takes a SINGLE Id and its caller
+     * is a human clicking Replace Broker on one record. This caller runs inside an after-trigger
+     * chunk of up to 200 submissions spanning arbitrarily many dispositions, so reusing it means
+     * SOQL in a loop and a blown 100-query limit at 101 rows.
+     *
+     * ── 🔴 WITH SYSTEM_MODE — TWO INDEPENDENT FORCES, EITHER SUFFICIENT ────────────────────────
+     * 1. THE FIELD. `Approval_Pending__c` has NO `fieldPermissions` entry in ANY permission set,
+     *    DELIBERATELY — both `DPEG_Disposition_View` and `DPEG_Disposition_Edit` carry an explicit
+     *    "do not complete the set" instruction against it, because an approval process is its only
+     *    writer. A `USER_MODE` read of that column raises
+     *    `System.QueryException: No such column 'Approval_Pending__c'` — an FLS denial wearing a
+     *    schema error — for LITERALLY EVERY USER INCLUDING SYSTEM ADMINISTRATOR. 🔴 DO NOT "FIX"
+     *    THIS BY GRANTING FLS. `Approval_Status__c` forces the same conclusion for the same reason
+     *    (`selectStatusesByDispositionId`'s header carries the argument in full), and
+     *    `Is_Manually_Appointed__c` is granted READ-ONLY by design and would be a third.
+     * 2. THE CALLER. ARCHITECTURE.md §2's automation-path exception in its purest form: the running
+     *    user asked to SAVE A BOV RESPONSE, or to PRICE A SALE. They never asked to read the
+     *    siblings. `USER_MODE` THROWS rather than degrades, and inside an AFTER-trigger that throw
+     *    escapes as `CANNOT_INSERT_UPDATE_ACTIVATE_ENTITY` and ROLLS BACK THE USER'S OWN SAVE.
+     *
+     * ⚠ SHARING IS A SEPARATE QUESTION AND IS DELIBERATELY LEFT ALONE HERE — `SYSTEM_MODE` lifts
+     * CRUD and FLS and NEVER sharing, and this class stays `with sharing`. 🔴 THE ASYMMETRY IS
+     * NAMED RATHER THAN HIDDEN: a Selected sibling the running user cannot SEE is absent from this
+     * result, so auto-selection would promote a SECOND Selected row. The backstop is
+     * `BovSubmissionSelectionGuardService`, whose own read is sharing-filtered in exactly the same
+     * way, so the pair fails in the SAFE direction (a refusal, never a silent duplicate) only while
+     * `viewAllRecords = true` holds on `BOV_Submission__c` in both disposition permission sets —
+     * which was read off both files on 2026-08-24 and is the bound. ⚠ THE **WRITE** THAT CONSUMES
+     * THIS READ DOES ESCAPE SHARING (`BovAutoSelectionService.SelectionWrites`) and that is a
+     * SEPARATE, SEPARATELY JUSTIFIED decision — read it there. A read that succeeds is not evidence
+     * a write will, and vice versa.
+     *
+     * ── 🔴 THE ORDER BY IS THE ALGORITHM, NOT PRESENTATION ─────────────────────────────────────
+     * `BOV_Score__c DESC NULLS LAST, CreatedDate ASC, Id ASC`. The caller takes the FIRST row that
+     * is scoreable and non-preferred and appoints that broker, so this clause IS the tie-break rule
+     * — there is no second sort in Apex, deliberately, because a re-sort could disagree with what
+     * the matrix shows. `selectByDispositionId` (the matrix's own read) carries the identical
+     * clause, which is what guarantees the green **Selected** pill lands on the TOP ROW of the table
+     * the user is looking at. If the two ever diverge the feature reads as a bug and is
+     * unfalsifiable from the UI.
+     * ⚠ `NULLS LAST` is load-bearing and is NOT the same as "nulls are worst". The CALLER skips
+     * null-scored rows entirely (a null score is not a rank — `BOV_Score__c` returns null until the
+     * parent has an `Asking_Price__c`); `NULLS LAST` merely keeps them from crowding the front of
+     * the list. `Id ASC` is not decoration either: `CreatedDate` alone ties for two rows created in
+     * the same transaction — every bulk insert and every seed script — and SOQL promises no order
+     * for a fully-tied sort.
+     *
+     * ── 🔴 `CreatedDate` IS SELECTED AND IT IS CONSUMED, NOT DECORATION (added 2026-08-24 with
+     *      the preferred-broker-wins decision) ────────────────────────────────────────────────
+     * `BovAutoSelectionService` ranks PREFERRED rows by `CreatedDate DESC, Id DESC` — NEWEST FIRST
+     * — which is the exact REVERSE of this query's `ORDER BY`, so it cannot be read off the row
+     * order and must be compared in memory. Two reasons it is not a second query with a second
+     * sort: it would double this method's budget inside a trigger, and two ORDER BY clauses over
+     * the same rows are two places for the appointment rule to drift apart.
+     * ⚠ `CreatedDate` IS A SYSTEM FIELD AND CARRIES NO `FieldPermissions`, so adding it cannot take
+     * this read down the way a custom field could — but this read is `WITH SYSTEM_MODE` anyway.
+     *
+     * ⚠ NO `Broker_Firm__c` AND NO `Broker__c`, DELIBERATELY, THOUGH THE DESIGN NOTE LISTED THE
+     * FIRST. The caller writes `Submission_Status__c` and nothing else; it does NOT stamp the parent
+     * and it does NOT write a `BOV_Broker_Change__c` history row (see that service's header for
+     * why). Selecting a column nothing reads would be the only thing in this class that is not
+     * consumed, and on `Broker__c` specifically it would materialise an unused lookup inside a
+     * trigger. The parent stamp still happens — later, on APPROVAL, in
+     * `BovSubmissionTriggerHandler.handleApprovedSelections`, from its own read.
+     *
+     * @param dispositionIds Disposition__c Ids whose submissions to rank; null/empty-safe and
+     *                       issues NO query when the set is null or empty.
+     * @return Every submission on those dispositions with Id, Disposition__c,
+     *         Submission_Status__c, BOV_Score__c, Approval_Pending__c, Approval_Status__c,
+     *         Is_Manually_Appointed__c, Is_Preferred_Broker__c and CreatedDate populated, highest score first
+     *         then oldest first then lowest Id; an EMPTY LIST when there are none (never null).
+     * @example
+     * List&lt;BOV_Submission__c&gt; ranked =
+     *     BovSubmissionSelector.selectSelectionContextByDispositionIds(dispositionIds);
+     */
+    public static List<BOV_Submission__c> selectSelectionContextByDispositionIds(
+        Set<Id> dispositionIds
+    ) {
+        if (dispositionIds == null || dispositionIds.isEmpty()) {
+            return new List<BOV_Submission__c>();
+        }
+        return [
+            SELECT Id, Disposition__c, Submission_Status__c, BOV_Score__c,
+                   Approval_Pending__c, Approval_Status__c,
+                   Is_Manually_Appointed__c, Is_Preferred_Broker__c, CreatedDate
+            FROM BOV_Submission__c
+            WHERE Disposition__c IN :dispositionIds
+            WITH SYSTEM_MODE
+            ORDER BY BOV_Score__c DESC NULLS LAST, CreatedDate ASC, Id ASC
         ];
     }
 }

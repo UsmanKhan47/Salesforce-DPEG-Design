@@ -48,8 +48,15 @@
          3. Name stays Readonly. It is an AutoNumber, displayFormat BOV-{0000}.
          4. Submission_Status__c IS LEFT EDITABLE ON PURPOSE. It is the team's own pick, set by
             hand or by BovSubmissionService.replaceSelectedBroker, and it is a different field from
-            Approval_Status__c: the trigger requires BOTH. BOV_Score__c is likewise left editable,
-            because nothing in Apex or Flow writes it, only reads it for the ORDER BY.
+            Approval_Status__c: the trigger requires BOTH.
+            🔴 RETRACTED 2026-08-22 (formula conversion completed). The sentence immediately above
+            used to continue "BOV_Score__c is likewise left editable, because nothing in Apex or
+            Flow writes it, only reads it for the ORDER BY." BOV_Score__c is now a FORMULA field
+            (recreated this wave — see manifest/bov-score-formula-conversion/), and rule 1 at the
+            top of this comment block already states the platform rule this triggers: a formula
+            carrying behavior=Edit fails the deploy outright. BOV_Score__c's layoutItem below is
+            now Readonly for that reason, same as Broker_Display__c / Property_Name__c /
+            Selected_Broker__c.
 
          THE relatedLists BLOCK BELOW IS UNTOUCHED. It carries RelatedProcessHistoryList, which is
          the only route to Recall Approval Request on this object.
@@ -133,6 +140,12 @@
             (restored the same day - see that permission set's own comment); DPEG_Disposition_View
             stays readable-only, so the field renders Readonly-equivalent for that persona via FLS
             regardless of this Edit behavior.
+            🔴 RE-RETRACTED 2026-08-22 (manifest/bov-score-formula-conversion/, Step 3). The
+            "CANCELLED FOR NOW" formula conversion above has now completed. BOV_Score__c is a
+            FORMULA field again, its layoutItem below is Readonly (see rule 1/rule 4's own
+            retraction near the top of this comment block), and lwc/bovAddResponseModal no longer
+            renders it at all - a formula field cannot be an editable input. DPEG_Disposition_Edit's
+            editable grant was flipped back to false in the same change.
 
          3. The CustomLinks section gained customLabel=true and label "Custom Links".
          4. A <summaryLayout> block appeared. Both are artifacts of the layout having been opened
@@ -199,7 +212,7 @@
                 <field>Hist_Success_Rate__c</field>
             </layoutItems>
             <layoutItems>
-                <behavior>Edit</behavior>
+                <behavior>Readonly</behavior>
                 <field>BOV_Score__c</field>
             </layoutItems>
         </layoutColumns>

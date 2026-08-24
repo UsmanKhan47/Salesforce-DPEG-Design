@@ -2,7 +2,7 @@
 <LightningComponentBundle xmlns="http://soap.sforce.com/2006/04/metadata">
     <apiVersion>67.0</apiVersion>
     <isExposed>true</isExposed>
-    <masterLabel>Broker Activity Timeline</masterLabel>
+    <masterLabel>Buyer Activity timeline</masterLabel>
     <description>One tile per NDA on a Disposition: NDA number, the broker it names, signed and materials-released dates and the days between. Not grouped by broker - one broker per sale repeats. Declined NDAs are kept, dateless, last.</description>
     <targets>
         <target>lightning__RecordPage</target>

@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+    BOV_Score__c Number -> Formula conversion, STEP 1 of 3 (SEVER + DELETE).
+
+    STATUS: PREPARED, NOT AUTHORISED FOR DEPLOY. The user deploys; this repo only
+    describes the change. Companion of destructiveChangesPost.xml in this same
+    directory.
+
+    WHY THIS IS AN IN-PLACE DELETE-AND-RECREATE, NOT THE REPO'S USUAL ADDITIVE
+    RENAME PATTERN (add -> backfill -> repoint -> retire, see e.g.
+    manifest/wave-b-formula/): BOV_Score__c is changing TYPE (Number -> Formula)
+    under the SAME API name. A field's type cannot be changed from Number to
+    Formula via an update -- Salesforce requires delete + recreate for that
+    conversion, and a formula field cannot be created under a name that is still
+    occupied by its own soft-deleted predecessor in the Recycle Bin. That is why
+    this wave has a genuinely manual step between Step 1 and Step 3 (Setup ->
+    Object Manager -> BOV Submission -> Fields & Relationships -> Deleted Fields ->
+    BOV_Score__c -> Erase) that no other field-retirement wave in this repo has
+    needed. BOV_Score__c is a plain Number field nothing writes (null on every row
+    in the org today), so there is no live data to lose and no backfill step.
+
+    THIS PACKAGE (constructive half): the 3 Apex classes that read/order by
+    BOV_Score__c, edited to sever every live reference so the field delete below
+    is accepted. Each edit is marked "🔴 TEMPORARY — restore in Step 3" inline so
+    the restore is mechanical:
+      - BovSubmissionSelector.cls  : BOV_Score__c dropped from the SELECT list in
+        selectByDispositionId, and from the ORDER BY leg of all three affected
+        queries (selectByDispositionId, selectSelectedByDispositionId,
+        selectStatusesByDispositionId). CreatedDate ASC, Id ASC remains as the
+        tie-break in all three.
+      - BovController.cls          : the s.BOV_Score__c.intValue() read in
+        getSubmissions replaced with a hardcoded null (the selector no longer
+        selects the field, so touching it would throw SObjectException).
+      - BovSubmissionSelectorTest.cls : the two now-unreachable BOV_Score__c
+        assertions (the populated-field proof and the null-tie premise) removed,
+        original text preserved as a restore comment.
+
+    NOT included here and deliberately so, per the task's explicit scope fence:
+      - lwc/bovAddResponseModal (renders BOV_Score__c as an editable input) --
+        Step 3, because a formula field cannot be written and removing the input
+        now would be premature (the field still exists as writable Number until
+        the destructive half below runs).
+      - layouts/BOV_Submission__c-BOV Submission Layout.layout-meta.xml
+        (BOV_Score__c layoutItem, behavior=Edit) -- Step 3, same reasoning; a
+        layoutItem referencing a field does not block that field's Metadata API
+        deletion (unlike a formula, validation rule, or FlexiPage quick-action
+        reference), so there is no ordering dependency forcing this into Step 1.
+      - DPEG_Disposition_Edit / DPEG_Disposition_View permission sets (FLS on
+        BOV_Score__c) -- not part of this deploy's payload at all; a deleted
+        field's FieldPermissions rows are dropped by the platform automatically
+        and do not block deletion. Step 3 must still flip
+        DPEG_Disposition_Edit's grant back to editable=false before the FORMULA
+        recreate (a formula field cannot carry editable=true -- hard deploy
+        error) -- see that permission set's own file for the exact prior flip
+        history.
+      - TestDataFactory.cls -- untouched. Its existing BOV_Score__c removal and
+        Asking_Price__c retraction are already correct (concurrent work, see
+        the class header); do not revert or blanket-checkout this file.
+
+    Deploy (only once authorised by the user; devops runs a validation-only
+    dry-run first per standing project practice):
+      sf project deploy start \
+        --manifest manifest/bov-score-formula-conversion/package.xml \
+        --post-destructive-changes manifest/bov-score-formula-conversion/destructiveChangesPost.xml \
+        --target-org usman-dpeg \
+        --test-level RunLocalTests --wait 30
+
+    Rollback: the 3 Apex edits are recoverable from git history (this same
+    commit modifies them). BOV_Score__c itself is a custom field and therefore
+    soft-deleted -- recoverable from the Recycle Bin (Setup -> Object Manager ->
+    BOV Submission -> Fields & Relationships -> Deleted Fields -> Restore) up
+    until the manual Erase step is performed, after which it is not recoverable
+    by any means (a fresh Number field with the same name and zero data would
+    have to be created by hand). All rows are null today, so an Erase followed
+    by a hand-rebuild loses no data either way.
+    -->
+    <types>
+        <members>BovController</members>
+        <members>BovSubmissionSelector</members>
+        <members>BovSubmissionSelectorTest</members>
+        <name>ApexClass</name>
+    </types>
+    <version>67.0</version>
+</Package>

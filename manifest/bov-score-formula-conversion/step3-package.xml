@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+    BOV_Score__c Number -> Formula conversion, STEP 3 of 3 (RECREATE + RESTORE).
+
+    STATUS: EDITS APPLIED IN THE WORKING TREE (2026-08-22), DEPLOY STILL NOT
+    AUTHORISED. The manual Erase (runbook 3.0) is confirmed complete by the
+    coordinator. Every file this manifest lists has been edited per
+    manifest/bov-score-formula-conversion/STEP3_RUNBOOK.txt in this same
+    directory. The user deploys, not this repo -- this manifest is validated
+    with --dry-run only until the user gives the go-ahead.
+
+    CONSTRUCTIVE ONLY -- recreating BOV_Score__c is an add, not a delete, so
+    there is no destructiveChangesPost.xml companion for this half the way
+    there was for Step 1 (manifest/bov-score-formula-conversion/package.xml).
+
+    CustomField (1):
+      - BOV_Submission__c.BOV_Score__c  -- recreated as a Number formula,
+        precision 5, scale 2, formulaTreatBlanksAs=BlankAsBlank. Copied into
+        place from step3-recreate/objects/BOV_Submission__c/fields/
+        BOV_Score__c.field-meta.xml in this directory.
+
+    ApexClass (4): the exact reverse of Step 1's temporary severing edits,
+    plus one comment-only consumer update -- see the runbook's 3.2.
+      - BovController              (r.bovScore read restored; BovRow.bovScore
+                                     widened Integer -> Decimal so the
+                                     formula's 2 decimal places are not
+                                     truncated -- open question resolved this
+                                     session, not part of the original runbook)
+      - BovSubmissionSelector      (BOV_Score__c restored to 1 SELECT and all
+                                     3 ORDER BY clauses)
+      - BovSubmissionSelectorTest  (2 premise assertions restored; reasoning
+                                     re-derived against TestDataFactory's
+                                     ACTUAL current Asking_Price__c behaviour
+                                     -- open question resolved this session,
+                                     see STEP3_RUNBOOK.txt 3.2's caveat)
+      - BovControllerTest          (comment-only: retracted stale references
+                                     to the deleted truncating ternary; its
+                                     own isNull(bovScore) assertions needed no
+                                     code change, only comment accuracy)
+
+    Layout (1):
+      - BOV_Submission__c-BOV Submission Layout  -- BOV_Score__c layoutItem
+        behavior flipped Edit -> Readonly (a formula field cannot carry
+        behavior=Edit, hard deploy error). See runbook 3.3.
+
+    PermissionSet (1):
+      - DPEG_Disposition_Edit -- BOV_Score__c fieldPermissions editable
+        flipped true -> false (a formula field cannot carry editable=true,
+        hard deploy error). DPEG_Disposition_View confirmed unchanged
+        (re-read this session, already editable=false) -- NOT included in
+        this manifest's PermissionSet type because it needs no edit.
+
+    LightningComponentBundle (1):
+      - bovAddResponseModal -- the BOV_Score__c lightning-input-field removed
+        from the create form (a formula field cannot render as an editable
+        input -- hard runtime error, not a soft no-op). See runbook 3.5.
+        Its Jest test (__tests__/bovAddResponseModal.test.js) and
+        lwc/bovComparisonMatrix's Jest test are NOT part of this manifest --
+        Jest never deploys on this project -- but both were updated and are
+        green (44/44 passed this session, including a new fractional-score
+        regression test proving 68.81 is not truncated to 68).
+
+    Deploy (only once the user authorises it):
+      sf project deploy start \
+        --manifest manifest/bov-score-formula-conversion/step3-package.xml \
+        --target-org usman-dpeg \
+        --test-level RunSpecifiedTests \
+        --tests BovSubmissionSelectorTest --tests BovControllerTest \
+        --wait 30
+
+    Verify after deploy: BOV-0015 -> BOV_Score__c = 68.81,
+    BOV-0017 -> BOV_Score__c = 82.95 (hand re-derived and confirmed against
+    the approved formula this session). A Disposition with blank/zero
+    Asking_Price__c must read BOV_Score__c = null on its submissions, never 0
+    -- see runbook "After deploy" note for why this is the one thing worth
+    spot-checking beyond the two pinned records.
+
+    Rollback: see runbook's ROLLBACK section. No data loss is possible either
+    direction -- BOV_Score__c is null on every row today and a formula field
+    never stores its own value.
+    -->
+    <types>
+        <members>BOV_Submission__c.BOV_Score__c</members>
+        <name>CustomField</name>
+    </types>
+    <types>
+        <members>BovController</members>
+        <members>BovSubmissionSelector</members>
+        <members>BovSubmissionSelectorTest</members>
+        <members>BovControllerTest</members>
+        <name>ApexClass</name>
+    </types>
+    <types>
+        <members>BOV_Submission__c-BOV Submission Layout</members>
+        <name>Layout</name>
+    </types>
+    <types>
+        <members>DPEG_Disposition_Edit</members>
+        <name>PermissionSet</name>
+    </types>
+    <types>
+        <members>bovAddResponseModal</members>
+        <name>LightningComponentBundle</name>
+    </types>
+    <version>67.0</version>
+</Package>

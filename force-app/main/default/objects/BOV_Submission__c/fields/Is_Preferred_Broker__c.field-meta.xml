@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY. A comment placed ABOVE
+        <CustomField> breaks `sf` deploy at source conversion with a misleading
+        "unable to find matching parent xml file" error.
+
+        ADDED 2026-08-24 (agent-output/bov-autoselect-preferred-brokers.md, §2/§5 A1).
+        Flags a BOV_Submission__c row as a manually-appointed preferred broker rather than an
+        ordinary scored response. Preferred rows are a SEPARATE list from the comparison matrix's
+        ranked responses and are NEVER auto-selected, whatever their BOV_Score__c.
+
+        WHAT WRITES IT: the "Add Preferred Broker" action on the comparison matrix
+        (lwc/bovAddResponseModal, opened with isPreferred=true), which forces this flag true in
+        withParent() alongside Submission_Status__c = 'Backup'. A human chooses to add a preferred
+        broker; nothing else sets this field.
+
+        WHAT READS IT: (a) lwc/bovComparisonMatrix, to split submissions between the preferred-only
+        instance (no action buttons) and the ordinary ranked instance; (b) the auto-selection
+        mechanism (BovAutoSelectionService, developer scope), which excludes any row with this flag
+        true from ever becoming the winner; (c) _backupOptions on the matrix, so a preferred row
+        cannot be offered as a Replace Broker candidate either.
+
+        FLS: READABLE + EDITABLE in DPEG_Disposition_Edit (the modal writes it programmatically;
+        lightning-record-edit-form drops a non-editable field from the payload SILENTLY, with a
+        success toast, so this grant is a hard prerequisite for "Add Preferred Broker" to work at
+        all — not merely a nicety). READABLE only, editable=false, in DPEG_Disposition_View — that
+        persona never saves a BOV.
+    -->
+    <fullName>Is_Preferred_Broker__c</fullName>
+    <defaultValue>false</defaultValue>
+    <description>Marks this BOV response as a manually-appointed preferred broker, kept in a separate list and never auto-selected. Set only by the Add Preferred Broker action (lwc/bovAddResponseModal); read by the comparison matrix's two instances and by auto-selection to exclude preferred rows from ranking.</description>
+    <inlineHelpText>Checked automatically by the Add Preferred Broker action. Preferred brokers are listed separately and are never auto-selected as the appointed broker.</inlineHelpText>
+    <label>Preferred Broker</label>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Checkbox</type>
+</CustomField>

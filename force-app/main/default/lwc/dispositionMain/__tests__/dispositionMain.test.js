@@ -82,6 +82,40 @@ describe('c-disposition-main', () => {
         ).toBeNull();
     });
 
+    it('🔴 BOV Outreach renders the matrix bundle TWICE — preferred card FIRST, then the matrix', async () => {
+        const element = createComponent();
+
+        getRecord.emit(recordForStage('BOV Outreach'));
+        await Promise.resolve();
+
+        const matrices = [
+            ...element.shadowRoot.querySelectorAll('c-bov-comparison-matrix')
+        ];
+
+        // 🔴 TWO, AND THE ORDER IS THE REQUIREMENT. The preferred-broker card
+        // renders ABOVE the comparison matrix. `querySelectorAll` returns
+        // document order, so index 0 IS the top card — the test that used
+        // `querySelector` above would pass with the tags in either order, or
+        // with only one of them present.
+        expect(matrices).toHaveLength(2);
+
+        // ⚠ ASSERTED ON THE RENDERED ELEMENT'S PROPERTIES. `preferred-only` and
+        // `hide-actions` are written as BARE attributes in the template; this is
+        // the assertion that proves LWC resolves a valueless attribute on a
+        // custom element to boolean `true` and not to the empty string — which
+        // is FALSY, and would have silently turned the top card back into a
+        // second copy of the matrix, buttons and all.
+        expect(matrices[0].preferredOnly).toBe(true);
+        expect(matrices[0].hideActions).toBe(true);
+        expect(matrices[0].recordId).toBe(RECORD_ID);
+
+        // The existing tag is untouched: both flags fall back to their `false`
+        // defaults, which is what makes the second instance provably unchanged.
+        expect(matrices[1].preferredOnly).toBe(false);
+        expect(matrices[1].hideActions).toBe(false);
+        expect(matrices[1].recordId).toBe(RECORD_ID);
+    });
+
     it('Active Listing stage renders the broker-listing cluster', async () => {
         const element = createComponent();
 

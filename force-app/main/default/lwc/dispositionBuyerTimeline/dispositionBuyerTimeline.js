@@ -1,7 +1,7 @@
 /**
  * c-disposition-buyer-timeline
  * ---------------------------------------------------------------------------
- * The card titled "Broker Activity Timeline" on the Disposition record page: one
+ * The card titled "Buyer Activity timeline" on the Disposition record page: one
  * row per buyer-role NDA, showing the NDA's number, the broker it names, the two dates
  * of the NDA journey (signed -> materials released) and the duration between
  * them. Tranche 2 Workstream D
@@ -12,37 +12,48 @@
  * 🔴 THREE NAMES, ALL DIFFERENT, ALL DELIBERATE. READ THIS BEFORE "FIXING" ANY.
  * ==========================================================================
  *   BUNDLE / APEX API NAME  ->  dispositionBuyerTimeline  (a BUYER concept)
- *   CARD TITLE ON SCREEN    ->  "Broker Activity Timeline" (2026-08-21)
+ *   CARD TITLE ON SCREEN    ->  "Buyer Activity timeline" (2026-08-24)
  *   ONE ROW REPRESENTS      ->  ONE NDA
  * Nothing here agrees with anything else, and each disagreement has a reason:
  *
- * 1. THE BUNDLE NAME IS HISTORICAL AND IS NOT GOING TO BE CORRECTED. DPEG
- *    communicates only with the appointed listing broker; buyers sit behind them
- *    and are not tracked (user decision, 2026-08-21), so this card stopped
- *    rendering a buyer identity — but it was NOT RENAMED. The bundle is placed
- *    by `flexipages/Disposition_Record_Page` and its Apex
+ * 0. 🔴 THE TITLE HAS NOW BEEN "NDA" -> "BROKER" -> "BUYER" IN FOUR DAYS. Full
+ *    sequence: "NDA Activity Timeline" -> "Broker Activity Timeline"
+ *    (2026-08-21) -> "Buyer Activity timeline" (2026-08-24). All three were
+ *    explicit user instructions and the last one is the current one.
+ *    ⚠ RECORDED AS A KNOWN INCONSISTENCY, NOT AS A SETTLED DESIGN: the
+ *    2026-08-21 retarget removed the buyer concept from this module entirely —
+ *    DPEG communicates only with the appointed listing broker, buyers sit behind
+ *    them and are NOT TRACKED — so the card is now titled for a party this
+ *    module does not model, over rows that name a BROKER. The rename was carried
+ *    out as instructed and raised with the user rather than quietly "corrected"
+ *    here. Do not resolve this by changing the DATA to match the title: the
+ *    subtitle on every tile is `brokerName`, and there is no buyer identity on
+ *    the DTO to put there.
+ *
+ * 1. THE BUNDLE NAME IS HISTORICAL AND IS NOT GOING TO BE CORRECTED. It now
+ *    happens to agree with the title again, which is a coincidence of the
+ *    2026-08-24 rename and NOT a reason to treat either as authoritative. The
+ *    bundle is placed by `flexipages/Disposition_Record_Page` and its Apex
  *    (`DispositionBuyerTimelineController` / `Service` / `Test`) is compiled into
  *    the org under these names, so a rename is a FlexiPage edit PLUS a
  *    destructive Apex delete — a two-sided deploy that a check-only validation
  *    cannot prove and that leaves a dangling reference if either half lands
- *    alone. Only the user-visible strings were changed, which costs nothing and
- *    is what anyone actually reads. Treat every "buyer" in an API name on this
- *    feature as historical.
+ *    alone. Only the user-visible strings have ever been changed, which costs
+ *    nothing and is what anyone actually reads. Treat every "buyer" in an API
+ *    name on this feature as historical.
  *
- * 2. 🔴 THE TITLE SAYS "BROKER" BUT THE ROWS ARE NOT GROUPED BY BROKER, AND
- *    GROUPING THEM WOULD DESTROY THE CARD. There is ONE appointed broker per
- *    sale, so THE SAME BROKER NAME REPEATS ON EVERY ROW — that is the data being
- *    true, not duplication to be cleaned up. The title says "Broker" because the
- *    broker is the party DPEG actually deals with (user instruction, 2026-08-21),
- *    NOT because the card is a per-broker rollup. Group by broker and a
- *    three-NDA sale collapses to a single row, deleting the entire timeline this
- *    component exists to show. The broker is therefore rendered as a per-tile
- *    SUBTITLE, never as the tile heading.
+ * 2. 🔴 THE ROWS ARE NOT GROUPED BY ANYTHING, AND GROUPING THEM WOULD DESTROY
+ *    THE CARD. There is ONE appointed broker per sale, so THE SAME BROKER NAME
+ *    REPEATS ON EVERY TILE — that is the data being true, not duplication to be
+ *    cleaned up. Group by broker and a three-NDA sale collapses to a single row,
+ *    deleting the entire timeline this component exists to show. The broker is
+ *    rendered as a per-tile SUBTITLE, never as the tile heading, and the title —
+ *    whatever it currently says — has never been a grouping claim.
  *
  * 3. The row's identity is the NDA AutoNumber, the only per-row identity that is
- *    always present. The intro line and the empty state still say "NDA" for that
- *    reason, and they are correct — they describe the rows, the title names the
- *    counterparty.
+ *    always present. The empty state still says "NDA" for that reason, and it is
+ *    correct — it describes the rows. The title names a counterparty; the rows
+ *    name the NDAs.
  *
  * ==========================================================================
  * 🔴 THE "FIRST OFFER" COLUMN WAS DELETED. THE OBVIOUS REPLACEMENT IS A LIE.
@@ -148,12 +159,16 @@ export default class DispositionBuyerTimeline extends LightningElement {
             this.rows = result.data;
             this.loadError = undefined;
         } else if (result.error) {
-            // The fallback names the card the user is looking at ("broker
+            // The fallback names the card the user is looking at ("buyer
             // activity timeline"), not the objects behind it — a message that
             // names a card the user cannot see on screen is not actionable.
+            // ⚠ RETITLED WITH THE CARD ON 2026-08-24. This sentence is the only
+            // user-visible string outside `cardTitle` that repeats the card's
+            // name, so it has to move with it or the alert names a card that is
+            // not on screen — which is the exact defect the wording avoids.
             this.loadError =
                 result.error?.body?.message ||
-                "Couldn't load the broker activity timeline.";
+                "Couldn't load the buyer activity timeline.";
             this.rows = undefined;
         }
     }
@@ -212,24 +227,27 @@ export default class DispositionBuyerTimeline extends LightningElement {
      *
      * 🔴 A PREMATURE "(0)" IS A CLAIM THIS CARD IS NOT ENTITLED TO MAKE. Before
      * the wire settles, `rows` is undefined and nothing is known about the sale;
-     * "Broker Activity Timeline (0)" would state, in the same words it uses for a
+     * "Buyer Activity timeline (0)" would state, in the same words it uses for a
      * genuinely empty sale, that no NDA has been raised. The same reasoning
-     * keeps the EMPTY STATE out of the pre-wire render, and it survived the
-     * 2026-08-21 re-titling exactly as its previous wording said it must.
+     * keeps the EMPTY STATE out of the pre-wire render, and it has now survived
+     * two re-titlings (2026-08-21, 2026-08-24) exactly as its wording said it
+     * must.
      *
-     * ⚠ THE COUNT IS A COUNT OF NDAs, NOT OF BROKERS — see the class header. On
-     * a sale with one broker and four NDAs this reads "Broker Activity Timeline
-     * (4)", which is correct. Do not "reconcile" the number with the title by
-     * counting distinct brokers; that number is 1 on every disposition and tells
-     * the reader nothing.
+     * ⚠ THE COUNT IS A COUNT OF NDAs — NOT OF BROKERS AND NOT OF BUYERS. See the
+     * class header. On a sale with one broker and four NDAs this reads "Buyer
+     * Activity timeline (4)", which is correct. Do not "reconcile" the number
+     * with the title by counting distinct counterparties; that number is 1 on
+     * every disposition and tells the reader nothing.
      *
-     * ⚠ THE TITLE SAYS "Broker", THE BUNDLE SAYS "buyer". The title is the half
-     * that was safe to change — see the class header.
+     * ⚠ THE CAPITALISATION IS THE USER'S, VERBATIM: capital "A", lower-case "t"
+     * ("Buyer Activity timeline", user instruction 2026-08-24). It is asymmetric
+     * on purpose and is pinned by an exact-match assertion in the Jest suite —
+     * "tidying" it to Title Case will red that test, which is the point.
      */
     get cardTitle() {
         return this.hasRows || this.isEmpty
-            ? `Broker Activity Timeline (${this.rows.length})`
-            : 'Broker Activity Timeline';
+            ? `Buyer Activity timeline (${this.rows.length})`
+            : 'Buyer Activity timeline';
     }
 
     /**

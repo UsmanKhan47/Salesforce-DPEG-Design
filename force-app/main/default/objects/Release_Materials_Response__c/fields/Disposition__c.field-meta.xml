@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY - see Broker__c.field-meta.xml
+        in this folder for why a comment above the root breaks `sf` deploy.
+
+        LOOKUP, NOT MASTER-DETAIL - matching NDA__c.Disposition__c and LOI__c.Disposition__c,
+        per explicit instruction.
+
+        RELATIONSHIP NAME: Release_Materials_Responses. A repo-wide sweep of every
+        <referenceTo>Disposition__c</referenceTo> field confirmed it free: existing
+        relationshipNames on that parent are BOV_Broker_Changes, BOV_Submissions,
+        Broker_Listings, Contract_Reviews, Disposition_Offers, LOIs, NDAs and Wires.
+
+        deleteConstraint SetNull, matching every other child-of-Disposition__c lookup in this
+        repo - deleting a disposition must never cascade-delete the response log.
+    -->
+    <fullName>Disposition__c</fullName>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <description>The disposition this response belongs to.</description>
+    <label>Disposition</label>
+    <referenceTo>Disposition__c</referenceTo>
+    <relationshipLabel>Release Materials Responses</relationshipLabel>
+    <relationshipName>Release_Materials_Responses</relationshipName>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Lookup</type>
+</CustomField>

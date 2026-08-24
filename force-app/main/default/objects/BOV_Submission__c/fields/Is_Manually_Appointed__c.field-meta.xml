@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY. A comment placed ABOVE
+        <CustomField> breaks `sf` deploy at source conversion with a misleading
+        "unable to find matching parent xml file" error.
+
+        ADDED 2026-08-24 (agent-output/bov-autoselect-preferred-brokers.md, §2/§3.3/§5 A2).
+        SYSTEM FIELD. The permanent "a human deliberately overrode auto-selection" marker — the
+        third leg of the auto-selection LOCK predicate:
+            LOCKED(disposition) ⟺ ∃ submission where
+                  Approval_Pending__c   = true
+               OR Approval_Status__c   != null
+               OR Is_Manually_Appointed__c = true
+        Needed because BovSubmissionService.replaceSelectedBroker clears Approval_Status__c on
+        BOTH the incumbent and the challenger so the new broker gets a fresh approval. Without this
+        third leg, a manual Replace Broker after a rejection would leave Approval_Pending__c = false
+        and Approval_Status__c = null everywhere, and auto-selection would UNLOCK and undo the
+        human's deliberate pick on the very next BOV save.
+
+        WHAT WRITES IT: BovSubmissionService.replaceSelectedBroker ONLY, on the challenger row,
+        inside that method's existing single bulk write (developer scope — zero new DML). No other
+        Apex, no Flow, no human should ever set this field.
+
+        WHAT READS IT: the auto-selection lock query (BovAutoSelectionService /
+        BovSubmissionSelector, developer scope), WITH SYSTEM_MODE alongside Approval_Pending__c and
+        Approval_Status__c in the same selection-context query.
+
+        FLS: READ ONLY in BOTH DPEG_Disposition_Edit and DPEG_Disposition_View. A user who could
+        edit this by hand could un-lock a broker the principals already decided on — the same
+        reasoning that keeps Disposition_Offer__c.Is_Selected__c and
+        BOV_Submission__c.Approval_Status__c read-only in both sets. Do NOT grant editable=true on
+        either set for any persona.
+    -->
+    <fullName>Is_Manually_Appointed__c</fullName>
+    <defaultValue>false</defaultValue>
+    <description>SYSTEM FIELD. Set only by BovSubmissionService.replaceSelectedBroker on the challenger row. Marks that a human deliberately overrode auto-selection, permanently locking auto-selection out for this disposition even after Approval_Status__c is cleared for re-approval. Read-only FLS everywhere by design.</description>
+    <inlineHelpText>System-set when a broker is appointed via Replace Broker. Locks this disposition out of automatic re-selection. Never edit by hand.</inlineHelpText>
+    <label>Manually Appointed</label>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Checkbox</type>
+</CustomField>

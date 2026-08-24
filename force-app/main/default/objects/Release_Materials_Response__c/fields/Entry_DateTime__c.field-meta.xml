@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY - see Broker__c.field-meta.xml
+        in this folder for why a comment above the root breaks `sf` deploy.
+
+        Matches the four-instance append-only-log convention (Lease_Activity__c
+        .Entry_DateTime__c, Deal_Message__c.Entry_DateTime__c, BOV_Broker_Change__c
+        .Entry_DateTime__c) rather than the free CreatedDate system field, per explicit
+        instruction to check and match BOV_Broker_Change__c's shape. Defaults to NOW() so the
+        merged timeline can sort without relying on a hand-typed value, and stays editable in
+        DPEG_Disposition_Edit (unlike BOV_Broker_Change__c's own copy, which is read-only
+        because that whole object is Apex-authored) so a response logged after the fact can be
+        backdated to when it actually happened.
+    -->
+    <fullName>Entry_DateTime__c</fullName>
+    <defaultValue>NOW()</defaultValue>
+    <description>When this response actually happened. Defaults to now on create; orders the merged response timeline.</description>
+    <inlineHelpText>Date AND time the response actually happened - not necessarily when it was logged. Defaults to now; backdate it if recording an earlier response.</inlineHelpText>
+    <label>Entry DateTime</label>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>DateTime</type>
+</CustomField>

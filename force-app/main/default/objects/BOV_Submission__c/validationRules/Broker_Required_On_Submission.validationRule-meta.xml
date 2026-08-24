@@ -128,6 +128,18 @@
         sweep's. 🔴 DO NOT DEPLOY THIS RULE AHEAD OF IT: RunLocalTests goes red across the
         whole BOV surface.
     -->
+    <!--
+        CONSIDERED AND DELIBERATELY LEFT UNCHANGED, 2026-08-24
+        (agent-output/bov-autoselect-preferred-brokers.md §3.7 Q-3; user decision, settled).
+        This rule's sibling, BOV_Amount_Required_On_Submission, gained a
+        NOT(Is_Preferred_Broker__c) exemption in the same change, because the "Add Preferred
+        Broker" modal makes every field optional except Broker__c. THIS rule does NOT get the
+        same exemption: a preferred-broker row with a blank Broker__c names nobody -
+        BovSubmissionBrokerStampService derives Broker_Firm__c and Contact_Name__c FROM Broker__c,
+        so a blank lookup produces a row whose Firm and Contact columns both render "-" in a list
+        whose entire purpose is to identify somebody. A preferred broker must still name a Contact.
+        Nothing above this comment is falsified by that decision - the rule stays byte-identical.
+    -->
     <fullName>Broker_Required_On_Submission</fullName>
     <active>true</active>
     <description>A BOV submission must name the broker who responded. Broker__c keys the comparison matrix, the appointment flow and the stamped firm/contact text, none of which can be re-derived from a blank lookup. A rule, not required=true: see the XML comment.</description>

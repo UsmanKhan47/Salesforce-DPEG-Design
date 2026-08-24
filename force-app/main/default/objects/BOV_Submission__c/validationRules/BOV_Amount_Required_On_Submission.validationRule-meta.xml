@@ -38,14 +38,29 @@
         that says what the amount is FOR.
 
         =====================================================================================
-        NO STATUS EXEMPTION, BECAUSE THERE IS NO STATUS TO EXEMPT. CHECKED, NOT ASSUMED.
+        🔴 RETRACTED 2026-08-24 (agent-output/bov-autoselect-preferred-brokers.md, §3.7/§5 A5).
+        THE HEADING BELOW NO LONGER DESCRIBES THIS RULE. Quoted and retracted in place, not
+        deleted, because it correctly explains why NO EXEMPTION EXISTED BEFORE TODAY and a reader
+        tracing the rule's history needs that.
         =====================================================================================
-        The obvious objection to an unguarded amount rule is "a broker who never responded has
-        no amount". Submission_Status__c does not model that: its complete restricted value
-        set is {Backup, Selected}, both of which describe a broker who DID respond. There is
-        no 'No Response' or 'Declined' value to carve out, so an unguarded ISBLANK refuses
-        nothing legitimate. 🔴 IF A NON RESPONSE VALUE IS EVER ADDED TO Submission_Status__c,
+            RETRACTED HEADING: "NO STATUS EXEMPTION, BECAUSE THERE IS NO STATUS TO EXEMPT.
+            CHECKED, NOT ASSUMED."
+        The reasoning under it stands and is still correct for every ORDINARY BOV response:
+        Submission_Status__c's restricted value set is still {Backup, Selected}, both of which
+        describe a broker who DID respond, so an unguarded ISBLANK still refuses nothing
+        legitimate on that path. 🔴 IF A NON RESPONSE VALUE IS EVER ADDED TO Submission_Status__c,
         THIS RULE MUST BE AMENDED IN THE SAME CHANGE or it will freeze every such row.
+
+        WHAT CHANGED: a row is no longer only ever a response. Is_Preferred_Broker__c
+        (objects/BOV_Submission__c/fields/Is_Preferred_Broker__c.field-meta.xml, added in the same
+        change as this amendment) marks a manually-appointed preferred broker — "a firm you'd like
+        to use, not a firm that has quoted" (design §3.7) — arriving via a FLAG rather than a
+        Submission_Status__c value, which is exactly the shape the paragraph above anticipated
+        without naming. The formula below now reads
+        AND(NOT(Is_Preferred_Broker__c), ISBLANK(BOV_Amount__c)) so a preferred row with no amount
+        saves cleanly while an ORDINARY response with no amount is refused exactly as before.
+        🔴 Broker_Required_On_Submission (the sibling rule, same object) is DELIBERATELY NOT
+        amended in this change — a preferred broker still names a Contact; see that file.
 
         =====================================================================================
         🔴 MEASURED IMPACT AT CREATION: ONE EXISTING ROW IS REFUSED.
@@ -60,8 +75,8 @@
     -->
     <fullName>BOV_Amount_Required_On_Submission</fullName>
     <active>true</active>
-    <description>A BOV submission must carry the opinion of value it exists to record. A blank amount inflates Responses_Received__c and cannot be ranked in the comparison matrix. A rule, not required=true, because required fields cannot hold FLS: see the XML comment.</description>
-    <errorConditionFormula>ISBLANK(BOV_Amount__c)</errorConditionFormula>
+    <description>A BOV response must carry the opinion of value it exists to record; a blank amount cannot be ranked. Exempt when Is_Preferred_Broker__c: a preferred broker is a firm you'd like to use, not one that has quoted. See the XML comment.</description>
+    <errorConditionFormula>AND(NOT(Is_Preferred_Broker__c), ISBLANK(BOV_Amount__c))</errorConditionFormula>
     <errorMessage>Enter the BOV Amount this broker submitted. A Broker Opinion of Value with no value cannot be ranked against the other responses or used to appoint a broker.</errorMessage>
     <errorDisplayField>BOV_Amount__c</errorDisplayField>
 </ValidationRule>

@@ -31,30 +31,36 @@
  * `lightning-datatable` rowaction shape the platform never sends.
  *
  * ─────────────────────────────────────────────────────────────────────────────
- * 🔴 THE TWO-COLUMN ROW IS GONE AND MUST NOT COME BACK (2026-08-21).
+ * 🔴 THE RENDERED SHAPE IS A VERTICAL TIMELINE (2026-08-24).
  * ─────────────────────────────────────────────────────────────────────────────
- * This card moved to the ~340px record-page sidebar, where the old layout (swap + notes left,
- * timestamp + reason + logger right-aligned, held apart by `justify-content: space-between`)
- * collides. It is now a <ul>/<li> of self-labelling tiles. T-NARROW / T-CSS below are
- * anti-regression pins for that, modelled on the identical pair in
- * c/competingBrokerSubmissions, which solved the same problem on Lead_Record_Page.
+ * Restyled to a design the user supplied. Per entry: a decorative dot-and-line rail, then
+ *   line 1  {outgoing} → {incoming}, BOTH BOLD;
+ *   line 2  calendar icon · date-time · "|" · reason;
+ *   line 3  "Logged By:" · name;
+ *   line 4  the RETAINED notes affordance (see T-NOTES-KEPT).
+ * Before this it was a dt/dd tile grid (2026-08-21) and before that a two-column flex row
+ * (2026-08-20). The two-column row must not come back — see T-TIMELINE.
  *
- * EVERY BEHAVIOURAL ASSERTION FROM THE OLD LAYOUT SURVIVES IN MEANING. Three things moved:
- *   - `.bbc-row` -> `.bbc-tile`;
- *   - `.bbc-reason` / `.bbc-loggedby` now hold BARE VALUES ('Better BOV Received', 'Avery Chen')
- *     with the wording promoted to a real <dt> beside them. The tests assert BOTH halves, so a
- *     regression that drops the label is caught as well as one that drops the value;
- *   - the empty and unavailable states gained an icon and a centred layout. `.bbc-empty` is
- *     still the <p> carrying EXACTLY 'No broker changes recorded', so the falsifier that pins
- *     the two states' wording apart is unchanged.
+ * 🔴 WHY THESE TESTS READ ELEMENTS AND PROPERTIES, NEVER GETTERS. This repo has a measured defect
+ * where a getter-only assertion stayed green while the rendered output was wrong (a getter's
+ * return value is not the attribute the template writes). Everything below is queried out of
+ * `shadowRoot`. And where the thing under test is a LIGHTNING BASE COMPONENT, the assertion is on
+ * a PROPERTY (`iconName`, `alternativeText`, `value`) — the Jest stubs render an EMPTY template,
+ * so a `textContent` assertion against one of them is vacuously green whatever the component does.
+ *
+ * ⚠ THE HEADLINE'S SPACES COME FROM CSS `gap`, NOT FROM THE MARKUP. The template compiler discards
+ * the whitespace-only text nodes between the three spans, so `h3.textContent` is
+ * "JLL→replaced byCushman & Wakefield" — correct, and not what a reader sees. The assertions
+ * therefore read the individual spans and their DOM ORDER rather than the concatenated string; an
+ * `h3.textContent` assertion here would be pinning an artefact of the compiler.
  */
 import { createElement } from 'lwc';
 import BovBrokerChangeHistory from 'c/bovBrokerChangeHistory';
 import getHistory from '@salesforce/apex/BovBrokerChangeController.getHistory';
 
-// The stylesheet, read once, WITH ITS COMMENTS STRIPPED. Stripping first is not cosmetic: T-CSS's
-// assertions are deliberately broad, so a comment that merely NAMED a banned value would fail
-// them — which is what forces a stylesheet to describe its own rules in circumlocutions.
+// The stylesheet, read once, WITH ITS COMMENTS STRIPPED. Stripping first is not cosmetic: the
+// stylesheet assertions are deliberately broad, so a comment that merely NAMED a banned value
+// would fail them — which is what forces a stylesheet to describe its own rules in circumlocutions.
 const CSS_SOURCE = require('fs')
     .readFileSync(
         require('path').join(__dirname, '..', 'bovBrokerChangeHistory.css'),
@@ -115,6 +121,25 @@ const APPOINTMENT_ONLY = [
     }
 ];
 
+/**
+ * Nothing optional at all — no reason, no logger, no notes. This fixture exists for ONE assertion
+ * the others cannot make: that the "|" separator on line 2 disappears with the reason it separates.
+ * Every other fixture carries a reason, so a pipe hard-coded outside the `lwc:if` would render a
+ * dangling "Aug 01, 2026, 12:00 PM |" and every one of them would still pass.
+ */
+const BARE_ENTRY = [
+    {
+        id: 'a1B0000000000004AAA',
+        changeNumber: 'BBC-0004',
+        outgoingBrokerFirm: 'Colliers',
+        incomingBrokerFirm: 'Newmark',
+        reason: null,
+        notes: null,
+        entryDateTime: '2026-06-11T08:30:00.000Z',
+        loggedBy: null
+    }
+];
+
 describe('c-bov-broker-change-history', () => {
     afterEach(() => {
         while (document.body.firstChild) {
@@ -132,16 +157,24 @@ describe('c-bov-broker-change-history', () => {
         return element;
     }
 
-    const rows = (el) => el.shadowRoot.querySelectorAll('.bbc-tile');
+    /** One timeline entry per recorded change. */
+    const rows = (el) => el.shadowRoot.querySelectorAll('.bbc-entry');
     const empty = (el) => el.shadowRoot.querySelector('.bbc-empty');
     const unavailable = (el) => el.shadowRoot.querySelector('.bbc-unavailable');
     const text = (el) => el.shadowRoot.textContent;
     const title = (el) =>
         el.shadowRoot.querySelector('span[slot="title"]').textContent.trim();
 
-    /** Every dt label on one tile, in template order. */
-    const labels = (tile) =>
-        [...tile.querySelectorAll('dt')].map((d) => d.textContent.trim());
+    /**
+     * The headline's visible parts in DOM order, as `class -> text` pairs. Reading the ORDER is the
+     * point: "Cushman & Wakefield → JLL" contains exactly the same strings as the correct headline
+     * and means the opposite.
+     */
+    const headline = (entry) =>
+        [...entry.querySelector('.bbc-swap').children].map((c) => [
+            c.className,
+            c.textContent
+        ]);
 
     it('BEFORE THE WIRE ANSWERS: renders no rows, no empty state and — crucially — no spinner', async () => {
         const element = createComponent();
@@ -159,13 +192,13 @@ describe('c-bov-broker-change-history', () => {
         expect(unavailable(element)).toBeNull();
         // 🔴 ...and neither must a "(0)" in the TITLE, which is the same claim in fewer words and
         // is the one place the state templates cannot guard.
-        expect(title(element)).toBe('Broker Change History');
+        expect(title(element)).toBe('Broker Replace History');
         // 🔴 NO SPINNER, EVER. A spinner is the only element on this card capable of hanging
         // forever, which is the specific failure the design forbids.
         expect(element.shadowRoot.querySelector('lightning-spinner')).toBeNull();
     });
 
-    it('HEADER: the card carries a title and an icon once the wire answers', async () => {
+    it('HEADER: the card reads "Broker Replace History (n)" and carries an icon', async () => {
         const element = createComponent();
 
         getHistory.emit(HISTORY);
@@ -174,10 +207,12 @@ describe('c-bov-broker-change-history', () => {
         expect(
             element.shadowRoot.querySelector('lightning-card').iconName
         ).toBe('standard:record_update');
-        expect(title(element)).toBe('Broker Change History (2)');
+        // 🔴 EXACT WORDING AND EXACT COUNT. The user specified this header text; "(2)" is the
+        // count of rendered entries, so a title that stopped counting would pass a `toContain`.
+        expect(title(element)).toBe('Broker Replace History (2)');
     });
 
-    it('DATA: renders one row per recorded change, with both stamped firm snapshots', async () => {
+    it('DATA: one timeline entry per change, with both stamped firm snapshots in order', async () => {
         const element = createComponent();
 
         getHistory.emit(HISTORY);
@@ -188,28 +223,54 @@ describe('c-bov-broker-change-history', () => {
         expect(unavailable(element)).toBeNull();
 
         const first = rows(element)[0];
-        expect(first.querySelector('.bbc-outgoing').textContent).toBe('JLL');
-        expect(first.querySelector('.bbc-incoming').textContent).toBe(
-            'Cushman & Wakefield'
-        );
 
-        // 🔴 VALUE AND LABEL ARE ASSERTED SEPARATELY. These used to be one pre-composed string
-        // ("Reason: Better BOV Received"); the wording is now a real <dt>, so a regression that
-        // drops the label is a DIFFERENT failure from one that drops the value and each needs
-        // its own assertion. Asserting only the value would let the labels vanish silently —
-        // which in a 340px tile leaves an unidentifiable bare date and a bare name.
-        expect(first.querySelector('.bbc-reason').textContent.trim()).toBe(
+        // 🔴 THE HEADLINE, READ AS RENDERED ELEMENTS IN DOM ORDER. Outgoing, then the arrow, then
+        // the assistive relationship word, then incoming. Reversing the two firms produces a
+        // headline containing all the same text and asserting the opposite fact, which is exactly
+        // what a set-membership assertion would miss.
+        expect(headline(first)).toEqual([
+            ['bbc-outgoing', 'JLL'],
+            ['bbc-arrow', '→'],
+            ['bbc-sr-only', 'replaced by'],
+            ['bbc-incoming', 'Cushman & Wakefield']
+        ]);
+
+        // 🔴 LINE 2 — the calendar icon, the timestamp, the pipe, the reason, in that order.
+        // The icon is a base component whose Jest stub renders an EMPTY template, so it is
+        // asserted on its PROPERTIES; a textContent assertion against it would pass vacuously.
+        const metaIcon = first.querySelector('.bbc-meta lightning-icon');
+        expect(metaIcon).not.toBeNull();
+        expect(metaIcon.iconName).toBe('utility:event');
+        // The icon is also the timestamp's accessible label now that the "When" <dt> is gone.
+        expect(metaIcon.alternativeText).toBe('Changed on');
+
+        // The DateTime is rendered by the platform's own formatter, which is stubbed in Jest — so
+        // the assertion is that the RAW value and the requested FORMAT were handed to it, not how
+        // it renders. The format is what produces "Aug 19, 2026, 3:04 PM" in the browser.
+        const fdt = first.querySelector('lightning-formatted-date-time');
+        expect(fdt.value).toBe('2026-08-19T15:04:00.000Z');
+        expect([fdt.year, fdt.month, fdt.day, fdt.hour, fdt.minute]).toEqual([
+            'numeric',
+            'short',
+            '2-digit',
+            '2-digit',
+            '2-digit'
+        ]);
+
+        expect(first.querySelector('.bbc-sep').textContent).toBe('|');
+        expect(first.querySelector('.bbc-reason').textContent).toBe(
             'Better BOV Received'
         );
-        expect(first.querySelector('.bbc-loggedby').textContent.trim()).toBe(
+
+        // 🔴 LINE 3 — the label is VISIBLE and the name is beside it. Asserting only the name
+        // would let the label vanish silently, leaving an unattributed person's name under a
+        // timestamp; asserting only the label would let the name vanish.
+        expect(first.querySelector('.bbc-logged-label').textContent).toBe(
+            'Logged By:'
+        );
+        expect(first.querySelector('.bbc-loggedby').textContent).toBe(
             'Avery Chen'
         );
-        expect(labels(first)).toEqual(['When', 'Reason', 'Logged by', 'Notes']);
-        // The DateTime is rendered by the platform's own formatter, which is stubbed in Jest — so
-        // the assertion is that the RAW value was handed to it, not how it renders.
-        expect(
-            first.querySelector('lightning-formatted-date-time').value
-        ).toBe('2026-08-19T15:04:00.000Z');
     });
 
     it('ORDER: preserves the server order and does not re-sort', async () => {
@@ -227,26 +288,68 @@ describe('c-bov-broker-change-history', () => {
         expect(incoming).toEqual(['Cushman & Wakefield', 'JLL']);
     });
 
-    it('APPOINTMENT: a change with no outgoing firm NAMES that state instead of rendering a blank', async () => {
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+    // 🔴 T-NO-PREVIOUS — THE BRANCH A NAIVE "{outgoing} → {incoming}" TEMPLATE GETS WRONG.
+    //
+    // The service records an APPOINTMENT (nobody to replace) with a NULL outgoing firm. Bound
+    // straight into the template that renders as "undefined → JLL"; guarded with an `lwc:if` on
+    // the firm instead of a fallback STRING it renders as a bare "→ JLL". Neither is caught by a
+    // test that only ever feeds the wire a two-firm row, which is why this branch gets its own.
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+
+    it('🔴 T-NO-PREVIOUS: an appointment reads "No Previous Broker → {firm}", not "undefined →"', async () => {
         const element = createComponent();
 
         getHistory.emit(APPOINTMENT_ONLY);
         await Promise.resolve();
 
         expect(rows(element).length).toBe(1);
-        expect(rows(element)[0].querySelector('.bbc-outgoing').textContent).toBe(
-            'No previous broker'
-        );
+        const entry = rows(element)[0];
+
+        // 🔴 THE EXACT RENDERED HEADLINE, IN ORDER. Both halves matter: the fallback WORDING
+        // ("No Previous Broker", not an em dash the reader has to interpret) and the fact that it
+        // occupies the outgoing SLOT, so the arrow still points from it to the appointed firm.
+        expect(headline(entry)).toEqual([
+            ['bbc-outgoing', 'No Previous Broker'],
+            ['bbc-arrow', '→'],
+            ['bbc-sr-only', 'replaced by'],
+            ['bbc-incoming', 'Marcus & Millichap']
+        ]);
+
         // Asserted on the RENDERED markup, not on a getter: an undefined bound into the template
         // renders the literal string "undefined".
         expect(text(element)).not.toContain('undefined');
         expect(text(element)).not.toContain('null');
-        // A null loggedBy / notes must simply omit those PAIRS — value AND label — not print an
-        // empty one. An absent reason and a blank reason look identical on screen and mean
-        // different things, so the <dt> has to go too.
-        expect(rows(element)[0].querySelector('.bbc-loggedby')).toBeNull();
-        expect(rows(element)[0].querySelector('.bbc-notes')).toBeNull();
-        expect(labels(rows(element)[0])).toEqual(['When', 'Reason']);
+
+        // A null loggedBy / notes must OMIT those lines entirely — label and value together —
+        // rather than render an empty one. "Logged By:" with nothing after it is worse than no
+        // line at all: it names a person and then fails to.
+        expect(entry.querySelector('.bbc-logged')).toBeNull();
+        expect(entry.querySelector('.bbc-logged-label')).toBeNull();
+        expect(entry.querySelector('.bbc-notes')).toBeNull();
+    });
+
+    it('🔴 T-NO-DANGLING-PIPE: with no reason, the separator goes too', async () => {
+        const element = createComponent();
+
+        getHistory.emit(BARE_ENTRY);
+        await Promise.resolve();
+
+        const entry = rows(element)[0];
+        // The timestamp still renders — it is never null.
+        expect(entry.querySelector('lightning-formatted-date-time').value).toBe(
+            '2026-06-11T08:30:00.000Z'
+        );
+        // 🔴 ...but the pipe that separates it FROM the reason must not survive the reason. A
+        // hard-coded "|" outside the lwc:if passes every other test in this file.
+        expect(entry.querySelector('.bbc-sep')).toBeNull();
+        expect(entry.querySelector('.bbc-reason')).toBeNull();
+        expect(entry.querySelector('.bbc-meta').textContent).not.toContain('|');
+        // The headline is unaffected by any of the optional lines being absent.
+        expect(entry.querySelector('.bbc-outgoing').textContent).toBe(
+            'Colliers'
+        );
+        expect(entry.querySelector('.bbc-incoming').textContent).toBe('Newmark');
     });
 
     it('🔴 EMPTY: says "No broker changes recorded" — with no alert and no spinner anywhere near it', async () => {
@@ -257,8 +360,7 @@ describe('c-bov-broker-change-history', () => {
 
         expect(rows(element).length).toBe(0);
         expect(empty(element)).not.toBeNull();
-        // 🔴 EXACTLY this sentence and nothing else in this element. The explanatory line lives
-        // in a SIBLING <p> precisely so this assertion stays a tight pin on the wording that
+        // 🔴 EXACTLY this sentence and nothing else in this element — the wording is what
         // separates "empty" from "unavailable".
         expect(empty(element).textContent).toBe('No broker changes recorded');
         // 🔴 The design's actual requirement is as much about what must NOT be here. Most
@@ -267,6 +369,9 @@ describe('c-bov-broker-change-history', () => {
         expect(element.shadowRoot.querySelector('[role="alert"]')).toBeNull();
         expect(element.shadowRoot.querySelector('lightning-spinner')).toBeNull();
         expect(unavailable(element)).toBeNull();
+        // No timeline chrome either — a rail with no entries is a line to nowhere.
+        expect(element.shadowRoot.querySelector('.bbc-timeline')).toBeNull();
+        expect(element.shadowRoot.querySelector('.bbc-rail')).toBeNull();
 
         // Structure, not a bare grey sentence: a status region with an icon.
         // ⚠ THE ASSERTION ON `.bbc-state-sub` WAS DELETED ON 2026-08-21, NOT SOFTENED. It pinned
@@ -282,7 +387,7 @@ describe('c-bov-broker-change-history', () => {
         );
         // The count IS shown once the wire has answered, even at zero — at that point it is a
         // fact about the sale rather than a guess.
-        expect(title(element)).toBe('Broker Change History (0)');
+        expect(title(element)).toBe('Broker Replace History (0)');
     });
 
     it('🔴 UNAVAILABLE: a failed read is its OWN state — never the empty sentence, never an alert', async () => {
@@ -308,9 +413,9 @@ describe('c-bov-broker-change-history', () => {
         // user's incident, on a card they did not ask to interact with.
         expect(element.shadowRoot.querySelector('.lv-error')).toBeNull();
 
-        // 🔴 NO COUNT IN THE TITLE. "Broker Change History (0)" is the empty state's claim in
+        // 🔴 NO COUNT IN THE TITLE. "Broker Replace History (0)" is the empty state's claim in
         // fewer words, and it is the one place the state templates cannot guard.
-        expect(title(element)).toBe('Broker Change History');
+        expect(title(element)).toBe('Broker Replace History');
         // ⚠ `expect(text(element)).not.toContain('nothing is deleted')` STOOD HERE AND WAS DELETED
         // ON 2026-08-21. It was a real falsifier while the intro rendered in the other two states
         // — it proved this state alone withheld the completeness claim. The 2026-08-21 removal
@@ -324,23 +429,23 @@ describe('c-bov-broker-change-history', () => {
     // 🔴 T-NO-PROSE — THE DELIBERATE ABSENCE PIN (2026-08-21 UAT prose removal)
     //
     // `get intro()` — 'Every broker ever appointed to this sale — nothing is deleted.' — was
-    // removed at the user's request; they quoted it. It rendered in TWO places, above the tile
+    // removed at the user's request; they quoted it. It rendered in TWO places, above the entry
     // list and as the empty state's sub-line, and both are gone.
     //
     // 🔴 THE PIN RUNS ON THE POPULATED FIXTURE, AND THAT IS THE WHOLE POINT. The assertion it
     // replaces (in the UNAVAILABLE test) became always-green the moment the sentence stopped
     // rendering anywhere: a card that renders NOTHING satisfies "does not contain 'nothing is
-    // deleted'" just as well as a correct one. Asserting it on two rendered tiles is what keeps
+    // deleted'" just as well as a correct one. Asserting it on two rendered entries is what keeps
     // it falsifiable.
     // ─────────────────────────────────────────────────────────────────────────────────────────
 
-    it('🔴 T-NO-PROSE: no intro sentence above the tiles, and none in the empty state', async () => {
+    it('🔴 T-NO-PROSE: no intro sentence above the entries, and none in the empty state', async () => {
         const element = createComponent();
 
         getHistory.emit(HISTORY);
         await Promise.resolve();
 
-        // Guard the guard: real tiles rendered, so the absences below are real.
+        // Guard the guard: real entries rendered, so the absences below are real.
         expect(rows(element).length).toBe(2);
 
         // 1. THE OLD SELECTOR.
@@ -354,7 +459,7 @@ describe('c-bov-broker-change-history', () => {
         //    pointed at it; an aria-describedby naming an element that no longer exists promises
         //    a screen-reader user a description that resolves to nothing — strictly worse than
         //    having none. This is the assertion that catches "deleted the <p>, left the attribute".
-        const list = element.shadowRoot.querySelector('.bbc-list');
+        const list = element.shadowRoot.querySelector('.bbc-timeline');
         expect(list).not.toBeNull();
         expect(list.getAttribute('aria-describedby')).toBeNull();
         // The list's own accessible NAME is unaffected and must stay.
@@ -381,6 +486,37 @@ describe('c-bov-broker-change-history', () => {
         expect(text(element)).not.toContain('nothing is deleted');
     });
 
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+    // 🔴 T-NOTES-KEPT — THE FEATURE THE SUPPLIED DESIGN DOES NOT SHOW.
+    //
+    // The timeline mock has three lines and no notes control. Notes__c is written by
+    // c/bovReplaceBrokerModal and this card is the ONLY place in the application that reads it
+    // back, so matching the mock exactly would have retired a working feature and orphaned the
+    // data — silently, because a card that stops rendering something throws nothing. It is kept
+    // as a quieter fourth line, labelled by a note ICON now that the "Notes" <dt> is gone.
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+
+    it('🔴 T-NOTES-KEPT: the notes line survives the restyle, icon-labelled, on the entry that has one', async () => {
+        const element = createComponent();
+
+        getHistory.emit(HISTORY);
+        await Promise.resolve();
+
+        const noted = rows(element)[0].querySelector('.bbc-notes');
+        expect(noted).not.toBeNull();
+
+        // The icon carries the line's accessible name — asserted on the PROPERTY, because the
+        // lightning-icon stub renders an empty template and its textContent is always ''.
+        const icon = noted.querySelector('lightning-icon');
+        expect(icon.iconName).toBe('utility:note');
+        expect(icon.alternativeText).toBe('Notes');
+
+        // And it is genuinely absent where there is no note, rather than rendered blank.
+        getHistory.emit(APPOINTMENT_ONLY);
+        await Promise.resolve();
+        expect(rows(element)[0].querySelector('.bbc-notes')).toBeNull();
+    });
+
     it('NOTES: clips a long note to a 60-character preview and offers View; a short note gets neither', async () => {
         const element = createComponent();
 
@@ -394,12 +530,21 @@ describe('c-bov-broker-change-history', () => {
         expect(preview.length).toBeLessThanOrEqual(61);
         expect(LONG_NOTE.startsWith(preview.slice(0, -1).trim())).toBe(true);
         expect(longRow.querySelector('.bbc-notes-view')).not.toBeNull();
+        // The single-line clip is applied by a MODIFIER CLASS, and only to the long note. The
+        // stylesheet's one permitted `nowrap` hangs off it (see T-CSS), so if the modifier stops
+        // being emitted the clip silently stops applying.
+        expect(longRow.querySelector('.bbc-notes').className).toContain(
+            'bbc-notes--clip'
+        );
 
         const shortRow = rows(element)[1];
         expect(shortRow.querySelector('.bbc-notes-txt').textContent).toBe(
             'Short note.'
         );
         expect(shortRow.querySelector('.bbc-notes-view')).toBeNull();
+        expect(shortRow.querySelector('.bbc-notes').className).not.toContain(
+            'bbc-notes--clip'
+        );
     });
 
     it('VIEW: a real click on the View button opens the full note, and Close dismisses it', async () => {
@@ -433,32 +578,67 @@ describe('c-bov-broker-change-history', () => {
         expect(element.shadowRoot.querySelector('.slds-modal')).toBeNull();
     });
 
+    it('VIEW: the popup subtitle uses the same "No Previous Broker" wording as the headline', async () => {
+        const element = createComponent();
+
+        // A long note on an APPOINTMENT — the one row shape where the subtitle has to compose a
+        // fallback. The two fallbacks live in different methods (`historyRows` and `openNote`),
+        // so changing one and not the other is a live risk and shows up only here.
+        getHistory.emit([
+            { ...APPOINTMENT_ONLY[0], notes: LONG_NOTE }
+        ]);
+        await Promise.resolve();
+
+        rows(element)[0].querySelector('.bbc-notes-view').click();
+        await Promise.resolve();
+
+        expect(
+            element.shadowRoot.querySelector('.bbc-note-sub').textContent
+        ).toBe('No Previous Broker → Marcus & Millichap');
+    });
+
     // ─────────────────────────────────────────────────────────────────────────
-    // Narrow-column anti-regression pins (2026-08-21)
+    // Structural / stylesheet anti-regression pins
     // ─────────────────────────────────────────────────────────────────────────
 
-    // T-NARROW — the direct pin. A test that merely renders would not catch a revert to the
-    // two-column row; this does, in four lines.
-    it('T-NARROW: renders a labelled tile list, no table and no scroll wrapper', async () => {
+    it('🔴 T-TIMELINE: a semantic list of entries, each with a decorative dot-and-line rail', async () => {
         const element = createComponent();
 
         getHistory.emit(HISTORY);
         await Promise.resolve();
 
-        expect(element.shadowRoot.querySelector('table')).toBeNull();
-        // `.bbc-right` was the right-aligned second column of the old flex row, and
-        // `.lv-scroll` is this repo's retired horizontal-overflow wrapper.
-        expect(element.shadowRoot.querySelector('.bbc-right')).toBeNull();
-        expect(element.shadowRoot.querySelector('.lv-scroll')).toBeNull();
-
-        const list = element.shadowRoot.querySelector('.bbc-list');
+        const list = element.shadowRoot.querySelector('ul.bbc-timeline');
         expect(list).not.toBeNull();
         // role="list" is NOT redundant: `list-style: none` makes WebKit drop the implicit list
         // role, and aria-label is only exposed on an element whose role supports naming. axe has
         // no rule for it, so `is accessible with rows` passing is not evidence against it.
         expect(list.getAttribute('role')).toBe('list');
         expect(list.getAttribute('aria-label')).toBe('Broker changes');
-        expect(list.querySelectorAll('li').length).toBe(2);
+
+        // The entries are real <li>s — a stack of divs would leave a screen-reader user with no
+        // count and no "item 1 of 2".
+        const items = list.querySelectorAll('li.bbc-entry');
+        expect(items.length).toBe(2);
+
+        items.forEach((li) => {
+            const rail = li.querySelector('.bbc-rail');
+            expect(rail).not.toBeNull();
+            // 🔴 THE RAIL IS DECORATION AND MUST SAY SO. Two empty spans announced per entry is
+            // noise, and neither carries information the three text lines do not.
+            expect(rail.getAttribute('aria-hidden')).toBe('true');
+            expect(rail.querySelector('.bbc-dot')).not.toBeNull();
+            expect(rail.querySelector('.bbc-track')).not.toBeNull();
+        });
+
+        // The shapes this replaced, named outright so a revert is caught even if class names are
+        // kept: `.bbc-right` was the right-aligned second column of the 2026-08-20 flex row,
+        // `.lv-scroll` is this repo's retired horizontal-overflow wrapper, and the dt/dd pairs
+        // were the 2026-08-21 tile.
+        expect(element.shadowRoot.querySelector('table')).toBeNull();
+        expect(element.shadowRoot.querySelector('.bbc-right')).toBeNull();
+        expect(element.shadowRoot.querySelector('.lv-scroll')).toBeNull();
+        expect(element.shadowRoot.querySelector('dl')).toBeNull();
+        expect(element.shadowRoot.querySelector('dt')).toBeNull();
     });
 
     // T-CSS — the stylesheet pin, deliberately a SOURCE-TEXT assertion rather than a
@@ -472,11 +652,12 @@ describe('c-bov-broker-change-history', () => {
         expect(CSS_SOURCE).not.toMatch(/overflow(-x)?\s*:\s*(auto|scroll)/);
 
         // No fixed pixel width on content. `min-width` / `max-width` are not matched (the char
-        // before "width" is a hyphen, not a boundary).
+        // before "width" is a hyphen, not a boundary). A hook fallback such as
+        // `width: var(--slds-g-sizing-border-1, 1px)` is likewise not matched — the value starts
+        // with `var`, not a digit — which is deliberate: the rail's hairline is a token.
         expect(CSS_SOURCE).not.toMatch(/(^|[\s;{])width\s*:\s*\d+px/);
 
-        // The old two-column row was held apart by this. Named outright so a revert is caught
-        // even if the class names are kept.
+        // The 2026-08-20 two-column row was held apart by this.
         expect(CSS_SOURCE).not.toMatch(/justify-content\s*:\s*space-between/);
 
         // ⚠ `nowrap` IS ALLOWED IN EXACTLY ONE PLACE — the long-note preview clip, whose full
@@ -487,24 +668,79 @@ describe('c-bov-broker-change-history', () => {
             /\.bbc-notes--clip\s+\.bbc-notes-txt\s*\{[^}]*white-space\s*:\s*nowrap/
         );
 
+        // 🔴 THE TIMELINE IS SINGLE-COLUMN. A connecting line down the left is meaningless if the
+        // entries it joins sit side by side, so the `repeat(auto-fill, minmax(...))` tile grid
+        // that preceded it must not come back.
+        expect(CSS_SOURCE).not.toMatch(/repeat\(\s*auto-fill/);
+
         // --- REQUIRED, and every one SELECTOR-ANCHORED ----------------------
         // An unanchored /min-width:\s*0/ passes while ANY ONE of the many occurrences survives.
-        // The LOAD-BEARING one is on the grid item.
-        expect(CSS_SOURCE).toMatch(/\.bbc-tile\s*\{[^}]*min-width\s*:\s*0/);
+        // The LOAD-BEARING one is the grid item holding all the text, beside the rail.
+        expect(CSS_SOURCE).toMatch(/\.bbc-body\s*\{[^}]*min-width\s*:\s*0/);
 
-        // overflow-wrap must be on :host, not .bbc-tile — that is what makes it reach the
-        // full-note popup and the two centred states, not just the tiles.
+        // overflow-wrap must be on :host, not on the entry — that is what makes it reach the
+        // full-note popup and the two centred states, not just the timeline.
         expect(CSS_SOURCE).toMatch(/:host\s*\{[^}]*overflow-wrap\s*:\s*anywhere/);
 
-        // The grid minimum. A bare `minmax(18rem, 1fr)` bursts any container narrower than
-        // 288px — invisible at desktop width, and the ONLY place it shows is the sidebar this
-        // rework exists for.
-        expect(CSS_SOURCE).toMatch(/minmax\(\s*min\(\s*18rem\s*,\s*100%\s*\)/);
-
-        // The swap must WRAP. At 340px "No previous broker → Marcus & Millichap" legitimately
+        // The headline must WRAP. At 340px "No Previous Broker → Marcus & Millichap" legitimately
         // needs two lines, and a firm name clipped to an ellipsis is worse than a wrapped one —
-        // the firm is the fact the whole tile exists to record.
+        // the firm is the fact the whole entry exists to record.
         expect(CSS_SOURCE).toMatch(/\.bbc-swap\s*\{[^}]*flex-wrap\s*:\s*wrap/);
+
+        // 🔴 AND IT MUST HAVE A GAP. The template compiler discards the whitespace-only text
+        // nodes between the headline's spans, so with no gap the card renders
+        // "JLL→Cushman & Wakefield". This is the only thing standing between the design and that.
+        expect(CSS_SOURCE).toMatch(
+            /\.bbc-swap\s*\{[^}]*gap\s*:\s*var\(--slds-g-spacing-/
+        );
+
+        // The rail's line must reach the next dot on its own, without anyone measuring an entry.
+        expect(CSS_SOURCE).toMatch(/\.bbc-track\s*\{[^}]*flex\s*:\s*1\s+1\s+auto/);
+        // ...and must STOP at the last dot rather than trailing off into the card's padding.
+        expect(CSS_SOURCE).toMatch(
+            /\.bbc-entry:last-child\s+\.bbc-track\s*\{[^}]*display\s*:\s*none/
+        );
+        // The dot is a circle by token, not by a hand-rolled radius.
+        expect(CSS_SOURCE).toMatch(
+            /\.bbc-dot\s*\{[^}]*border-radius\s*:\s*var\(--slds-g-radius-border-circle/
+        );
+    });
+
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+    // 🔴 T-TOKENS — LIGHT *AND* DARK.
+    //
+    // The card has to be legible in both themes. Every SLDS 2 colour hook used here resolves to a
+    // `light-dark(...)` pair in the dark-capable theme; a literal hex written straight into a
+    // declaration resolves to ONE colour in both, which is how a dot or a connecting line ends up
+    // invisible on a dark surface. jsdom cannot render either theme, and axe's colour-contrast
+    // rule is inert in jsdom, so `toBeAccessible()` will never catch it — this source-text pin is
+    // the only automated check there is.
+    //
+    // The technique: blank out every `var(--…)` INCLUDING ITS FALLBACK, then look for what is
+    // left. A hex surviving that is a hex nothing can re-theme. The SLDS linter is a separate
+    // command a reviewer can forget to run; this one runs with the suite.
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+
+    it('🔴 T-TOKENS: no colour is hard-coded outside a design-token fallback', () => {
+        const withoutTokens = CSS_SOURCE.replace(/var\(\s*--[^()]*\)/g, 'TOKEN');
+
+        expect(withoutTokens).not.toMatch(/#[0-9a-fA-F]{3}\b/);
+        expect(withoutTokens).not.toMatch(/rgba?\(/);
+        expect(withoutTokens).not.toMatch(/hsla?\(/);
+
+        // Guard the guard: the blanking regex must actually have found tokens to blank, or the
+        // three assertions above are satisfied by an empty search space.
+        expect((CSS_SOURCE.match(/var\(\s*--slds-/g) || []).length).toBeGreaterThan(20);
+
+        // 🔴 THE TWO NEW ELEMENTS SPECIFICALLY, ANCHORED. The dot and the line are the parts of
+        // this design with no text fallback: if they resolve to nothing, or to white on white,
+        // the timeline simply is not there and no other assertion in this file notices.
+        expect(CSS_SOURCE).toMatch(
+            /\.bbc-dot\s*\{[^}]*background\s*:\s*var\(--slds-g-color-/
+        );
+        expect(CSS_SOURCE).toMatch(
+            /\.bbc-track\s*\{[^}]*background\s*:\s*var\(--slds-g-color-/
+        );
     });
 
     it('is accessible with rows', async () => {

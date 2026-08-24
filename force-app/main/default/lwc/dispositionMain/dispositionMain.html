@@ -6,6 +6,35 @@
         </div>
     </template>
     <template if:true={isBovOutreach}>
+        <!--
+          ═══════════════════════════════════════════════════════════════════════════════
+          🔴 THE SAME BUNDLE, TWICE, DELIBERATELY (2026-08-24).
+          ═══════════════════════════════════════════════════════════════════════════════
+          The tag below is the "Preferred Broker" card; the tag after it is the BOV
+          Comparison Matrix and is BYTE-IDENTICAL to what has always been here. Order is
+          the requirement: preferred ABOVE the matrix.
+
+          ⚠ NOT A WRAPPER BUNDLE AND NOT A FlexiPage COMPONENT. `c/bovComparisonMatrix`
+          is `isExposed=false` with no `targetConfigs` — it is not placeable in App
+          Builder and never was — so a second instance is a second TAG here, which is
+          also the only place that can guarantee the two cards render in this order. A
+          wrapper bundle would have had to duplicate that component's column set, its
+          `getSubmissions` wire and its un-destructured wire-result invariant.
+
+          🔴 THE PREFERRED CARD GATES ITSELF. There is no `if:true` around it: it renders
+          nothing at all when the disposition has no preferred broker, and it knows that
+          from the BOV rows it already holds. Gating it HERE would mean this component
+          reading BOV submissions it otherwise has no reason to know about.
+
+          ⚠ BOTH TAGS WIRE THE SAME APEX METHOD WITH THE SAME PARAMETER, so LDS serves
+          them from ONE cache entry — this is not a second server round trip — and
+          `refreshApex` from either instance re-provisions both.
+        -->
+        <c-bov-comparison-matrix
+            record-id={recordId}
+            preferred-only
+            hide-actions
+        ></c-bov-comparison-matrix>
         <c-bov-comparison-matrix record-id={recordId}></c-bov-comparison-matrix>
     </template>
     <template if:true={isActiveListing}>

@@ -1250,6 +1250,15 @@
         formula conversion harder: the day it resumes, this grant needs the same true -> false
         flip Item 2 already describes.
     -->
+    <!--
+        🔴 RE-APPLIED 2026-08-22 (manifest/bov-score-formula-conversion/, Step 3). The REVERTED
+        paragraph immediately above described the formula conversion as "CANCELLED FOR NOW". It has
+        since resumed and completed - BOV_Score__c is now a formula field, and a formula field
+        cannot carry editable=true (hard deploy error, same reasoning Item 2 originally gave).
+        editable is flipped back to FALSE on this field, matching DPEG_Disposition_View, which never
+        changed. lwc/bovAddResponseModal no longer renders this field at all (a formula field cannot
+        be an editable input, not merely one this persona lacks write on).
+    -->
     <customPermissions>
         <enabled>true</enabled>
         <name>Disposition_Deal_Actions</name>
@@ -1261,7 +1270,7 @@
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
-        <editable>true</editable>
+        <editable>false</editable>
         <field>BOV_Submission__c.BOV_Score__c</field>
         <readable>true</readable>
     </fieldPermissions>
@@ -1328,6 +1337,37 @@
     <fieldPermissions>
         <editable>true</editable>
         <field>BOV_Submission__c.Broker__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!--
+        ADDED 2026-08-24 (agent-output/bov-autoselect-preferred-brokers.md, §5 A3). Granted at the
+        TAIL of the BOV_Submission__c run, next to Broker__c, following this file's convention of
+        appending later additions rather than reflowing the alphabetical block.
+
+        Is_Preferred_Broker__c: readable + editable. Written by the Add Preferred Broker action
+        (lwc/bovAddResponseModal) via lightning-record-edit-form, which FLS-checks every key in its
+        payload INCLUDING programmatic ones and drops a non-editable field SILENTLY with a success
+        toast — so this grant is a hard prerequisite for the action to work at all, not polish.
+
+        Is_Manually_Appointed__c: readable only, editable=false. This is a SYSTEM field, the
+        permanent leg of the auto-selection lock predicate (see the field's own XML comment). A
+        user who could hand-edit it could un-lock a broker the principals already decided on — same
+        reasoning as Disposition_Offer__c.Is_Selected__c and BOV_Submission__c.Approval_Status__c,
+        both read-only in both disposition permission sets for the identical reason.
+
+        Neither field's Metadata-API deploy grants any FLS by itself; both must land before the
+        modal (Is_Preferred_Broker__c) or the auto-selection lock query (both fields, WITH
+        SYSTEM_MODE, so this grant is not strictly required for the read but is granted anyway for
+        UI/report visibility parity with every other BOV_Submission__c field in this set).
+    -->
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>BOV_Submission__c.Is_Preferred_Broker__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>BOV_Submission__c.Is_Manually_Appointed__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -1873,6 +1913,20 @@
         <readable>true</readable>
     </fieldPermissions>
     <!--
+        ADDED 2026-08-24 - NDA__c.Tracking_Status__c, the four-step display collapse of
+        Status__c (see that field's own comment). READ ONLY - editable is FALSE and must stay
+        FALSE, this is a formula field and cannot be written to; only readable grants are
+        meaningful here. Granted on this set and on DPEG_Disposition_View, matching this file's
+        convention of granting NDA__c FLS wherever Status__c itself is granted. A Metadata API
+        deployed field carries NO FLS for anyone, System Administrator included, so without this
+        grant the field renders blank and any SOQL selecting it reports "No such column".
+    -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>NDA__c.Tracking_Status__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!--
         ADDED 2026-08-20 - Workstream D6.1 (buyer activity timeline, disposition-tranche-2
         -requirements.md §3). NDA__c.Buyer__c and NDA__c.Materials_Released_Date__c: readable
         AND editable. This is the analyst Edit persona; Materials_Released_Date__c is
@@ -2093,6 +2147,73 @@
         <field>BOV_Broker_Change__c.Logged_By__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!--
+        ADDED 2026-08-24. Release_Materials_Response__c, appended at the tail of this
+        fieldPermissions run, following this file's convention of appending new objects rather
+        than reflowing the alphabetical block. All five fields read+edit - the object is
+        hand-entered (no Apex writer), same shape NDA__c's fields take in this file, unlike the
+        read-only grants Counter_Offer__c and BOV_Broker_Change__c get because Apex is their
+        only writer. This block and the matching objectPermissions block below, the object,
+        its fields, and the layout must land together.
+    -->
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Release_Materials_Response__c.Method__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Release_Materials_Response__c.Broker__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Release_Materials_Response__c.Notes__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Release_Materials_Response__c.Disposition__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Release_Materials_Response__c.Entry_DateTime__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!--
+        ADDED 2026-08-24 (NDA-stage Details redesign). Five formula fields mirroring the
+        primary NDA's own fields onto Disposition__c - see NDA_Broker__c.field-meta.xml for the
+        full reasoning. Read-only in both disposition permission sets: a formula field cannot
+        carry editable=true (hard deploy error, same reasoning already documented against
+        BOV_Score__c above). Must land with Disposition_Record_Page.flexipage-meta.xml, which
+        is the only place these fields are surfaced.
+    -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Disposition__c.NDA_Broker__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Disposition__c.NDA_Status__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Disposition__c.NDA_Date_Sent__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Disposition__c.NDA_Date_Signed__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Disposition__c.NDA_Expiry_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <hasActivationRequired>false</hasActivationRequired>
     <label>DPEG Disposition Edit</label>
     <objectPermissions>
@@ -2192,6 +2313,23 @@
         <allowRead>true</allowRead>
         <modifyAllRecords>false</modifyAllRecords>
         <object>BOV_Broker_Change__c</object>
+        <viewAllRecords>true</viewAllRecords>
+    </objectPermissions>
+    <!--
+        ADDED 2026-08-24. Release_Materials_Response__c. allowCreate/allowEdit=true (unlike
+        Counter_Offer__c/BOV_Broker_Change__c immediately above, which are Apex-only-written) -
+        this object is hand-entered, matching NDA__c's grant shape. viewAllRecords=true,
+        matching Counter_Offer__c, so no sharing rule is needed (see the object's own XML
+        comment) - this object has no record types, so NDA__c's criteria-rule complexity does
+        not apply.
+    -->
+    <objectPermissions>
+        <allowCreate>true</allowCreate>
+        <allowDelete>false</allowDelete>
+        <allowEdit>true</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>false</modifyAllRecords>
+        <object>Release_Materials_Response__c</object>
         <viewAllRecords>true</viewAllRecords>
     </objectPermissions>
     <recordTypeVisibilities>

@@ -1,0 +1,430 @@
+BOV_Score__c Number -> Formula conversion — STEP 3 RUNBOOK (RECREATE + RESTORE)
+================================================================================
+STATUS: EDITS APPLIED IN THE WORKING TREE, 2026-08-22. Step 1 deployed cleanly
+(4/4 components, 37/37 tests) and the manual Erase (3.0 below) was confirmed
+complete by the coordinator before this runbook was executed. Every section
+below (3.1–3.6) has been carried out; this file is kept as the record of what
+was done and why, not as a to-do list. The deploy itself has NOT happened —
+see manifest/bov-score-formula-conversion/step3-package.xml's header for the
+dry-run/deploy command; the user deploys, this repo does not.
+
+Two deviations from the ORIGINAL plan below, both resolved rather than left
+open (see step3-package.xml's header for the short version):
+  - BovController.BovRow.bovScore was widened Integer -> Decimal (3.2's
+    caveat asked this be flagged; it has been resolved, not left pending —
+    a truncating Integer would have silently dropped BOV_Score__c's 2
+    decimal places, e.g. 82.95 rendering as 82). BovControllerTest and
+    lwc/bovComparisonMatrix (+ its Jest test) were updated to match.
+  - The two restored premise assertions in BovSubmissionSelectorTest were
+    NOT restored with their original 2026-08-21 wording. TestDataFactory's
+    createDisposition/createDispositions were re-checked this session and
+    confirmed to still NOT set Asking_Price__c, so the null-score premise
+    still holds — but the restored comments now say so explicitly (fixture
+    fact) instead of implying it's because "nothing writes it" (a stale
+    reason once the field became a formula).
+
+Hand-verified expectations to check after this deploy (query BOV_Submission__c
+for these two records and confirm BOV_Score__c):
+  BOV-0015 (BOV_Amount__c 1,500,000; Commission_Rate__c 2; Days_To_Market__c 20;
+            parent Disposition__r.Asking_Price__c 2,000,000)  -> 68.81
+  BOV-0017 (BOV_Amount__c 200,000; Commission_Rate__c 2; Days_To_Market__c 15;
+            parent Disposition__r.Asking_Price__c 200,000)    -> 82.95
+(Hand re-derived and confirmed against the formula in this session — see
+package.xml's header in this same directory for the arithmetic.)
+
+--------------------------------------------------------------------------------
+STEP 3.0 — THE MANUAL STEP (do this in the Salesforce UI, not via CLI)
+--------------------------------------------------------------------------------
+1. Confirm Step 1 has already been deployed (BOV_Score__c must be soft-deleted,
+   i.e. absent from a live describe of BOV_Submission__c, before you proceed).
+2. Setup -> Object Manager -> BOV Submission -> Fields & Relationships ->
+   Deleted Fields -> find "BOV_Score__c" -> Erase.
+3. Confirm the Erase actually completed by RE-READING the Deleted Fields list
+   (navigate away and back, or refresh) and checking BOV_Score__c is no longer
+   present in it at all — not by the absence of an error banner, which is not
+   reliable proof by itself. If it is still listed (even greyed out), the
+   platform has not finished the async purge yet; wait and re-check the list
+   again before proceeding. Do NOT deploy the recreate field while it still
+   appears in Deleted Fields — field creation under an API name still occupied
+   by a Recycle-Bin entry fails.
+
+--------------------------------------------------------------------------------
+STEP 3.1 — COPY THE PREPARED FIELD FILE INTO PLACE
+--------------------------------------------------------------------------------
+Copy (do not hand-retype — this file is already formula-escaped and precision/
+scale-checked):
+
+  FROM: manifest/bov-score-formula-conversion/step3-recreate/objects/BOV_Submission__c/fields/BOV_Score__c.field-meta.xml
+  TO:   force-app/main/default/objects/BOV_Submission__c/fields/BOV_Score__c.field-meta.xml
+
+That file already carries: formula (the exact IF/OR/MIN/MAX expression the
+user approved), formulaTreatBlanksAs=BlankAsBlank, precision=5, scale=2,
+type=Number, required=false, unique=false. Do not edit it further unless the
+user changes the approved formula.
+
+--------------------------------------------------------------------------------
+STEP 3.2 — RESTORE THE 3 APEX FILES (reverse Step 1's temporary edits)
+--------------------------------------------------------------------------------
+Every edit Step 1 made is marked "🔴 TEMPORARY — restore in Step 3" inline —
+search each of the 3 files below for that exact string and you will find every
+site that needs restoring. The blocks are also reproduced here so the restore
+is copy-paste mechanical.
+
+  ── force-app/main/default/classes/BovSubmissionSelector.cls ──
+
+  (a) selectByDispositionId — replace the whole method body with:
+
+    public static List<BOV_Submission__c> selectByDispositionId(Id dispositionId) {
+        return [
+            SELECT Id, Name, Broker_Firm__c, Contact_Name__c, BOV_Amount__c,
+                   Commission_Rate__c, Days_To_Market__c, Hist_Success_Rate__c,
+                   Cap_Rate__c, BOV_Score__c, Submission_Status__c
+            FROM BOV_Submission__c
+            WHERE Disposition__c = :dispositionId
+            WITH USER_MODE
+            ORDER BY BOV_Score__c DESC NULLS LAST, CreatedDate ASC, Id ASC
+        ];
+    }
+
+  (removes the "🔴 TEMPORARY" comment block above it entirely, restores
+  "BOV_Score__c," to the SELECT list, and restores "BOV_Score__c DESC NULLS
+  LAST, " to the front of the ORDER BY.)
+
+  (b) selectSelectedByDispositionId — replace the whole method body with:
+
+    public static List<BOV_Submission__c> selectSelectedByDispositionId(Id dispositionId) {
+        if (dispositionId == null) {
+            return new List<BOV_Submission__c>();
+        }
+        return [
+            SELECT Id, Broker_Firm__c, Contact_Name__c, Submission_Status__c
+            FROM BOV_Submission__c
+            WHERE Disposition__c = :dispositionId AND Submission_Status__c = :STATUS_SELECTED
+            WITH USER_MODE
+            ORDER BY BOV_Score__c DESC NULLS LAST, CreatedDate ASC, Id ASC
+        ];
+    }
+
+  (c) selectStatusesByDispositionId — replace the whole method body with:
+
+    public static List<BOV_Submission__c> selectStatusesByDispositionId(Id dispositionId) {
+        if (dispositionId == null) {
+            return new List<BOV_Submission__c>();
+        }
+        return [
+            SELECT Id, Disposition__c, Broker__c, Broker_Firm__c, Submission_Status__c,
+                   Approval_Status__c
+            FROM BOV_Submission__c
+            WHERE Disposition__c = :dispositionId
+            WITH SYSTEM_MODE
+            ORDER BY BOV_Score__c DESC NULLS LAST, CreatedDate ASC, Id ASC
+        ];
+    }
+
+  ⚠ Do not blanket `git checkout HEAD~1` this file to "undo" Step 1 — the file
+  also carries this session's class-header prose about the formula conversion
+  (kept), and a real `git log` may have landed unrelated concurrent edits to
+  other methods in this class in the interim (this repo has measured
+  concurrent-session drift on shared files before). Apply the 3 surgical
+  restores above, nothing else.
+
+  ── force-app/main/default/classes/BovController.cls ──
+
+  Replace:
+                r.capRate = s.Cap_Rate__c;
+                // 🔴 TEMPORARY — restore in Step 3. ... (comment block)
+                r.bovScore = null;
+                r.status = s.Submission_Status__c;
+  With:
+                r.capRate = s.Cap_Rate__c;
+                r.bovScore = s.BOV_Score__c != null ? s.BOV_Score__c.intValue() : null;
+                r.status = s.Submission_Status__c;
+
+  ⚠ BOV_Score__c precision=5 scale=2 means a non-null value can carry two
+  decimal places (e.g. 68.81). `.intValue()` TRUNCATES that to 68. Confirm with
+  the user whether BovRow.bovScore (currently `Integer`) should become a
+  `Decimal`/`Double` so the matrix displays 68.81 rather than 68 — this runbook
+  restores the PRE-Step-1 signature verbatim (Integer, truncating) because that
+  is what was reverted; widening the type is a separate, explicit decision the
+  design step approved the formula for but did not approve a DTO type change
+  for. Flag this to the user before restoring blindly if fractional precision
+  in the UI matters.
+
+  ── force-app/main/default/classes/BovSubmissionSelectorTest.cls ──
+
+  (a) In selectByDispositionId_populatesEverySelectedField, replace the
+      "🔴 TEMPORARY — restore in Step 3" comment block (right after the
+      Cap_Rate__c assertion) with:
+
+        Assert.isNull(s.BOV_Score__c,
+            'BOV_Score__c should be selected — and null, because nothing writes it and the '
+            + 'formula that will replace it returns null with no asking price on the parent');
+
+      ⚠ THIS ASSERTION IS NOW STALE THE MOMENT THE FORMULA HAS A REAL ASKING
+      PRICE TO WORK WITH. The @testSetup Disposition this test reads has no
+      Asking_Price__c set (unless the concurrent Disposition-module wave has
+      changed that default), so BOV_Score__c is still expected null here. If
+      Asking_Price__c now defaults to a non-null value in TestDataFactory,
+      this assertion will need a real expected score instead of null — check
+      TestDataFactory.createDisposition's current defaults before restoring
+      this line unchanged.
+
+  (b) In selectByDispositionId_tiedScores_ordersOldestFirstDeterministically,
+      replace the "🔴 TEMPORARY — restore in Step 3" comment block with:
+
+        Assert.isNull(result[0].BOV_Score__c, 'PREMISE — every fixture score ties at null');
+        Assert.isNull(result[1].BOV_Score__c, 'PREMISE — every fixture score ties at null');
+        Assert.isNull(result[2].BOV_Score__c, 'PREMISE — every fixture score ties at null');
+
+      Same caveat as (a): this premise only holds while the @testSetup
+      Disposition has no Asking_Price__c. If that has changed, this whole test
+      needs re-deriving (it exists to prove the CreatedDate/Id tie-break, which
+      only bites when every score genuinely ties at null).
+
+  ── manifest/bov-score-formula-conversion/ deferred coverage (design debt) ──
+  BovSubmissionSelectorTest.cls's class header (the "🔴 DEFERRED COVERAGE"
+  block) lists 4 owed tests once Asking_Price__c and the formula both exist:
+    1. a test giving one Disposition an asking price + two submissions with
+       different BOV_Amount__c, asserting the higher-valuing broker sorts FIRST;
+    2. a test mixing a scored and an unscored Disposition's submissions,
+       asserting nulls fall LAST;
+    3. the derived VALUE itself pinned against BOV-0015 / BOV-0017's hand-
+       verified numbers above (68.81 / 82.95) — the strongest test this wave
+       can add, and the one that actually exercises the formula rather than
+       just its presence in the SELECT;
+    4. BovControllerTest's non-null `.intValue()` branch, unreachable since
+       Step 1 — restore or replace it once bovScore's type question above is
+       settled.
+  These are NOT included in this runbook's mechanical restore — they are new
+  tests, not reverts, and belong in their own reviewed change once the formula
+  is live and the bovScore type question is settled.
+
+--------------------------------------------------------------------------------
+STEP 3.3 — LAYOUT: behavior Edit -> Readonly
+--------------------------------------------------------------------------------
+File: force-app/main/default/layouts/BOV_Submission__c-BOV Submission Layout.layout-meta.xml
+(⚠ space in the filename — sf CLI crashes on this path from Git Bash on this
+machine; validate/deploy it via PowerShell, not Bash. See this repo's
+salesforce-admin memory note on the subject if unsure of the exact syntax.)
+
+(a) The layoutItem itself — replace:
+
+            <layoutItems>
+                <behavior>Edit</behavior>
+                <field>BOV_Score__c</field>
+            </layoutItems>
+
+    with:
+
+            <layoutItems>
+                <behavior>Readonly</behavior>
+                <field>BOV_Score__c</field>
+            </layoutItems>
+
+(b) The header's rule 4 sentence is now WRONG and must be corrected. Replace:
+
+         4. Submission_Status__c IS LEFT EDITABLE ON PURPOSE. It is the team's own pick, set by
+            hand or by BovSubmissionService.replaceSelectedBroker, and it is a different field from
+            Approval_Status__c: the trigger requires BOTH. BOV_Score__c is likewise left editable,
+            because nothing in Apex or Flow writes it, only reads it for the ORDER BY.
+
+    with (dated retraction, matching this file's own established pattern of
+    retracting in place rather than deleting):
+
+         4. Submission_Status__c IS LEFT EDITABLE ON PURPOSE. It is the team's own pick, set by
+            hand or by BovSubmissionService.replaceSelectedBroker, and it is a different field from
+            Approval_Status__c: the trigger requires BOTH.
+            🔴 RETRACTED 2026-08-22 (formula conversion completed). The sentence immediately above
+            used to continue "BOV_Score__c is likewise left editable, because nothing in Apex or
+            Flow writes it, only reads it for the ORDER BY." BOV_Score__c is now a FORMULA field
+            (recreated this wave — see manifest/bov-score-formula-conversion/), and rule 1 at the
+            top of this comment block already states the platform rule this triggers: a formula
+            carrying behavior=Edit fails the deploy outright. BOV_Score__c's layoutItem below is
+            now Readonly for that reason, same as Broker_Display__c / Property_Name__c /
+            Selected_Broker__c.
+
+--------------------------------------------------------------------------------
+STEP 3.4 — PERMISSION SETS: FLS back to editable=false
+--------------------------------------------------------------------------------
+File: force-app/main/default/permissionsets/DPEG_Disposition_Edit.permissionset-meta.xml
+
+(a) The fieldPermissions block — replace:
+
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>BOV_Submission__c.BOV_Score__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+
+    with:
+
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>BOV_Submission__c.BOV_Score__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+
+(b) Add a dated retraction to the existing comment block that already tells
+    this field's history in this file (search for "BOV_Submission__c.BOV_Score__c,
+    editable true -> false" and the "REVERTED 2026-08-21" paragraph directly
+    below it). Append, do not delete either paragraph:
+
+        🔴 RE-APPLIED 2026-08-22. The REVERTED paragraph immediately above described the
+        formula conversion as "CANCELLED FOR NOW". It has since resumed and completed
+        (manifest/bov-score-formula-conversion/) — BOV_Score__c is now a formula field, and a
+        formula field cannot carry editable=true (hard deploy error, same reasoning Item 2
+        originally gave). editable is flipped back to FALSE on this field, matching
+        DPEG_Disposition_View, which never changed.
+
+File: force-app/main/default/permissionsets/DPEG_Disposition_View.permissionset-meta.xml
+    NO CHANGE NEEDED — confirmed (this session, 2026-08-22) that this set already carries
+    editable=false / readable=true on BOV_Submission__c.BOV_Score__c and was never flipped.
+    Re-read it before deploying anyway to confirm no concurrent edit has changed that in the
+    interim (this repo has measured concurrent-session drift on shared permission-set files
+    before) — do not assume it is still true without re-reading.
+
+⚠ A PermissionSet deploy REPLACES ITS WHOLE fieldPermissions SET. Diff the
+file against HEAD immediately before deploying either permission set, not
+just against what this runbook describes — if the concurrent Disposition-
+module work has ALSO touched either file in the interim, your diff needs to
+carry BOTH sets of changes forward together, not silently drop one.
+
+--------------------------------------------------------------------------------
+STEP 3.5 — LWC bovAddResponseModal: remove the hand-entry input
+--------------------------------------------------------------------------------
+File: force-app/main/default/lwc/bovAddResponseModal/bovAddResponseModal.html
+
+Replace the entire block (comment + input-field) that currently reads:
+
+                    <!-- ═══════════════════════════════════════════════════════════════
+                         🔴 RETRACTED 2026-08-21 (later the same day). THE NOTE BELOW USED TO
+                         SAY `BOV_Score__c` IS DELIBERATELY ABSENT — DO NOT ADD IT BACK WITHOUT
+                         ASKING. ...
+                         [... full block through the closing "-->" and the
+                         <lightning-input-field class="bar-field bar-field-score" ... /> tag ...]
+
+with:
+
+                    <!-- ═══════════════════════════════════════════════════════════════
+                         🔴 RETRACTED 2026-08-22 (formula conversion completed). BOV_Score__c was
+                         hand-enterable on this form from 2026-08-21 while the formula conversion
+                         was deferred (see the two retracted paragraphs below, kept for context).
+                         It is now a FORMULA field (manifest/bov-score-formula-conversion/) and
+                         `lightning-record-edit-form` cannot render a formula field as an editable
+                         input at all — `lightning-input-field` on a non-updateable/formula field
+                         is a hard runtime error, not a soft no-op, so the field is REMOVED from
+                         this form rather than left in place with `disabled`. The score is still
+                         visible to the analyst — it now renders read-only wherever
+                         BovSubmissionSelector's queried rows are displayed (the comparison matrix),
+                         computed live from Disposition__r.Asking_Price__c, BOV_Amount__c,
+                         Commission_Rate__c and Days_To_Market__c, all of which ARE still on this
+                         form. There is nothing left to type.
+                         ═══════════════════════════════════════════════════════════════
+                         RETRACTED 2026-08-21 (later the same day), KEPT FOR CONTEXT: the note that
+                         used to sit here said `BOV_Score__c` is deliberately absent — do not add
+                         it back without asking. It was reinstated hand-enterable that same day at
+                         the user's explicit instruction, deferring the formula conversion.
+                         ORIGINAL NOTE, ALSO KEPT FOR CONTEXT: it was removed from `BOV Submission
+                         Layout` by hand in Setup on 2026-08-20 and this dialog exists to replace
+                         that screen, so reinstating it here would have silently overturned that
+                         decision. -->
+
+(i.e. delete the `<lightning-input-field class="bar-field bar-field-score"
+field-name="BOV_Score__c"></lightning-input-field>` element entirely — do not
+replace it with anything, there is nothing left to render for this field on a
+create form.)
+
+File: force-app/main/default/lwc/bovAddResponseModal/bovAddResponseModal.js
+
+The class-header paragraphs describing the field set need the same dated
+retraction. Two spots:
+  (a) "The layout's Information + BOV Terms sections give: ... BOV_Score__c."
+      -> drop BOV_Score__c from that list; it append a note that it moved to
+      the OMITTED list below, with the reason (formula, cannot be edited).
+  (b) The "OMITTED, WITH REASONS" bullet list already has a BOV_Score__c
+      bullet carrying two retracted paragraphs (2026-08-21) — append a third:
+
+        🔴 RE-RETRACTED 2026-08-22 (formula conversion completed). BOV_Score__c is
+        removed from this form again, this time permanently: it is now a FORMULA field
+        (manifest/bov-score-formula-conversion/) and `lightning-input-field` cannot
+        render a formula field as an editable input — a hard runtime error, not a
+        soft no-op. It joins the three formula fields (`Broker_Display__c`,
+        `Property_Name__c`, `Selected_Broker__c`) already excluded above for the
+        same reason.
+
+--------------------------------------------------------------------------------
+STEP 3.6 — JEST: bovAddResponseModal.test.js
+--------------------------------------------------------------------------------
+File: force-app/main/default/lwc/bovAddResponseModal/__tests__/bovAddResponseModal.test.js
+
+(a) T-FIELDS "renders every field..." — remove 'BOV_Score__c' from the
+    expected fieldNames array (it goes from 9 entries to 8; Hist_Success_Rate__c
+    is immediately followed by Submission_Status__c).
+
+(b) Delete the entire
+    "🔴 T-FIELDS: BOV_Score__c is rendered and OPTIONAL (2026-08-21, formula
+    conversion deferred)" test — it asserts a state (the field IS rendered)
+    that Step 3 makes false. Do not leave it commented out; it has no future
+    restore the way the Apex temporary markers do; this one is retired for
+    good along with the input it was testing.
+
+(c) Consider whether "🔴 T-FIELDS: the stamped / derived / withdrawn fields
+    are NOT offered" (the next test) should gain BOV_Score__c to its list of
+    excluded fields, alongside the other 3 formula fields it already checks
+    for — this makes the Jest suite the thing that would catch a future
+    regression if someone re-adds the input, the same protective role the two
+    retracted HTML/JS comments serve for a human reader.
+
+Jest is LOCAL-only on this project (never deploys, see this repo's
+salesforce-admin memory) — running it is a pre-flight sanity check, not a
+deploy gate. Run it before the real deploy anyway.
+
+--------------------------------------------------------------------------------
+STEP 3.7 — DEPLOY MANIFEST + COMMAND
+--------------------------------------------------------------------------------
+This half is CONSTRUCTIVE ONLY — recreating a field is an add, not a delete,
+so there is no destructiveChangesPost.xml companion for Step 3 the way there
+was for Step 1.
+
+manifest/bov-score-formula-conversion/step3-package.xml (already prepared in
+this directory) lists the exact 7 components this step touches:
+  CustomField      : BOV_Submission__c.BOV_Score__c
+  ApexClass        : BovController, BovSubmissionSelector, BovSubmissionSelectorTest
+  Layout           : BOV_Submission__c-BOV Submission Layout
+  PermissionSet    : DPEG_Disposition_Edit
+  LightningComponentBundle : bovAddResponseModal
+
+Deploy (only once every edit in 3.1–3.6 above is made and Jest is green):
+  sf project deploy start \
+    --manifest manifest/bov-score-formula-conversion/step3-package.xml \
+    --target-org usman-dpeg \
+    --test-level RunSpecifiedTests \
+    --tests BovSubmissionSelectorTest --tests BovControllerTest \
+    --wait 30
+
+Dry-run first (devops standing practice): add --dry-run to the same command.
+⚠ The Layout member's filename contains a space — if validating from this
+machine's Git Bash, this repo has a measured crash on space-containing
+--source-dir paths; --manifest mode has NOT been confirmed either way for
+this specific space issue, so if the dry-run errors with an unrecognized-
+command message rather than a real Salesforce validation error, retry via
+PowerShell before concluding the Layout content itself is broken.
+
+After deploy: query BOV-0015 and BOV-0017's BOV_Score__c and confirm 68.81 /
+82.95 per this file's header. Also spot-check one Disposition with a blank or
+zero Asking_Price__c and confirm its submissions' BOV_Score__c reads null
+(not 0, not an error) — that null-not-zero behaviour was an explicit user
+decision (see package.xml's header) and is the one thing a formula typo could
+silently invert into 0 without any test catching it if the deferred coverage
+in 3.2 is skipped.
+
+--------------------------------------------------------------------------------
+ROLLBACK
+--------------------------------------------------------------------------------
+If Step 3 deploys and something is wrong with the formula's live behaviour,
+the field is a formula with zero stored data, so there is nothing to back out
+data-wise — either fix the formula in a follow-up deploy of the same field
+file, or revert to Step 1's post-delete state (git revert this step's commit)
+and re-run Step 3 with a corrected formula once ready. There is no scenario
+in this wave where reverting loses real data: BOV_Score__c is null on every
+row today and a formula field never stores its own value.

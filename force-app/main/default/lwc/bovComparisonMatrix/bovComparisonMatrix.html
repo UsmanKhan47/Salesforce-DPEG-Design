@@ -1,54 +1,111 @@
+<!--
+  ══════════════════════════════════════════════════════════════════════════════
+  🔴 THIS TEMPLATE IS RENDERED TWICE ON THE SAME PAGE (2026-08-24).
+  ══════════════════════════════════════════════════════════════════════════════
+  `dispositionMain.html` mounts this bundle twice inside `if:true={isBovOutreach}`:
+  once with `preferred-only hide-actions` (the "Preferred Broker" card, ABOVE) and
+  once bare (the "BOV Comparison Matrix" card, BELOW). Both defaults are `false`,
+  so the second tag's behaviour is unchanged by construction — every branch added
+  for the preferred card is opt-in.
+
+  🔴 THE WHOLE CARD IS GATED ON `isVisible`. The preferred instance renders NOTHING
+  — not an empty card, not a header — when the disposition has no preferred broker.
+  That gate lives HERE rather than in `dispositionMain` because `dispositionMain`
+  has no BOV data of its own and gating it there would mean a second Apex read of
+  the same rows.
+  ══════════════════════════════════════════════════════════════════════════════
+-->
 <template>
-    <lightning-card icon-name="standard:contract">
-        <span slot="title">BOV Comparison Matrix ({count})</span>
+    <template lwc:if={isVisible}>
+        <lightning-card icon-name="standard:contract">
+            <!-- ⚠ THE TITLE IS A GETTER, NOT A LITERAL, because two instances of this
+                 template are on screen at once and two cards both reading "BOV
+                 Comparison Matrix (n)" would be unreadable. The preferred card's title
+                 is SINGULAR ("Preferred Broker") and carries NO count: exactly one
+                 preferred broker exists per disposition, so a count would only ever
+                 render "(1)". -->
+            <span slot="title">{cardTitle}</span>
 
-        <!-- Top-right actions. `slot="actions"` is lightning-card's own header
-             action region, so the buttons sit on the card header line rather
-             than pushing the table down. -->
-        <div slot="actions">
-            <lightning-button-group>
-                <lightning-button
-                    class="matrix-add"
-                    label="Add Broker Response"
-                    onclick={handleAddResponse}
-                ></lightning-button>
-                <!-- EXACTLY ONE of the next two renders, never both and never
-                     neither-when-there-are-rows: canSelectBroker is
-                     canReplaceBroker's negation, additionally gated on the
-                     matrix having at least one row. See the getters. -->
-                <template lwc:if={canSelectBroker}>
-                    <lightning-button
-                        class="matrix-select"
-                        label="Select Broker"
-                        onclick={handleSelectBroker}
-                    ></lightning-button>
-                </template>
-                <!-- Only rendered once a broker is Selected — there is nothing
-                     to replace before that. -->
-                <template lwc:if={canReplaceBroker}>
-                    <lightning-button
-                        class="matrix-replace"
-                        label="Replace Broker"
-                        onclick={handleReplaceBroker}
-                    ></lightning-button>
-                </template>
-            </lightning-button-group>
-        </div>
+            <!-- Top-right actions. `slot="actions"` is lightning-card's own header
+                 action region, so the buttons sit on the card header line rather
+                 than pushing the table down.
 
-        <template lwc:if={loadError}>
-            <div class="matrix-error" role="alert">{loadError}</div>
-        </template>
+                 🔴 THE WHOLE SLOT IS SUPPRESSED ON THE PREFERRED INSTANCE. Not each
+                 button individually — an empty `<div slot="actions">` still reserves
+                 the header's action region and still renders an empty
+                 `lightning-button-group`. `hideActions` removes the region itself. -->
+            <template lwc:if={showActions}>
+                <div slot="actions">
+                    <lightning-button-group>
+                        <lightning-button
+                            class="matrix-add"
+                            label="Add Broker Response"
+                            onclick={handleAddResponse}
+                        ></lightning-button>
+                        <!-- Only rendered once a broker is Selected — there is nothing
+                             to replace before that.
 
-        <c-list-datatable
-            key-field="id"
-            data={rows}
-            columns={columns}
-            column-widths-mode="auto"
-            hide-checkbox-column>
-        </c-list-datatable>
+                             🔴 RETRACTED 2026-08-24. A "Select Broker" button
+                             (`.matrix-select`, `canSelectBroker`) used to sit ABOVE this
+                             one, and the comment here used to read "EXACTLY ONE of the
+                             next two renders … canSelectBroker is canReplaceBroker's
+                             negation". IT IS GONE, deliberately and permanently: the
+                             first appointment is now made AUTOMATICALLY from
+                             `BOV_Score__c` by the server, so there is no first-appointment
+                             button to press. Replace Broker survives as the DELIBERATE
+                             HUMAN OVERRIDE and is the only client route into
+                             `BovSubmissionService.replaceSelectedBroker`. Do not reinstate
+                             a select button "for the empty case" — an empty case now
+                             resolves itself. -->
+                        <template lwc:if={canReplaceBroker}>
+                            <lightning-button
+                                class="matrix-replace"
+                                label="Replace Broker"
+                                onclick={handleReplaceBroker}
+                            ></lightning-button>
+                        </template>
+                        <!-- ⚠ HIDDEN ONCE ONE EXISTS, NOT DISABLED. Exactly one preferred
+                             broker is permitted per disposition (user decision,
+                             2026-08-24), and the flag has no server-side uniqueness
+                             guard — so the affordance is withdrawn rather than left on
+                             screen to be refused. -->
+                        <template lwc:if={canAddPreferredBroker}>
+                            <lightning-button
+                                class="matrix-add-preferred"
+                                label="Add Preferred Broker"
+                                onclick={handleAddPreferredBroker}
+                            ></lightning-button>
+                        </template>
+                    </lightning-button-group>
+                </div>
+            </template>
 
-        <div slot="footer" class="view-all-footer">
-            <a href={listUrl} onclick={viewAll}>View All</a>
-        </div>
-    </lightning-card>
+            <template lwc:if={loadError}>
+                <div class="matrix-error" role="alert">{loadError}</div>
+            </template>
+
+            <!-- ⚠ `columns` IS A GETTER, NOT THE MODULE CONSTANT. The preferred card
+                 drops the Status column: the pill is a CONSTANT on that card, so it
+                 costs a column's width to say nothing.
+                 🔴 THE CONSTANT FLIPPED ON 2026-08-24, THE DECISION DID NOT. This read
+                 "a preferred row is never Selected, so that pill would read Backup on
+                 every row forever". The user then decided a preferred broker IS the
+                 appointed broker, so it now reads SELECTED on every row forever.
+                 ⚠ Showing it would also put TWO green "Selected" pills on one page —
+                 one per card — for a disposition that has exactly ONE appointed
+                 broker, which reads as the duplicate-Selected defect the exclusivity
+                 guard exists to prevent. See PREFERRED_COLUMNS in the JS. -->
+            <c-list-datatable
+                key-field="id"
+                data={rows}
+                columns={columns}
+                column-widths-mode="auto"
+                hide-checkbox-column>
+            </c-list-datatable>
+
+            <div slot="footer" class="view-all-footer">
+                <a href={listUrl} onclick={viewAll}>View All</a>
+            </div>
+        </lightning-card>
+    </template>
 </template>

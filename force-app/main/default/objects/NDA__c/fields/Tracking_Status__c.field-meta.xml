@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY - a comment placed ABOVE
+        <CustomField> breaks `sf` deploy at source conversion with the misleading
+        "unable to find matching parent xml file" error.
+
+        ADDED 2026-08-24, alongside the Status__c value-set changes adding Prepare, Review and
+        Approved (see that field's own comment). PURPOSE: Status__c now carries up to nine
+        granular values across two record types, which is too fine-grained for a compact display
+        surface (a list view column, a dashboard tile, a kanban-style board). This field collapses
+        every Status__c value onto a four-step DISPLAY lifecycle: Not Sent, Sent, Signed, Declined.
+
+        NAMED Tracking_Status__c, NOT Status_Summary__c or NDA_Stage__c - '_Status__c' suffix per
+        ARCHITECTURE.md's status-field convention (a field expressing CURRENT STATE), and
+        'Tracking' distinguishes it from the master Status__c it derives from without implying a
+        Path-driving Stage__c (it drives no Path and gates nothing).
+
+        EVERY Status__c VALUE MUST MAP - a CASE with no fallback would render BLANK for any value
+        it does not name, which reads as a bug, not as "unmapped". The mapping:
+          - Prepare, Review, Approved, Not Sent, Pending  -> "Not Sent"  (document not yet sent)
+          - Sent                                          -> "Sent"
+          - Received                                      -> "Sent"     (see note below - DECISION,
+                                                                          not an accident)
+          - Signed                                        -> "Signed"
+          - Declined                                       -> "Declined"
+          - anything else (a future Status__c value added without updating this formula)
+                                                            -> "Not Sent" (explicit fallback, see
+                                                                           below)
+
+        Received -> "Sent" IS A DELIBERATE DECISION, STATED HERE PER THE TASK THAT ADDED THIS
+        FIELD, NOT AN OVERSIGHT. Received is Acquisition_NDA-only (the broker's NDA has arrived at
+        DPEG but is not yet DPEG's own signed copy going back out). On the four-step display scale
+        this reads closer to "the document is in motion / out" than to "not yet sent", so it maps
+        to Sent rather than Not Sent. This mirrors how Days_Out__c and the Acquisition_NDA record
+        type's own 2026-08-16 reorder already treat 'Sent' as the acquisition-side terminal/active
+        state - see that RecordType file's comment for the fuller reasoning on the acquisition
+        sequence shape.
+
+        FALLBACK IS "Not Sent", NOT "Signed" OR BLANK - fail-CLOSED by design, matching how
+        NDA_Signed_Rollup's own default branch treats any unrecognised Status__c value as
+        outstanding rather than complete (see that flow and Status__c's 2026-08-24 comment).
+        Reaching the fallback means a new Status__c value was added to the picklist without this
+        formula being updated to name it explicitly - that is a defect to fix (add the value to
+        the CASE), not a state this field is meant to represent long-term.
+
+        READ-ONLY BY CONSTRUCTION - a formula field cannot be edited directly, so FLS grants for
+        this field must never set <editable>true</editable> anywhere; only <readable>. Granted on
+        DPEG_Disposition_Edit and DPEG_Disposition_View (see those permission sets' own NDA__c
+        blocks) since this is a disposition-facing display field. A Metadata API deployed field
+        carries NO FLS for anyone, System Administrator included, so without those grants this
+        field renders blank and any SOQL selecting it reports "No such column".
+    -->
+    <fullName>Tracking_Status__c</fullName>
+    <description>Four-step display collapse of Status__c: Prepare/Review/Approved/Not Sent/Pending -&gt; Not Sent; Sent/Received -&gt; Sent (Received maps to Sent deliberately - see XML comment); Signed -&gt; Signed; Declined -&gt; Declined. Explicit fallback of &apos;Not Sent&apos; for any future Status__c value not yet named here. Read-only; derived from Status__c.</description>
+    <externalId>false</externalId>
+    <formula>CASE(
+  TEXT(Status__c),
+  &quot;Prepare&quot;, &quot;Not Sent&quot;,
+  &quot;Review&quot;, &quot;Not Sent&quot;,
+  &quot;Approved&quot;, &quot;Not Sent&quot;,
+  &quot;Not Sent&quot;, &quot;Not Sent&quot;,
+  &quot;Pending&quot;, &quot;Not Sent&quot;,
+  &quot;Sent&quot;, &quot;Sent&quot;,
+  &quot;Received&quot;, &quot;Sent&quot;,
+  &quot;Signed&quot;, &quot;Signed&quot;,
+  &quot;Declined&quot;, &quot;Declined&quot;,
+  &quot;Not Sent&quot;
+)</formula>
+    <inlineHelpText>Simplified display status derived from Status. Collapses the full lifecycle to Not Sent, Sent, Signed or Declined.</inlineHelpText>
+    <label>Tracking Status</label>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>

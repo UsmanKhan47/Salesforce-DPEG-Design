@@ -9,13 +9,31 @@
         <span slot="title">{cardTitle}</span>
 
         <!-- ═══════════════════════════════════════════════════════════════════════════════
-             DATA — one self-labelling TILE per recorded change.
+             DATA — A VERTICAL TIMELINE. ONE ENTRY PER RECORDED CHANGE.
              ═══════════════════════════════════════════════════════════════════════════════
-             🔴 DESIGNED FOR A ~340px SIDEBAR COLUMN. This used to be a two-column flex row
-             (swap + notes on the left, timestamp + reason + logger right-aligned on the
-             right) with `justify-content: space-between`, which collapses into a collision at
-             sidebar width. Each fact is now its own labelled dt/dd pair stacked down the tile,
-             the same shape c/competingBrokerSubmissions adopted for the same problem.
+             🔴 RESTYLED 2026-08-24 TO THE USER-SUPPLIED TIMELINE DESIGN. This was previously
+             a self-labelling dt/dd TILE (and before that a two-column flex row). The tile's
+             four <dt> labels — When / Reason / Logged by / Notes — are gone from the visible
+             markup and replaced by three lines per entry:
+                1. {outgoing} → {incoming}, both bold;
+                2. calendar icon · date-time · pipe · reason;
+                3. "Logged By:" · name.
+
+             🔴 WHAT REPLACED THE VISIBLE LABELS IS NOT NOTHING. Removing a <dt> removes the
+             accessible name of the value beside it, so each value that lost a visible label
+             carries an equivalent: the date-time's label is the calendar icon's
+             `alternative-text`, the reason's is a locally-defined `.bbc-sr-only` span (NOT the global
+             `slds-assistive-text` — that class lives in a document-level SLDS stylesheet, and
+             under NATIVE shadow DOM it would not reach into this component, leaving the word
+             "Reason" visible on screen; the local rule cannot fail that way).
+             The "Logged By:" label stayed visible because the design shows it. Do not delete
+             the assistive spans as "dead markup" — in a 340px sidebar a bare date and a bare
+             sentence are exactly as unidentifiable to a screen-reader user as they would be to
+             a sighted one without the icon.
+
+             ⚠ THE RAIL (dot + connecting line) IS PURELY DECORATIVE and is `aria-hidden`.
+             It carries no information the three text lines do not already carry, and an
+             announced empty <span> per entry is noise.
 
              ORDERING IS THE SERVER'S (Entry_DateTime__c DESC, Name DESC) and is not re-sorted
              here — see the component header.
@@ -32,33 +50,50 @@
              DANGLING `aria-describedby` IS WORSE THAN NONE — it names an element that does not
              exist, so do not leave the attribute behind if the paragraph ever goes again. -->
         <template lwc:if={hasRows}>
-            <ul class="bbc-list" role="list" aria-label="Broker changes">
+            <ul class="bbc-timeline" role="list" aria-label="Broker changes">
                 <template for:each={historyRows} for:item="row">
-                    <li key={row.id} class="bbc-item">
-                        <div class="bbc-tile">
-                            <!-- The swap reads left-to-right as "this became that". It WRAPS
-                                 rather than truncating: at 340px "No previous broker →
-                                 Marcus & Millichap" legitimately needs two lines, and a firm
-                                 name clipped to an ellipsis is worse than a wrapped one. -->
-                            <h3 class="bbc-swap">
+                    <li key={row.id} class="bbc-entry">
+                        <!-- Decorative only — see the note above. The dot marks the entry and
+                             the track joins it to the next one; the track is suppressed on the
+                             last entry in CSS so the line ends ON a dot rather than trailing
+                             off into the card's padding. -->
+                        <div class="bbc-rail" aria-hidden="true">
+                            <span class="bbc-dot"></span>
+                            <span class="bbc-track"></span>
+                        </div>
+
+                        <div class="bbc-body">
+                            <!-- The swap reads left-to-right as "this became that", BOTH FIRMS
+                                 BOLD (the outgoing firm is no longer struck through or greyed —
+                                 the supplied design gives them equal weight). It WRAPS rather
+                                 than truncating: at 340px "No Previous Broker → Marcus &
+                                 Millichap" legitimately needs two lines, and a firm name clipped
+                                 to an ellipsis is worse than a wrapped one.
+                                 ⚠ The arrow is a GLYPH, aria-hidden, with the relationship
+                                 spelled out in assistive text beside it — screen readers vary on
+                                 whether they announce "→" at all, and "JLL Cushman & Wakefield"
+                                 with no verb between them is not a broker change. -->
+                            <h3 class="bbc-swap slds-hyphenate">
                                 <span class="bbc-outgoing">{row.outgoing}</span>
-                                <lightning-icon
-                                    icon-name="utility:forward"
-                                    size="xx-small"
-                                    class="bbc-arrow"
-                                    alternative-text="replaced by"
-                                ></lightning-icon>
+                                <span class="bbc-arrow" aria-hidden="true">→</span>
+                                <span class="bbc-sr-only">replaced by</span>
                                 <span class="bbc-incoming">{row.incoming}</span>
                             </h3>
 
-                            <!-- dt/dd ONLY, in order and with no wrapper divs — axe's
-                                 `definition-list` rule is strict, so the two-track layout is
-                                 done entirely in CSS. A pair is OMITTED, never rendered with
-                                 an empty value: an absent reason and a blank reason look
+                            <!-- Line 2: when · | · why. The pipe is decorative and is rendered
+                                 ONLY when there is a reason to separate the date from — a
+                                 dangling "Aug 21, 2026, 10:09 PM |" is a visible promise of a
+                                 value that does not exist. Same principle as the omitted dt/dd
+                                 pairs this replaced: an absent reason and a blank reason look
                                  identical on screen and mean different things. -->
-                            <dl class="bbc-facts">
-                                <dt class="bbc-label">When</dt>
-                                <dd class="bbc-value bbc-mono">
+                            <p class="bbc-meta">
+                                <lightning-icon
+                                    icon-name="utility:event"
+                                    size="xx-small"
+                                    class="bbc-meta-icon"
+                                    alternative-text="Changed on"
+                                ></lightning-icon>
+                                <span class="bbc-when bbc-mono">
                                     <lightning-formatted-date-time
                                         value={row.entryDateTime}
                                         year="numeric"
@@ -67,39 +102,56 @@
                                         hour="2-digit"
                                         minute="2-digit"
                                     ></lightning-formatted-date-time>
-                                </dd>
-
+                                </span>
                                 <template lwc:if={row.hasReason}>
-                                    <dt class="bbc-label">Reason</dt>
-                                    <dd class="bbc-value bbc-reason">{row.reason}</dd>
+                                    <span class="bbc-sep" aria-hidden="true">|</span>
+                                    <span class="bbc-sr-only">Reason</span>
+                                    <span class="bbc-reason">{row.reason}</span>
                                 </template>
+                            </p>
 
-                                <template lwc:if={row.hasLoggedBy}>
-                                    <dt class="bbc-label">Logged by</dt>
-                                    <dd class="bbc-value bbc-loggedby">
-                                        {row.loggedBy}
-                                    </dd>
-                                </template>
+                            <!-- Line 3. The label is MUTED and VISIBLE, the name is normal
+                                 weight — per the supplied design, and the one label that did
+                                 not become assistive-only. -->
+                            <template lwc:if={row.hasLoggedBy}>
+                                <p class="bbc-logged">
+                                    <span class="bbc-logged-label">Logged By:</span>
+                                    <span class="bbc-loggedby">{row.loggedBy}</span>
+                                </p>
+                            </template>
 
-                                <template lwc:if={row.hasNotes}>
-                                    <dt class="bbc-label">Notes</dt>
-                                    <dd class={row.notesClass}>
-                                        <span class="bbc-notes-txt">
-                                            {row.notesPreview}
-                                        </span>
-                                        <template lwc:if={row.notesLong}>
-                                            <button
-                                                class="bbc-notes-view"
-                                                data-id={row.id}
-                                                onclick={openNote}
-                                                title="View full note"
-                                            >
-                                                View
-                                            </button>
-                                        </template>
-                                    </dd>
-                                </template>
-                            </dl>
+                            <!-- 🔴 THE NOTES AFFORDANCE IS DELIBERATELY RETAINED THOUGH THE
+                                 SUPPLIED DESIGN DOES NOT SHOW IT. Notes are captured by
+                                 c/bovReplaceBrokerModal and stored on Notes__c; this is the only
+                                 place in the application that reads them back. Dropping the line
+                                 to match a three-line mock would silently retire a working
+                                 feature and orphan the data.
+                                 It is surfaced as a FOURTH, quieter line: a note icon (which is
+                                 also the line's accessible name, since the "Notes" <dt> is gone)
+                                 + the same 60-character preview + the same View button, opening
+                                 the same modal. Behaviour is byte-for-byte what it was; only the
+                                 label mechanism changed. -->
+                            <template lwc:if={row.hasNotes}>
+                                <p class={row.notesClass}>
+                                    <lightning-icon
+                                        icon-name="utility:note"
+                                        size="xx-small"
+                                        class="bbc-meta-icon"
+                                        alternative-text="Notes"
+                                    ></lightning-icon>
+                                    <span class="bbc-notes-txt">{row.notesPreview}</span>
+                                    <template lwc:if={row.notesLong}>
+                                        <button
+                                            class="bbc-notes-view"
+                                            data-id={row.id}
+                                            onclick={openNote}
+                                            title="View full note"
+                                        >
+                                            View
+                                        </button>
+                                    </template>
+                                </p>
+                            </template>
                         </div>
                     </li>
                 </template>

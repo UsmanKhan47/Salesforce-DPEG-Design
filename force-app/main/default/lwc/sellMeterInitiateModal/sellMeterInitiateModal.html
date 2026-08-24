@@ -1,5 +1,13 @@
 <template>
-    <lightning-modal-header label="Initiate Disposition"></lightning-modal-header>
+    <!-- Header label retitled 2026-08-24 (user instruction): "Initiate Disposition" ->
+         "Decide to Sell - Approval". It names the APPROVAL this dialog submits into
+         (`Sale_Decision_Approval`) rather than the record it creates, which is what the
+         user is actually deciding. ⚠ The bundle's `masterLabel` still reads "Initiate
+         Disposition"; that string is invisible (isExposed=false, so it never reaches App
+         Builder) and was deliberately left alone. -->
+    <lightning-modal-header
+        label="Decide to Sell - Approval"
+    ></lightning-modal-header>
 
     <lightning-modal-body>
         <div class="smi-body slds-is-relative">
@@ -44,16 +52,36 @@
                 </template>
             </dl>
 
-            <lightning-radio-group
-                class="smi-radio slds-m-top_medium"
+            <!-- ═══════════════════════════════════════════════════════════════════════════
+                 SELL TYPE — A PICKLIST, NOT RADIO BUTTONS (user instruction, 2026-08-24).
+                 Replaced `<lightning-radio-group type="radio">` labelled "How is this
+                 property going to market?". Three things changed and nothing else did:
+                 the CONTROL (combobox), the FIELD LABEL ("Sell Type") and the OPTION
+                 LABELS (now hyphenated, "On-Market" / "Off-Market").
+
+                 🔴 THE VALUES DID NOT CHANGE AND MUST NOT. They are still the Disposition
+                 RECORD TYPE developer names — see `RECORD_TYPE_OPTIONS` in the JS, which
+                 holds the only copy. This control is still backed by the record type;
+                 there is deliberately NO `Sell_Type__c` field (settled user decision,
+                 2026-08-24), so the hyphen lives ONLY in the on-screen label.
+
+                 ⚠ `required` DRAWS THE ASTERISK; IT IS NOT THE GATE. lightning-combobox
+                 only enforces requiredness through reportValidity(), which nothing calls
+                 here. The mandatory behaviour the radio group had is preserved by
+                 `confirmDisabled` keeping "Send for Approval" disabled until a value is
+                 chosen — the same gate as before, unchanged. Both halves are pinned in
+                 the suite; removing either leaves a dialog that can submit with no
+                 record type and fail server-side.
+                 ═══════════════════════════════════════════════════════════════════════════ -->
+            <lightning-combobox
+                class="smi-sell-type slds-m-top_medium"
                 name="dispositionRecordType"
-                label="How is this property going to market?"
+                label="Sell Type"
                 options={recordTypeOptions}
                 value={recordType}
                 onchange={handleRecordTypeChange}
-                type="radio"
                 required
-            ></lightning-radio-group>
+            ></lightning-combobox>
 
             <template lwc:if={error}>
                 <div class="lv-error slds-text-color_error slds-m-top_small" role="alert">

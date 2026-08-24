@@ -48,6 +48,19 @@ public with sharing class BovController {
         @AuraEnabled public Decimal bovScore;
         @AuraEnabled public String status;
         @AuraEnabled public Boolean isSelected;
+
+        /**
+         * `BOV_Submission__c.Is_Preferred_Broker__c` (added 2026-08-24). Splits the ONE
+         * `getSubmissions` payload between `c/bovComparisonMatrix`'s two instances — the
+         * `preferredOnly` card above shows `isPreferred === true`, the ranked card below shows the
+         * rest — and keeps a preferred row out of the Replace Broker picker's options.
+         *
+         * ⚠ ONE WIRE, FILTERED CLIENT-SIDE, RATHER THAN A SECOND APEX METHOD. Zero extra SOQL, zero
+         * extra cache entries, and — the real reason — the two instances CANNOT disagree about the
+         * same broker's numbers, which is the identical contract that forced `brokerOptionLabel`
+         * out of that component and into `c/utils`.
+         */
+        @AuraEnabled public Boolean isPreferred;
     }
 
     public class OutreachSummary {
@@ -113,6 +126,11 @@ public with sharing class BovController {
                 r.bovScore = s.BOV_Score__c;
                 r.status = s.Submission_Status__c;
                 r.isSelected = 'Selected'.equals(s.Submission_Status__c);
+                // `== true` rather than a bare pass-through: a Checkbox is never null on a saved
+                // row, but the client filters on `=== true` and a null crossing the wire as
+                // `undefined` would land the row in NEITHER matrix instance rather than in the
+                // ranked one. Normalised here so the client never has to know.
+                r.isPreferred = (s.Is_Preferred_Broker__c == true);
                 rows.add(r);
             }
             return rows;

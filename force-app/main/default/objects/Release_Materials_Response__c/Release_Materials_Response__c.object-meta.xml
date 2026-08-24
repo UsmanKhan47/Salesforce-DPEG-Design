@@ -1,0 +1,223 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomObject xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY. A comment placed ABOVE
+        <CustomObject> breaks `sf` deploy at source conversion with a misleading
+        "unable to find matching parent xml file" error.
+
+        ADDED 2026-08-24. Logs each response received after materials go out at the Release
+        Materials disposition stage - one row per response (a broker asking more questions,
+        declining, or submitting an offer signal). Modelled on Counter_Offer__c (the child
+        object behind lwc/loiCounterOffer), per explicit instruction: same minimal shape (no
+        record types, no compact layout override, Private OWD, viewAllRecords=true in both
+        disposition permission sets instead of a criteria/owner sharing rule), same AutoNumber
+        Name convention, same Contact lookup-filter shape copied from a sibling.
+
+        API NAME: Release_Materials_Response__c. Follows ARCHITECTURE.md Section 1
+        (Title_Case_With_Underscores, no prefix) and the sibling child-log naming already in
+        this module (Counter_Offer__c, BOV_Broker_Change__c) - a noun describing the row, not a
+        verb. "Response" (singular per Salesforce object-naming convention, plural label
+        pluralizes it) rather than "Log" - the object records the response itself, the same
+        shape Counter_Offer__c takes for a single counter rather than being called
+        "Counter_Log__c".
+
+        UNLIKE Counter_Offer__c AND BOV_Broker_Change__c, THIS OBJECT IS HAND-ENTERED, NOT
+        APEX-WRITTEN. Neither has an Apex service that stamps a response for a broker's inbound
+        reply, and building one is out of scope for this declarative change (developer-agent
+        territory, not requested). objectPermissions therefore grants allowCreate/allowEdit in
+        DPEG_Disposition_Edit - unlike Counter_Offer__c/BOV_Broker_Change__c, which are
+        deliberately allowCreate=false/allowEdit=false because Apex is their only writer. This
+        is the same allowCreate=true shape NDA__c takes for the identical reason (D20/C2: a
+        human must be able to click New).
+
+        SETTINGS ARE COPIED FROM Counter_Offer__c.object-meta.xml, DELIBERATELY AND EXACTLY,
+        matching every other disposition child object in this repo: sharingModel/
+        externalSharingModel Private (the disposition module is uniformly Private OWD per the
+        2026-07-22 RBAC build), enableHistory false, enableActivities false, enableReports
+        true, enableSearch true, enableBulkApi true, enableStreamingApi true, deploymentStatus
+        Deployed, visibility Public, compactLayoutAssignment SYSTEM (no custom compact layout -
+        Counter_Offer__c ships none either and this object has too few fields to need one).
+        AutoNumber name RMR-{0000} - checked against every <displayFormat> in this repo, free.
+
+        🔴 FLS: EVERY FIELD ON THIS OBJECT ARRIVES WITH NO PERMISSIONS FOR ANYONE, SYSTEM
+        ADMINISTRATOR INCLUDED, UNTIL THE PERMISSION SETS LAND. Read+edit is granted in
+        DPEG_Disposition_Edit and read-only in DPEG_Disposition_View, in the same change, on
+        all five custom fields (Method__c, Broker__c, Notes__c, Disposition__c,
+        Entry_DateTime__c). This file, its fields, the layout, the empty sharing-rules
+        placeholder and the two permission sets must land TOGETHER.
+
+        🔴 SHARING: viewAllRecords=true in BOTH disposition permission sets (matching
+        Counter_Offer__c exactly), so no sharingOwnerRules/sharingCriteriaRules entry is
+        needed - an EMPTY placeholder sharingRules file ships instead, matching
+        Counter_Offer__c's own empty file, kept only so a future rule has somewhere to land
+        without creating a new file at that time.
+
+        No record types: unlike NDA__c this object has exactly one shape and one purpose, so
+        the record-type-scoped criteria-rule complexity NDA__c needed (D17) does not apply
+        here - Counter_Offer__c is the correct, simpler precedent.
+    -->
+    <actionOverrides>
+        <actionName>Accept</actionName>
+        <type>Default</type>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>Accept</actionName>
+        <formFactor>Large</formFactor>
+        <type>Default</type>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>Accept</actionName>
+        <formFactor>Small</formFactor>
+        <type>Default</type>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>CancelEdit</actionName>
+        <type>Default</type>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>CancelEdit</actionName>
+        <formFactor>Large</formFactor>
+        <type>Default</type>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>CancelEdit</actionName>
+        <formFactor>Small</formFactor>
+        <type>Default</type>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>Clone</actionName>
+        <type>Default</type>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>Clone</actionName>
+        <formFactor>Large</formFactor>
+        <type>Default</type>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>Clone</actionName>
+        <formFactor>Small</formFactor>
+        <type>Default</type>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>Delete</actionName>
+        <type>Default</type>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>Delete</actionName>
+        <formFactor>Large</formFactor>
+        <type>Default</type>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>Delete</actionName>
+        <formFactor>Small</formFactor>
+        <type>Default</type>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>Edit</actionName>
+        <type>Default</type>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>Edit</actionName>
+        <formFactor>Large</formFactor>
+        <type>Default</type>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>Edit</actionName>
+        <formFactor>Small</formFactor>
+        <type>Default</type>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>List</actionName>
+        <type>Default</type>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>List</actionName>
+        <formFactor>Large</formFactor>
+        <type>Default</type>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>List</actionName>
+        <formFactor>Small</formFactor>
+        <type>Default</type>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>New</actionName>
+        <type>Default</type>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>New</actionName>
+        <formFactor>Large</formFactor>
+        <type>Default</type>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>New</actionName>
+        <formFactor>Small</formFactor>
+        <type>Default</type>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>SaveEdit</actionName>
+        <type>Default</type>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>SaveEdit</actionName>
+        <formFactor>Large</formFactor>
+        <type>Default</type>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>SaveEdit</actionName>
+        <formFactor>Small</formFactor>
+        <type>Default</type>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>Tab</actionName>
+        <type>Default</type>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>Tab</actionName>
+        <formFactor>Large</formFactor>
+        <type>Default</type>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>Tab</actionName>
+        <formFactor>Small</formFactor>
+        <type>Default</type>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>View</actionName>
+        <type>Default</type>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>View</actionName>
+        <formFactor>Large</formFactor>
+        <type>Default</type>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>View</actionName>
+        <formFactor>Small</formFactor>
+        <type>Default</type>
+    </actionOverrides>
+    <allowInChatterGroups>false</allowInChatterGroups>
+    <compactLayoutAssignment>SYSTEM</compactLayoutAssignment>
+    <deploymentStatus>Deployed</deploymentStatus>
+    <description>Logs each response received after materials go out at the Release Materials disposition stage - one row per broker response (more questions, decision, or offer signal). Hand-entered; no Apex writer.</description>
+    <enableActivities>false</enableActivities>
+    <enableBulkApi>true</enableBulkApi>
+    <enableFeeds>false</enableFeeds>
+    <enableHistory>false</enableHistory>
+    <enableLicensing>false</enableLicensing>
+    <enableReports>true</enableReports>
+    <enableSearch>true</enableSearch>
+    <enableSharing>true</enableSharing>
+    <enableStreamingApi>true</enableStreamingApi>
+    <externalSharingModel>Private</externalSharingModel>
+    <label>Release Materials Response</label>
+    <nameField>
+        <displayFormat>RMR-{0000}</displayFormat>
+        <label>Response Number</label>
+        <type>AutoNumber</type>
+    </nameField>
+    <pluralLabel>Release Materials Responses</pluralLabel>
+    <searchLayouts></searchLayouts>
+    <sharingModel>Private</sharingModel>
+    <visibility>Public</visibility>
+</CustomObject>

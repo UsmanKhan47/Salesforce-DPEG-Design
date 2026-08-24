@@ -1,7 +1,12 @@
-// Two jobs, in two different context families:
+// Three jobs, in three different context families:
 //
 //   before insert / before update -> derive Broker_Firm__c and Contact_Name__c from the
-//                                    Broker__c Contact lookup (BovSubmissionBrokerStampService).
+//                                    Broker__c Contact lookup (BovSubmissionBrokerStampService),
+//                                    and REFUSE a second Selected row on one Disposition
+//                                    (BovSubmissionSelectionGuardService).
+//   after insert  / after update  -> AUTOMATIC BROKER APPOINTMENT: the highest-scoring,
+//                                    non-preferred, unlocked submission becomes the Selected one
+//                                    (BovAutoSelectionService, 2026-08-24).
 //   after update                  -> when Broker_Finalize_Approval approves the Selected BOV
 //                                    submission, move the PARENT Disposition from BOV Outreach to
 //                                    Broker Selection and stamp its Selected Broker.
@@ -46,8 +51,32 @@
 // `Broker__c` CHANGING and returns after one in-memory pass with ZERO queries when it did not —
 // see BovSubmissionBrokerStampService's class header and its bulk cost tests.
 //
-// ⚠ NO `after insert`. Nothing needs it: the approval transition this file's afterUpdate detects
-// requires `Approval_Status__c` to CHANGE to Approved, which cannot happen on an insert.
-trigger BovSubmissionTrigger on BOV_Submission__c (before insert, before update, after update) {
+// ══════════════════════════════════════════════════════════════════════════════════════════
+// 🔴 RETRACTED IN PLACE 2026-08-24 (BOV auto-selection). The claim below is quoted rather than
+//    deleted because HALF OF IT IS STILL TRUE and a reader who found only the new context list
+//    would not know which half:
+//
+//        RETRACTED: "⚠ NO `after insert`. Nothing needs it: the approval transition this file's
+//        afterUpdate detects requires `Approval_Status__c` to CHANGE to Approved, which cannot
+//        happen on an insert."
+//
+// WHAT WAS RIGHT AND STAYS RIGHT: the sentence's actual subject — the APPROVAL transition.
+// `handleApprovedSelections` still cannot fire on an insert, and `afterInsert` does not call it.
+//
+// WHAT WAS WRONG: "nothing needs it" generalised one job's requirements into the whole trigger's.
+// `BovAutoSelectionService` needs it, because a NEW submission arriving is exactly the event that
+// can change which broker is highest-scoring — and it must run in an AFTER context, because it
+// promotes one row and demotes another in ONE `Database.update` and that is the only shape
+// `BovSubmissionSelectionGuardService` (this same trigger, before contexts) does not refuse.
+// See BovAutoSelectionService's class header for the traced arithmetic.
+// ══════════════════════════════════════════════════════════════════════════════════════════
+// ⚠ `after delete` ADDED 2026-08-24 (preferred-broker-wins). Deleting the appointed submission —
+// the normal way a user withdraws a preferred broker — must re-rank the sale, and there was no
+// delete context at all, so the broker simply vanished with nothing to notice it. 🔴 STILL NO
+// `after undelete`: see BovAutoSelectionService.reselectForDeleted for the three things that
+// depend on the undelete duplicate remaining REACHABLE rather than silently self-healed.
+trigger BovSubmissionTrigger on BOV_Submission__c (
+    before insert, before update, after insert, after update, after delete
+) {
     new BovSubmissionTriggerHandler().run();
 }

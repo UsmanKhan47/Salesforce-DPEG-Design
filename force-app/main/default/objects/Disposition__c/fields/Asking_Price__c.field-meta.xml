@@ -43,11 +43,21 @@
         with NO error shown to the approver - a silently stranded approved disposition. The
         guard belongs in DispositionApprovalService.submitForApproval's STAGE_READINESS branch
         instead (developer-owned, tracked separately - not built by this change).
+
+        2026-08-24 - RELABELED "Asking Price" -> "Expected Value". LABEL ONLY, everything above
+        still applies unchanged: fullName stays Asking_Price__c (referenced by
+        BOV_Score__c's formula as Disposition__r.Asking_Price__c, by DispositionApprovalService's
+        submission guard, by DispositionSelector, and by layouts - none of those touched). The
+        description and inlineHelpText below were reworded to say "expected value" instead of
+        "asking price" / "list price" so they stay consistent with the new on-screen label;
+        DispositionApprovalService.ASKING_PRICE_REQUIRED_MESSAGE was updated the same way (see
+        that class - constant name unchanged, only the message text). Property__c.Asking_Price__c
+        and Opportunity.Asking_Price__c are a DIFFERENT module (acquisitions) and were left alone.
     -->
     <fullName>Asking_Price__c</fullName>
-    <description>Asking price for this sale, captured at Disposition Readiness. Feeds BOV_Submission__c.BOV_Score__c's value dimension; a blank or zero value makes every BOV score on this sale blank.</description>
-    <inlineHelpText>The list price this sale is being marketed at. Enter it here during Disposition Readiness - this field lives only on this page at this stage and will not be shown after the sale advances, including at BOV Outreach where BOV scores are reviewed.</inlineHelpText>
-    <label>Asking Price</label>
+    <description>Expected value for this sale (formerly labeled "Asking Price"; API name unchanged), captured at Disposition Readiness. Feeds BOV_Submission__c.BOV_Score__c's value dimension; a blank or zero value makes every BOV score on this sale blank.</description>
+    <inlineHelpText>The expected value this sale is being marketed at. Enter it here during Disposition Readiness - this field lives only on this page at this stage and will not be shown after the sale advances, including at BOV Outreach where BOV scores are reviewed.</inlineHelpText>
+    <label>Expected Value</label>
     <precision>18</precision>
     <required>false</required>
     <scale>0</scale>

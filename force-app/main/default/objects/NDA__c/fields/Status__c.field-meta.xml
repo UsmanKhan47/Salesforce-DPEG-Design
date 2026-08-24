@@ -1,8 +1,68 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        AMENDED 2026-08-24 - THREE VALUES ADDED TO THE MASTER SET: Approved, Prepare, Review.
+
+        Approved WAS A DIRECT ORG EDIT, MADE OUTSIDE THIS REPO, AND THIS CHANGE IS A CATCH-UP,
+        NOT A NEW DECISION. Setup already carried Approved on Disposition_NDA before this file was
+        touched (confirmed via the UI API picklist-values endpoint, the only channel that reports
+        record-type-scoped values correctly here - see RecordType retrieve note below). This
+        change brings the repo level with the org for that one value, then adds two more
+        (Prepare, Review) on top, on the user's explicit instruction.
+
+        Prepare and Review are NEW, DISPOSITION_NDA ONLY. They do not exist on Acquisition_NDA and
+        must not be added there - the acquisition path is explicitly out of bounds for this
+        change. Master set is still a UNION, now of two record-type sets that no longer overlap in
+        size: Acquisition_NDA keeps exactly four values (Pending, Received, Signed, Sent, reordered
+        2026-08-16 - see that RecordType file's own comment for why Sent is now terminal there).
+        Disposition_NDA grows from four to seven: Not Sent, Approved, Sent, Signed, Declined (as
+        measured live in org) plus Prepare and Review, REORDERED to
+        Prepare -> Review -> Approved -> Not Sent -> Sent -> Signed -> Declined - the pre-send
+        lifecycle the user described, where Approved now sits BEFORE Not Sent rather than after
+        it. This is a deliberate reorder of Approved's position relative to Not Sent, not merely
+        an addition; anywhere the OLD order (Not Sent before Approved) was assumed - e.g. a report
+        column expecting ascending picklist order, or a components sort keyed off value order -
+        should be checked. See objects/NDA__c/recordTypes/Disposition_NDA.recordType-meta.xml for
+        the record-type-scoped ordering.
+
+        MASTER (GLOBAL) VALUE SET ORDER: the pre-existing six values (Pending, Not Sent, Sent,
+        Received, Signed, Declined) keep their RELATIVE order unchanged; Prepare, Review and
+        Approved are inserted as a block immediately before Not Sent, matching where they sit in
+        the disposition lifecycle. This is a minimal-disruption insertion, not a full reorder to
+        match either record type's own sequence - the master list is a union and is never rendered
+        directly once a record type is in play, since every record type here enumerates its own
+        picklistValues order (see both RecordType files' own "EVERY PICKLIST ON THE OBJECT IS
+        ENUMERATED" comments).
+
+        DEFAULT VALUE NOT CHANGED. Master default stays Pending (Acquisition_NDA's entry state).
+        Disposition_NDA's own default stays Not Sent, NOT Prepare - this was a deliberate choice
+        to avoid silently changing new-record behavior for the disposition path; the task adding
+        Prepare/Review was about picklist ORDER and CONTENT, not about moving the record-type
+        default earlier. If Prepare should become the default entry state for a new Disposition
+        NDA, that is a follow-up decision for the user, not inferred here.
+
+        RESTRICTED PICKLIST, DML-ENFORCED (measured, not assumed - see
+        recordTypes/Acquisition_NDA.recordType-meta.xml's 2026-08-20 correction). Deploy order is
+        therefore load-bearing: this field (the superset) must deploy before or with the
+        RecordType files that narrow it, never after a Disposition_NDA file that already
+        references a value this file doesn't yet carry.
+
+        ROLLUP SAFETY CHECKED 2026-08-24 (Task 3 of this change) - flows/NDA_Signed_Rollup's
+        Is_Row_Signed decision has exactly two named outcomes, Signed and Declined; every other
+        value, INCLUDING the three added here, falls through its default connector
+        ("Outstanding - count the total only") into Count_Row, which increments NDA_Count__c but
+        NOT Signed_NDA_Count__c. That is the correct, fail-CLOSED behavior for Prepare/Review/
+        Approved: each counts as an outstanding party toward the total, so
+        All_NDAs_Signed_Before_Progression's BLANKVALUE(Signed_NDA_Count__c,0) &lt;
+        BLANKVALUE(NDA_Count__c,0) clause keeps blocking every forward stage until the party
+        actually reaches Signed. NO FLOW CHANGE WAS MADE OR IS NEEDED for this reason - the
+        rollup's default branch already treats "anything that isn't Signed or Declined" as
+        outstanding, and that default already covers the three new values without being told
+        their names.
+    -->
     <fullName>Status__c</fullName>
-    <description>Lifecycle state of the NDA. THE MASTER SET IS THE UNION OF TWO RECORD-TYPE SETS AND NO SINGLE RECORD TYPE SEES ALL SIX. Acquisition_NDA exposes Pending, Sent, Received, Signed (D14.1). Disposition_NDA exposes Not Sent, Sent, Signed, Declined (Part 2 lines 28-41). Sent and Signed are SHARED, so this field alone does NOT identify the record type - use Disposition__c or RecordTypeId for that. Three values were ADDED 2026-08-09 (Received, Not Sent, Declined) and ZERO were removed, so every existing acquisition NDA keeps a valid value and no data migration is needed. Read by the NDA_Signed_Status_Sync before-save flow, which derives NDA_Signed__c, and by the NDA_Signed_Rollup after-save flow, which counts Signed rows onto the parent Disposition.</description>
-    <inlineHelpText>Pick the state this NDA is in. The choices differ by record type: an acquisition NDA runs Pending, Sent, Received, Signed; a disposition NDA runs Not Sent, Sent, Signed, and Declined if the counterparty refuses.</inlineHelpText>
+    <description>Lifecycle state of the NDA. THE MASTER SET IS THE UNION OF TWO RECORD-TYPE SETS AND NO SINGLE RECORD TYPE SEES ALL VALUES. Acquisition_NDA exposes Pending, Received, Signed, Sent (D14.1, reordered 2026-08-16). Disposition_NDA exposes Prepare, Review, Approved, Not Sent, Sent, Signed, Declined (2026-08-24 addition - see XML comment). Sent and Signed are SHARED, so this field alone does NOT identify the record type - use Disposition__c or RecordTypeId for that. Read by NDA_Signed_Status_Sync (before-save, derives NDA_Signed__c) and NDA_Signed_Rollup (after-save, counts Signed rows onto the parent Disposition).</description>
+    <inlineHelpText>Pick the state this NDA is in. The choices differ by record type: an acquisition NDA runs Pending, Received, Signed, Sent; a disposition NDA runs Prepare, Review, Approved, Not Sent, Sent, Signed, and Declined if the counterparty refuses.</inlineHelpText>
     <label>Status</label>
     <required>false</required>
     <trackHistory>false</trackHistory>
@@ -16,6 +76,21 @@
                 <fullName>Pending</fullName>
                 <default>true</default>
                 <label>Pending</label>
+            </value>
+            <value>
+                <fullName>Prepare</fullName>
+                <default>false</default>
+                <label>Prepare</label>
+            </value>
+            <value>
+                <fullName>Review</fullName>
+                <default>false</default>
+                <label>Review</label>
+            </value>
+            <value>
+                <fullName>Approved</fullName>
+                <default>false</default>
+                <label>Approved</label>
             </value>
             <value>
                 <fullName>Not Sent</fullName>

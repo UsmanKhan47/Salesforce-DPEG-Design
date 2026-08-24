@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY - a comment placed ABOVE
+        <CustomField> breaks `sf` deploy at source conversion with a misleading "unable to find
+        matching parent xml file" error.
+
+        ADDED 2026-08-24 (NDA-stage Details redesign). One of five formula fields mirroring the
+        primary NDA's own fields onto Disposition__c, chosen over a Lightning "Related Record"
+        component after checking this repo for precedent: a full grep of every
+        <componentName> across every FlexiPage in this org found none, so that route would have
+        meant guessing an unverified component shape against a production org. A formula field
+        is the option with real, deployed precedent here (Is_On_Market__c, BOV_Score__c,
+        Property_Name__c, Broker_Name__c) and is used instead.
+
+        THIS IS THE ROUTE THAT MAKES THE PROBLEM SOLVABLE AT ALL: a FlexiPage fieldInstance
+        cannot traverse a relationship (Record.Primary_NDA__r.Broker__r.FirstName is not
+        addressable in a FlexiPage), but a formula field CAN - Salesforce formulas support
+        cross-object spanning, confirmed in this exact repo by BOV_Submission__c
+        .Property_Name__c's two-hop Disposition__r.Property_Asset__r.Name. This field takes the
+        same two-hop shape: Primary_NDA__r.Broker__r.
+
+        🔴 Contact.Name IS NOT FORMULA-ADDRESSABLE (it is a compound field). FirstName &amp;
+        LastName is used instead, matching Broker_Assignment__c.Broker_Name__c's exact pattern
+        in this repo.
+
+        Reads BLANK before a primary NDA exists or before that NDA has a Broker__c populated -
+        both are legitimate states (Disposition Readiness/BOV Outreach/Broker Selection have no
+        NDA yet), and blank is the correct, honest rendering for those stages. This field is
+        placed on Disposition_Record_Page ONLY inside a section gated to the NDA stage - see
+        that file's own comment.
+
+        🔴 FLS: THIS FIELD IS INVISIBLE TO EVERYONE, ADMINS INCLUDED, UNTIL A PERMSET LANDS.
+        Read-only in BOTH DPEG_Disposition_Edit and DPEG_Disposition_View - a formula field
+        cannot carry editable=true (hard deploy error; see BOV_Score__c's permission-set
+        comment for the same reasoning). This file and both permission sets must land together.
+    -->
+    <fullName>NDA_Broker__c</fullName>
+    <description>The primary NDA's broker Contact name, read through Primary_NDA__c. Blank before a primary NDA exists or before its Broker__c is set. Placed on the NDA-stage-scoped Details section only - a FlexiPage field cannot traverse Primary_NDA__r directly.</description>
+    <externalId>false</externalId>
+    <formula>Primary_NDA__r.Broker__r.FirstName &amp; &quot; &quot; &amp; Primary_NDA__r.Broker__r.LastName</formula>
+    <formulaTreatBlanksAs>BlankAsZero</formulaTreatBlanksAs>
+    <inlineHelpText>The broker Contact on the primary NDA for this disposition. Read-only; derived.</inlineHelpText>
+    <label>NDA Broker</label>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>

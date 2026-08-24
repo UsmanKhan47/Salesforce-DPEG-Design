@@ -91,10 +91,46 @@
         included - Modify All Data is an OBJECT permission and confers no record-type access),
         the per-profile default, the layout assignment, and the migration of existing NDA rows
         off Master. profiles/** is .forceignore'd in this repo.
+
+        =====================================================================
+        AMENDED 2026-08-24 - THREE VALUES ADDED, ONE OF THEM (Approved) A REPO CATCH-UP FOR AN
+        ORG EDIT MADE OUTSIDE THIS REPO, TWO (Prepare, Review) NEW ON THE USER'S INSTRUCTION.
+        =====================================================================
+
+        Approved was already live on this record type in the org (confirmed via the UI API
+        picklist-values endpoint - see objects/NDA__c/fields/Status__c.field-meta.xml's own
+        2026-08-24 comment for why that endpoint and not a RecordType retrieve). This file did not
+        carry it; it now does, matching the org.
+
+        Prepare and Review are genuinely new and DISPOSITION_NDA ONLY - they are not added to
+        Acquisition_NDA, which stays at its existing four values (Pending, Received, Signed,
+        Sent). The user described these as the pre-send lifecycle: a Disposition NDA is now
+        Prepared, then Reviewed, then Approved, and ONLY THEN does it enter the existing
+        Not Sent -> Sent -> Signed sequence, with Declined remaining a terminal off-ramp reachable
+        at any point after the document exists.
+
+        ORDER BELOW IS THEREFORE Prepare -> Review -> Approved -> Not Sent -> Sent -> Signed ->
+        Declined. THIS IS A DELIBERATE REORDER, NOT ONLY AN ADDITION: in the org as measured
+        immediately before this change, Approved sat AFTER Not Sent (Not Sent, Approved, Sent,
+        Signed, Declined). It now sits BEFORE Not Sent. Whether this list order actually controls
+        the runtime Status__c dropdown order for this record type, independently of the master
+        field's own value order, was not verified as part of this change - the same open question
+        Acquisition_NDA's 2026-08-16 amendment flags for itself; see that file's comment.
+
+        DEFAULT IS UNCHANGED - still Not Sent, not Prepare. Adding earlier lifecycle steps did not
+        move where a newly-created Disposition NDA record starts; that is a separate decision left
+        to the user, not inferred here.
+
+        ROLLUP AND RELEASE-GATE IMPACT CHECKED, NO CHANGE NEEDED: flows/NDA_Signed_Rollup counts
+        any Status__c value that is not literally 'Signed' or 'Declined' toward NDA_Count__c only
+        (its default "Outstanding" branch), so Prepare/Review/Approved rows count as outstanding,
+        not signed, and All_NDAs_Signed_Before_Progression keeps blocking every forward stage on
+        this disposition until they reach Signed. See the field file's own 2026-08-24 comment for
+        the full trace.
     -->
     <fullName>Disposition_NDA</fullName>
     <active>true</active>
-    <description>The sell-side NDA, parented by Disposition. States: Not Sent, Sent, Signed, plus Declined as a terminal off-ramp. Pending and Received are restricted out. See the XML comment in this file.</description>
+    <description>The sell-side NDA, parented by Disposition. States (process order): Prepare, Review, Approved, Not Sent, Sent, Signed, plus Declined as a terminal off-ramp. Pending and Received are restricted out. See the XML comment in this file.</description>
     <label>Disposition NDA</label>
     <picklistValues>
         <picklist>Method__c</picklist>
@@ -120,6 +156,18 @@
     </picklistValues>
     <picklistValues>
         <picklist>Status__c</picklist>
+        <values>
+            <fullName>Prepare</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Review</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Approved</fullName>
+            <default>false</default>
+        </values>
         <values>
             <fullName>Not Sent</fullName>
             <default>true</default>

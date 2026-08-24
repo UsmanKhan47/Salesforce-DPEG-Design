@@ -4,15 +4,28 @@
    `slds/no-slds-var-without-fallback` warns on one.
 
    ═══════════════════════════════════════════════════════════════════════════════════════════
+   🔴 EVERY COLOUR ON THIS CARD IS A HOOK, INCLUDING THE TIMELINE DOT AND ITS CONNECTING LINE.
+   ═══════════════════════════════════════════════════════════════════════════════════════════
+   The card must be legible in BOTH light and dark. The SLDS 2 hooks used below resolve to a
+   `light-dark(...)` pair in the dark-capable (cosmos) theme — e.g. the rail's line hook is
+   light-dark(#c9c9c9, #444) and the surface it sits on is light-dark(#fff, #242424) — so a
+   literal hex written directly into a declaration would be correct in exactly one of the two
+   themes and invisible or glaring in the other. The literals that DO appear here are var()
+   FALLBACKS, reached only where hooks are unavailable altogether; nothing on the card depends
+   on one to be legible in normal operation. A test (T-TOKENS) fails if any colour-bearing
+   declaration stops going through var(--slds-…).
+
+   ═══════════════════════════════════════════════════════════════════════════════════════════
    🔴 NOTHING IN THIS COMPONENT MAY SCROLL SIDEWAYS AT ANY CONTAINER WIDTH.
    ═══════════════════════════════════════════════════════════════════════════════════════════
-   This card moved to a ~340px record-page SIDEBAR. It used to be a two-column flex row —
-   swap + notes on the left, timestamp + reason + logger right-aligned on the right, held apart
-   by `justify-content: space-between` — which collides at that width. It is now a stacked tile,
-   the same shape c/competingBrokerSubmissions and c/dispositionBuyerTimeline use, and it relies
-   on the same load-bearing declarations:
+   This card sits in a ~340px record-page SIDEBAR. It has been a two-column flex row (2026-08-20,
+   collided at that width), then a self-labelling dt/dd tile grid (2026-08-21), and is now a
+   VERTICAL TIMELINE (2026-08-24, to a design the user supplied). Each shape inherited the same
+   load-bearing declarations, and they are still load-bearing:
      1. no `overflow-x` and no `overflow` shorthand set to auto/scroll — clipping the content
-        instead of reflowing it only hides the burst;
+        instead of reflowing it only hides the burst. ⚠ THE ONE EXCEPTION IS `.bbc-sr-only`,
+        whose `overflow: hidden` is part of the standard visually-hidden recipe on a
+        one-pixel box that has no visible content to clip;
      2. no `nowrap` anywhere. ⚠ THE ONE EXCEPTION IS `.bbc-notes--clip .bbc-notes-txt`, which
         deliberately clips a LONG NOTE to one line, because the full text is one click away
         behind the View button. That is a deliberate truncation of an optional preview, not a
@@ -20,17 +33,19 @@
         unbounded free text;
      3. `min-width: 0` on every flex/grid child holding text. A flex/grid item defaults to
         `min-width: auto` and REFUSES to shrink below its longest unbreakable token, so one long
-        firm name would force a tile wider than its container. The LOAD-BEARING one is on
-        `.bbc-tile` (the grid item);
+        firm name would force an entry wider than its container. The LOAD-BEARING one is on
+        `.bbc-body` — the grid item that holds all four text lines, beside the rail;
      4. `overflow-wrap: anywhere` on :host — `anywhere`, not `break-word`, because only
         `anywhere` affects min-content sizing, which is what lets rule 3 take effect;
-     5. grid minimum `min(18rem, 100%)`, NEVER a bare 18rem — a bare 18rem minimum bursts any
-        container narrower than 288px, which is invisible at desktop width and shows only in the
-        sidebar;
-     6. no fixed pixel widths on content.
-   The grid uses `auto-fill` and NO media queries: a media query measures the VIEWPORT, but the
-   constraint here is CONTAINER width — the same viewport yields a ~340px sidebar or a ~900px
-   main region.
+     5. no fixed pixel widths on content.
+   ⚠ THE TIMELINE IS DELIBERATELY SINGLE-COLUMN and the `repeat(auto-fill, minmax(...))` tile
+   grid that preceded it is GONE ON PURPOSE — not by oversight. A connecting line down the left
+   only means anything if the entries it joins are stacked; two entries side by side would leave
+   the rail drawing a line between them that says nothing. The single column is also why no
+   `min(18rem, 100%)` guard is needed any more: there is no track minimum left to burst the
+   container.
+   No media queries: a media query measures the VIEWPORT, but the constraint here is CONTAINER
+   width — the same viewport yields a ~340px sidebar or a ~900px main region.
 
    ⚠ --slds-g-color-on-surface-1 is the GREY one (#757575); -2 (#2e2e2e) and -3 (#181818) are
    progressively DARKER. The numbering reads like an ascending emphasis scale and is the reverse.
@@ -46,56 +61,112 @@
     font-variant-numeric: tabular-nums;
 }
 
-/* ⚠ `.bbc-intro` WAS DELETED ON 2026-08-21 with the intro paragraph above the tile list (UAT
-   prose removal). `.bbc-list` carries its own padding, so the list is not left flush against the
-   card header by its removal. */
+/* Visually hidden, still announced. LOCAL ON PURPOSE — `slds-assistive-text` is defined in a
+   document-level SLDS stylesheet, so under native shadow DOM it would not reach this component
+   and the words it hides ("replaced by", "Reason") would render as visible clutter. This rule
+   travels with the component and cannot fail that way.
+   ⚠ Sized in `--slds-g-sizing-border-1` rather than a literal 1px so the whole stylesheet stays
+   free of raw pixel values; the box is never seen, so the exact size is immaterial. */
+.bbc-sr-only {
+    position: absolute;
+    width: var(--slds-g-sizing-border-1, 1px);
+    height: var(--slds-g-sizing-border-1, 1px);
+    margin: calc(-1 * var(--slds-g-sizing-border-1, 1px));
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+}
 
-/* ===== Tile list ===== */
-.bbc-list {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(min(18rem, 100%), 1fr));
-    gap: var(--slds-g-spacing-3, 0.75rem);
-    padding: var(--slds-g-spacing-3, 0.75rem) var(--slds-g-spacing-4, 1rem);
+/* ===== Timeline ===== */
+.bbc-timeline {
+    display: block;
     margin: 0;
+    padding: var(--slds-g-spacing-4, 1rem);
     list-style: none;
 }
 
-.bbc-item {
+/* Rail column + content column. The entry's BOTTOM PADDING is what separates one entry from the
+   next — deliberately not a `gap` on the list — because the rail's connecting track has to span
+   that space to reach the following dot. A gap would leave the line broken between every pair. */
+.bbc-entry {
+    position: relative;
+    display: grid;
+    grid-template-columns: var(--slds-g-sizing-4, 0.75rem) 1fr;
+    column-gap: var(--slds-g-spacing-3, 0.75rem);
+    min-width: 0;
+    padding-bottom: var(--slds-g-spacing-4, 1rem);
+}
+
+.bbc-entry:last-child {
+    padding-bottom: 0;
+}
+
+/* ===== The rail: a filled dot per entry, joined by a line ===== */
+.bbc-rail {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
     min-width: 0;
 }
 
-.bbc-tile {
-    min-width: 0;
-    padding: var(--slds-g-spacing-3, 0.75rem);
-    border: var(--slds-g-sizing-border-1, 1px) solid
-        var(--slds-g-color-border-1, #e5e5e5);
-    border-radius: var(--slds-g-radius-border-3, 0.5rem);
-    background: var(--slds-g-color-surface-container-1, #fff);
+/* The dot sits a quarter-rem down so it centres on the first line of the headline beside it —
+   an offset in `rem`, not a magic `em` fraction of whatever font-size happens to apply. */
+.bbc-dot {
+    flex: none;
+    width: var(--slds-g-sizing-3, 0.5rem);
+    height: var(--slds-g-sizing-3, 0.5rem);
+    margin-top: var(--slds-g-spacing-1, 0.25rem);
+    border-radius: var(--slds-g-radius-border-circle, 100%);
+    background: var(--slds-g-color-accent-container-1, #0176d3);
 }
 
-/* ===== The swap: "this became that" =====
-   WRAPS rather than truncates. At 340px "No previous broker → Marcus & Millichap" legitimately
+/* `flex: 1 1 auto` inside a full-height rail is what makes the line reach the NEXT dot without
+   anyone measuring anything: the rail stretches to the entry's height (grid `align-items:
+   stretch`), the dot is fixed, and the track takes the remainder — including the entry's bottom
+   padding. Nothing here needs to know how tall an entry is. */
+.bbc-track {
+    flex: 1 1 auto;
+    width: var(--slds-g-sizing-border-1, 1px);
+    margin-top: var(--slds-g-spacing-1, 0.25rem);
+    background: var(--slds-g-color-border-1, #c9c9c9);
+}
+
+/* The line ends ON the last dot rather than trailing off into the card's padding, which would
+   read as "and then something else happened" on a log that is complete. */
+.bbc-entry:last-child .bbc-track {
+    display: none;
+}
+
+/* ===== Entry body: three text lines (four with a note) ===== */
+.bbc-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--slds-g-spacing-1, 0.25rem);
+    min-width: 0;
+}
+
+/* ===== Line 1 — the swap: "this became that" =====
+   WRAPS rather than truncates. At 340px "No Previous Broker → Marcus & Millichap" legitimately
    needs two lines, and a firm name clipped to an ellipsis is worse than a wrapped one — the firm
-   is the fact the whole tile exists to record. */
+   is the fact the whole entry exists to record.
+   ⚠ THE `gap` IS NOT COSMETIC. The template compiler discards the whitespace-only text nodes
+   between these spans, so with `gap: 0` the headline renders as "JLL→Cushman & Wakefield". The
+   space between the firms and the arrow comes from here and nowhere else. */
 .bbc-swap {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
     gap: var(--slds-g-spacing-2, 0.5rem);
     min-width: 0;
-    margin: 0 0 var(--slds-g-spacing-3, 0.75rem);
+    margin: 0;
 }
 
-/* The replaced firm is de-emphasised and the appointed firm is not. The strike-through is
-   reinforcement only — the arrow's `alternative-text` and the reading order carry the meaning. */
-.bbc-outgoing {
-    min-width: 0;
-    font-size: var(--slds-g-font-scale-base, 0.8125rem);
-    font-weight: var(--slds-g-font-weight-4, 400);
-    color: var(--slds-g-color-on-surface-1, #757575);
-    text-decoration: line-through;
-}
-
+/* 🔴 BOTH FIRMS CARRY THE SAME WEIGHT AND COLOUR, per the supplied design. The outgoing firm
+   used to be greyed and struck through; that de-emphasis is deliberately GONE. Restoring it
+   would re-rank two facts the design ranks equally — and on an "appointment" entry it would
+   strike through the words "No Previous Broker", which is not a thing that was cancelled. */
+.bbc-outgoing,
 .bbc-incoming {
     min-width: 0;
     font-size: var(--slds-g-font-scale-1, 0.875rem);
@@ -105,48 +176,82 @@
 
 .bbc-arrow {
     flex: none;
+    font-size: var(--slds-g-font-scale-1, 0.875rem);
+    color: var(--slds-g-color-on-surface-1, #757575);
+}
+
+/* ===== Line 2 — when | why ===== */
+.bbc-meta {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--slds-g-spacing-1, 0.25rem);
+    min-width: 0;
+    margin: 0;
+    font-size: var(--slds-g-font-scale-base, 0.8125rem);
+    color: var(--slds-g-color-on-surface-1, #757575);
+}
+
+/* Shared by the calendar icon on line 2 and the note icon on line 4. Colouring a base
+   component's icon through the COMPONENT hook on a wrapper avoids an inline `style` attribute:
+   custom properties inherit across the shadow boundary into the icon's own root. */
+.bbc-meta-icon {
+    flex: none;
     --slds-c-icon-color-foreground-default: var(
         --slds-g-color-on-surface-1,
         #757575
     );
 }
 
-/* ===== Labelled facts: When / Reason / Logged by / Notes ===== */
-.bbc-facts {
-    display: grid;
-    grid-template-columns: max-content 1fr;
-    gap: var(--slds-g-spacing-2, 0.5rem) var(--slds-g-spacing-3, 0.75rem);
+.bbc-when,
+.bbc-reason {
+    min-width: 0;
+}
+
+/* The pipe between the timestamp and the reason. Decorative (aria-hidden in the template) and
+   rendered only when there IS a reason on the other side of it. */
+.bbc-sep {
+    flex: none;
+    color: var(--slds-g-color-border-1, #c9c9c9);
+}
+
+/* ===== Line 3 — who ===== */
+.bbc-logged {
+    display: flex;
     align-items: baseline;
-    min-width: 0;
-    margin: 0;
-}
-
-.bbc-label {
-    grid-column: 1;
-    min-width: 0;
-    margin: 0;
-    font-size: var(--slds-g-font-scale-neg-2, 0.625rem);
-    font-weight: var(--slds-g-font-weight-7, 700);
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-    color: var(--slds-g-color-on-surface-1, #757575);
-}
-
-.bbc-value {
-    grid-column: 2;
+    flex-wrap: wrap;
+    gap: var(--slds-g-spacing-1, 0.25rem);
     min-width: 0;
     margin: 0;
     font-size: var(--slds-g-font-scale-base, 0.8125rem);
+}
+
+/* Muted label, normal-weight name — the design's own emphasis, and the reverse of the usual
+   bold-label pattern. The name is the fact; "Logged By:" is just its handle. */
+.bbc-logged-label {
+    flex: none;
+    color: var(--slds-g-color-on-surface-1, #757575);
+}
+
+.bbc-loggedby {
+    min-width: 0;
+    font-weight: var(--slds-g-font-weight-4, 400);
     color: var(--slds-g-color-on-surface-2, #2e2e2e);
 }
 
-/* ===== Notes =====
-   The preview and its View button share one grid cell; the button never shrinks, so the text is
-   what gives way. */
+/* ===== Line 4 — notes (RETAINED; the supplied design does not show it) =====
+   See the template comment: this is the only reader of Notes__c in the application, so it is
+   kept as a quieter fourth line rather than dropped to match a three-line mock. The preview and
+   its View button share the line; the button never shrinks, so the text is what gives way. */
 .bbc-notes {
     display: flex;
-    align-items: baseline;
-    gap: var(--slds-g-spacing-2, 0.5rem);
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--slds-g-spacing-1, 0.25rem);
+    min-width: 0;
+    margin: 0;
+    font-size: var(--slds-g-font-scale-neg-1, 0.75rem);
+    color: var(--slds-g-color-on-surface-1, #757575);
 }
 
 .bbc-notes-txt {

@@ -3,7 +3,7 @@ import LightningModal from 'lightning/modal';
 import initiateAndSubmit from '@salesforce/apex/DispositionController.initiateAndSubmit';
 
 /**
- * The two allowed record types, and the ONLY two.
+ * The two allowed record types, and the ONLY two — rendered as the "Sell Type" picklist.
  *
  * 🔴 THE VALUES ARE RECORD TYPE **DEVELOPER NAMES**, NOT LABELS. They are matched
  * character-for-character against `objects/Disposition__c/recordTypes/On_Market` and
@@ -12,10 +12,17 @@ import initiateAndSubmit from '@salesforce/apex/DispositionController.initiateAn
  * controller's generic write-failure message — it is a CALLER defect, not something a user can act
  * on — so a typo here surfaces as an unexplained "could not create" rather than as anything that
  * names this file. Do not "tidy" these into 'On Market' / 'Off Market'.
+ *
+ * ⚠ THE LABELS ARE HYPHENATED, THE VALUES ARE NOT, AND THAT ASYMMETRY IS THE WHOLE POINT
+ * (user instruction, 2026-08-24: "Sell Type: 1- On-Market 2. Off-Market"). The hyphen is a
+ * PRESENTATION change and stops at this array. It was NOT applied to the record type labels in
+ * `objects/Disposition__c/recordTypes/`, and no `Sell_Type__c` field was created to carry it —
+ * both were settled user decisions, so this list is the only place the hyphenated spelling
+ * exists. Anyone reconciling the two will find them different ON PURPOSE.
  */
 const RECORD_TYPE_OPTIONS = [
-    { label: 'On Market', value: 'On_Market' },
-    { label: 'Off Market', value: 'Off_Market' }
+    { label: 'On-Market', value: 'On_Market' },
+    { label: 'Off-Market', value: 'Off_Market' }
 ];
 
 /** Placeholder for a summary value the caller did not supply. */
@@ -25,9 +32,13 @@ const DASH = '—';
  * c-sell-meter-initiate-modal — the Sell Meter "Initiate" / "Override" popup
  * (user-confirmed decision 1 of the disposition flow redesign).
  *
- * Read-only property summary + a MANDATORY On Market / Off Market choice, then one call to
- * `DispositionController.initiateAndSubmit`, which creates the Disposition at the chosen record
- * type AND submits it into `Sale_Decision_Approval` in the same transaction.
+ * Read-only property summary + a MANDATORY "Sell Type" choice (On-Market / Off-Market), then one
+ * call to `DispositionController.initiateAndSubmit`, which creates the Disposition at the chosen
+ * record type AND submits it into `Sale_Decision_Approval` in the same transaction.
+ *
+ * ⚠ THE DIALOG IS TITLED "Decide to Sell - Approval" AND THE CONTROL IS A PICKLIST (both user
+ * instructions, 2026-08-24). The control was a `lightning-radio-group` until then; the swap is
+ * presentational only — same values, same mandatory gate, same Apex call.
  *
  * ── WHY THE SUMMARY ARRIVES PRE-FORMATTED ────────────────────────────────────
  * Every summary field is a STRING the caller already rendered (`sellMeterList.allRows` builds
@@ -126,10 +137,16 @@ export default class SellMeterInitiateModal extends LightningModal {
     }
 
     /**
-     * "Send for Approval" stays disabled until a record type is chosen — the choice is MANDATORY
+     * "Send for Approval" stays disabled until a Sell Type is chosen — the choice is MANDATORY
      * (user-confirmed decision 1) and there is deliberately no default. A default would silently
-     * decide the entire downstream path (On Market gets BOV Outreach + Active Listing; Off Market
-     * gets neither) for a user who never looked at the radio.
+     * decide the entire downstream path (On-Market gets BOV Outreach + Active Listing; Off-Market
+     * gets neither) for a user who never opened the picklist.
+     *
+     * 🔴 THIS GETTER IS THE ONLY REAL ENFORCEMENT OF `required`. The markup's `required`
+     * attribute draws the asterisk, but `lightning-combobox` (like the radio group before it)
+     * only refuses on `reportValidity()`, which nothing calls here — this dialog has no
+     * `lightning-record-edit-form` and no submit path other than the button below. Delete this
+     * gate and the picklist's asterisk becomes decoration.
      */
     get confirmDisabled() {
         return this._saving || !this.recordType;

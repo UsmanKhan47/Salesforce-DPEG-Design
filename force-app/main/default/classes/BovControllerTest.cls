@@ -131,6 +131,14 @@ private class BovControllerTest {
         Assert.areEqual(45, winnerRow.daysToMarket, 'Days_To_Market__c maps through as an Integer');
         Assert.areEqual(true, winnerRow.isSelected, 'Selected status should map to isSelected = true');
         Assert.areEqual(false, backupRow.isSelected, 'Backup status should map to isSelected = false');
+        // 🔴 `BovRow.isPreferred` (added 2026-08-24). Asserted as a hard `false`, NOT merely
+        // "not true": `c/bovComparisonMatrix` renders twice off this ONE payload and filters on
+        // `=== true` / `!== true`, so a value arriving as `undefined` would land the row in the
+        // ranked instance by luck rather than by contract. Both directions are pinned — the TRUE
+        // case is `getSubmissions_mapsThePreferredBrokerFlag` below.
+        Assert.areEqual(false, winnerRow.isPreferred,
+            'An ordinary response must map isPreferred = false, not null');
+        Assert.areEqual(false, backupRow.isPreferred, 'and likewise for the other row');
         // 🔴 RETRACTED 2026-08-22 (conversion completed). This used to pin a now-deleted ternary's
         // null leg and name a coverage gap on its `.intValue()` leg — both gone, see this class's
         // header. Null is still the only reachable answer HERE because this fixture's Disposition
@@ -191,6 +199,44 @@ private class BovControllerTest {
             + 'ASC is the only key left and without it the matrix reshuffles between page loads');
         Assert.areEqual(String.valueOf(subs[1].Id), rows[1].id, 'then the next-oldest');
         Assert.areEqual(String.valueOf(subs[0].Id), rows[2].id, 'then the newest');
+    }
+
+    /**
+     * The TRUE half of `BovRow.isPreferred` (added 2026-08-24).
+     *
+     * 🔴 ONE WIRE FEEDS BOTH MATRIX INSTANCES, WHICH IS WHY THIS FLAG IS ON THE ROW RATHER THAN IN
+     * A SECOND APEX METHOD. `c/bovComparisonMatrix` renders twice on the Disposition page — a
+     * `preferredOnly` card above the ranked one — and splits THIS payload client-side. Zero extra
+     * SOQL, zero extra cache entries, and the two instances cannot disagree about the same broker's
+     * numbers.
+     *
+     * ⚠ IT ALSO PROVES `Is_Preferred_Broker__c` IS ACTUALLY IN THE `WITH USER_MODE` SELECT. If the
+     * field is dropped from `selectByDispositionId`, this fails; if the FLS grant is missing in the
+     * org, `getSubmissions` throws `No such column` and is masked as the generic read-failure
+     * message — so the whole matrix disappears for that persona and this test goes red rather than
+     * the defect reaching UAT.
+     */
+    @isTest
+    static void getSubmissions_mapsThePreferredBrokerFlag() {
+        Disposition__c d = [SELECT Id FROM Disposition__c LIMIT 1];
+        BOV_Submission__c ordinary = TestDataFactory.createBovSubmission(d.Id, false);
+        BOV_Submission__c preferred = TestDataFactory.createBovSubmission(d.Id, false);
+        preferred.Is_Preferred_Broker__c = true;
+        insert new List<BOV_Submission__c>{ ordinary, preferred };
+
+        Test.startTest();
+        List<BovController.BovRow> rows = BovController.getSubmissions(d.Id);
+        Test.stopTest();
+
+        Map<String, BovController.BovRow> byId = new Map<String, BovController.BovRow>();
+        for (BovController.BovRow r : rows) {
+            byId.put(r.id, r);
+        }
+        Assert.areEqual(true, byId.get(String.valueOf(preferred.Id)).isPreferred,
+            '🔴 A preferred-broker row must arrive flagged, or it renders in the RANKED matrix and '
+            + 'becomes auto-selectable — the exact defect the flag exists to prevent');
+        Assert.areEqual(false, byId.get(String.valueOf(ordinary.Id)).isPreferred,
+            'and an ordinary row must not, or it vanishes out of the ranked matrix entirely');
     }
 
     @isTest

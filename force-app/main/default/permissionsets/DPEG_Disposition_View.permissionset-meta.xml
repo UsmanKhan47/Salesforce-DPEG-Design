@@ -604,6 +604,25 @@
         <field>BOV_Submission__c.Broker__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!--
+        ADDED 2026-08-24 (agent-output/bov-autoselect-preferred-brokers.md, §5 A4). Granted at the
+        TAIL of the BOV_Submission__c run, next to Broker__c, following this file's convention of
+        appending later additions rather than reflowing the alphabetical block. Both fields
+        readable only, editable=false — this is the read-only Principal persona; every other
+        BOV_Submission__c grant in this file is read only for the same reason, and
+        Is_Manually_Appointed__c is additionally a SYSTEM field (see its own XML comment) that must
+        stay read-only everywhere, in both disposition permission sets.
+    -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>BOV_Submission__c.Is_Preferred_Broker__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>BOV_Submission__c.Is_Manually_Appointed__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
         <field>Broker_Listing__c.Broker_Firm__c</field>
@@ -1123,6 +1142,20 @@
         <readable>true</readable>
     </fieldPermissions>
     <!--
+        ADDED 2026-08-24 - NDA__c.Tracking_Status__c, the four-step display collapse of
+        Status__c (see that field's own comment). READ ONLY - editable is FALSE, this is a
+        formula field and cannot be written to. Granted on this set and on DPEG_Disposition_Edit,
+        matching this file's convention of granting NDA__c FLS wherever Status__c itself is
+        granted. A Metadata API deployed field carries NO FLS for anyone, System Administrator
+        included, so without this grant the field renders blank and any SOQL selecting it
+        reports "No such column".
+    -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>NDA__c.Tracking_Status__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!--
         ADDED 2026-08-20 - Workstream D6.1 (buyer activity timeline, disposition-tranche-2
         -requirements.md §3). NDA__c.Buyer__c and NDA__c.Materials_Released_Date__c: readable
         only, matching this file's read-only Principal persona and every other NDA__c field
@@ -1303,6 +1336,67 @@
         <field>BOV_Broker_Change__c.Logged_By__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!--
+        ADDED 2026-08-24. Release_Materials_Response__c, appended at the tail of this
+        fieldPermissions run, matching DPEG_Disposition_Edit's addition in the same change.
+        Read-only - this is the read-only Principal persona; every other grant in this file
+        follows the same shape.
+    -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Release_Materials_Response__c.Method__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Release_Materials_Response__c.Broker__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Release_Materials_Response__c.Notes__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Release_Materials_Response__c.Disposition__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Release_Materials_Response__c.Entry_DateTime__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!--
+        ADDED 2026-08-24 (NDA-stage Details redesign). Five formula fields mirroring the
+        primary NDA's own fields onto Disposition__c - matching DPEG_Disposition_Edit's
+        addition in the same change. Read-only, same reasoning.
+    -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Disposition__c.NDA_Broker__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Disposition__c.NDA_Status__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Disposition__c.NDA_Date_Sent__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Disposition__c.NDA_Date_Signed__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Disposition__c.NDA_Expiry_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <hasActivationRequired>false</hasActivationRequired>
     <label>DPEG Disposition View</label>
     <objectPermissions>
@@ -1402,6 +1496,21 @@
         <allowRead>true</allowRead>
         <modifyAllRecords>false</modifyAllRecords>
         <object>BOV_Broker_Change__c</object>
+        <viewAllRecords>true</viewAllRecords>
+    </objectPermissions>
+    <!--
+        ADDED 2026-08-24. Release_Materials_Response__c. Read-only object grant, matching
+        every other object in this file - the read-only Principal persona never gets
+        allowCreate/allowEdit. viewAllRecords=true, matching DPEG_Disposition_Edit's grant in
+        the same change and Counter_Offer__c's own shape.
+    -->
+    <objectPermissions>
+        <allowCreate>false</allowCreate>
+        <allowDelete>false</allowDelete>
+        <allowEdit>false</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>false</modifyAllRecords>
+        <object>Release_Materials_Response__c</object>
         <viewAllRecords>true</viewAllRecords>
     </objectPermissions>
 </PermissionSet>

@@ -12,16 +12,23 @@
  *   - the "First offer" column and the "Days to respond" duration are GONE —
  *     nothing links an offer to a specific NDA any more, so any attribution
  *     would be fiction (T-NO-OFFER is the pin);
- *   - the card TITLE says "Broker Activity Timeline" (user instruction,
- *     2026-08-21 — it was briefly "NDA Activity Timeline") while the BUNDLE is
- *     still called buyerTimeline, deliberately (a rename is a FlexiPage edit plus
- *     a destructive Apex delete — see the component header).
+ *   - the card TITLE says "Buyer Activity timeline" (user instruction,
+ *     2026-08-24). Full sequence in four days: "NDA Activity Timeline" ->
+ *     "Broker Activity Timeline" (2026-08-21) -> "Buyer Activity timeline"
+ *     (2026-08-24). The BUNDLE is still called buyerTimeline, deliberately (a
+ *     rename is a FlexiPage edit plus a destructive Apex delete — see the
+ *     component header).
  *     🔴 THE TITLE ASSERTIONS BELOW ARE EXACT (`toBe`), NEVER `toContain`. A
- *     substring match on "Activity Timeline" would pass for BOTH the old and the
- *     new name, i.e. it would not detect the rename being reverted — which is
- *     the only thing those assertions exist to detect.
- *     ⚠ "Broker" IS NOT A GROUPING CLAIM. One broker per sale, so the same name
- *     repeats on every tile and the count in the title counts NDAs, not brokers.
+ *     substring match on "Activity" would pass for ALL THREE names, i.e. it
+ *     would not detect the rename being reverted — which is the only thing those
+ *     assertions exist to detect. The exact string also pins the user's
+ *     asymmetric capitalisation (capital "A", lower-case "t"), which a later
+ *     "tidy" to Title Case would otherwise change silently.
+ *     ⚠ THE TITLE IS NOT A GROUPING CLAIM AND NO LONGER MATCHES THE ROWS. The
+ *     tiles still name a BROKER (one per sale, so the same name repeats), the
+ *     count still counts NDAs, and this module stopped modelling buyers on
+ *     2026-08-21 — the 2026-08-24 rename was carried out as instructed and
+ *     flagged to the user, not reconciled here. See the component header, item 0.
  * The old per-buyer assertions were DELETED, not softened into always-true
  * negations inside tests still named for buyers.
  *
@@ -199,19 +206,19 @@ describe('c-disposition-buyer-timeline', () => {
         expect(element.shadowRoot.querySelector('lightning-card')).not.toBeNull();
 
         // 🔴 ...but the card says nothing about the sale yet. No tiles, no empty
-        // state, and NO "(0)" in the title: "Broker Activity Timeline (0)" would
+        // state, and NO "(0)" in the title: "Buyer Activity timeline (0)" would
         // state, in the same words it uses for a genuinely empty sale, that no
         // NDA has been raised — before anything is known.
         expect(dataRows(element).length).toBe(0);
         expect(element.shadowRoot.querySelector('.dbt-empty')).toBeNull();
         expect(element.shadowRoot.querySelector('.dbt-error')).toBeNull();
-        expect(title(element)).toBe('Broker Activity Timeline');
+        expect(title(element)).toBe('Buyer Activity timeline');
         // No spinner either — a spinner is the only element on this card capable
         // of hanging forever if the wire never emits.
         expect(element.shadowRoot.querySelector('lightning-spinner')).toBeNull();
     });
 
-    it('HEADER: the card carries the Broker Activity Timeline title and a contract icon once the wire answers', async () => {
+    it('HEADER: the card carries the Buyer Activity timeline title and a contract icon once the wire answers', async () => {
         const element = createComponent();
 
         getTimeline.emit(TIMELINE);
@@ -227,7 +234,7 @@ describe('c-disposition-buyer-timeline', () => {
         // no-broker placeholder), so a future "group by broker" would render (2)
         // here and fail. That is the point: the title names the counterparty, it
         // does not promise a per-broker rollup.
-        expect(title(element)).toBe('Broker Activity Timeline (4)');
+        expect(title(element)).toBe('Buyer Activity timeline (4)');
     });
 
     it('EMPTY BRANCH: an empty list renders an empty state, not an error', async () => {
@@ -479,11 +486,39 @@ describe('c-disposition-buyer-timeline', () => {
         const text = element.shadowRoot.textContent.toLowerCase();
         expect(text).not.toContain('first offer');
         expect(text).not.toContain('days to respond');
-        // "buyer" must not appear as a rendered word at all — not in the title,
-        // not in a label, not in the empty state. (It could once also have
-        // appeared in the intro line; that line was removed on 2026-08-21 — see
-        // T-NO-PROSE below.)
-        expect(text).not.toContain('buyer');
+
+        // ─────────────────────────────────────────────────────────────────
+        // 🔴 THE "buyer" PIN WAS NARROWED ON 2026-08-24 — NOT WEAKENED, AND
+        //    NOT DELETED. READ THIS BEFORE TOUCHING IT.
+        //
+        //    It used to read `expect(text).not.toContain('buyer')` over the
+        //    WHOLE card: the word could not appear anywhere, because this
+        //    module stopped modelling buyers on 2026-08-21 and every buyer
+        //    surface was deleted.
+        //
+        //    The user then retitled the card to "Buyer Activity timeline"
+        //    (2026-08-24), which makes the original assertion unsatisfiable.
+        //    ⚠ THAT COLLISION IS THE FINDING, NOT A TEST BUG: the card is now
+        //    titled for a party the module does not model. It was flagged to
+        //    the user rather than resolved here.
+        //
+        //    So the pin now says the thing that is still true and still worth
+        //    defending: the word may appear ONCE, as the card's TITLE, and
+        //    NOWHERE IN THE ROWS. A re-added buyer name, buyer column or buyer
+        //    label reds this exactly as before.
+        // ─────────────────────────────────────────────────────────────────
+
+        // 3a. THE ROWS: no buyer identity, no buyer label, on any tile.
+        const tileText = dataRows(element)
+            .map((tile) => tile.textContent.toLowerCase())
+            .join(' ');
+        expect(tileText).not.toContain('buyer');
+
+        // 3b. THE CARD: EXACTLY ONE occurrence, and it is the title. A count is
+        //     what keeps this narrow — `not.toContain` cannot express "one",
+        //     and an allow-list of two surfaces would quietly become three.
+        expect(text.match(/buyer/g)).toHaveLength(1);
+        expect(title(element).toLowerCase()).toContain('buyer');
     });
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -528,7 +563,7 @@ describe('c-disposition-buyer-timeline', () => {
         expect(list.getAttribute('aria-describedby')).toBeNull();
         // The list's own accessible NAME is unaffected and must stay — it has to
         // keep matching the card title (see T-NARROW).
-        expect(list.getAttribute('aria-label')).toBe('Broker activity timeline');
+        expect(list.getAttribute('aria-label')).toBe('Buyer activity timeline');
     });
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -561,7 +596,7 @@ describe('c-disposition-buyer-timeline', () => {
         // Renamed with the card on 2026-08-21. It must keep MATCHING the card
         // title — a list announced under a different name than the card wrapping
         // it reads to a screen-reader user as a second, unrelated region.
-        expect(list.getAttribute('aria-label')).toBe('Broker activity timeline');
+        expect(list.getAttribute('aria-label')).toBe('Buyer activity timeline');
     });
 
     // T-LABELS — proves the old <th scope="col"> semantics were REPLACED, not

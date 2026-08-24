@@ -19,14 +19,19 @@
  * ─────────────────────────────────────────────────────────────────────────────
  * 🔴 THE LOAD-BEARING ASSERTIONS
  * ─────────────────────────────────────────────────────────────────────────────
- * 1. The record-type radio has NO DEFAULT and the confirm button is DISABLED
+ * 1. The Sell Type picklist has NO DEFAULT and the confirm button is DISABLED
  *    until it is answered. A default would silently decide the entire downstream
- *    path (On Market gets BOV Outreach + Active Listing; Off Market gets neither)
+ *    path (On-Market gets BOV Outreach + Active Listing; Off-Market gets neither)
  *    for a user who never looked at the control.
  * 2. The values sent to Apex are RECORD TYPE DEVELOPER NAMES ('On_Market' /
  *    'Off_Market'), not labels. The service allow-lists them character-for-
  *    character and masks the resulting exception as a generic write failure, so
  *    a label leaking through here surfaces as an unexplained "could not create".
+ *    🔴 THE LABELS AND THE VALUES DIVERGED ON 2026-08-24 and the suite asserts
+ *    them SEPARATELY for exactly that reason: the labels gained a hyphen
+ *    ('On-Market'), the values did not ('On_Market'), and no `Sell_Type__c` field
+ *    was created. A test asserting only the option objects wholesale still passes
+ *    if someone "harmonises" the two — the split assertions below do not.
  * 3. `submitted === false` closes with the OUTCOME, not with an error. It is a
  *    success path — the record exists — and only the caller's toast variant
  *    differs. Turning it into `{ error }` would tell a user nothing was created
@@ -35,6 +40,30 @@
  *    refusal reachable here is a property of the ASSET (RED band, already-open
  *    disposition), so re-picking the other record type and retrying produces the
  *    identical refusal.
+ * 5. The modal is titled "Decide to Sell - Approval" and the control is a
+ *    PICKLIST labelled "Sell Type" (both user instructions, 2026-08-24). Pinned
+ *    exactly, never by substring — the point of those assertions is to detect
+ *    the rename being reverted, and a substring match survives a revert.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * 🔴 WHY THESE ASSERT ELEMENT PROPERTIES, NOT GETTERS (2026-08-24 rework)
+ * ─────────────────────────────────────────────────────────────────────────────
+ * `lightning-combobox`'s Jest stub renders `<template></template>` — an EMPTY
+ * template — so no option label ever reaches the jsdom text content and
+ * `textContent` cannot be asserted on. The strongest available statement is
+ * therefore the property read off the `<lightning-combobox>` ELEMENT IN THE
+ * SHADOW ROOT, which is what the TEMPLATE passed it.
+ * ⚠ That is deliberately NOT `element.recordTypeOptions`. This repo has a
+ * measured defect where a getter-only assertion stayed green while the rendered
+ * attribute was wrong (a getter bound into markup is written unconditionally),
+ * so reading the getter proves the array exists, never that the markup binds it.
+ * Every assertion below goes through `sellType(element)` / `modalHeader(element)`.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * 🔴 T-NO-RADIO — the control was a `lightning-radio-group` until 2026-08-24
+ * ("Don't show radio button", user instruction). The picklist assertions alone
+ * would all pass with BOTH controls rendered side by side, so the absence of the
+ * radio group is pinned separately below.
  */
 import { createElement } from 'lwc';
 import SellMeterInitiateModal from 'c/sellMeterInitiateModal';
@@ -77,12 +106,16 @@ describe('c-sell-meter-initiate-modal', () => {
         return element;
     }
 
-    const radio = (el) => el.shadowRoot.querySelector('lightning-radio-group');
+    // The RENDERED control — read every property off this element, never off the
+    // component's getters (see the header).
+    const sellType = (el) => el.shadowRoot.querySelector('lightning-combobox');
+    const modalHeader = (el) =>
+        el.shadowRoot.querySelector('lightning-modal-header');
     const confirmBtn = (el) => el.shadowRoot.querySelector('.smi-confirm');
     const cancelBtn = (el) => el.shadowRoot.querySelector('.smi-cancel');
 
     function chooseRecordType(element, value) {
-        radio(element).dispatchEvent(
+        sellType(element).dispatchEvent(
             new CustomEvent('change', { detail: { value } })
         );
         return Promise.resolve();
@@ -133,7 +166,7 @@ describe('c-sell-meter-initiate-modal', () => {
         // Guard the guard: the summary genuinely rendered, so the absences below
         // are real absences and not an unrendered component.
         expect(element.shadowRoot.querySelectorAll('.smi-value').length).toBe(4);
-        expect(radio(element)).not.toBeNull();
+        expect(sellType(element)).not.toBeNull();
 
         // 1. THE OLD SELECTOR.
         expect(element.shadowRoot.querySelector('.smi-intro')).toBeNull();
@@ -166,18 +199,98 @@ describe('c-sell-meter-initiate-modal', () => {
         expect(element.shadowRoot.textContent).not.toContain('undefined');
     });
 
-    it('offers exactly two options, and their VALUES are record type developer names', async () => {
+    it('HEADER: the modal is titled "Decide to Sell - Approval"', async () => {
         const element = createComponent();
 
         await Promise.resolve();
 
-        expect(radio(element).options).toEqual([
-            { label: 'On Market', value: 'On_Market' },
-            { label: 'Off Market', value: 'Off_Market' }
-        ]);
+        // Read off the RENDERED <lightning-modal-header>, which is what the
+        // template bound — a hardcoded literal in the markup has no getter to
+        // check, and this is the only place the string is observable.
+        expect(modalHeader(element)).not.toBeNull();
+        expect(modalHeader(element).label).toBe('Decide to Sell - Approval');
+        // 🔴 EXACT, NEVER `toContain`. The retitle (2026-08-24) is the whole
+        // assertion; a substring match on "Approval" would pass for a revert to
+        // anything that merely mentions it.
+        expect(modalHeader(element).label).not.toBe('Initiate Disposition');
+    });
+
+    it('SELL TYPE: renders a combobox labelled "Sell Type" — required, with no default', async () => {
+        const element = createComponent();
+
+        await Promise.resolve();
+
+        const control = sellType(element);
+        expect(control).not.toBeNull();
+        // The FIELD label the user reads above the picklist.
+        expect(control.label).toBe('Sell Type');
         // No default. The choice is mandatory and the platform must not pick.
-        expect(radio(element).value).toBeUndefined();
-        expect(radio(element).required).toBe(true);
+        expect(control.value).toBeUndefined();
+        expect(control.required).toBe(true);
+    });
+
+    it('SELL TYPE: the option LABELS are hyphenated — "On-Market" / "Off-Market"', async () => {
+        const element = createComponent();
+
+        await Promise.resolve();
+
+        const options = sellType(element).options;
+        // Asserted as its own list, separately from the values below. The hyphen
+        // is a 2026-08-24 user instruction that exists ONLY here — the record
+        // type labels were deliberately not changed and no Sell_Type__c field
+        // was created — so this is the single surface that can regress it.
+        expect(options.map((o) => o.label)).toEqual(['On-Market', 'Off-Market']);
+    });
+
+    it('SELL TYPE: offers exactly two options, and their VALUES are record type developer names', async () => {
+        const element = createComponent();
+
+        await Promise.resolve();
+
+        const options = sellType(element).options;
+        expect(options).toHaveLength(2);
+        // 🔴 THE VALUES DID NOT GAIN THE HYPHEN. They are matched
+        // character-for-character by DispositionService's record type allow-list;
+        // 'On-Market' here would surface to the user as an unexplained "could not
+        // create", because the resulting exception is masked as a generic write
+        // failure.
+        expect(options.map((o) => o.value)).toEqual(['On_Market', 'Off_Market']);
+        expect(options).toEqual([
+            { label: 'On-Market', value: 'On_Market' },
+            { label: 'Off-Market', value: 'Off_Market' }
+        ]);
+    });
+
+    it('🔴 T-NO-RADIO: the radio group is GONE — the picklist did not join it', async () => {
+        const element = createComponent();
+
+        await Promise.resolve();
+
+        // Guard the guard: the body genuinely rendered, so the absence below is
+        // a real absence and not an unrendered component.
+        expect(element.shadowRoot.querySelectorAll('.smi-value').length).toBe(4);
+        expect(sellType(element)).not.toBeNull();
+
+        // "Don't show radio button" (user instruction, 2026-08-24). Every other
+        // assertion in this file passes with BOTH controls on screen — this is
+        // the only one that does not.
+        expect(
+            element.shadowRoot.querySelector('lightning-radio-group')
+        ).toBeNull();
+        expect(element.shadowRoot.querySelector('.smi-radio')).toBeNull();
+
+        // The old field label went with it. A re-added control usually arrives
+        // under a new class name, so the selectors alone would stay green.
+        // ⚠ ASSERTED OVER `label` PROPERTIES, NOT `textContent`: every lightning
+        // stub in sfdx-lwc-jest renders an EMPTY template, so the label of a
+        // re-added radio group would never appear in the shadow root's text and
+        // a `textContent` version of this line would be vacuously green.
+        const labels = [...element.shadowRoot.querySelectorAll('*')].map(
+            (n) => n.label
+        );
+        expect(labels).not.toContain('How is this property going to market?');
+        // Positive control for the line above — the scan really does see labels.
+        expect(labels).toContain('Sell Type');
     });
 
     it('GATE: "Send for Approval" is disabled until a record type is chosen', async () => {
@@ -227,7 +340,7 @@ describe('c-sell-meter-initiate-modal', () => {
         expect(closeHandler.mock.calls[0][0].detail).toEqual({ outcome });
     });
 
-    it('OFF MARKET: the other radio choice reaches Apex unchanged', async () => {
+    it('OFF-MARKET: the other picklist choice reaches Apex unchanged', async () => {
         initiateAndSubmit.mockResolvedValue({
             dispositionId: DISPOSITION_ID,
             submitted: true,

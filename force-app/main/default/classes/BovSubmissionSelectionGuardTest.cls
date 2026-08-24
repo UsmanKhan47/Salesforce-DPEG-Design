@@ -151,6 +151,120 @@ private class BovSubmissionSelectionGuardTest {
     }
 
     /**
+     * 🔴 THE SECOND REQUIRED FALSIFIER, ADDED 2026-08-24 WITH BOV AUTO-SELECTION. Twin of
+     * `existingReplaceSelectedBrokerService_stillSucceeds` above, and it must never be deleted for
+     * the same reason: `BovAutoSelectionService` is the SECOND class of caller that has to satisfy
+     * this guard, and its whole architecture is dictated by it.
+     *
+     * WHAT IT FALSIFIES, PRECISELY. The service promotes a new higher-scoring submission and
+     * demotes the committed incumbent in ONE `Database.update` from an AFTER context. If anyone
+     * ever moves it to a BEFORE context, or splits it into two DML statements, this guard refuses
+     * the save — and because the offending save is THE USER'S OWN INSERT of an unrelated BOV
+     * response, they see `DUPLICATE_SELECTED_MESSAGE` telling them to use Replace Broker on a save
+     * that had nothing to do with selection. 100% reproducible, and attributed to the wrong feature.
+     *
+     * ⚠ THE FIXTURE MUST BE A **PRICED** DISPOSITION. `BOV_Score__c` is null without an
+     * `Asking_Price__c`, and a null score is not a rank — so on an ordinary factory fixture
+     * auto-selection never promotes anything and this test would pass while exercising nothing.
+     * `TestDataFactory.createPricedDisposition` exists for exactly this.
+     *
+     * ⚠ IT DELIBERATELY ASSERTS THE ABSENCE OF AN ERROR RATHER THAN CATCHING ONE. The refusal
+     * arrives as an `addError` on the inserted row, which surfaces as a `DmlException` from the
+     * plain `insert` below — so a regression fails this test at the DML line with the guard's own
+     * message, which is the most readable possible failure.
+     */
+    @isTest
+    static void autoSelectionSwap_isNotRefusedByTheGuard() {
+        Disposition__c d = TestDataFactory.createPricedDisposition(assetId(), 1500000, false);
+        d.Disposition_Stage__c = 'BOV Outreach';
+        insert d;
+        BOV_Submission__c incumbent = TestDataFactory.createBovSubmission(d.Id, false);
+        incumbent.BOV_Amount__c = 1000000;
+        insert incumbent; // auto-selected: the only scoreable candidate
+        Assert.areEqual(STATUS_SELECTED, statusesOn(d.Id).get(incumbent.Id).Submission_Status__c,
+            'FIXTURE PRECONDITION: auto-selection must have appointed the lone candidate. If this '
+            + 'is Backup the disposition is unpriced, every score is null, and the assertion below '
+            + 'would be vacuous.');
+
+        Test.startTest();
+        // The triggering save. Auto-selection reacts in the AFTER context with ONE
+        // Database.update([demote incumbent, promote challenger]) — which re-enters THIS guard's
+        // beforeUpdate with BOTH rows in Trigger.new.
+        BOV_Submission__c challenger = TestDataFactory.createBovSubmission(d.Id, false);
+        challenger.BOV_Amount__c = 1400000;
+        insert challenger;
+        Test.stopTest();
+
+        Map<Id, BOV_Submission__c> after = statusesOn(d.Id);
+        Assert.areEqual(STATUS_SELECTED, after.get(challenger.Id).Submission_Status__c,
+            '🔴 THE GUARD MUST NOT REFUSE AUTO-SELECTION\'S OWN SWAP. The higher scorer must be '
+            + 'promoted — a before-context or two-statement implementation would have had this '
+            + 'insert rolled back by the guard instead.');
+        Assert.areEqual(STATUS_BACKUP, after.get(incumbent.Id).Submission_Status__c,
+            'And the incumbent must be demoted IN THE SAME STATEMENT, which is exactly what makes '
+            + 'the promotion legal (PASS 2 skips it because it is in incomingIds).');
+    }
+
+    /**
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * 🔴 THE CONTRACT WITH `c/bovAddResponseModal`, PINNED AS A REFUSAL. ADDED 2026-08-24.
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * The user's decision is that a preferred broker becomes the single `Selected` row. The obvious
+     * implementation — have the Add Preferred Broker modal write
+     * `Submission_Status__c = 'Selected'` alongside `Is_Preferred_Broker__c = true` and skip the
+     * server entirely — **IS REFUSED BY THIS GUARD**, and this test is what says so out loud.
+     *
+     * THE ARITHMETIC, TRACED: the disposition already holds a committed `Selected` row. On an
+     * INSERT that incumbent is NOT in `Trigger.new`, so PASS 2 counts it;
+     * `others = 1 (committed) + 1 (incoming) - 1 (self) = 1 > 0`; the guard `addError`s and the
+     * user's own Add Preferred Broker save is rolled back, with a message telling them to use
+     * Replace Broker — an action that would in turn refuse the preferred row.
+     *
+     * ⇒ THE CONTRACT IS: **the flag is the INPUT, `Selected` is the OUTPUT.** The modal inserts the
+     * row at `Backup` carrying only the flag (which is what it already does — no LWC change is
+     * required for this decision), and `BovAutoSelectionService` promotes it and demotes the
+     * incumbent in ONE `Database.update`, the only shape this guard permits.
+     *
+     * ⚠ THIS TEST WILL LOOK LIKE A STRANGE THING TO WANT UNTIL IT SAVES SOMEONE. It asserts that a
+     * reasonable-looking client change fails loudly rather than in UAT. Do not delete it as
+     * "testing the platform" — it is testing an interface agreement between two agents' work.
+     */
+    @isTest
+    static void preferredInsertedAsSelected_isRefused_soTheModalMustNotSetIt() {
+        Disposition__c d = TestDataFactory.createPricedDisposition(assetId(), 1500000, false);
+        d.Disposition_Stage__c = 'BOV Outreach';
+        insert d;
+        BOV_Submission__c scored = TestDataFactory.createBovSubmission(d.Id, false);
+        scored.BOV_Amount__c = 1200000;
+        insert scored;
+        Assert.areEqual(STATUS_SELECTED, statusesOn(d.Id).get(scored.Id).Submission_Status__c,
+            'FIXTURE PRECONDITION: auto-selection appointed the scored response, so there IS a '
+            + 'committed Selected incumbent for the guard to count');
+
+        BOV_Submission__c preferred = TestDataFactory.createBovSubmission(d.Id, false);
+        preferred.Is_Preferred_Broker__c = true;
+        preferred.Submission_Status__c = STATUS_SELECTED; // 🔴 what the modal must NOT do
+
+        Test.startTest();
+        Boolean refused = false;
+        try {
+            insert preferred;
+        } catch (DmlException e) {
+            refused = true;
+            Assert.isTrue(e.getMessage().contains('only one is allowed'),
+                'The refusal must be THIS guard, not an unrelated rule: ' + e.getMessage());
+        }
+        Test.stopTest();
+
+        Assert.isTrue(refused,
+            '🔴 If this insert now SUCCEEDS the guard has been weakened, and this repo has just '
+            + 'lost the only thing preventing two Selected brokers on one disposition. That is a '
+            + 'far worse outcome than the modal being unable to set the status directly.');
+        Assert.areEqual(STATUS_SELECTED, statusesOn(d.Id).get(scored.Id).Submission_Status__c,
+            'and the incumbent is untouched — a refused save writes nothing');
+    }
+
+    /**
      * The same shape as the service, performed with RAW DML rather than through it — so the guard's
      * contract is pinned independently of `BovSubmissionService`. A data loader or an integration
      * that demotes and promotes in one call is doing something legitimate and must be allowed.
