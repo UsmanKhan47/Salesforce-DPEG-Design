@@ -1,0 +1,34 @@
+/*
+  ═════════════════════════════════════════════════════════════════════════════
+  c-bov-preferred-broker-card — one rule, and it is not decoration.
+  ═════════════════════════════════════════════════════════════════════════════
+  🔴 THIS STYLESHEET DELIBERATELY CARRIES NO COLOUR. Every colour in this card
+  belongs to `c/bovPreferredBroker` — the green tint, the ring, the pill, the
+  icon — and that bundle's own stylesheet documents, at length, why the pairing
+  is `success-base-95` + `success-base-30` rather than `success-container-1`
+  (which is a SOLID MID-GREEN under the SLDS 2 base theme, not a tint). Re-stating
+  any of it here would create a second copy to drift, and this card and that
+  panel are the same visual object.
+
+  ⚠ SO DO NOT "THEME THE CARD" FROM HERE. If the panel's green ever needs to
+  change it changes in `c/bovPreferredBroker`, once, for both of its consumers
+  (this card and `c/bovBrokerPanel`).
+*/
+
+/*
+  `lightning-card`'s default slot has NO padding of its own, so without this the
+  green panel renders flush against the card's left, right and bottom edges —
+  which reads as a rendering fault rather than as a design.
+
+  ⚠ THIS IS NOT THE SAME PADDING AS `.pref-panel`'s. That one is INTERIOR (the
+  gap between the panel's ring and the shield/text inside it); this one is the
+  card body's inset. Deleting either does something different and visible.
+  ⚠ jsdom PERFORMS NO LAYOUT, so nothing in a DOM assertion can see this rule.
+  It is pinned as SOURCE TEXT in the Jest suite (T-CSS), which is the only
+  automated falsifier available for a stylesheet.
+
+  --slds-g-spacing-4 = 1rem: the step every other card body on this page uses.
+*/
+.pbc-body {
+    padding: var(--slds-g-spacing-4, 1rem);
+}

@@ -1,0 +1,121 @@
+<!--
+  ══════════════════════════════════════════════════════════════════════════════
+  c-bov-responses-card — "BOV (n)", card #3 of the three stacked broker cards on
+  the Disposition record page (2026-08-25).
+  ══════════════════════════════════════════════════════════════════════════════
+  🔴 THE WHOLE CARD IS INSIDE AN `lwc:if`, SAME REASON AS
+  `c/bovPreferredBrokerCard`: a FlexiPage component visibility rule can only test
+  FIELDS ON THE RECORD, and "does this disposition have any BOV submissions" is a
+  fact about a CHILD OBJECT. A manually appointed broker is a real path, so an
+  empty "BOV (0)" card would be a titled announcement that there is nothing to
+  announce, on a page that already has enough on it.
+
+  ⚠ A FAILED READ IS A DIFFERENT STATE AND DOES GET THE CARD. Silence there
+  would be a confident wrong answer — the reader would conclude that no broker
+  ever responded. So: rows -> the table; nothing -> no card; failure -> the card,
+  with one honest line. Three states, never two.
+
+  ── EXACTLY TWO COLUMNS, AND THAT IS THE REQUIREMENT ────────────────────────
+  🔴 THIS IS NOT `c/bovComparisonMatrix` AND MUST NOT GROW BACK INTO IT. The
+  matrix compares SEVEN columns (firm, contact, valuation, days to market, cap
+  rate, score, status) because it exists at BOV Outreach to help somebody CHOOSE.
+  This card sits on the record page for the rest of the sale's life, by which
+  time the choice is made — so it is the RECORD of that decision, and a valuation
+  or a cap rate here invites a reader to re-litigate it on numbers that are by
+  then months old. Broker name and status, nothing else.
+  ⚠ THE JEST FIXTURES CARRY ALL FIVE COMPARISON FIGURES ON PURPOSE: the server
+  hands this card the SAME row the matrix renders, so a re-added column would
+  display real, plausible data and look entirely correct. The suite asserts those
+  numbers are NOT rendered — an assertion that could not exist at all if the
+  fixtures had been nulled out "because the card does not use those fields".
+
+  ⚠ A REAL `<table>`, HAND-ROLLED, WITH REAL `<th scope="col">`. Two reasons.
+  (1) `lightning-datatable`'s Jest stub renders an EMPTY template, which would
+  make every text assertion in the suite vacuous and blind `@sa11y/jest` to the
+  headers entirely. (2) A datatable does not resolve a `fieldName` reference
+  inside a row action, a trap this repo has shipped twice; there are no actions
+  here today and a hand-rolled row cannot acquire that indirection later.
+
+  🔴 PREFERRED ROWS ARE INCLUDED IN THIS LIST, NOT FILTERED OUT. The user's
+  design shows three named firms with three statuses, and the preferred broker is
+  one of the sale's BOV submissions like any other. `c/bovComparisonMatrix`
+  EXCLUDES the preferred row — that is a fact about the matrix (it is a chooser,
+  and the preferred row is not a candidate), not a house rule. Do not copy its
+  filter here.
+-->
+<template>
+    <template lwc:if={isVisible}>
+        <lightning-card icon-name="standard:contract">
+            <!-- 🔴 THE `id` IS LOAD-BEARING: the table below is NAMED by this
+                 span via `aria-labelledby`, so an unnamed grid never reaches a
+                 screen reader. The IDREF resolves because the span, though
+                 SLOTTED into `lightning-card`'s shadow root, is still a node of
+                 THIS component's shadow tree — which is the tree an IDREF is
+                 resolved in. A <caption> was the alternative and was rejected:
+                 it would render the same words a second time, directly under the
+                 title that already says them. -->
+            <span slot="title" id="brc-title">{cardTitle}</span>
+
+            <!-- `lightning-card`'s default slot carries no padding of its own. -->
+            <div class="brc-body">
+                <template lwc:if={hasRows}>
+                    <table class="brc-table" aria-labelledby="brc-title">
+                        <thead>
+                            <tr>
+                                <th class="brc-th" scope="col">Broker Name</th>
+                                <th class="brc-th brc-th--status" scope="col">
+                                    Status
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <template
+                                for:each={responseRows}
+                                for:item="broker"
+                            >
+                                <tr key={broker.id} class="brc-row">
+                                    <td class="brc-td brc-name">
+                                        {broker.name}
+                                    </td>
+                                    <!-- ⚠ THE STATE IS READABLE TEXT INSIDE THE
+                                         PILL, never the pill's colour. This repo
+                                         has a measured incident of a text->badge
+                                         swap deleting accessible content a test
+                                         had pinned. The colour is reinforcement
+                                         and is derived from `isSelected`; the
+                                         WORD is passed through from the record.
+                                         axe's colour-contrast rule is inert in
+                                         jsdom, so colour alone would be checked
+                                         by nothing in this pipeline. -->
+                                    <td class="brc-td">
+                                        <span class={broker.statusClass}
+                                            >{broker.status}</span
+                                        >
+                                    </td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </template>
+
+                <!-- 🔴 `lwc:elseif={isUnavailable}`, NOT A BARE `lwc:else`.
+                     Today the two are provably equivalent — `isVisible` is
+                     `hasRows || isUnavailable`, so inside the card `!hasRows`
+                     can only mean the read failed. Naming the condition is what
+                     stops a future widening of `isVisible` (say, a third state)
+                     from silently showing everyone a failure message about a
+                     read that succeeded.
+                     ⚠ `role="status"`, NOT `alert`. This is a secondary card on
+                     a busy record page and nothing the user did caused it; an
+                     alert interrupts, a status is announced when the user gets
+                     there. Same treatment, for the same reason, as
+                     `c/bovBrokerChangeHistory`'s unavailable state. -->
+                <template lwc:elseif={isUnavailable}>
+                    <p class="brc-unavailable" role="status">
+                        Broker responses could not be loaded.
+                    </p>
+                </template>
+            </div>
+        </lightning-card>
+    </template>
+</template>

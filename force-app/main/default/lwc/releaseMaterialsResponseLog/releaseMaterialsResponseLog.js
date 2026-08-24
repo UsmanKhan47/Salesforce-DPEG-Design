@@ -95,6 +95,46 @@
  * `AccessLevel.USER_MODE` on the insert, which refuses the write whatever this
  * flag says, and there is an Apex test that runs a read-only persona through
  * the service to prove it.
+ *
+ * ==========================================================================
+ * 🔴 THE LOG RENDERS THROUGH `c-list-datatable`, LIKE `c/loiCounterOffer`
+ *    (2026-08-25) — AND THE ARGUMENT AGAINST IT WAS BASED ON A FALSE PREMISE
+ * ==========================================================================
+ * This card previously rendered its logged responses as a `<ul>` of hand-rolled
+ * tiles. The 2026-08-24 theming pass recorded that as "DIVERGENCE 4" and gave
+ * two reasons. BOTH ARE RETRACTED — quoted here rather than deleted, because the
+ * second is the kind a future reader would rebuild from first principles:
+ *
+ *   RETRACTED (1): "It is a REWRITE, not a theme." True at the time and no
+ *   longer a reason: the rewrite was subsequently ASKED FOR.
+ *
+ *   🔴 RETRACTED (2): "A fixed-column table does not survive the ~340px record-
+ *   page sidebar." THE PREMISE IS SIMPLY FALSE. This card is rendered by
+ *   `c/dispositionMain`, and `c_dispositionMain` is a componentInstance of the
+ *   **`main`** region of `flexipages/Disposition_Record_Page` (template
+ *   `flexipage:recordHomeWithSubheaderTemplateDesktop`) — the WIDE region. The
+ *   `sidebar` region holds `dispositionSidebar` and its neighbours; this card has
+ *   never been in it. DO NOT RE-USE THE WIDTH ARGUMENT.
+ *
+ * ⚠ AND THE DATA SHAPE WAS THE REAL QUESTION, NOT THE WIDTH — it was checked:
+ * `loiCounterOffer`'s "Counter Response" column already carries
+ * `Counter_Offer__c.Counter_Response__c`, which is `LongTextArea`, length 32768,
+ * `visibleLines` 3 — BYTE-FOR-BYTE THE SAME FIELD DEFINITION as this object's
+ * `Notes__c`. The idiom for it is `wrapText: true` with NO `initialWidth`, so the
+ * column absorbs the remaining width; that is copied verbatim below.
+ *
+ * ⚠ WHAT WAS DELIBERATELY *NOT* COPIED FROM loiCounterOffer, AND WHY — two
+ * things, both because they would change BEHAVIOUR rather than presentation:
+ *   1. SORTABLE COLUMNS + `onsort`. loiCounterOffer re-sorts client-side. This
+ *      card does not sort at all, on purpose: `ReleaseMaterialsResponseSelector`
+ *      orders `Entry_DateTime__c DESC NULLS LAST, Name DESC` and two sorts would
+ *      be free to disagree. No column is `sortable`, so no sort affordance is
+ *      offered that the component would then have to honour.
+ *   2. A `url`-TYPE FIRST COLUMN. loiCounterOffer links each row to its
+ *      Counter_Offer__c record. `Release_Materials_Response__c` ships with no tab
+ *      and no list view and its record page is unconfigured, so a link would be a
+ *      NEW navigation affordance landing on a bare default page. The response
+ *      number is carried as plain text instead.
  */
 import { LightningElement, api, wire } from 'lwc';
 import { refreshApex } from '@salesforce/apex';
@@ -123,6 +163,130 @@ const METHOD_OPTIONS = [
     { label: 'Offer', value: 'Offer' }
 ];
 
+/** loiCounterOffer's own cellAttributes constant — left-align every text column. */
+const LEFT = { alignment: 'left' };
+
+/**
+ * `[background, dot]` per `Method__c` value, for the `pill` custom cell type that
+ * `c/listDatatable` registers. This is the datatable-native replacement for the
+ * `slds-badge` the tiles used, and it is the same construction loiCounterOffer
+ * uses for its "Countered By" column.
+ *
+ * 🔴 BUT EVERY COLOUR IS A STYLING HOOK WITH A LITERAL FALLBACK, WHICH IS A
+ * DELIBERATE DEPARTURE FROM THE SIXTEEN OTHER `pillWrap` HELPERS IN THIS REPO —
+ * every one of them, loiCounterOffer included, hardcodes raw hex. Raw hex does
+ * not re-resolve under the dark theme, and this bundle's stylesheet carries an
+ * explicit dark-mode pin BECAUSE NOTHING ELSE IN THE PIPELINE CATCHES A DARK-MODE
+ * FAILURE (the SLDS linter only checks that a hook was used, Jest asserts class
+ * names, and axe's colour-contrast rule is inert in jsdom). Moving the method
+ * badge from CSS into an inline style string would have moved it OUT of reach of
+ * that pin — so the pin moved too, onto the rendered row data. See the test.
+ * ⚠ `-base-95` + `-base-30` IS THE SAFE TINT PAIRING. NOT `-container-1`, which
+ * is a SOLID DARK FILL (#2e844a for success, #ba0517 for error) whose pale
+ * literal fallback describes only the hook-undefined case — a file using it reads
+ * as correct while rendering dark-on-dark.
+ * ⚠ THE KEYS MUST MATCH `METHOD_OPTIONS` EXACTLY. A miss is not fatal — it falls
+ * through to the neutral pill below and the WORD still renders — which is
+ * precisely why a test asserts the resolved style per method rather than trusting
+ * the lookup.
+ */
+const METHOD_PILL = {
+    'More questions': [
+        'var(--slds-g-color-warning-base-95, #fff1ea)',
+        'var(--slds-g-color-warning-base-30, #8a5300)'
+    ],
+    Decision: [
+        'var(--slds-g-color-brand-base-95, #eef4ff)',
+        'var(--slds-g-color-brand-base-30, #014486)'
+    ],
+    Offer: [
+        'var(--slds-g-color-success-base-95, #ebf7e6)',
+        'var(--slds-g-color-success-base-30, #1b7a4b)'
+    ]
+};
+
+/** For a method the server sends that this client does not know, and for the em-dash. */
+const METHOD_PILL_NEUTRAL = [
+    'var(--slds-g-color-neutral-base-95, #f3f3f3)',
+    'var(--slds-g-color-neutral-base-30, #444444)'
+];
+
+const pillWrap = (bg) =>
+    `display:inline-flex;align-items:center;gap:7px;padding:4px 11px;border-radius:4px;font-weight:600;color:var(--slds-g-color-on-surface-2, #2e2e2e);background:${bg}`;
+const pillDot = (c) =>
+    `width:7px;height:7px;border-radius:50%;background:${c};flex-shrink:0`;
+
+/**
+ * The logged-response columns, in the required reading order: the response
+ * number, then METHOD, RESPONSE FROM, NOTES and finally the DATE — loiCounterOffer
+ * puts its date last too.
+ *
+ * ⚠ `Received` IS `type: 'date'`, NOT `date-local`. loiCounterOffer's date column
+ * is `date-local` because `Counter_Date__c` is an Apex **Date** — a bare
+ * `YYYY-MM-DD` with no instant attached, which `date-local` renders without a
+ * timezone shift. `Entry_DateTime__c` is a **DateTime**: an unambiguous instant,
+ * correctly rendered in the viewer's own timezone. Using `date-local` on it would
+ * render the DAY BEFORE for any viewer west of Greenwich. The typeAttributes are
+ * the same five the retired `lightning-formatted-date-time` carried.
+ * ⚠ A NULL `Entry_DateTime__c` (the field is `required=false`, defaulted to NOW()
+ * but editable) now renders an EMPTY CELL where the tile rendered an em-dash.
+ * That is the correct idiom change, not an oversight: an empty cell in a labelled
+ * column reads as "no value", whereas a blank under a tile's label reads as a
+ * rendering failure. The em-dash survives where it still carries meaning — Notes,
+ * the broker and the method are all `text`/`pill` and keep theirs.
+ * 🔴 NO `sortable` ON ANY COLUMN. See the class header: the order is the server's.
+ */
+const COLUMNS = [
+    {
+        label: 'Response',
+        fieldName: 'responseName',
+        type: 'text',
+        initialWidth: 110,
+        cellAttributes: LEFT
+    },
+    {
+        label: 'Method',
+        fieldName: 'method',
+        type: 'pill',
+        initialWidth: 150,
+        typeAttributes: {
+            wrapStyle: { fieldName: 'methodWrap' },
+            dotStyle: { fieldName: 'methodDot' }
+        }
+    },
+    {
+        label: 'Response from',
+        fieldName: 'brokerName',
+        type: 'text',
+        initialWidth: 180,
+        cellAttributes: LEFT
+    },
+    {
+        // No initialWidth: this column absorbs the remaining width (fixed mode),
+        // exactly as loiCounterOffer's "Counter Response" column does for the
+        // identically-defined Counter_Response__c.
+        label: 'Notes',
+        fieldName: 'notes',
+        type: 'text',
+        wrapText: true,
+        cellAttributes: LEFT
+    },
+    {
+        label: 'Received',
+        fieldName: 'entryDateTime',
+        type: 'date',
+        initialWidth: 150,
+        cellAttributes: LEFT,
+        typeAttributes: {
+            year: 'numeric',
+            month: 'short',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit'
+        }
+    }
+];
+
 export default class ReleaseMaterialsResponseLog extends LightningElement {
     @api recordId;
 
@@ -137,7 +301,7 @@ export default class ReleaseMaterialsResponseLog extends LightningElement {
     _wiredContext;
 
     methodOptions = METHOD_OPTIONS;
-    emDash = EM_DASH;
+    columns = COLUMNS;
 
     @wire(getLogContext, { dispositionId: '$recordId' })
     wiredLogContext(result) {
@@ -272,30 +436,39 @@ export default class ReleaseMaterialsResponseLog extends LightningElement {
     }
 
     /**
-     * The rendered rows, in SERVER ORDER — newest first. This component does NOT
-     * sort; `ReleaseMaterialsResponseSelector` does, and two sorts would be free
-     * to disagree.
+     * The datatable rows, in SERVER ORDER — newest first.
+     *
+     * 🔴 THIS COMPONENT DOES NOT SORT, AND `.map()` IS THE WHOLE IMPLEMENTATION
+     * FOR THAT REASON. `ReleaseMaterialsResponseSelector` orders
+     * `Entry_DateTime__c DESC NULLS LAST, Name DESC`; two sorts would be free to
+     * disagree, and there is no sort affordance on any column to honour. Note the
+     * contrast with `c/loiCounterOffer`'s own `rows` getter, which ends in a
+     * `[...data].sort(...)` because it DOES offer sortable columns — copying that
+     * tail along with the rest of the idiom is the mistake to avoid.
+     * ⚠ NAMED `rows`, NOT `entries`: it is what `data={rows}` binds to, and it
+     * carries per-row STYLE STRINGS the tiles never needed. Anything reading it as
+     * a generic "the entries" list is reading it wrong.
      */
-    get entries() {
+    get rows() {
         if (!this.hasContext) {
             return [];
         }
         return this.context.responses.map((row) => {
-            const responseName = row.responseName || EM_DASH;
             const method = row.method || EM_DASH;
+            const [background, dot] = METHOD_PILL[method] || METHOD_PILL_NEUTRAL;
             return {
                 id: row.responseId,
-                responseName,
+                responseName: row.responseName || EM_DASH,
                 method,
+                methodWrap: pillWrap(background),
+                methodDot: pillDot(dot),
                 brokerName: row.brokerName || EM_DASH,
                 // Notes are OPTIONAL on a response — an em-dash is the correct
                 // rendering of "none entered", not a missing value.
                 notes: row.notes || EM_DASH,
-                entryDateTime: row.entryDateTime,
-                // The accessible name for the whole tile group. The badge and
-                // the subtitle are reinforcement; THIS is what a screen reader
-                // announces for the row.
-                rowLabel: `${responseName} — ${method} from ${row.brokerName || 'no broker'}`
+                // ⚠ PASSED RAW. The `date` column formats it; a pre-formatted
+                // string here would be formatted twice and render as NaN.
+                entryDateTime: row.entryDateTime
             };
         });
     }

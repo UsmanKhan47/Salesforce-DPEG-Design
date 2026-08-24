@@ -1,13 +1,13 @@
 /* c-release-materials-response-log
    ═══════════════════════════════════════════════════════════════════════════════════════════════
-   🔴 THIS FILE IS DELIBERATELY SMALL, AND THAT IS THE POINT OF THE 2026-08-24 THEMING PASS.
+   🔴 THIS FILE IS DELIBERATELY SMALL, AND IT GOT SMALLER AGAIN ON 2026-08-25.
    ═══════════════════════════════════════════════════════════════════════════════════════════════
    `c/loiCounterOffer` — the card this one was asked to match — ships a stylesheet with ONE rule
    and carries all of its spacing, boxing and muted text on SLDS utility classes in the template.
    This card previously hand-rolled all of that with raw styling hooks, which is what made it read
-   as a different component family. Everything that had an SLDS equivalent was DELETED here and
-   moved to the markup:
+   as a different component family.
 
+   ── PASS 1 (2026-08-24): everything with an SLDS equivalent was DELETED and moved to the markup ──
      .rmr-body        -> slds-p-horizontal_small slds-p-bottom_small (the card body wrapper)
      .rmr-notice      -> slds-text-color_weak slds-p-vertical_x-small
      .rmr-form        -> slds-box slds-box_x-small slds-m-bottom_small
@@ -19,9 +19,23 @@
      .rmr-tile        -> slds-box slds-box_x-small (border/radius/padding/background all deleted)
      .rmr-readonly-*  -> slds-form-element__label / __static / __help carry the type scale
 
-   ⚠ WHAT SURVIVES IS ONLY WHAT SLDS HAS NO CLASS FOR: the responsive tile grid, the two-track
-   definition list, and three type/colour overrides. Do NOT re-add a hook for something a
-   `slds-*` utility already does — that is precisely the drift this pass reversed.
+   ── 🔴 PASS 2 (2026-08-25): THE WHOLE TILE LIST IS GONE, AND WITH IT TEN MORE RULES ──
+   The logged responses now render through `<c-list-datatable>` — loiCounterOffer's own history
+   component — which owns its row layout entirely. DELETED, and they must STAY deleted:
+     .rmr-list  .rmr-item  .rmr-tile  .rmr-tile-head  .rmr-name  .rmr-broker-line
+     .rmr-facts  .rmr-label  .rmr-c  .rmr-notes
+   🔴 THE ARGUMENT THAT PUT THEM HERE IS RETRACTED, AND IT WAS FACTUALLY WRONG. This file used to
+   end with: *"This card lives in the disposition record page's MAIN region today, which is wide —
+   but c/dispositionBuyerTimeline was built for an ~800px region, moved to a ~340px sidebar, and
+   had to be rebuilt… It is also the reason this card keeps tiles where loiCounterOffer uses a
+   datatable."* The card is rendered by `c/dispositionMain`, which is a componentInstance of the
+   **`main`** region of `flexipages/Disposition_Record_Page`; the `sidebar` region holds
+   `dispositionSidebar`. There was never a narrow-container constraint to design around here.
+
+   ⚠ WHAT SURVIVES IS ONLY WHAT SLDS HAS NO CLASS FOR: three type/colour overrides on the
+   read-only broker block, two margins on the empty state, and the shared error banner. Do NOT
+   re-add a hook for something a `slds-*` utility already does — that is precisely the drift these
+   two passes reversed.
 
    ⚠ --slds-g-color-on-surface-1 IS THE GREY ONE (#757575); -2 (#2e2e2e) and -3 (#181818) are
    progressively DARKER. The numbering reads like an ascending emphasis scale and is the reverse,
@@ -35,22 +49,19 @@
    the Salesforce environments where hooks are unavailable, which is why the repo gate
    `slds/no-slds-var-without-fallback` warns on one.
 
-   🔴 EVERY `gap` AND EVERY `margin` BELOW IS MARKUP, NOT DECORATION. The LWC template compiler
-   discards whitespace-only text nodes between sibling elements, so deleting the `gap` on
-   .rmr-list does not "tighten" the list — it welds the tiles edge to edge with literally nothing
-   between them. Measured four times this week in this repo. __tests__ pins these rules against
-   this file's SOURCE for exactly that reason.
+   🔴 THE DARK-MODE PIN MOVED WITH THE BADGE. The method pill's colours are no longer in this file
+   at all — they are inline style strings built in the JS, because that is how `c/listDatatable`'s
+   `pill` custom cell type receives them. The __tests__ dark-mode assertion therefore now runs over
+   the RENDERED ROW DATA as well as over this stylesheet. If you move a colour out of here, move
+   its pin with it or the claim quietly stops being checked.
 
-   ⚠ NO FIXED PIXEL WIDTHS AND NO `nowrap` ANYWHERE. This card lives in the disposition record
-   page's MAIN region today, which is wide — but `c/dispositionBuyerTimeline` was built for an
-   ~800px region, moved to a ~340px sidebar, and had to be rebuilt. The tile list below is the
-   shape that survived that move, used here from the start so the same rework is never needed
-   twice. It is also the reason this card keeps tiles where loiCounterOffer uses a datatable. */
+   🔴 EVERY `margin` BELOW IS MARKUP, NOT DECORATION. The LWC template compiler discards
+   whitespace-only text nodes between sibling elements, so two adjacent tags render edge to edge
+   with literally nothing between them. Measured repeatedly in this repo. */
 
 :host {
     display: block;
-    /* `anywhere`, not `break-word` — only `anywhere` affects min-content sizing, which is what
-       lets the `min-width: 0` rules below actually take effect. On :host so it also covers the
+    /* `anywhere`, not `break-word` — only `anywhere` affects min-content sizing. Kept for the
        .lv-error banner, whose text is a SERVER message this component cannot pre-wrap.
        ⚠ NO TOP MARGIN / BORDER HERE, DESPITE loiCounterOffer's :host RULE HAVING ONE. That card
        sits under a field section on a record page and separates itself. This one is a child of
@@ -81,102 +92,6 @@
 
 .rmr-readonly-help {
     margin: 0;
-}
-
-/* ===== The logged rows =====
-   auto-fill + `min(28rem, 100%)` and NO media query: a media query measures the VIEWPORT, but the
-   constraint here is CONTAINER width — the same viewport yields a wide main region or a narrow
-   sidebar. A BARE 28rem minimum would burst any container narrower than 448px, which is invisible
-   at desktop width and is exactly the failure c/dispositionBuyerTimeline was rebuilt for. */
-.rmr-list {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(min(28rem, 100%), 1fr));
-    /* 🔴 LOAD-BEARING: without it the tiles touch. Nothing renders between two sibling elements. */
-    gap: var(--slds-g-spacing-3, 0.75rem);
-    padding: 0;
-    margin: 0;
-    list-style: none;
-}
-
-.rmr-item {
-    min-width: 0;
-}
-
-/* The tile's border, radius, padding and background all come from `slds-box slds-box_x-small` in
-   the markup now — loiCounterOffer's own container class. This rule is what SLDS does not do:
-   a grid item defaults to `min-width: auto` and then REFUSES to shrink below its longest
-   unbreakable token, so one long note would force a tile wider than its container. */
-.rmr-tile {
-    min-width: 0;
-}
-
-/* Name left, method badge right; the badge wraps beneath the name at extreme narrow widths
-   rather than pushing the tile wider. The `gap` is the ONLY separation between them. */
-.rmr-tile-head {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--slds-g-spacing-2, 0.5rem);
-    min-width: 0;
-    margin-bottom: var(--slds-g-spacing-3, 0.75rem);
-}
-
-.rmr-name {
-    min-width: 0;
-    margin: 0;
-    font-size: var(--slds-g-font-scale-1, 0.875rem);
-    font-weight: var(--slds-g-font-weight-7, 700);
-    color: var(--slds-g-color-on-surface-3, #181818);
-}
-
-/* The broker, as a SUBTITLE under the response number rather than as the heading.
-   ⚠ It is one appointed broker per sale, so this line repeats down the whole list. That is the
-   data being true — placing it as secondary text is what stops the repetition reading as a
-   per-row identity claim. */
-.rmr-broker-line {
-    min-width: 0;
-    margin: calc(-1 * var(--slds-g-spacing-2, 0.5rem)) 0
-        var(--slds-g-spacing-3, 0.75rem);
-    font-size: var(--slds-g-font-scale-neg-1, 0.75rem);
-    color: var(--slds-g-color-on-surface-1, #757575);
-}
-
-/* The two-track label/value layout. SLDS has no dl utility, and axe's `definition-list` rule
-   forbids the wrapper divs a grid would otherwise need — so the tracks are done here. */
-.rmr-facts {
-    display: grid;
-    grid-template-columns: max-content 1fr;
-    /* 🔴 LOAD-BEARING both ways: the row gap separates the two fact rows and the column gap
-       separates every label from its value. Delete it and "ReceivedMar 11, 2026" is what renders. */
-    gap: var(--slds-g-spacing-2, 0.5rem) var(--slds-g-spacing-3, 0.75rem);
-    align-items: baseline;
-    min-width: 0;
-    margin: 0;
-}
-
-.rmr-label {
-    grid-column: 1;
-    min-width: 0;
-    margin: 0;
-    font-size: var(--slds-g-font-scale-neg-2, 0.625rem);
-    font-weight: var(--slds-g-font-weight-7, 700);
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-    color: var(--slds-g-color-on-surface-1, #757575);
-}
-
-.rmr-c {
-    grid-column: 2;
-    min-width: 0;
-    margin: 0;
-    font-size: var(--slds-g-font-scale-base, 0.8125rem);
-    color: var(--slds-g-color-on-surface-2, #2e2e2e);
-}
-
-/* Notes are free text and can be long; they keep their author's line breaks. */
-.rmr-notes {
-    white-space: pre-line;
 }
 
 /* ===== Empty state =====

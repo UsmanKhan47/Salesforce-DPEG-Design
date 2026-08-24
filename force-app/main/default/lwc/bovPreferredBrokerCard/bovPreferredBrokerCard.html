@@ -1,0 +1,70 @@
+<!--
+  ══════════════════════════════════════════════════════════════════════════════
+  c-bov-preferred-broker-card — "Preferred Broker", card #1 of the three stacked
+  broker cards on the Disposition record page (2026-08-25).
+  ══════════════════════════════════════════════════════════════════════════════
+  🔴 THE WHOLE CARD IS INSIDE AN `lwc:if`. THAT IS THE FEATURE, NOT A DETAIL.
+  A FlexiPage component visibility rule can only test FIELDS ON THE RECORD, and
+  "does this disposition have a BOV submission flagged preferred" is a fact about
+  a CHILD OBJECT. There is therefore no declarative way to hide this card when
+  there is no preferred broker, so the component has to withhold itself — an
+  empty green "Preferred Broker" panel asserts a broker that does not exist, and
+  a titled-but-empty card is barely better.
+
+  ⚠ THE COST OF SELF-GATING, RECORDED SO NOBODY "FIXES" IT: the host element is
+  still in the FlexiPage region when nothing renders, so a region using a flex
+  `gap` spaces this card whether or not it drew anything. There is no CSS escape
+  (`:empty` matches a custom element regardless of what its shadow root
+  rendered). It is the accepted price of the gate; see `c/bovBrokerPanel`'s
+  stylesheet, which documents the same trade the other way round.
+
+  🔴 THE GREEN PANEL IS `c/bovPreferredBroker`, MOUNTED AS-IS AND NOT
+  REIMPLEMENTED. That bundle already renders the shield / eyebrow / firm name /
+  YES pill, already owns the "Unnamed broker" fallback for a null firm, and is
+  already mounted by `c/bovBrokerPanel` at BOV Outreach. A second copy would
+  drift from the first on the first edit to either — and both surfaces sit on the
+  SAME record page.
+
+  ⚠ KNOWN AND DELIBERATE: THE PHRASE "PREFERRED BROKER" RENDERS **THREE** TIMES.
+  MEASURED, not estimated — a screen reader on this card hears, in order:
+    1. "Preferred Broker"       — this card's title              (THIS bundle)
+    2. "Preferred Broker"       — the panel's eyebrow             (the child)
+    3. "Preferred broker:" YES  — the pill's visually-hidden subject, which
+                                  exists because "YES" alone names nothing
+  Copies 2 and 3 are load-bearing for the child's OTHER consumer:
+  `c/bovBrokerPanel` titles its card "Brokers", so without the eyebrow that panel
+  would be an unlabelled green box, and without the hidden subject its pill would
+  announce the bare word "YES". COPY 1 IS THE ONE THIS BUNDLE ADDS, and it is the
+  user's design. Suppressing copy 2 from here would mean an `@api` mode flag on
+  the child — exactly the shape this repo spent 2026-08-24 retiring from
+  `c/bovComparisonMatrix` — so it was not done.
+  🔴 IF THE REPETITION IS EVER JUDGED UNACCEPTABLE, the fix is to drop the
+  EYEBROW from the child and give `c/bovBrokerPanel`'s instance a heading of its
+  own; copy 3 must stay whatever happens. Pinned by a COUNTING test so any such
+  change is a decision rather than an accident — see T-TRIPLE-LABEL.
+-->
+<template>
+    <template lwc:if={hasPreferredBroker}>
+        <lightning-card icon-name="standard:contact">
+            <span slot="title">Preferred Broker</span>
+
+            <!-- ⚠ THE CARD BODY'S INSET LIVES HERE. `lightning-card`'s default
+                 slot has no padding of its own, so without this wrapper the
+                 green panel sits flush against the card's edges. The panel's own
+                 1rem is INTERIOR padding and is a different thing. -->
+            <div class="pbc-body">
+                <!-- ⚠ `firm-name` IS ALWAYS A STRING, NEVER `undefined`. It is
+                     bound to an ATTRIBUTE on a custom element and a getter bound
+                     to an attribute is written UNCONDITIONALLY, so `undefined`
+                     would reach the DOM as the literal text "undefined" —
+                     measured in this repo. `Broker_Firm__c` is legitimately
+                     nullable and was null on live data this week; the
+                     USER-FACING fallback ("Unnamed broker") is the CHILD's, so
+                     that bundle stays safe to mount from anywhere. -->
+                <c-bov-preferred-broker
+                    firm-name={preferredBrokerFirm}
+                ></c-bov-preferred-broker>
+            </div>
+        </lightning-card>
+    </template>
+</template>

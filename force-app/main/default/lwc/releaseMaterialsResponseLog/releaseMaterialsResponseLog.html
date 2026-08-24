@@ -16,14 +16,20 @@
              left-aligned;
            · the empty state is muted body text (`slds-text-color_weak`), not a centred icon
              column;
-           · state pills are `slds-badge`.
+           · 🔴 AND SINCE 2026-08-25, THE LOG ITSELF IS `<c-list-datatable>` — loiCounterOffer's
+             own history component, with its `pill` custom cell type carrying the method where a
+             `slds-badge` used to. This replaced a `<ul>` of hand-rolled tiles. The retracted
+             argument for those tiles claimed a table "does not survive the ~340px sidebar";
+             THIS CARD IS IN THE `main` REGION, NOT THE SIDEBAR — see the block itself.
          🔴 SPACING IS EXPLICIT SLDS MARGIN UTILITIES OR AN EXPLICIT `gap` — NEVER RENDERED
          WHITESPACE. The LWC template compiler discards whitespace-only text nodes between sibling
          elements, so two adjacent tags render EDGE TO EDGE with literally nothing between them
          (measured four times this week in this repo). Removing a `slds-m-top_x-small` here does
          not "tighten" the form, it welds two fields together.
          ⚠ WHERE THIS CARD DIVERGES FROM loiCounterOffer, AND WHY, IS RECORDED AT EACH SITE
-         BELOW — there are four. Do not "finish the job" on any of them without reading the reason.
+         BELOW — there are THREE since the log became a datatable (they are numbered 1, 2 and 3;
+         the old "DIVERGENCE 4" was the tile list and it is gone). Do not "finish the job" on any
+         of them without reading the reason.
 
          🔴 THE CARD CHROME IS UNCONDITIONAL. Every branch below renders INSIDE it, so a card that
          is briefly empty still tells the user WHICH panel is thinking. The count is appended only
@@ -232,93 +238,46 @@
                 </template>
 
                 <!-- ═══════════════════════════════════════════════════════════════════════════
-                     WHAT HAS ALREADY BEEN LOGGED — NEWEST FIRST.
+                     WHAT HAS ALREADY BEEN LOGGED — NEWEST FIRST, IN `c-list-datatable`.
                      ═══════════════════════════════════════════════════════════════════════════
-                     ⚠ DIVERGENCE 4, AND THE BIG ONE — loiCounterOffer renders its history as
-                     `<c-list-datatable>`. NOT ADOPTED, for two reasons that both outrank the
-                     visual match:
-                       1. It is a REWRITE, not a theme. A datatable needs a `columns` definition
-                          and sort state in the JS, and this pass was explicitly scoped to
-                          presentation with the behaviour, fields and payload untouched.
-                       2. A fixed-column table does not survive the ~340px record-page sidebar.
-                          `c/dispositionBuyerTimeline` was built as a grid for an ~800px region,
-                          moved, and had to be REBUILT as exactly this shape — a ul/li of
-                          self-labelling tiles with their own dl. That rework is not worth doing
-                          twice.
-                     WHAT WAS ADOPTED INSTEAD: the tiles now use loiCounterOffer's OWN container
-                     class, `slds-box slds-box_x-small` (the same one its entry form uses), rather
-                     than a hand-rolled border/radius/background that merely imitated it; and the
-                     method pill is now `slds-badge`, the badge class loiCounterOffer uses in its
-                     card title.
+                     🔴 THIS IS loiCounterOffer's OWN HISTORY COMPONENT, ADOPTED 2026-08-25. The
+                     block that used to sit here was a `<ul>` of hand-rolled tiles, and it carried
+                     a comment headed "DIVERGENCE 4, AND THE BIG ONE" giving two reasons not to
+                     use the datatable. BOTH ARE RETRACTED, and the second was FACTUALLY WRONG:
+
+                       RETRACTED: "A fixed-column table does not survive the ~340px record-page
+                       sidebar."
+
+                     🔴 THIS CARD IS NOT IN THE SIDEBAR AND NEVER HAS BEEN. It is rendered by
+                     `c/dispositionMain`, which is a componentInstance of the **`main`** region of
+                     `flexipages/Disposition_Record_Page` — the wide one. The `sidebar` region
+                     holds `dispositionSidebar`. DO NOT RE-USE THE WIDTH ARGUMENT.
+                     The full retraction, and the two things deliberately NOT copied from
+                     loiCounterOffer (sortable columns, and a `url`-type first column), are in the
+                     JS class header. The columns themselves are `COLUMNS` there.
+
                      ⚠ THE ORDER IS THE SERVER'S. `ReleaseMaterialsResponseSelector` orders
-                     `Entry_DateTime__c DESC NULLS LAST, Name DESC` and this component does NOT
-                     re-sort — two sorts would be free to disagree.
-                     role="list" is NOT redundant: `list-style: none` makes WebKit drop the
-                     implicit list role, and `aria-label` is only exposed on an element whose role
-                     supports naming. axe has no rule for it, so a passing toBeAccessible() is not
-                     evidence against it. -->
+                     `Entry_DateTime__c DESC NULLS LAST, Name DESC`, this component does NOT
+                     re-sort, and NO COLUMN IS `sortable` — so the datatable offers no affordance
+                     that would put a second, disagreeing sort on the same rows.
+
+                     ⚠ ONE HONEST COST OF THE MOVE, RECORDED SO NOBODY REPORTS IT AS COVERAGE:
+                     sfdx-lwc-jest stubs `lightning/datatable` with an EMPTY template, and
+                     `c-list-datatable` is a subclass of it — so nothing inside this element
+                     renders under Jest, and every `textContent` assertion the tiles supported is
+                     now unavailable. The tests assert the `data` and `columns` PROPERTIES of this
+                     rendered element instead, which is the same technique the file already used
+                     for `lightning-combobox.options`. `@sa11y/jest` likewise sees an empty stub
+                     here; the table's own a11y comes from the base component, not from us. -->
                 <template lwc:if={hasEntries}>
-                    <ul class="rmr-list" role="list" aria-label="Logged responses">
-                        <template for:each={entries} for:item="entry">
-                            <li key={entry.id} class="rmr-item">
-                                <!-- ⚠ THE GROUP ROLE SITS ON THIS INNER DIV, NOT ON THE li.
-                                     role="group" on the li would REPLACE its implicit `listitem`
-                                     role, and axe's `list` rule then reports the ul as having a
-                                     disallowed child — the accessible name would cost the list
-                                     semantics it was added to complement. -->
-                                <div
-                                    class="rmr-tile slds-box slds-box_x-small"
-                                    role="group"
-                                    aria-label={entry.rowLabel}
-                                >
-                                    <div class="rmr-tile-head">
-                                        <h3 class="rmr-name">{entry.responseName}</h3>
-                                        <!-- ⚠ THE METHOD TRAVELS AS READABLE TEXT INSIDE THE
-                                             BADGE, never as a colour alone. This repo has a
-                                             measured incident of a text->badge swap deleting
-                                             accessible content a test had pinned. -->
-                                        <span class="slds-badge" data-method-badge>
-                                            {entry.method}
-                                        </span>
-                                    </div>
-
-                                    <p class="rmr-broker-line">{entry.brokerName}</p>
-
-                                    <!-- dt/dd ONLY, in order and with no wrapper divs — axe's
-                                         `definition-list` rule is strict, so the two-track layout
-                                         is done entirely in CSS. -->
-                                    <dl class="rmr-facts">
-                                        <dt class="rmr-label">Received</dt>
-                                        <dd class="rmr-c">
-                                            <template lwc:if={entry.entryDateTime}>
-                                                <!-- ⚠ `lightning-formatted-date-time`, NOT a
-                                                     hand-rolled parse. This is a DATETIME (an
-                                                     unambiguous instant), so rendering it in the
-                                                     viewer's own timezone is correct — unlike the
-                                                     bare `YYYY-MM-DD` Apex Dates on the timeline
-                                                     card, where `new Date(value)` parses as UTC
-                                                     midnight and renders the DAY BEFORE for any
-                                                     viewer west of Greenwich. -->
-                                                <lightning-formatted-date-time
-                                                    data-received
-                                                    value={entry.entryDateTime}
-                                                    year="numeric"
-                                                    month="short"
-                                                    day="2-digit"
-                                                    hour="2-digit"
-                                                    minute="2-digit"
-                                                ></lightning-formatted-date-time>
-                                            </template>
-                                            <template lwc:else>{emDash}</template>
-                                        </dd>
-
-                                        <dt class="rmr-label">Notes</dt>
-                                        <dd class="rmr-c rmr-notes">{entry.notes}</dd>
-                                    </dl>
-                                </div>
-                            </li>
-                        </template>
-                    </ul>
+                    <c-list-datatable
+                        data-log
+                        key-field="id"
+                        data={rows}
+                        columns={columns}
+                        hide-checkbox-column
+                        show-row-number-column
+                    ></c-list-datatable>
                 </template>
 
                 <!-- EMPTY. loiCounterOffer's idiom is ONE muted line of body text

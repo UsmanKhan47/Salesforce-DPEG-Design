@@ -26,9 +26,40 @@
  * ⚠ AND WHERE A `lightning-*` STUB IS INVOLVED, THE ASSERTION IS ON A PROPERTY,
  * NOT ON `textContent`. sfdx-lwc-jest stubs render an EMPTY template, so a
  * `textContent` assertion against one is vacuously green whether or not the
- * value was ever passed. `lightning-formatted-date-time.value`,
- * `lightning-button.disabled` and `lightning-combobox.options` are read
- * directly for that reason.
+ * value was ever passed. `lightning-button.disabled` and
+ * `lightning-combobox.options` are read directly for that reason.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * 🔴 2026-08-25 — THE LOG BECAME `<c-list-datatable>`, AND THAT CHANGED WHAT
+ *    THIS FILE IS ABLE TO ASSERT. READ THIS BEFORE "STRENGTHENING" ANYTHING.
+ * ═══════════════════════════════════════════════════════════════════════════
+ * The logged responses used to render as a `<ul>` of hand-rolled tiles, so the
+ * old LIST tests read `.rmr-name`, `[data-method-badge]`, `.rmr-notes` and `dt`
+ * TEXT out of this component's own shadow root. They are gone, and the reason
+ * they could not simply be kept is measured, not assumed:
+ *
+ *   `c-list-datatable` extends `lightning/datatable`, and sfdx-lwc-jest stubs
+ *   that base with an EMPTY TEMPLATE — its own test file says so in its header.
+ *   Nothing inside the element renders. Every `textContent` assertion against it
+ *   would be VACUOUSLY GREEN, passing identically if the component were deleted.
+ *
+ * So the list is now pinned the way the rest of this file already pins a stubbed
+ * child — on the RENDERED ELEMENT'S PROPERTIES (`.data`, `.columns`, `.keyField`)
+ * — plus an absence scan proving the tile markup is really gone rather than
+ * duplicated. 🔴 DO NOT "IMPROVE" THESE BACK INTO textContent CHECKS; they would
+ * all pass and none of them would mean anything.
+ *
+ * ⚠ TWO REAL COVERAGE LOSSES, STATED PLAINLY RATHER THAN PAPERED OVER:
+ *   1. `@sa11y/jest` sees an empty stub where the table is, so the three
+ *      accessibility tests below no longer cover the ROW markup at all. What
+ *      they still cover — the card, the form, the empty state — is what this
+ *      component actually authors; the table's semantics belong to the base
+ *      component. The `is accessible with rows` test is KEPT anyway because it
+ *      still proves the surrounding chrome survives a populated wire.
+ *   2. The per-row accessible name (`rowLabel`) is gone with the tiles. A
+ *      datatable names its rows from its column headers, which is the platform's
+ *      job, not ours — so the getter that built it was deleted rather than left
+ *      computing a string nothing reads.
  */
 import { createElement } from 'lwc';
 import ReleaseMaterialsResponseLog from 'c/releaseMaterialsResponseLog';
@@ -98,6 +129,34 @@ const READ_ONLY_CONTEXT = { ...CONTEXT, canLog: false };
 /** Nothing logged yet — the ordinary state the day materials go out. */
 const EMPTY_CONTEXT = { ...CONTEXT, responses: [] };
 
+/**
+ * 🔴 THREE ROWS IN AN ORDER NO CLIENT-SIDE SORT CAN REPRODUCE. This fixture IS
+ * the falsifier for "this component does not sort", and it exists because the
+ * obvious two-row fixture is not one.
+ *
+ * MEASURED 2026-08-25: with `CONTEXT` (RMR-0007 then RMR-0008) a mutation that
+ * added `.sort()` by responseName ascending produced the IDENTICAL rendered
+ * order, so the order test — and the tile-era test it replaced — passed on a
+ * component that had started sorting. The server's order and the sorted order
+ * were the same sequence.
+ *
+ * The order below is deliberately NON-MONOTONIC IN BOTH plausible keys:
+ *   by name  → 0008, 0009, 0010 (asc) / 0010, 0009, 0008 (desc) — neither matches
+ *   by date  → 0009, 0008, 0010 (asc) / 0010, 0008, 0009 (desc) — neither matches
+ * so any single-key sort in either direction reds the assertion. The real server
+ * order is `Entry_DateTime__c DESC NULLS LAST, Name DESC`; this fixture is not
+ * that sequence either, on purpose — the component's job is to preserve WHATEVER
+ * arrives, not to re-derive the selector's rule.
+ */
+const SCRAMBLED_CONTEXT = {
+    ...CONTEXT,
+    responses: [
+        { ...BARE_ROW, responseId: 'a1B1', responseName: 'RMR-0008', entryDateTime: '2026-03-05T09:30:00.000Z' },
+        { ...BARE_ROW, responseId: 'a1B2', responseName: 'RMR-0010', entryDateTime: '2026-03-11T09:30:00.000Z' },
+        { ...BARE_ROW, responseId: 'a1B3', responseName: 'RMR-0009', entryDateTime: '2026-03-02T09:30:00.000Z' }
+    ]
+};
+
 function flushPromises() {
     return new Promise((resolve) => setTimeout(resolve, 0));
 }
@@ -122,7 +181,20 @@ describe('c-release-materials-response-log', () => {
     const q = (element, selector) => element.shadowRoot.querySelector(selector);
     const all = (element, selector) => [...element.shadowRoot.querySelectorAll(selector)];
     const title = (element) => q(element, 'span[slot="title"]').textContent.trim();
-    const tiles = (element) => all(element, '.rmr-tile');
+
+    /**
+     * The rendered `<c-list-datatable>`, or null.
+     *
+     * ⚠ `[data-log]` AND NOT THE TAG NAME. The tag would also match a second
+     * datatable added elsewhere in the card; the attribute names THIS one.
+     */
+    const logTable = (element) => q(element, '[data-log]');
+
+    /** The rows the datatable was actually handed. `[]` when it is not rendered. */
+    const logRows = (element) => {
+        const table = logTable(element);
+        return table ? table.data : [];
+    };
 
     /** Opens the inline form and waits for the re-render. */
     async function openForm(element) {
@@ -159,7 +231,7 @@ describe('c-release-materials-response-log', () => {
         expect(title(element)).toBe('Release materials responses');
         expect(q(element, '.rmr-empty')).toBeNull();
         expect(q(element, '[data-open]')).toBeNull();
-        expect(tiles(element)).toHaveLength(0);
+        expect(logTable(element)).toBeNull();
     });
 
     it('HEADER: the count appears once the wire answers, and it counts the logged rows', async () => {
@@ -170,7 +242,7 @@ describe('c-release-materials-response-log', () => {
 
         expect(title(element)).toBe('Release materials responses (2)');
         expect(q(element, 'lightning-card').iconName).toBe('standard:feedback');
-        expect(tiles(element)).toHaveLength(2);
+        expect(logRows(element)).toHaveLength(2);
     });
 
     it('EMPTY BRANCH: an empty log renders an empty STATUS, not an error', async () => {
@@ -203,9 +275,9 @@ describe('c-release-materials-response-log', () => {
         // renewalList / competingBrokerSubmissions / dispositionBuyerTimeline.
         expect(alert.classList.contains('lv-error')).toBe(true);
         // 🔴 AN EMPTY LOG ON A SALE WITH THREE LOGGED RESPONSES IS A CONFIDENT
-        // WRONG ANSWER. Neither the tiles, the empty state, nor the form may
+        // WRONG ANSWER. Neither the table, the empty state, nor the form may
         // appear on the error branch.
-        expect(tiles(element)).toHaveLength(0);
+        expect(logTable(element)).toBeNull();
         expect(q(element, '.rmr-empty')).toBeNull();
         expect(q(element, '[data-open]')).toBeNull();
         expect(q(element, '[data-broker]')).toBeNull();
@@ -537,7 +609,7 @@ describe('c-release-materials-response-log', () => {
         expect(q(element, '[data-form]')).toBeNull();
         // 🔴 BUT THE LOG IS NOT HIDDEN. A view persona holds viewAllRecords on a
         // Private object and is entitled to read every row.
-        expect(tiles(element)).toHaveLength(2);
+        expect(logRows(element)).toHaveLength(2);
         // ⚠ AND NO "Response from" BLOCK EITHER — it lives inside the form,
         // which this persona never gets. The broker is a property of the entry
         // being composed, and they are not composing one.
@@ -545,100 +617,265 @@ describe('c-release-materials-response-log', () => {
     });
 
     // ═════════════════════════════════════════════════════════════════════════
-    // THE LOGGED ROWS
+    // THE LOGGED ROWS — NOW `<c-list-datatable>`
+    //
+    // 🔴 ASSERTED ON THE RENDERED ELEMENT'S PROPERTIES, NOT ON ITS TEXT. The
+    // sfdx-lwc-jest `lightning/datatable` stub renders an empty template and
+    // `c-list-datatable` extends it, so `textContent` here is `''` whatever the
+    // data is. See this file's header for the full note.
     // ═════════════════════════════════════════════════════════════════════════
 
-    it('🔴 LIST: rows render in SERVER order — newest first — and this component does not sort', async () => {
+    it('🔴 LIST: the log renders through c-list-datatable — loiCounterOffer’s own history component', async () => {
         const element = createComponent();
 
         getLogContext.emit(CONTEXT);
         await Promise.resolve();
 
-        expect(all(element, '.rmr-name').map((el) => el.textContent.trim())).toEqual([
-            'RMR-0007',
-            'RMR-0008'
+        const table = logTable(element);
+        expect(table).not.toBeNull();
+        expect(table.tagName.toLowerCase()).toBe('c-list-datatable');
+        // The wiring loiCounterOffer uses, per attribute. `keyField` must name a
+        // property that exists on every row or the datatable re-creates every row
+        // on each re-render and loses selection/scroll state.
+        expect(table.keyField).toBe('id');
+        expect(logRows(element).every((r) => typeof r.id === 'string')).toBe(true);
+        expect(table.hideCheckboxColumn).toBe(true);
+        expect(table.showRowNumberColumn).toBe(true);
+    });
+
+    /**
+     * 🔴 THE TILES ARE GONE — AN ABSENCE PIN WITH ITS OWN PRESENCE CONTROL.
+     *
+     * ⚠ A TAG/SELECTOR SCAN, NEVER A textContent CHECK. A child component's shadow
+     * text never reaches this shadow root (measured in this repo: it returns ''),
+     * so an absence assertion written as `not.toContain('RMR-0007')` would be
+     * green whatever renders.
+     * ⚠ AND THE PRESENCE HALF IS LOAD-BEARING. Without it this test passes on a
+     * component that renders nothing at all — which is exactly what a broken
+     * `hasEntries` would produce.
+     */
+    it('🔴 LIST: the hand-rolled tile markup is gone, not duplicated beside the table', async () => {
+        const element = createComponent();
+
+        getLogContext.emit(CONTEXT);
+        await Promise.resolve();
+
+        // PRESENCE first, so the absences below cannot be satisfied by an empty card.
+        expect(logRows(element)).toHaveLength(2);
+
+        ['.rmr-list', '.rmr-tile', '.rmr-tile-head', '.rmr-name', '.rmr-broker-line',
+         '.rmr-facts', '.rmr-notes', '[data-method-badge]', '[data-received]',
+         'ul', 'li', 'dl', 'dt', 'dd'].forEach((selector) => {
+            expect({ selector, found: all(element, selector).length }).toEqual({
+                selector,
+                found: 0
+            });
+        });
+    });
+
+    it('🔴 LIST: rows are handed over in SERVER order — newest first — and this component does not sort', async () => {
+        const element = createComponent();
+
+        getLogContext.emit(SCRAMBLED_CONTEXT);
+        await Promise.resolve();
+
+        // 🔴 THE ORDER ASSERTED HERE IS ONE NO CLIENT-SIDE SORT CAN PRODUCE. See
+        // SCRAMBLED_CONTEXT: it is non-monotonic in BOTH plausible sort keys, so
+        // adding `.sort()` on name or on date, ascending or descending, reds this
+        // line. MEASURED: with the ordinary two-row CONTEXT (RMR-0007 then
+        // RMR-0008) a `.sort()` by name ascending produced the IDENTICAL order and
+        // this test — and the tile-era test it replaced — stayed GREEN AND
+        // VACUOUS. The fixture is the assertion here; do not "simplify" it back.
+        expect(logRows(element).map((r) => r.responseName)).toEqual([
+            'RMR-0008',
+            'RMR-0010',
+            'RMR-0009'
         ]);
-        // Reversing the payload reverses the render — which is what "does not
-        // sort" means, and is why this fixture's order is not alphabetical by
-        // accident.
-        expect(q(element, '.rmr-list').getAttribute('role')).toBe('list');
-        expect(q(element, '.rmr-list').getAttribute('aria-label')).toBe('Logged responses');
+        // 🔴 AND NO COLUMN OFFERS A SORT. loiCounterOffer's columns are `sortable`
+        // and it re-sorts client-side; copying that here would put a second sort
+        // on rows the selector has already ordered, free to disagree with it.
+        // There is also no `onsort` handler to honour one.
+        expect(
+            logTable(element).columns.filter((c) => c.sortable)
+        ).toEqual([]);
+        expect(logTable(element).sortedBy).toBeUndefined();
     });
 
-    it('LIST: a row shows its number, method, broker, timestamp and notes', async () => {
+    /**
+     * 🔴 THE COLUMN DEFINITION IS THE RENDERED CONTRACT NOW.
+     *
+     * With the cells unrenderable under Jest, the columns array is where "the
+     * same fields, in this order" lives. Asserted as ONE ordered list rather than
+     * per-column, because a reorder is exactly the regression a set of individual
+     * lookups cannot see.
+     */
+    it('🔴 LIST: the columns are Response, Method, Response from, Notes, Received — in that order', async () => {
         const element = createComponent();
 
         getLogContext.emit(CONTEXT);
         await Promise.resolve();
 
-        const tile = tiles(element)[0];
-        expect(tile.querySelector('.rmr-name').textContent.trim()).toBe('RMR-0007');
-        // ⚠ THE METHOD TRAVELS AS READABLE TEXT INSIDE THE BADGE, never as a
-        // colour alone. A text->badge->icon swap that deletes this word fails
-        // HERE rather than silently in production.
-        expect(tile.querySelector('[data-method-badge]').textContent.trim()).toBe('Offer');
-        expect(tile.querySelector('.rmr-broker-line').textContent.trim()).toBe(
-            'Derek Simmons'
-        );
-        expect(tile.querySelector('.rmr-notes').textContent.trim()).toBe(
-            'Verbal at 4.2m, 6.1 cap.'
-        );
+        const columns = logTable(element).columns;
+        expect(columns.map((c) => c.label)).toEqual([
+            'Response',
+            'Method',
+            'Response from',
+            'Notes',
+            'Received'
+        ]);
+        expect(columns.map((c) => c.fieldName)).toEqual([
+            'responseName',
+            'method',
+            'brokerName',
+            'notes',
+            'entryDateTime'
+        ]);
 
-        // 🔴 ASSERTED ON THE STUB'S `value` PROPERTY. The sfdx-lwc-jest stub for
-        // a lightning base component renders an EMPTY template, so a
-        // `textContent` assertion here would be vacuously green whether or not
-        // the timestamp was passed through at all.
-        expect(tile.querySelector('[data-received]').value).toBe(
-            '2026-03-11T14:05:00.000Z'
-        );
+        const byField = Object.fromEntries(columns.map((c) => [c.fieldName, c]));
 
-        const labels = [...tile.querySelectorAll('dt')].map((d) => d.textContent.trim());
-        expect(labels).toEqual(['Received', 'Notes']);
+        // 🔴 THE NOTES COLUMN IS loiCounterOffer's "Counter Response" COLUMN,
+        // COPIED. `Counter_Offer__c.Counter_Response__c` and
+        // `Release_Materials_Response__c.Notes__c` are the same field definition —
+        // LongTextArea, length 32768, visibleLines 3 — so the idiom that carries
+        // one carries the other: wrapText, and NO initialWidth so the column
+        // absorbs the remaining width in the datatable's fixed layout.
+        expect(byField.notes.wrapText).toBe(true);
+        expect(byField.notes.initialWidth).toBeUndefined();
+
+        // ⚠ `date`, NOT `date-local`. Entry_DateTime__c is a DateTime — an
+        // unambiguous instant, correctly rendered in the viewer's timezone.
+        // `date-local` (which loiCounterOffer correctly uses for its Apex DATE)
+        // would render the DAY BEFORE for any viewer west of Greenwich.
+        expect(byField.entryDateTime.type).toBe('date');
+        expect(byField.entryDateTime.typeAttributes).toEqual({
+            year: 'numeric',
+            month: 'short',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+
+        // The method is the `pill` custom cell type c/listDatatable registers —
+        // the datatable-native replacement for the tiles' `slds-badge`.
+        expect(byField.method.type).toBe('pill');
+        expect(byField.method.typeAttributes).toEqual({
+            wrapStyle: { fieldName: 'methodWrap' },
+            dotStyle: { fieldName: 'methodDot' }
+        });
     });
 
-    it('LIST: a row with no notes renders an em-dash, never a blank cell', async () => {
+    it('LIST: a row carries its number, method, broker, notes and raw timestamp', async () => {
         const element = createComponent();
 
         getLogContext.emit(CONTEXT);
         await Promise.resolve();
 
-        const bare = tiles(element)[1];
-        expect(bare.querySelector('.rmr-notes').textContent.trim()).toBe(EM_DASH);
-        expect(bare.querySelector('.rmr-broker-line').textContent.trim()).toBe(
-            'No broker recorded'
-        );
+        const row = logRows(element)[0];
+        expect(row.responseName).toBe('RMR-0007');
+        // ⚠ THE METHOD TRAVELS AS THE READABLE WORD, never as a colour alone. The
+        // `pill` template renders `{value}` beside the dot, so this string IS what
+        // the user reads — a swap to a colour-only marker fails HERE.
+        expect(row.method).toBe('Offer');
+        expect(row.brokerName).toBe('Derek Simmons');
+        expect(row.notes).toBe('Verbal at 4.2m, 6.1 cap.');
+        // 🔴 PASSED RAW, NOT PRE-FORMATTED. The `date` column formats it; a
+        // formatted string here would be formatted twice and render as NaN.
+        expect(row.entryDateTime).toBe('2026-03-11T14:05:00.000Z');
     });
 
-    it('LIST: each row carries an accessible name naming the response, method and broker', async () => {
+    it('LIST: a row with no notes carries an em-dash, never a blank', async () => {
         const element = createComponent();
 
         getLogContext.emit(CONTEXT);
         await Promise.resolve();
 
-        const tile = tiles(element)[0];
-        // ⚠ role="group" SITS ON THIS INNER DIV, NOT ON THE <li>. On the <li> it
-        // would REPLACE the implicit `listitem` role and axe's `list` rule would
-        // then report the <ul> as having a disallowed child.
-        expect(tile.getAttribute('role')).toBe('group');
-        expect(tile.tagName.toLowerCase()).toBe('div');
-        expect(tile.parentElement.tagName.toLowerCase()).toBe('li');
-        const label = tile.getAttribute('aria-label');
-        expect(label).toContain('RMR-0007');
-        expect(label).toContain('Offer');
-        expect(label).toContain('Derek Simmons');
+        const bare = logRows(element)[1];
+        expect(bare.notes).toBe(EM_DASH);
+        // The server's fixed placeholder for a response logged without a broker —
+        // never a blank, which would read as a rendering failure.
+        expect(bare.brokerName).toBe('No broker recorded');
+    });
+
+    /**
+     * 🔴 DARK MODE, RELOCATED WITH THE BADGE.
+     *
+     * The method's colours used to live in the stylesheet, where the T-CSS test
+     * below asserts every colour comes from a styling hook. Moving the badge into
+     * the datatable moved those colours into INLINE STYLE STRINGS BUILT IN THE JS
+     * — out of that test's reach — so the pin follows them here, onto the rendered
+     * row data.
+     * ⚠ NOTHING ELSE IN THIS PIPELINE CATCHES A DARK-MODE FAILURE: the SLDS linter
+     * only checks CSS files, and axe's colour-contrast rule is inert in jsdom.
+     * ⚠ AND THIS IS A DELIBERATE DEPARTURE FROM THE SIXTEEN OTHER `pillWrap`
+     * HELPERS IN THIS REPO, loiCounterOffer's included — every one hardcodes raw
+     * hex. A reviewer will read that as inconsistency; it is the bundle's existing
+     * dark-mode claim being kept true.
+     */
+    it('🔴 LIST: every method pill colour is a styling hook, per method, not a raw hex', async () => {
+        const element = createComponent();
+
+        getLogContext.emit({
+            ...CONTEXT,
+            responses: [
+                { ...OFFER_ROW, method: 'Offer' },
+                { ...BARE_ROW, method: 'Decision' },
+                { ...BARE_ROW, responseId: 'a1A3', method: 'More questions' },
+                // A value this client does not know, and a null — both must still
+                // produce a complete, hook-based pill rather than `undefined`.
+                { ...BARE_ROW, responseId: 'a1A4', method: 'Carrier pigeon' },
+                { ...BARE_ROW, responseId: 'a1A5', method: null }
+            ]
+        });
+        await Promise.resolve();
+
+        const rows = logRows(element);
+        expect(rows).toHaveLength(5);
+        // The unknown method and the null one are distinguishable in the DATA:
+        // the word survives for the first, the em-dash stands in for the second.
+        expect(rows.map((r) => r.method)).toEqual([
+            'Offer',
+            'Decision',
+            'More questions',
+            'Carrier pigeon',
+            EM_DASH
+        ]);
+
+        rows.forEach((row) => {
+            const declarations = `${row.methodWrap};${row.methodDot}`
+                .split(';')
+                .filter((d) => /^(background|color)\s*:/.test(d.trim()));
+            // Two backgrounds (pill + dot) and one text colour on every row.
+            expect(declarations).toHaveLength(3);
+            declarations.forEach((declaration) => {
+                expect(declaration.slice(declaration.indexOf(':') + 1).trim())
+                    .toMatch(/^var\(--slds-/);
+            });
+        });
+
+        // ⚠ AND THE FOUR PALETTES ARE ACTUALLY DIFFERENT. Without this the loop
+        // above passes on a lookup that returned the neutral pill for everything —
+        // a silent loss of the colour coding with every colour still "a hook".
+        const backgrounds = rows.map((r) => r.methodWrap.split('background:')[1]);
+        expect(new Set(backgrounds).size).toBe(4);
     });
 
     // ═════════════════════════════════════════════════════════════════════════
     // 🔴 THE loiCounterOffer IDIOM — ADDED BY THE 2026-08-24 THEMING PASS
     // ═════════════════════════════════════════════════════════════════════════
     // User instruction: *"make it the same as the LOI counter offers LWC"*. The
-    // 25 tests above were ALL GREEN before and after that pass without a single
-    // edit — which is the point of the seven tests below. Every structural fact
+    // tests above this banner were ALL GREEN before and after that pass without a
+    // single edit — which is the point of the ones below. Every structural fact
     // the pass established (where the opener lives, which button comes first,
-    // which container class boxes the form and the tiles, what the empty state
-    // is made of, and that the tile spacing is `gap` rather than whitespace) was
+    // which container class boxes the form, what the empty state is made of) was
     // invisible to the existing suite, so a later "tidy-up" could revert the
     // whole thing and stay green.
+    // 🔴 UPDATED 2026-08-25, WHEN THE SECOND HALF OF THE INSTRUCTION LANDED: the
+    // log itself became `<c-list-datatable>`. Two pins here changed with it — the
+    // `slds-box` container test no longer has tiles to check, and the
+    // `slds-badge` pin was REPLACED (not deleted) by the column-type and pill
+    // colour assertions in the LIST section above. A retired pin has to be
+    // replaced by the equivalent claim about the new shape, or the coverage
+    // quietly leaves with the markup.
     // ⚠ EACH ONE WAS MUTATION-TESTED: the rule was broken, the test confirmed
     // RED, and the rule restored. A pin that never goes red is not a pin.
 
@@ -687,7 +924,7 @@ describe('c-release-materials-response-log', () => {
         expect(buttons[0].classList.contains('slds-m-right_x-small')).toBe(true);
     });
 
-    it('🔴 IDIOM: the form and the tiles share loiCounterOffer’s slds-box container', async () => {
+    it('🔴 IDIOM: the entry form uses loiCounterOffer’s slds-box container', async () => {
         const element = createComponent();
 
         getLogContext.emit(CONTEXT);
@@ -703,11 +940,13 @@ describe('c-release-materials-response-log', () => {
         expect(form.classList.contains('slds-box_x-small')).toBe(true);
         expect(form.classList.contains('slds-m-bottom_small')).toBe(true);
 
-        // Every logged tile uses the same box, so the card reads as one family.
-        tiles(element).forEach((tile) => {
-            expect(tile.classList.contains('slds-box')).toBe(true);
-            expect(tile.classList.contains('slds-box_x-small')).toBe(true);
-        });
+        // ⚠ THE SECOND HALF OF THIS TEST IS GONE ON PURPOSE, NOT BY OVERSIGHT. It
+        // asserted that every logged TILE carried the same box; the tiles were
+        // replaced by `<c-list-datatable>` on 2026-08-25 and a datatable owns its
+        // own row chrome. The claim that replaced it — that the log renders
+        // through that component at all — is in the LIST section above, so the
+        // "one family" fact is still pinned, just against the new shape.
+        expect(logTable(element)).not.toBeNull();
     });
 
     it('🔴 IDIOM: form fields are separated by an explicit slds-m-top_x-small, never by whitespace', async () => {
@@ -738,18 +977,38 @@ describe('c-release-materials-response-log', () => {
         );
     });
 
-    it('🔴 IDIOM: the method pill is slds-badge — not a hand-rolled .rmr-badge', async () => {
+    /**
+     * 🔴 THE SUCCESSOR TO THE RETIRED `slds-badge` PIN.
+     *
+     * Until 2026-08-25 this test read `[data-method-badge]` and asserted the
+     * method rendered inside an `slds-badge` carrying its readable word. The badge
+     * went with the tiles; loiCounterOffer's equivalent is the `pill` CUSTOM CELL
+     * TYPE that `c/listDatatable` registers, and the word now travels as the
+     * column's `value`.
+     * ⚠ RETIRED, NOT DELETED. Both halves of the old claim are re-stated here
+     * against the datatable — the method is a `pill` column, and the word is still
+     * the data — because a pin that is removed along with its markup takes its
+     * coverage with it and nothing says so.
+     */
+    it('🔴 IDIOM: the method is loiCounterOffer’s `pill` cell type, and the WORD is still the value', async () => {
         const element = createComponent();
 
         getLogContext.emit(CONTEXT);
         await Promise.resolve();
 
-        const badge = q(element, '[data-method-badge]');
-        expect(badge.classList.contains('slds-badge')).toBe(true);
-        // ⚠ AND THE WORD IS STILL IN IT. A badge that loses its text is exactly
-        // the regression the LIST test above pins; this one only changes the
-        // dress, so both facts are asserted at once.
-        expect(badge.textContent.trim()).toBe('Offer');
+        const methodColumn = logTable(element).columns.find(
+            (c) => c.fieldName === 'method'
+        );
+        expect(methodColumn.type).toBe('pill');
+        // The pill template renders `{value}` beside the dot, so the row's
+        // `method` string IS what the user reads. A colour-only marker fails here.
+        expect(logRows(element)[0].method).toBe('Offer');
+        // ⚠ AND THE STYLES THAT MAKE IT A PILL ARE ACTUALLY SUPPLIED. The custom
+        // type resolves `wrapStyle`/`dotStyle` per row from the fieldNames above;
+        // if the row data lacked them every pill would render unstyled and the
+        // type assertion alone would still pass.
+        expect(logRows(element)[0].methodWrap).toContain('border-radius');
+        expect(logRows(element)[0].methodDot).toContain('border-radius');
     });
 
     it('🔴 IDIOM: the empty state is muted body text, with no centred icon column', async () => {
@@ -781,15 +1040,26 @@ describe('c-release-materials-response-log', () => {
      * ⚠ `require`, NEVER an ESM `import { readFileSync } from 'fs'` — the LWC
      * compiler rejects that with LWC1702, which the editor surfaces as an error
      * with an EMPTY message. Every T-CSS file in this repo uses this form.
-     * ⚠ COMMENTS ARE STRIPPED FIRST. This stylesheet's header NAMES the deleted
-     * rules (.rmr-form, .rmr-field, .rmr-actions, .rmr-badge) in prose to record
-     * what moved to SLDS utilities — without the strip, the absence assertions
-     * below would match that prose and fail for the wrong reason.
+     * ⚠ COMMENTS ARE STRIPPED FIRST. This stylesheet's header NAMES every deleted
+     * rule (.rmr-form, .rmr-badge, .rmr-list, .rmr-tile …) in prose to record what
+     * moved to SLDS utilities or to the datatable — without the strip, the absence
+     * assertions below would match that prose and fail for the wrong reason. This
+     * has actually happened in this repo: a mutation string matched a header
+     * comment instead of the markup and produced a fake green.
      * 🔴 DO NOT "IMPROVE" THIS INTO A MEASUREMENT: jsdom does no layout, so
      * getBoundingClientRect(), scrollWidth and clientWidth are all 0 and the
      * obvious assertion is `0 <= 0` — green whether or not the card overflows.
+     *
+     * 🔴 REWRITTEN 2026-08-25. The three `gap:` pins this test was built around
+     * (.rmr-list, .rmr-tile-head, .rmr-facts) named rules that NO LONGER EXIST —
+     * the tiles they spaced were replaced by `<c-list-datatable>`, which owns its
+     * own row layout. Left as they were they would have failed; deleted silently
+     * they would have taken a real claim with them. They are therefore INVERTED
+     * into absence assertions: the ten tile rules must stay gone, because
+     * re-adding any of them means somebody has put the hand-rolled list back
+     * beside the datatable.
      */
-    it('🔴 T-CSS: the tile gaps are load-bearing, and nothing re-implements an SLDS utility', () => {
+    it('🔴 T-CSS: the tile rules stay deleted, and nothing re-implements an SLDS utility', () => {
         const CSS = require('fs')
             .readFileSync(
                 require('path').join(__dirname, '..', 'releaseMaterialsResponseLog.css'),
@@ -797,10 +1067,10 @@ describe('c-release-materials-response-log', () => {
             )
             .replace(/\/\*[\s\S]*?\*\//g, '');
 
-        // A selector-anchored slice, never a bare /gap:/ — an unanchored search
-        // passes while any ONE of the three copies survives, and a MISSING rule
-        // returns '' so every assertion below it reds rather than silently
-        // matching somewhere else in the file.
+        // A selector-anchored slice, never a bare /margin:/ — an unanchored search
+        // passes while any ONE copy survives, and a MISSING rule returns '' so
+        // every assertion below it reds rather than silently matching somewhere
+        // else in the file.
         // ⚠ indexOf, NOT a constructed RegExp: a `new RegExp('...\{...')` here
         // loses a backslash level depending on how the file is written and
         // silently matches NOTHING, which reads as "the rule is gone" — a green
@@ -809,31 +1079,43 @@ describe('c-release-materials-response-log', () => {
             const at = CSS.indexOf(selector + ' {');
             return at < 0 ? '' : CSS.slice(at, CSS.indexOf('}', at));
         };
-        // 🔴 WITHOUT THESE THREE THE CARD HAS NO SEPARATION AT ALL. The LWC
-        // template compiler discards whitespace-only text nodes between sibling
-        // elements, so deleting a `gap` does not "tighten" a layout — it welds
-        // the tiles / the name and its badge / every label and its value
-        // together, and no rendered TEXT changes to show it.
-        expect(rule('.rmr-list')).toMatch(/gap:/);
-        expect(rule('.rmr-tile-head')).toMatch(/gap:/);
-        expect(rule('.rmr-facts')).toMatch(/gap:/);
 
-        // The responsive tile grid — a BARE 28rem minimum bursts any container
-        // narrower than 448px, which is invisible at desktop width and is the
-        // exact failure c/dispositionBuyerTimeline had to be rebuilt for.
-        expect(rule('.rmr-list')).toMatch(/minmax\(\s*min\(28rem,\s*100%\)/);
-        expect(CSS).not.toMatch(/@media/);
-        expect(CSS).not.toMatch(/overflow(-x)?\s*:\s*(auto|scroll)/);
+        // 🔴 THE TEN TILE RULES. Every one of them styled markup this component no
+        // longer emits. Asserted as a named list so a failure says WHICH came
+        // back, and with `\s*\{` so a mention inside a shorthand value cannot
+        // match.
+        [
+            '.rmr-list', '.rmr-item', '.rmr-tile', '.rmr-tile-head', '.rmr-name',
+            '.rmr-broker-line', '.rmr-facts', '.rmr-label', '.rmr-c', '.rmr-notes'
+        ].forEach((selector) => {
+            expect({ selector, present: new RegExp('\\' + selector + '\\s*\\{').test(CSS) })
+                .toEqual({ selector, present: false });
+        });
 
-        // 🔴 THE RULES THE THEMING PASS DELETED MUST STAY DELETED. Each one
-        // re-implemented an SLDS utility that the markup now carries, and
-        // re-adding any of them re-creates the drift that made this card read
-        // as a different component family.
+        // 🔴 AND THE RULES THE 2026-08-24 THEMING PASS DELETED MUST ALSO STAY
+        // DELETED. Each one re-implemented an SLDS utility that the markup now
+        // carries, and re-adding any of them re-creates the drift that made this
+        // card read as a different component family.
         expect(CSS).not.toMatch(/\.rmr-form\s*\{/);
         expect(CSS).not.toMatch(/\.rmr-field\s*\{/);
         expect(CSS).not.toMatch(/\.rmr-actions\s*\{/);
         expect(CSS).not.toMatch(/\.rmr-badge\s*\{/);
         expect(CSS).not.toMatch(/\.rmr-body\s*\{/);
+
+        // ⚠ THE GUARD-THE-GUARD. Twenty absence assertions in a row pass perfectly
+        // on an EMPTY FILE, so the rules that must SURVIVE are named too — this is
+        // what stops a future "the stylesheet is nearly empty, delete it" from
+        // sailing through.
+        expect(rule('.rmr-readonly-value')).toMatch(/font-weight:/);
+        expect(rule('.rmr-readonly-value_empty')).toMatch(/font-style:\s*italic/);
+        expect(rule('.rmr-empty-sub')).toMatch(/max-width:/);
+        expect(rule('.lv-error')).toMatch(/font-size:/);
+
+        // No media query and no scroll container: a media query measures the
+        // VIEWPORT, but the constraint on a card is its CONTAINER width. The
+        // datatable handles its own horizontal overflow.
+        expect(CSS).not.toMatch(/@media/);
+        expect(CSS).not.toMatch(/overflow(-x)?\s*:\s*(auto|scroll)/);
 
         // 🔴 DARK MODE. NOTHING ELSE IN THIS PIPELINE CATCHES A DARK-MODE
         // FAILURE: the SLDS linter only checks that a hook was USED, Jest
@@ -842,6 +1124,11 @@ describe('c-release-materials-response-log', () => {
         // on the comment-stripped stylesheet is the only automated falsifier.
         // Every colour must come from a global styling hook, which is what
         // makes it re-resolve under the dark theme; a raw literal does not.
+        // ⚠ AND THIS FILE IS NO LONGER THE WHOLE STORY: the method pill's colours
+        // moved into inline style strings in the JS when the badge became a
+        // datatable cell. Their pin lives in the LIST section above — see
+        // "every method pill colour is a styling hook". Deleting either half
+        // leaves half the component's colour unchecked.
         const colourDecls = CSS.match(/(?:color|background|background-color|border-color):[^;]+;/g) || [];
         expect(colourDecls.length).toBeGreaterThan(0);
         colourDecls.forEach((decl) => {
@@ -852,7 +1139,7 @@ describe('c-release-materials-response-log', () => {
         // The pale literal fallback written beside it describes only the
         // hook-UNDEFINED case, so a file using it reads as correct while
         // rendering dark-on-dark. The safe tint pairing is `-base-95` +
-        // `-base-30`; here the boxes are `slds-box`, which SLDS themes itself.
+        // `-base-30`, which is exactly what the method pills use.
         expect(CSS).not.toMatch(/container-1/);
 
         // ⚠ :host CARRIES NO TOP MARGIN OR BORDER, despite loiCounterOffer's
@@ -862,10 +1149,9 @@ describe('c-release-materials-response-log', () => {
         // it — they double up.
         expect(rule(':host')).not.toMatch(/margin/);
         expect(rule(':host')).not.toMatch(/border/);
-        // Still load-bearing for the narrow-container work: only `anywhere`
-        // affects min-content sizing, which is what lets `min-width: 0` bite.
+        // Kept for the .lv-error banner, whose text is a SERVER message this
+        // component cannot pre-wrap: only `anywhere` affects min-content sizing.
         expect(rule(':host')).toMatch(/overflow-wrap:\s*anywhere/);
-        expect(rule('.rmr-tile')).toMatch(/min-width:\s*0/);
     });
 
     // ═════════════════════════════════════════════════════════════════════════

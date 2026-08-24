@@ -458,7 +458,32 @@
          below, in the `main` region) must always be exact complements. Any future stage added
          to, removed from, or renamed within Disposition_Stage__c.field-meta.xml's valueSetDefinition
          requires editing BOTH rules in the SAME change - one more EQUAL criterion added to the OR
-         chain, one more NE criterion added to the AND chain - never just one side. -->
+         chain, one more NE criterion added to the AND chain - never just one side.
+
+         =====================================================================
+         2026-08-25 - BOV PREFERRED BROKER / RESPONSES CARDS ADDED TO THE SIDEBAR AS A THREE-CARD
+         GROUP WITH bovBrokerChangeHistory.
+         =====================================================================
+         Two new components placed in the sidebar region, sandwiching the pre-existing
+         bovBrokerChangeHistory so the group reads, top to bottom: bovPreferredBrokerCard (new) ->
+         bovBrokerChangeHistory (unmoved, unedited) -> bovResponsesCard (new) ->
+         dispositionBuyerTimeline (unmoved, unedited, keeps its own wider four-criteria rule). Full
+         sidebar order end to end: dispositionDealSummary, dispositionSidebar,
+         bovPreferredBrokerCard, bovBrokerChangeHistory, bovResponsesCard, dispositionBuyerTimeline,
+         flexipage_tabset.
+
+         Both new cards carry bovBrokerChangeHistory's OWN rule, copied verbatim - single
+         <criteria>, no <booleanFilter>, {!Record.Disposition_Stage__c} NE 'Disposition Readiness' -
+         so the three-card group behaves as one unit. Neither carries a data-based rule for "has a
+         preferred broker" / "has BOV rows": that is a BOV_Submission__c child-object fact a
+         FlexiPage rule cannot see, and both components' own header comments confirm they self-gate
+         and render nothing (or, for bovResponsesCard, one honest line on a failed read) when empty.
+
+         NO recordId componentInstanceProperties ON EITHER - same measured shape as
+         bovBrokerChangeHistory and dispositionBuyerTimeline immediately below: both new bundles'
+         targetConfigs declare only <objects><object>Disposition__c</object></objects>, no
+         `recordId` property, so recordId reaches them solely as the lightning__RecordPage implicit
+         input (`@api recordId` in each JS). -->
     <flexiPageRegions>
         <itemInstances>
             <componentInstance>
@@ -1341,6 +1366,38 @@
                 <identifier>dispositionSidebar</identifier>
             </componentInstance>
         </itemInstances>
+        <!-- BOV PREFERRED BROKER CARD (added 2026-08-25). FIRST of a three-card BOV group, in the
+             order bovPreferredBrokerCard -> bovBrokerChangeHistory -> bovResponsesCard -> (then the
+             pre-existing dispositionBuyerTimeline below). Placed directly after dispositionSidebar,
+             ahead of its sibling bovBrokerChangeHistory, per the supplied design order.
+             NO recordId componentInstanceProperties HERE - same measured reason as its siblings on
+             this page: bovPreferredBrokerCard.js-meta.xml's targetConfig declares only
+             <objects><object>Disposition__c</object></objects>, no `recordId` property, so recordId
+             reaches the component only as the lightning__RecordPage implicit input (`@api
+             recordId` in the JS) - an explicit componentInstanceProperties entry would fail the
+             same way bovBrokerChangeHistory's did (confirmed via dry-run 2026-08-20, cited in that
+             card's own comment below).
+             SAME STAGE RULE AS bovBrokerChangeHistory, DELIBERATELY - single <criteria>, no
+             <booleanFilter>, NE 'Disposition Readiness' - so the two BOV-flanking cards and
+             bovResponsesCard between them behave as one group. Not the EXTENDED four-criteria rule
+             dispositionBuyerTimeline carries a few lines below; that extension is scoped to that
+             one sibling only, per its own 2026-08-24 comment.
+             NO DATA-BASED VISIBILITY RULE ADDED. "Has a preferred broker" is a BOV_Submission__c
+             child-object fact a FlexiPage rule cannot see; the component's own header comment
+             confirms it self-gates and renders nothing when no broker is flagged preferred. -->
+        <itemInstances>
+            <componentInstance>
+                <componentName>bovPreferredBrokerCard</componentName>
+                <identifier>bovPreferredBrokerCard</identifier>
+                <visibilityRule>
+                    <criteria>
+                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
+                        <operator>NE</operator>
+                        <rightValue>Disposition Readiness</rightValue>
+                    </criteria>
+                </visibilityRule>
+            </componentInstance>
+        </itemInstances>
         <!-- BOV BROKER CHANGE HISTORY (Tranche 2, A6/B). MOVED main -> sidebar 2026-08-21 (see the
              root comment's 2026-08-21 entry above for why). Placed directly after
              dispositionSidebar, not after contractReviewsList as the original comment below still
@@ -1366,6 +1423,32 @@
             <componentInstance>
                 <componentName>bovBrokerChangeHistory</componentName>
                 <identifier>bovBrokerChangeHistory</identifier>
+                <visibilityRule>
+                    <criteria>
+                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
+                        <operator>NE</operator>
+                        <rightValue>Disposition Readiness</rightValue>
+                    </criteria>
+                </visibilityRule>
+            </componentInstance>
+        </itemInstances>
+        <!-- BOV RESPONSES CARD (added 2026-08-25). THIRD of the bovPreferredBrokerCard ->
+             bovBrokerChangeHistory -> bovResponsesCard group started above - placed directly after
+             bovBrokerChangeHistory and ahead of the pre-existing dispositionBuyerTimeline below,
+             per the supplied design order.
+             NO recordId componentInstanceProperties HERE, SAME MEASURED REASON as its two BOV
+             siblings above: bovResponsesCard.js-meta.xml's targetConfig declares only
+             <objects><object>Disposition__c</object></objects>, no `recordId` property; the
+             component receives it as the lightning__RecordPage implicit input (`@api recordId`).
+             SAME STAGE RULE AS bovBrokerChangeHistory - single <criteria>, no <booleanFilter>, NE
+             'Disposition Readiness' - so all three BOV cards behave as one group.
+             NO DATA-BASED VISIBILITY RULE ADDED. "Has BOV rows" is a BOV_Submission__c child-object
+             fact a FlexiPage rule cannot see; the component's own header comment confirms it
+             renders nothing when there are no submissions (and one honest line on a failed read). -->
+        <itemInstances>
+            <componentInstance>
+                <componentName>bovResponsesCard</componentName>
+                <identifier>bovResponsesCard</identifier>
                 <visibilityRule>
                     <criteria>
                         <leftValue>{!Record.Disposition_Stage__c}</leftValue>

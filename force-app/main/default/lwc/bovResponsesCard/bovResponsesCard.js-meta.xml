@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<LightningComponentBundle xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        ⚠ THE COMMENT MUST STAY INSIDE THE ROOT ELEMENT. A comment placed ABOVE
+        <LightningComponentBundle> breaks `sf` at source conversion with a
+        misleading "parent xml" error.
+
+        THE DESCRIPTION BELOW IS CAPPED AT 255 CHARACTERS AND ONLY A DEPLOY
+        CATCHES A BREACH - Jest, the SLDS linter and code review have all passed
+        a 258-character one in this repo. It was counted before this file was
+        written; count it again before editing it.
+
+        🔴 THIS COMPONENT HIDES ITSELF WHEN THE SALE HAS NO BOV SUBMISSIONS, and
+        an admin placing it must not "fix" that with a component visibility rule.
+        A FlexiPage rule can only test fields on the RECORD, and the condition
+        here is a fact about a CHILD OBJECT - which is precisely why the gate is
+        in the component. A FAILED read is a different state and DOES render the
+        card, carrying one honest line.
+
+        Place on the Disposition record page only; recordId must be a
+        Disposition__c Id. That is ENFORCED by the targetConfig below rather than
+        merely requested: the read is WHERE Disposition__c = :id, which matches
+        no rows rather than throwing, so a misplaced instance would silently
+        render nothing forever.
+    -->
+    <apiVersion>67.0</apiVersion>
+    <isExposed>true</isExposed>
+    <masterLabel>BOV Responses</masterLabel>
+    <description>Every BOV submission on this disposition as a two-column table - broker name and status - with the count in the card title, in the server ranking. Renders nothing when there are none; a failed read renders one honest line instead.</description>
+    <targets>
+        <target>lightning__RecordPage</target>
+    </targets>
+    <targetConfigs>
+        <targetConfig targets="lightning__RecordPage">
+            <!-- The ELEMENT form; the objects= ATTRIBUTE form is rejected by the Metadata API. -->
+            <objects>
+                <object>Disposition__c</object>
+            </objects>
+        </targetConfig>
+    </targetConfigs>
+</LightningComponentBundle>

@@ -26,8 +26,17 @@
           in step, and `querySelector` in the tests could not tell which one rendered.
 
       ⚠ THE STAGE LIST STAYS IN ONE PLACE. `isOfferSelection` is a NARROWING of
-      `isOfferStage`, not a parallel list — see the JS, where the shared constant is what
-      keeps the two from drifting.
+      `isOfferStage`, not a parallel list. The 2026-08-25 record-type work left that intact —
+      'Offer Selection' is on BOTH record types and is the one offer stage NOT scoped — and
+      the invariant is held by a sweep test over the whole stage × record-type grid rather
+      than by an `&&` that could never be false. See the JS.
+
+      🔴 AND `isOfferStage` IS NOW RECORD-TYPE AWARE (2026-08-25). `Release Materials` is a
+      stage on BOTH record types but only means "offers arrive here" OFF-market, so the card
+      no longer renders there on an On_Market sale — confirmed live on DISP-0023. The record
+      type rides on the SAME `getRecord` wire that already reads the stage. There is still
+      exactly ONE `<c-disposition-offer>` tag: the scoping is in the getter, not a second
+      branch here, for the same reason the mode flag is a bound getter and not a second tag.
     -->
     <template if:true={isOfferStage}>
         <c-disposition-offer

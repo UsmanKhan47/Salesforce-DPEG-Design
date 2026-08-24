@@ -817,6 +817,61 @@ describe('c-disposition-buyer-timeline', () => {
     });
 
     /**
+     * 🔴 T-FEED-ONLY — ONE CARD, ONE LIST, ONE WIRE (added 2026-08-25).
+     *
+     * On 2026-08-25 three BROKER SECTIONS were briefly nested inside this card —
+     * `c/bovPreferredBroker`, `c/bovBrokerChangeHistory` and a two-column broker
+     * responses table — fed by a SECOND wire on
+     * `BovController.getSubmissions`, and the card's entry count was moved out of
+     * the title onto a heading over the feed. THE USER CLARIFIED THE DESIGN: the
+     * three are SEPARATE STACKED CARDS, not sections of the timeline. The nesting
+     * was reverted in full and now lives in `c/bovPreferredBrokerCard`,
+     * `c/bovBrokerChangeHistory` (already placed standalone on the FlexiPage) and
+     * `c/bovResponsesCard`.
+     *
+     * Without this test NOTHING IN THIS FILE NOTICES THE NESTING COMING BACK: a
+     * mounted child renders its own card inside this one and every existing
+     * assertion here still passes. That is exactly the hole this pin fills.
+     *
+     * ⚠ A TAG SCAN, NOT A `textContent` SEARCH. A child's text NEVER reaches this
+     * component's `shadowRoot.textContent` — measured `""` in this repo with
+     * children rendering — so `not.toContain('Preferred Broker')` would be
+     * VACUOUSLY GREEN with the panel fully rendered. The exact-set form is used
+     * rather than `not.toContain` because the latter misses the same card re-added
+     * under a different bundle name.
+     * ⚠ AND THE COUNT ASSERTION BELOW IS HALF THE POINT. The count belongs in the
+     * TITLE precisely because this card is a single list; if it ever moves to a
+     * heading again, that is a signal the card has stopped being one.
+     */
+    it('🔴 T-FEED-ONLY: one card, one list, one wire — no broker sections mounted', async () => {
+        const element = createComponent();
+
+        getTimeline.emit(MERGED);
+        await Promise.resolve();
+
+        // PRESENCE CONTROL FIRST — the card is genuinely full, so every absence
+        // below is a real absence and not an unrendered component.
+        expect(dataRows(element)).toHaveLength(4);
+        // 🔴 THE COUNT IS ON THE TITLE, where it belongs while the feed is the
+        // whole of the card's body.
+        expect(title(element)).toBe('Buyer Activity timeline (4)');
+
+        // ...AND NOT ON A HEADING OVER THE FEED. `.dbt-section-h` was the class
+        // the nested version's section headings used.
+        expect(element.shadowRoot.querySelector('.dbt-section-h')).toBeNull();
+        expect(element.shadowRoot.querySelector('.dbt-stack')).toBeNull();
+        expect(element.shadowRoot.textContent).not.toContain('Activity Feed');
+
+        // 🔴 NO CHILD BUNDLES, OF ANY NAME.
+        const tags = [...element.shadowRoot.querySelectorAll('*')].map((el) =>
+            el.tagName.toLowerCase()
+        );
+        expect(tags.filter((t) => t.startsWith('c-'))).toEqual([]);
+        // Guard the guard: the scan really did walk a populated card.
+        expect(tags).toContain('lightning-card');
+    });
+
+    /**
      * 🔴 THE ABSENCE PIN, RE-RUN ON THE MERGED FIXTURE. T-NO-OFFER below runs on
      * the NDA-only payload, so it could not see a "buyer" word introduced by a
      * RESPONSE tile. This extends the same claim to the new markup rather than
