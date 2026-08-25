@@ -1,10 +1,39 @@
 import { LightningElement, api, wire } from 'lwc';
+import { NavigationMixin } from 'lightning/navigation';
 import { ShowToastEvent } from 'lightning/platformShowToastEvent';
 import { refreshApex } from '@salesforce/apex';
 import { getRelatedListRecords } from 'lightning/uiRelatedListApi';
 import DispositionLogOfferModal from 'c/dispositionLogOfferModal';
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+/**
+ * A page reference to one offer RECORD.
+ *
+ * 🔴 `standard__recordPage` + `actionName: 'view'` — NOT `standard__objectPage` AND NEVER
+ * `actionName: 'new'`. That second pair is the 2026-08-21 defect this file's header describes at
+ * length, and it lived on the "+ Log Offer" button, not here. Viewing an existing record navigates
+ * because navigating IS the request; creating one navigated because the platform's create screen
+ * redirects on save, which was never what the user asked for.
+ *
+ * ⚠ `objectApiName` IS PASSED EXPLICITLY even though `standard__recordPage` can resolve a record
+ * page from the Id prefix alone. It costs nothing, and it makes the target object greppable from
+ * this file rather than only inferable at runtime.
+ *
+ * ⚠ NOT A HAND-BUILT URL. `/lightning/r/Disposition_Offer__c/${id}/view` would work today and
+ * break silently in an Experience Cloud context, where the same record lives under a different
+ * path. `GenerateUrl` asks the platform.
+ */
+function offerRecordPageRef(recordId) {
+    return {
+        type: 'standard__recordPage',
+        attributes: {
+            recordId,
+            objectApiName: 'Disposition_Offer__c',
+            actionName: 'view'
+        }
+    };
+}
 
 /**
  * c-disposition-offer — the Disposition record page's offers card.
@@ -77,8 +106,16 @@ const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov
  * ⚠ DEFECT 2 USED TO READ "the layout offers `Buyer__c` as a bare, UNFILTERED Contact lookup, every
  * Contact in the org". That sentence is retired, not merely reworded: the buyer was removed from
  * this feature on 2026-08-21, so there is no picker left to narrow.
- * 🔴 A REGRESSION TO ANY FORM OF NAVIGATION HERE IS THE ORIGINAL BUG RETURNING. `NavigationMixin`
- * is no longer imported, deliberately — re-adding the import is the tell.
+ * 🔴 A REGRESSION TO A NAVIGATING **CREATE** HERE IS THE ORIGINAL BUG RETURNING.
+ * ⚠ THE TELL FOR THAT REGRESSION CHANGED ON 2026-08-25, AND THE OLD ONE IS NOW WRONG. This
+ * paragraph used to read "`NavigationMixin` is no longer imported, deliberately — re-adding the
+ * import is the tell". The mixin IS imported again, for an unrelated and legitimate reason: the
+ * offer NUMBER on each row links to that offer's record page (see `offerRecordPageRef` above and
+ * the `resolveOfferUrls` / `handleOpenOffer` pair below). Viewing a record the user asked to open
+ * has nothing in common with the defect above except the word "navigate".
+ * 🔴 THE TELL IS NOW THE PAGE-REFERENCE SHAPE, NOT THE IMPORT: `standard__objectPage`, or
+ * `actionName: 'new'`, or a `defaultFieldValues` state, ANYWHERE in this file. This file contains
+ * exactly one page reference, it is built in one function, and that function is `view`-only.
  *
  * ⚠ THE WIRE RESULT IS RETAINED IN `_wired` BECAUSE `refreshApex` REQUIRES IT. Destructuring the
  * handler's argument (`wired({ data, error })`, which is what this file used to do) throws the
@@ -87,7 +124,7 @@ const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov
  * LDS, so LDS may well invalidate this related list on its own — but that is not something this
  * file can assert, and an explicit refresh costs one call.
  */
-export default class DispositionOffer extends LightningElement {
+export default class DispositionOffer extends NavigationMixin(LightningElement) {
     @api recordId;
 
     /**
@@ -95,7 +132,11 @@ export default class DispositionOffer extends LightningElement {
      *
      * Set by `c/dispositionSidebar` at the `Offer Selection` stage and nowhere else. Changes four
      * things and nothing else: which rows are shown (`isSelected === true` instead of all of
-     * them), the card title, the empty-state sentence, and whether "+ Log Offer" is enabled.
+     * them), the card title, the empty-state sentence, and whether "+ Log Offer" RENDERS AT ALL
+     * (it was "whether it is enabled" until 2026-08-25 — see `showLogButton`).
+     *
+     * ⚠ IT DOES **NOT** GATE THE ROW LINK. The offer number links to its record in both modes;
+     * opening a record is not a stage-specific privilege.
      *
      * ⚠ DEFAULT `false` IS THE WHOLE SAFETY ARGUMENT. Every branch below reads
      * `this.selectedOnly === true`, so the card takes its existing path at Active Listing,
@@ -112,6 +153,18 @@ export default class DispositionOffer extends LightningElement {
     _offers = [];
     _error;
     _wired;
+
+    /**
+     * Resolved record-page URLs, keyed by OFFER Id.
+     *
+     * ⚠ REASSIGNED, NEVER MUTATED IN PLACE (`{ ...this._urlsById, [id]: url }`). A private field
+     * is reactive on ASSIGNMENT; `this._urlsById[id] = url` would populate the map and re-render
+     * nothing, leaving every row as plain text forever.
+     *
+     * ⚠ KEYED BY ID RATHER THAN BY ROW INDEX, so a `refreshApex` that reorders or adds rows reuses
+     * the URLs it already has and only asks the platform for genuinely new ones.
+     */
+    _urlsById = {};
 
     /**
      * ⚠ `Is_Selected__c` IS REQUESTED IN **EVERY** MODE, NOT ONLY WHEN `selectedOnly` IS SET. A
@@ -148,6 +201,9 @@ export default class DispositionOffer extends LightningElement {
                 // card must be a string — an `undefined` bound into the DOM renders the literal
                 // text "undefined" (measured in this repo).
                 offerName: r.fields.Name?.value || '—',
+                // ⚠ ALWAYS A NON-EMPTY STRING — it is bound to the anchor's `title`, which the
+                // compiler writes unconditionally. The `|| '—'` above guarantees the operand.
+                linkTitle: 'Open offer ' + (r.fields.Name?.value || '—'),
                 amountLabel: r.fields.Offer_Amount__c?.value != null
                     ? '$' + (r.fields.Offer_Amount__c.value / 1000000).toFixed(2) + 'M' : '—',
                 dateLabel: this._fmtDate(r.fields.Offer_Date__c?.value),
@@ -157,10 +213,62 @@ export default class DispositionOffer extends LightningElement {
                 // compete with the Select Offer quick action for the same meaning.
                 isSelected: r.fields.Is_Selected__c?.value === true
             }));
+            this.resolveOfferUrls(this._offers);
         } else if (error) {
             this._error = error;
             this._offers = [];
         }
+    }
+
+    /**
+     * Asks the platform for a record-page URL per offer, once each.
+     *
+     * ⚠ RESOLVED FOR **EVERY** OFFER IN THE PAYLOAD, NOT ONLY THE VISIBLE ONES. The filter in
+     * `_visible` is a rendering decision that the parent can flip at any moment; keying the URL
+     * cache off it would mean a row that appears on a mode change renders unlinked for a tick for
+     * no reason. The cost is one `GenerateUrl` per offer on a card that shows a handful.
+     *
+     * ⚠ A REJECTED `GenerateUrl` IS SWALLOWED, and the row keeps rendering as plain text. A
+     * navigation convenience must not take out the card that shows the offers themselves.
+     *
+     * @param {Array} rows The mapped wire rows.
+     */
+    resolveOfferUrls(rows) {
+        rows.forEach((row) => {
+            if (!row.id || this._urlsById[row.id]) {
+                return;
+            }
+            this[NavigationMixin.GenerateUrl](offerRecordPageRef(row.id))
+                .then((url) => {
+                    // Guard the empty/undefined resolution too: an `href=""` is a link back to
+                    // the current page, which is worse than no link at all.
+                    if (url) {
+                        this._urlsById = { ...this._urlsById, [row.id]: url };
+                    }
+                })
+                .catch(() => {
+                    // Leave the row unlinked. See the note above.
+                });
+        });
+    }
+
+    /**
+     * Opens the offer behind a clicked row label.
+     *
+     * `preventDefault()` + `NavigationMixin.Navigate` keeps a plain left-click an in-app SPA
+     * transition, while the real `href` on the anchor keeps middle-click, ctrl/cmd-click and
+     * "open in new tab" working — those never reach this handler at all, which is the entire
+     * reason the href is generated rather than the anchor being a bare `<a onclick>`.
+     *
+     * @param {Event} event The click, whose `data-record-id` carries the target offer.
+     */
+    handleOpenOffer(event) {
+        event.preventDefault();
+        const targetId = event.currentTarget.dataset.recordId;
+        if (!targetId) {
+            return;
+        }
+        this[NavigationMixin.Navigate](offerRecordPageRef(targetId));
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -185,7 +293,25 @@ export default class DispositionOffer extends LightningElement {
             : all;
     }
 
-    get offers()    { return this._visible; }
+    /**
+     * The visible rows, each decorated with its link state.
+     *
+     * 🔴 THE LINK IS COMPOSED HERE RATHER THAN STORED ON `_offers`. `_urlsById` fills in
+     * asynchronously AFTER the wire has already mapped the rows, so a URL written onto the stored
+     * row objects would arrive too late for a re-render — this getter re-reads the map on every
+     * render pass instead, which is what makes a settling promise repaint the row.
+     *
+     * ⚠ `hasLink` IS A SEPARATE FLAG FROM `recordUrl` because the template must choose between an
+     * anchor and a plain span BEFORE it can bind an href; see the row comment in the markup for
+     * why a missing URL must not become `href="undefined"`.
+     */
+    get offers() {
+        return this._visible.map((o) => {
+            const url = this._urlsById[o.id];
+            return { ...o, recordUrl: url, hasLink: !!url };
+        });
+    }
+
     get hasOffers() { return this._visible.length > 0; }
     get hasError()  { return !!this._error; }
     // Suppress the "no offers yet" copy when the failure is an actual load error.
@@ -216,8 +342,9 @@ export default class DispositionOffer extends LightningElement {
      * authored path cannot produce (`DispositionApprovalService.selectOffer` sets the flag and
      * moves the stage in one savepointed transaction, so reaching Offer Selection with no selected
      * offer takes a data load or a direct API write). If it ever does appear, telling the user
-     * there are no offers would send them to log another one, which is the one thing the disabled
-     * button below exists to prevent.
+     * there are no offers would send them to log another one, which is the one thing the SUPPRESSED
+     * button below exists to prevent — and since 2026-08-25 that button is not merely greyed out in
+     * this mode, it is absent, so this sentence is the only thing on the card that speaks to it.
      */
     get emptyMessage() {
         return this.selectedOnly === true
@@ -226,31 +353,44 @@ export default class DispositionOffer extends LightningElement {
     }
 
     /**
-     * "+ Log Offer" is DISABLED — not hidden — in `selected-only` mode (user decision,
-     * 2026-08-24).
+     * "+ Log Offer" is HIDDEN — not disabled — in `selected-only` mode (user decision,
+     * 2026-08-25).
      *
-     * 🔴 DISABLED, NOT HIDDEN, ON PURPOSE. A greyed control with a `title` explains itself; a
-     * vanished one reads as a permission problem or a broken page, and this card is the only place
-     * the button has ever appeared.
+     * 🔴 THIS REVERSES THE 2026-08-24 DECISION, WHICH WAS ONE DAY OLD. The getter it replaces was
+     * `logDisabled`, and its comment argued the opposite case in the same 🔴 tone: "DISABLED, NOT
+     * HIDDEN, ON PURPOSE — a greyed control with a `title` explains itself; a vanished one reads as
+     * a permission problem or a broken page." That argument is RETIRED, not softened. It is
+     * recorded here only so the next reader knows the two shapes were both considered rather than
+     * one having been overlooked; do not re-derive it back into a `disabled` binding without a
+     * fresh user decision.
      *
-     * WHY IT IS DISABLED AT ALL: at Offer Selection the card shows only the flagged offer, so a
-     * newly logged offer would save successfully and then RENDER NOWHERE — a silent disappearing
-     * save. The route for changing the choice is the Select Offer quick action on the Disposition,
-     * which re-runs the exclusivity sweep; logging a fresh offer does not.
+     * WHY THE BUTTON IS SUPPRESSED AT ALL — UNCHANGED, AND THIS IS THE PART THAT MATTERS: at Offer
+     * Selection the card shows only the flagged offer, so a newly logged offer would save
+     * successfully and then RENDER NOWHERE — a silent disappearing save. The route for changing the
+     * choice is the Select Offer quick action on the Disposition, which re-runs the exclusivity
+     * sweep; logging a fresh offer does not.
+     *
+     * ⚠ POSITIVE, NOT `!logDisabled`. The template asks "should this render?" and gets a getter
+     * that answers that question, so the name and the `lwc:if` cannot drift into a double negative.
+     *
+     * @returns {boolean} True at every stage EXCEPT Offer Selection.
      */
-    get logDisabled() {
-        return this.selectedOnly === true;
+    get showLogButton() {
+        return this.selectedOnly !== true;
     }
 
     /**
-     * ⚠ ALWAYS A NON-EMPTY STRING, IN BOTH MODES. The LWC compiler writes a bound attribute
-     * UNCONDITIONALLY, so returning `undefined` here would render the literal `title="undefined"`
-     * on the enabled button (measured in this repo, on a different bundle).
+     * ⚠ ONE STRING NOW, NOT A MODE-DEPENDENT PAIR. The `selected-only` branch used to return the
+     * long "An offer has already been selected for approval…" sentence that explained the DISABLED
+     * state. With the button hidden in that mode the branch is unreachable, and a tooltip that can
+     * never be shown is a lie waiting to be quoted — so it is deleted rather than left dangling.
+     *
+     * ⚠ STILL A NON-EMPTY STRING. The LWC compiler writes a bound attribute UNCONDITIONALLY, so
+     * returning `undefined` here would render the literal `title="undefined"` on the button
+     * (measured in this repo, on a different bundle).
      */
     get logTitle() {
-        return this.selectedOnly === true
-            ? 'An offer has already been selected for approval. Use the Select Offer action on this disposition to change the choice.'
-            : 'Log an offer against this disposition.';
+        return 'Log an offer against this disposition.';
     }
 
     /**
@@ -261,11 +401,11 @@ export default class DispositionOffer extends LightningElement {
      * `CustomEvent` from the dialog has no path here. The promise IS the wiring.
      */
     async handleLogOffer() {
-        // 🔴 THE SECOND OF TWO GUARDS, AND IT IS NOT REDUNDANT. The button carries
-        // `disabled={logDisabled}`, which is what the user SEES and what stops the click; this is
-        // what stops the SAVE if that binding is ever dropped in a template edit. They fail
-        // independently and each has its own falsifier in __tests__ — a single guard would let one
-        // of those tests go vacuous behind the other.
+        // 🔴 THE SECOND OF TWO GUARDS, AND IT IS NOT REDUNDANT. The template carries
+        // `lwc:if={showLogButton}` — since 2026-08-25 the button is ABSENT rather than disabled in
+        // this mode, so there is normally nothing to click; this is what stops the SAVE if that
+        // `lwc:if` is ever dropped in a template edit, and it is also the guard that holds if the
+        // handler is ever reached by any route other than that button. They fail independently.
         if (this.selectedOnly === true) {
             return;
         }

@@ -1419,7 +1419,11 @@
              still reaches the component - it is a lightning__RecordPage implicit input and the
              JS exposes `@api recordId` - the platform injects it automatically without a
              FlexiPage-side declaration. -->
-        <!-- 2026-08-24: added a visibilityRule hiding this card at Disposition_Stage__c =
+        <!-- 2026-08-25: EXTENDED the visibilityRule to also hide at Offer Selection, so this
+             card now renders at every stage except Disposition Readiness and Offer Selection.
+             booleanFilter "1 AND 2" added to pair the two NE criteria; shape copied from
+             dispositionBuyerTimeline's own "1 AND 2 AND 3 AND 4" chain immediately below.
+             2026-08-24: added a visibilityRule hiding this card at Disposition_Stage__c =
              'Disposition Readiness'. Shape copied from FieldBroker's fieldInstance-level rule
              (single <criteria>, no <booleanFilter>, further up this file) rather than the
              multi-criteria action-level rules on the Submit_* Dynamic Actions - this is a plain
@@ -1430,10 +1434,16 @@
                 <componentName>bovBrokerChangeHistory</componentName>
                 <identifier>bovBrokerChangeHistory</identifier>
                 <visibilityRule>
+                    <booleanFilter>1 AND 2</booleanFilter>
                     <criteria>
                         <leftValue>{!Record.Disposition_Stage__c}</leftValue>
                         <operator>NE</operator>
                         <rightValue>Disposition Readiness</rightValue>
+                    </criteria>
+                    <criteria>
+                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
+                        <operator>NE</operator>
+                        <rightValue>Offer Selection</rightValue>
                     </criteria>
                 </visibilityRule>
             </componentInstance>

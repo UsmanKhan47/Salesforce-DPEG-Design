@@ -35,6 +35,27 @@
 /* The first column. It was `.offer-buyer` until 2026-08-21, when buyer identity was retired and
    the offer's own AutoNumber took its place — same slot, same weight, different subject. */
 .offer-name { font-weight: var(--slds-g-font-weight-4, 400); color: var(--slds-g-color-on-surface-2, #181818); flex: 1; }
+/*
+  The offer number as a link to its record (2026-08-25).
+
+  ⚠ THE CARD'S OWN LINK COLOUR, TOKEN AND FALLBACK BOTH. `--slds-g-color-brand-base-50` is the
+  hook `c/dispositionDealSummary` uses on its row labels, but its FALLBACK there is `#0176d3`
+  while `.log-btn` in THIS stylesheet has always fallen back to `#1565c0`. Two different literals
+  for one token inside one bundle would render as two different blues wherever styling hooks are
+  unavailable, so the bundle-local value wins — the token is what matters, the fallback is what
+  keeps it from rendering as nothing.
+
+  ⚠ UNDERLINE ON `:focus` AS WELL AS `:hover`. Colour alone is not an accessible affordance, and
+  the anchor is keyboard-reachable precisely because it carries a real `href`.
+*/
+.offer-link {
+    color: var(--slds-g-color-brand-base-50, #1565c0);
+    text-decoration: none;
+}
+.offer-link:hover,
+.offer-link:focus {
+    text-decoration: underline;
+}
 .offer-amount { font-weight: var(--slds-g-font-weight-4, 400); color: var(--slds-g-color-palette-green-40, #1B7A4B); margin: 0 var(--slds-g-spacing-3, 12px); }
 .offer-date { color: var(--slds-g-color-neutral-base-60, #8a96a3); }
 .log-btn-wrap {
@@ -53,30 +74,19 @@
     cursor: pointer;
     text-align: center;
 }
-/* ⚠ SCOPED WITH :not([disabled]) RATHER THAN OVERRIDDEN BELOW. A second `.log-btn[disabled]:hover`
-   rule would have to restate the disabled background, giving two places to change it. The raw
-   `#f0f8ff` is pre-existing and deliberately untouched — recolouring the hover state was not part
-   of this change. */
-.log-btn:not([disabled]):hover { background: #f0f8ff; }
 /*
-  THE OFFER-SELECTION DISABLED STATE (2026-08-24).
-
-  🔴 NOT `--slds-g-color-disabled-container-1` / `--slds-g-color-on-disabled-1`. Measured against
-  the linter's own metadata: that pair is WHITE on PALE GREY, i.e. near-invisible on this white
-  card — the button would read as enabled-but-broken rather than disabled. `neutral-base-95` +
-  `on-surface-1` is the pairing that actually reads as greyed out here.
-  ⚠ `--slds-g-color-neutral-base-95` is one of the hooks `slds-linter --fix` will NOT write a
-  fallback for, so `#f3f3f3` is hand-authored from the metadata JSON. Do not delete it: a bare
-  var() renders as nothing in environments where styling hooks are unavailable.
-  ⚠ COLOUR IS NOT THE ONLY SIGNAL. The button also carries a `title` explaining why it is off
-  (see `logTitle`), because colour alone is not an accessible explanation.
+  ⚠ THE `:not([disabled])` SCOPING IS GONE WITH THE STATE IT PROTECTED (2026-08-25). This button
+  has no disabled state any more — in `selected-only` mode it is not rendered at all — so the
+  companion `.log-btn[disabled]` block that used to follow (a hand-authored `neutral-base-95` /
+  `on-surface-1` greyed-out pairing, chosen because SLDS's own `disabled-container-1` /
+  `on-disabled-1` pair measured as WHITE ON PALE GREY and read as broken-not-disabled on this white
+  card) is deleted rather than left as dead CSS describing a state the component cannot enter.
+  🔴 IF A DISABLED STATE EVER RETURNS HERE, DO NOT REACH FOR `--slds-g-color-disabled-*` — that
+  measurement is the one thing worth carrying forward from the deleted block.
+  The raw `#f0f8ff` is pre-existing and deliberately untouched — recolouring the hover state was
+  not part of this change either.
 */
-.log-btn[disabled] {
-    background: var(--slds-g-color-neutral-base-95, #f3f3f3);
-    color: var(--slds-g-color-on-surface-1, #757575);
-    border-color: var(--slds-g-color-border-1, #e3e6eb);
-    cursor: not-allowed;
-}
+.log-btn:hover { background: #f0f8ff; }
 .wire-error {
     display: flex;
     align-items: center;

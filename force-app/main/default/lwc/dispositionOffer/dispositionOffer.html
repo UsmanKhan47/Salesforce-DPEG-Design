@@ -19,8 +19,42 @@
                     <div key={o.id} class="offer-row">
                         <!-- 🔴 THE OFFER NUMBER, NOT A BUYER NAME. Buyer identity was retired
                              on 2026-08-21; see the JS header before putting a party back in
-                             this column, and note that the BROKER is the same on every row. -->
-                        <div class="offer-name">{o.offerName}</div>
+                             this column, and note that the BROKER is the same on every row.
+
+                             ⚠ THE NUMBER IS A LINK TO THE OFFER RECORD, IN **BOTH** MODES
+                             (2026-08-25). Opening a record is not a stage-specific privilege,
+                             and this loop is the single row template both modes render — a
+                             mode-gated link would have meant a second row shape to keep in
+                             step for no gain.
+
+                             🔴 A REAL `href` FROM `NavigationMixin.GenerateUrl`, NOT A
+                             HAND-BUILT `/lightning/r/...` STRING, WITH `preventDefault()` +
+                             `Navigate` IN THE HANDLER. The href is what makes the anchor
+                             keyboard-focusable, announced as a link, and middle-clickable /
+                             open-in-new-tab; the handler is what keeps a plain left-click an
+                             in-app SPA transition instead of a full page load. This is the
+                             `c/dispositionDealSummary` row-label shape verbatim.
+
+                             🔴 `hasLink` EXISTS BECAUSE `GenerateUrl` IS ASYNCHRONOUS. For the
+                             tick between the wire landing and the promise settling there is no
+                             URL, and a bound attribute is written UNCONDITIONALLY by the LWC
+                             compiler — `href={o.recordUrl}` with an unresolved URL would put
+                             the literal string "undefined" in the href (measured in this repo).
+                             Until then, and if the promise rejects, the row renders the same
+                             plain text it always did. Never a bare `<a>` with no destination. -->
+                        <div class="offer-name">
+                            <template lwc:if={o.hasLink}>
+                                <a
+                                    class="offer-link"
+                                    data-record-id={o.id}
+                                    href={o.recordUrl}
+                                    title={o.linkTitle}
+                                    onclick={handleOpenOffer}
+                                    >{o.offerName}</a
+                                >
+                            </template>
+                            <template lwc:else>{o.offerName}</template>
+                        </div>
                         <div class="offer-amount">{o.amountLabel}</div>
                         <div class="offer-date">{o.dateLabel}</div>
                     </div>
@@ -49,24 +83,30 @@
             <div class="empty-msg">{emptyMessage}</div>
         </template>
         <!--
-          ⚠ `disabled` AND `title` ARE BOTH BOUND, AND BOTH RESOLVE IN EVERY MODE. A getter
-          bound to an attribute is written UNCONDITIONALLY by the LWC compiler, so a `logTitle`
-          that returned `undefined` in the enabled state would render the literal
-          `title="undefined"` on the page (measured in this repo). `logTitle` therefore always
-          returns a non-empty string.
+          🔴 HIDDEN IN `selected-only` MODE — NOT DISABLED (user decision, 2026-08-25). This
+          REVERSES the 2026-08-24 decision one day old; the button was rendered greyed with an
+          explanatory `title` until now. The reasoning that argued for disabled-not-hidden ("a
+          vanished control reads as a permission problem") is retired, not merely reworded, and
+          the tooltip that carried it is gone with it — see `showLogButton` in the JS.
 
-          🔴 THE `disabled` BINDING IS ONE OF **TWO** GUARDS, DELIBERATELY. `handleLogOffer`
-          returns early in the same mode. Removing either one alone leaves the feature correct
-          and reds exactly one test — which is the point: neither test can go vacuous behind
-          the other.
+          ⚠ THE ONLY REMAINING BOUND ATTRIBUTE IS `title`, AND IT IS NOW A CONSTANT. A getter
+          bound to an attribute is written UNCONDITIONALLY by the LWC compiler, so a `logTitle`
+          returning `undefined` would render the literal `title="undefined"` on the page
+          (measured in this repo). `logTitle` therefore still always returns a non-empty string.
+
+          🔴 STILL **TWO** GUARDS, JUST A DIFFERENT FIRST ONE. `lwc:if` replaces the `disabled`
+          binding as the guard the user SEES; `handleLogOffer` keeps its own early return for
+          the same mode as belt and braces, so dropping either one alone still leaves the
+          feature correct rather than silently opening the save path.
         -->
-        <div class="log-btn-wrap">
-            <button
-                class="log-btn"
-                onclick={handleLogOffer}
-                disabled={logDisabled}
-                title={logTitle}
-            >+ Log Offer</button>
-        </div>
+        <template lwc:if={showLogButton}>
+            <div class="log-btn-wrap">
+                <button
+                    class="log-btn"
+                    onclick={handleLogOffer}
+                    title={logTitle}
+                >+ Log Offer</button>
+            </div>
+        </template>
     </div>
 </template>
