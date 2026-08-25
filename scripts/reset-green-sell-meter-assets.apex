@@ -92,6 +92,13 @@ delete assets;
 System.debug(LoggingLevel.ERROR, 'Teardown complete.');
 
 // 4. Create two fresh GREEN assets, Bandera-shaped.
+//    Guarded: this script is NOT idempotent by Id (the teardown Ids are gone after one run),
+//    so a second run must not create the pair again — it did once, on 2026-08-25.
+Integer existing = [SELECT COUNT() FROM Property_Asset__c
+                    WHERE Name IN ('Stone Oak Village Center', 'Alamo Ranch Marketplace')];
+if (existing > 0) {
+    throw new HandledException('Refusing to create: ' + existing + ' of the new assets already exist.');
+}
 List<Property__c> props = new List<Property__c>{
     new Property__c(Name = 'Stone Oak Village Center', City__c = 'San Antonio', State__c = 'TX'),
     new Property__c(Name = 'Alamo Ranch Marketplace',  City__c = 'San Antonio', State__c = 'TX')
