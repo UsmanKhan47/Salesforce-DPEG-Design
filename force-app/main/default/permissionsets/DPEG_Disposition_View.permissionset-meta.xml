@@ -1382,114 +1382,31 @@
         <readable>true</readable>
     </fieldPermissions>
     <!--
-        ADDED 2026-08-24 (NDA-stage Details redesign). Five formula fields mirroring the
-        primary NDA's own fields onto Disposition__c - matching DPEG_Disposition_Edit's
-        addition in the same change. Read-only, same reasoning.
-    -->
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>Disposition__c.NDA_Broker__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>Disposition__c.NDA_Status__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>Disposition__c.NDA_Date_Sent__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>Disposition__c.NDA_Date_Signed__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>Disposition__c.NDA_Expiry_Date__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <!--
-        ADDED 2026-08-25 (native LOI/PSA Details). The read-only twin of the block in
-        DPEG_Disposition_Edit - the LOI/PSA sibling of the NDA block immediately above, landing for
-        the same reason: a Metadata-API-deployed field arrives with NO field permissions for ANY
-        profile, System Administrator included, so every field below is invisible to everyone until
-        this set deploys, and the FlexiPage renders NOTHING for a field the running user cannot
-        read (a missing grant looks exactly like an empty field, never like an error).
+        🔴 REMOVED 2026-08-25 - SEVENTEEN Disposition__c GRANTS DELETED HERE. The read-only twin
+        of the removal recorded in DPEG_Disposition_Edit; read that file's note for the full
+        reasoning and do not re-derive it. In short: the 2026-08-24 five NDA_*__c formulas and
+        the 2026-08-25 Primary_LOI__c / Primary_PSA__c lookups plus nine LOI_*__c / PSA_*__c
+        formulas existed ONLY to feed three stage-scoped Details sections on
+        Disposition_Record_Page. The user retired that idea on 2026-08-25 ("we don't need
+        them"); the sections and the fields went with it, so these grants have nothing left to
+        grant.
 
-        🔴 EVERY FIELD BELOW IS READ-ONLY HERE, INCLUDING THE FOUR LOOKUPS - and that is where this
-        block DIVERGES from the Edit set, which grants edit on the four. Two reasons, and neither
-        applies to a view persona: the Edit set needs it for the one-off `sf data update record`
-        backfill (USER mode, refused on a non-editable field), and for a user hand-creating a
-        second-round LOI. A view persona does neither. The nine FORMULA fields cannot carry
-        editable = true in EITHER set - that is a hard deploy error, not a policy choice.
+        ⚠ THE ARGUMENT THE REMOVED COMMENT MADE IS STILL TRUE AND STILL APPLIES ELSEWHERE - it
+        is being retired, not refuted. A Metadata-API-deployed field arrives with NO field
+        permissions for ANY profile, System Administrator included, and the FlexiPage renders
+        NOTHING for a field the running user cannot read, so a missing grant looks like an empty
+        field rather than an error. Any future field surfaced on that page still needs a grant
+        in this set, landing in the SAME deploy.
 
-        Must land WITH objects/Disposition__c/fields/, objects/LOI__c/fields/Selected_Offer__c,
-        objects/Contract_Review__c/fields/Selected_Offer__c and
-        Disposition_Record_Page.flexipage-meta.xml.
+        ⚠ Disposition__c.Primary_NDA__c IS DELIBERATELY STILL GRANTED (further UP this file) AND
+        WAS NOT PART OF THIS REMOVAL - it pre-dates the mirror work (D16.2, Tranche 3A) and
+        DispositionNdaStampQueueable is still its writer.
+
+        ⚠ THE "FOUR LOOKUPS" PHRASE IN THE REMOVED COMMENT COUNTED Primary_LOI__c,
+        Primary_PSA__c AND the two child-side Selected_Offer__c fields. Only the first two are
+        gone; LOI__c.Selected_Offer__c and Contract_Review__c.Selected_Offer__c are UNTOUCHED and
+        are granted immediately below.
     -->
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>Disposition__c.Primary_LOI__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>Disposition__c.Primary_PSA__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>Disposition__c.LOI_Stage__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>Disposition__c.LOI_Status__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>Disposition__c.LOI_Signed_Date__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>Disposition__c.LOI_Final_Agreed_Price__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>Disposition__c.LOI_Counter_Price__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>Disposition__c.LOI_Counter_Received_Date__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>Disposition__c.PSA_Negotiation_Status__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>Disposition__c.PSA_Stage__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>Disposition__c.PSA_Ball_In_Court__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>Disposition__c.PSA_Execution_Date__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
     <!--
         The two CHILD-side offer links (scope addition, same day). Read-only here. Both objects are
         shared with the acquisition side, where the field is simply blank (no Disposition__c, so no

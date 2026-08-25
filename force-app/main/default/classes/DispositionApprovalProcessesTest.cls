@@ -137,19 +137,24 @@ private class DispositionApprovalProcessesTest {
      * deliberately NOT a validation rule (design F-4). This test pins the consequence, and it
      * is written to fail LOUDLY the day somebody adds the rule anyway:
      *
-     *   a disposition that is ALREADY INSIDE `Sale_Decision_Approval` with a BLANK asking
-     *   price must still advance on approval.
+     *   a disposition that is ALREADY INSIDE `Sale_Decision_Approval` with a BLANK price
+     *   must still advance on approval.
+     *
+     * ⚠ "BLANK PRICE" MEANS THE PARENT ASSET'S `Target_Sale_Price__c` SINCE 2026-08-25, not
+     * `Disposition__c.Asking_Price__c` — that field was retired from the disposition flow and the
+     * gate moved with `BOV_Score__c`'s value basis. The claim and the risk are unchanged; only the
+     * field the hypothetical validation rule would name is different.
      *
      * WHY THAT STATE IS REACHABLE AND NOT A STRAW MAN: every disposition that predates the
      * gate is in exactly this shape (measured 2026-08-22 — DISP-0020 sits at Disposition
-     * Readiness with `Asking_Price__c` null), and `Sale_Decision_Approval`'s `entryCriteria`
+     * Readiness with no price), and `Sale_Decision_Approval`'s `entryCriteria`
      * tests the STAGE only, so the platform's own Submit button and any direct
      * `Approval.process` call still accept an unpriced record. The submit here is a RAW
      * `Approval.process`, bypassing the service pre-check on purpose — that is the point, not
      * a shortcut.
      *
      * 🔴 WHAT FAILURE LOOKS LIKE, AND WHY IT WOULD OTHERWISE BE INVISIBLE. If a validation
-     * rule requiring `Asking_Price__c` is ever added, `DispositionApprovalAdvanceService.advance`
+     * rule requiring a price is ever added, `DispositionApprovalAdvanceService.advance`
      * — `Database.update(rows, false, AccessLevel.SYSTEM_MODE)`, where SYSTEM_MODE lifts CRUD
      * and FLS but NEVER a validation rule — would be refused, `allOrNone = false` would DISCARD
      * the error, and the disposition would sit APPROVED at Disposition Readiness with
@@ -160,12 +165,16 @@ private class DispositionApprovalProcessesTest {
      * hint as to why.
      */
     @isTest
-    static void saleDecisionApproved_blankAskingPrice_stillAdvances() {
+    static void saleDecisionApproved_blankPrice_stillAdvances() {
         Disposition__c d = dispositionAt(TestDataFactory.DISPOSITION_RT_ON_MARKET, 'Disposition Readiness');
+        // ⚠ THE PRECONDITION READS THE **ASSET** SINCE 2026-08-25. Reading the Disposition's own
+        // retired `Asking_Price__c` would still compile and would still be null — and would
+        // therefore assert nothing about the field the gate actually looks at.
         Assert.isNull(
-            [SELECT Asking_Price__c FROM Disposition__c WHERE Id = :d.Id].Asking_Price__c,
-            'PRECONDITION: the fixture must be UNPRICED. A priced one would satisfy any future '
-            + 'validation rule and this test would pass without testing anything.');
+            [SELECT Target_Sale_Price__c FROM Property_Asset__c WHERE Id = :assetId()]
+                .Target_Sale_Price__c,
+            'PRECONDITION: the fixture asset must be UNPRICED. A priced one would satisfy any '
+            + 'future validation rule and this test would pass without testing anything.');
         submit(d.Id);
 
         Test.startTest();
@@ -178,10 +187,10 @@ private class DispositionApprovalProcessesTest {
             WHERE Id = :d.Id WITH SYSTEM_MODE
         ];
         Assert.areEqual('BOV Outreach', after.Disposition_Stage__c,
-            'A blank asking price must NOT block the D-1 auto-advance. Still reading '
+            'A blank target sale price must NOT block the D-1 auto-advance. Still reading '
             + '"Disposition Readiness" means a validation rule (or an approval entry criterion) '
-            + 'now requires Asking_Price__c and the Queueable\'s allOrNone = false swallowed the '
-            + 'refusal — read ASKING_PRICE_REQUIRED_MESSAGE in DispositionApprovalService.');
+            + 'now requires a price and the Queueable\'s allOrNone = false swallowed the '
+            + 'refusal — read TARGET_SALE_PRICE_REQUIRED_MESSAGE in DispositionApprovalService.');
         Assert.isFalse(after.Approval_Advance_Pending__c,
             'The semaphore must be CLEARED. A stuck true is the signature of a swallowed '
             + 'validation-rule refusal inside DispositionApprovalAdvanceQueueable.');

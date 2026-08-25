@@ -267,7 +267,12 @@ private class DispositionSelectorTest {
      *   - "...FourDecisionFields" -> "...Five" on 2026-08-20 when the SELECT gained `Broker__c`,
      *     the field the `Broker Selection` gate actually reads;
      *   - "...Five" -> "...Six" on 2026-08-22 when it gained `Asking_Price__c`, the field the new
-     *     `Disposition Readiness` gate reads (DispositionApprovalService.submitForApproval).
+     *     `Disposition Readiness` gate read (DispositionApprovalService.submitForApproval);
+     *   - the COUNT stayed at Six on 2026-08-25 while the sixth field CHANGED: `Asking_Price__c`
+     *     was retired from the disposition flow and the gate now reads the parent asset's
+     *     `Property_Asset__r.Target_Sale_Price__c`. ⚠ A name that only counts cannot catch a
+     *     SWAP, which is why the assertion below names the field explicitly and why this bullet
+     *     exists.
      *
      * ⚠ `Selected_Broker__c` is NOT hand-set to a literal here on purpose. Setting `Broker__c` on
      * this same `update` fires `DispositionBrokerStampService` (before-update, same trigger), which
@@ -291,8 +296,13 @@ private class DispositionSelectorTest {
             assetId(), TestDataFactory.DISPOSITION_RT_OFF_MARKET, true);
         d.Broker__c = broker.Id;
         d.Wire_Verification_Completed__c = false;
-        d.Asking_Price__c = 3750000;
         update d;
+        // 🔴 THE SIXTH FIELD LIVES ON THE PARENT ASSET SINCE 2026-08-25, SO IT IS SET THERE.
+        // This is not a stylistic move: the SELECT now spans `Property_Asset__r`, which is an
+        // FLS/CRUD gate on a SECOND OBJECT. Writing the value onto the Disposition (where
+        // `Asking_Price__c` still exists and still compiles) would leave the span untested and the
+        // assertion below reading a null it could not distinguish from an unqueried field.
+        update new Property_Asset__c(Id = assetId(), Target_Sale_Price__c = 3750000);
 
         Test.startTest();
         Disposition__c result = DispositionSelector.selectApprovalContextById(d.Id);
@@ -305,13 +315,21 @@ private class DispositionSelectorTest {
             'Selected_Broker__c is still in the SELECT as the display-only carry, now DERIVED '
             + 'from Broker__c by DispositionBrokerStampService rather than hand-typed');
         Assert.areEqual(false, result.Wire_Verification_Completed__c);
-        Assert.areEqual(3750000, result.Asking_Price__c,
-            'Asking_Price__c must be in the SELECT — it is what the Disposition Readiness gate in '
-            + 'DispositionApprovalService reads. MEASURED 2026-08-22 by deleting it from the query: '
-            + '8 tests across 3 classes go red with System.SObjectException "SObject row was '
-            + 'retrieved via SOQL without querying the requested field", and the user-facing '
-            + 'symptom is that Submit for Approval at Disposition Readiness fails for EVERYONE '
-            + 'behind the controller\'s generic "could not be submitted" mask.');
+        Assert.isNotNull(result.Property_Asset__r,
+            'The Property_Asset__r SPAN must be in the SELECT. A null parent here (on a row that '
+            + 'demonstrably HAS an asset) means the traversal was dropped and the Readiness gate '
+            + 'has nothing to read.');
+        Assert.areEqual(3750000, result.Property_Asset__r.Target_Sale_Price__c,
+            'Property_Asset__r.Target_Sale_Price__c must be in the SELECT — it is what the '
+            + 'Disposition Readiness gate in DispositionApprovalService reads as of 2026-08-25 '
+            + '(it read Disposition__c.Asking_Price__c until then). MEASURED 2026-08-22 by '
+            + 'deleting the old field from this query: 8 tests across 3 classes went red with '
+            + 'System.SObjectException "SObject row was retrieved via SOQL without querying the '
+            + 'requested field", and the user-facing symptom is that Submit for Approval at '
+            + 'Disposition Readiness fails for EVERYONE behind the controller\'s generic '
+            + '"could not be submitted" mask. The span fails the same way, plus one more: under '
+            + 'WITH USER_MODE it also needs read on Property_Asset__c itself, which only '
+            + 'DPEG_PropertyMgmt_View grants.');
         Id rt = result.RecordTypeId; // readable without throwing — proves it is in the SELECT
     }
 

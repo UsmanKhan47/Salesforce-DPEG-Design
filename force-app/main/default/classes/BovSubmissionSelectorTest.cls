@@ -15,19 +15,24 @@
  * good — and with them the only mechanism this repo had for producing two submissions with
  * DIFFERENT scores.
  *
- * ⚠ RETRACTED: "`Asking_Price__c` DOES NOT EXIST ON `Disposition__c` YET." It exists now
- * (`objects/Disposition__c/fields/Asking_Price__c.field-meta.xml`, deployed by a concurrent wave).
+ * ⚠ RETRACTED TWICE — READ BOTH, THE SECOND ONE CHANGES WHICH FIELD ANY FUTURE FIX TOUCHES.
+ *   V1: "`Asking_Price__c` DOES NOT EXIST ON `Disposition__c` YET." ❌ It did exist.
+ *   V2 (2026-08-25): `Asking_Price__c` is RETIRED from the disposition flow altogether. It is not
+ *      deleted and it still compiles, but nothing reads it — `BOV_Score__c`'s 50-point Value term
+ *      now divides by `Disposition__r.Property_Asset__r.Target_Sale_Price__c`, on the PARENT ASSET.
  * What is STILL true, and is why deferred items 1/2/3 below remain owed rather than closed: this
- * class's own `@testSetup` (and every `TestDataFactory.createDisposition`/`createDispositions`
- * call site) still does not SET `Asking_Price__c`, so the formula's guard clause still returns
- * null for every fixture in this file and no test here exercises the DESC leg of the ORDER BY —
- * see the restored premise assertions in `selectByDispositionId_populatesEverySelectedField` and
+ * class's own `@testSetup` builds a plain `TestDataFactory` asset, which carries NO
+ * `Target_Sale_Price__c` (that factory default was REMOVED on 2026-08-25 in the same change —
+ * read its comment in `TestDataFactory` before re-adding one), so the formula's guard clause
+ * returns null for every fixture in this file and no test here exercises the DESC leg of the
+ * ORDER BY — see the restored premise assertions in
+ * `selectByDispositionId_populatesEverySelectedField` and
  * `selectByDispositionId_tiedScores_ordersOldestFirstDeterministically` for where this is now
  * asserted explicitly rather than assumed.
  *
  * ⚠ WHAT IS OWED, and must not be quietly dropped:
- *   1. a test that gives ONE disposition an asking price and two submissions with different
- *      `BOV_Amount__c`, asserting the higher-valuing broker sorts FIRST (the DESC leg);
+ *   1. a test that gives ONE disposition's ASSET a target sale price and two submissions with
+ *      different `BOV_Amount__c`, asserting the higher-valuing broker sorts FIRST (the DESC leg);
  *   2. a test mixing a scored disposition's submissions with an unscored one's, asserting the
  *      nulls fall to the BOTTOM (the `NULLS LAST` leg, still untested);
  *   3. the derived VALUE itself asserted at least once against the published band table — e.g.
@@ -100,14 +105,17 @@ private class BovSubmissionSelectorTest {
         // now a live FORMULA field again and is back in the SELECT list. It still asserts NULL —
         // not because "nothing writes it" (a formula field is never written, that reasoning no
         // longer applies) but because this test's @testSetup Disposition
-        // (TestDataFactory.createDisposition) does not set Asking_Price__c, so the formula's own
+        // sits under a factory Property_Asset__c with NO Target_Sale_Price__c, so the formula's own
         // guard clause returns null regardless of BOV_Amount__c/Commission_Rate__c/
-        // Days_To_Market__c (confirmed against TestDataFactory.createBovSubmissions's own header,
-        // 2026-08-22). A test that needs a NON-null score must give its own Disposition fixture a
-        // real Asking_Price__c — see this class's header, deferred item 3.
+        // Days_To_Market__c. ⚠ AMENDED 2026-08-25: the basis used to be the Disposition's own
+        // Asking_Price__c, which is now retired from the disposition flow. The CONCLUSION is
+        // unchanged only because `TestDataFactory.createPropertyAssets` had its
+        // Target_Sale_Price__c default REMOVED in the same change — read its comment before
+        // re-adding one. A test that needs a NON-null score must price the ASSET
+        // (TestDataFactory.createPricedDisposition) — see this class's header, deferred item 3.
         Assert.isNull(s.BOV_Score__c,
-            'BOV_Score__c should be selected — and null, because this fixture\'s Disposition has '
-            + 'no Asking_Price__c, so the formula\'s guard clause returns null');
+            'BOV_Score__c should be selected — and null, because this fixture\'s Disposition sits '
+            + 'under an asset with no Target_Sale_Price__c, so the formula\'s guard returns null');
         Assert.areEqual('Backup', s.Submission_Status__c, 'Submission_Status__c should be selected');
         // 🔴 `Name` (added 2026-08-21). Compared against a fresh read rather than a literal because
         // it is an AUTO-NUMBER (measured in usman-dpeg: type string, autoNumber true, nillable
@@ -157,7 +165,8 @@ private class BovSubmissionSelectorTest {
         Assert.areEqual(3, result.size(), 'All three submissions should return');
         // 🔴 RESTORED 2026-08-22 (manifest/bov-score-formula-conversion/, Step 3). Same fixture
         // fact as selectByDispositionId_populatesEverySelectedField above: this test's @testSetup
-        // Disposition has no Asking_Price__c, so BOV_Score__c's formula guard returns null for all
+        // Disposition sits under an asset with no Target_Sale_Price__c (the basis moved there
+        // 2026-08-25), so BOV_Score__c's formula guard returns null for all
         // three fixtures regardless of their BOV_Amount__c/Commission_Rate__c/Days_To_Market__c —
         // which is exactly the premise this tie-break test needs (every score ties at null, so
         // CreatedDate ASC / Id ASC is the ONLY key left).
@@ -732,7 +741,8 @@ private class BovSubmissionSelectorTest {
             'Submission_Status__c must be selected — it is the field the service writes');
         Assert.isNotNull(got.BOV_Score__c,
             '🔴 BOV_Score__c must be selected AND non-null on a priced disposition. Null here means '
-            + 'the fixture lost its Asking_Price__c and every auto-selection test is vacuous.');
+            + 'the fixture asset lost its Target_Sale_Price__c and every auto-selection test is '
+            + 'vacuous.');
         Assert.isFalse(got.Approval_Pending__c,
             '🔴 Approval_Pending__c must be selected — it is lock leg 1, and it is the field that '
             + 'forces this read to WITH SYSTEM_MODE (no permission set grants it, by design)');

@@ -24,9 +24,12 @@
  * ⚠ `Broker__c` IS LEFT IN PLACE on every row: `Broker_Required_On_Submission` is
  * `ISBLANK(Broker__c)` and got NO preferred exemption, and it is also what keeps `Broker_Firm__c`
  * (and therefore the history row's surviving Text column) non-blank.
- * ⚠ DISPOSITIONS ARE **PRICED** wherever a scored competitor matters — every `TestDataFactory`
- * disposition leaves `Asking_Price__c` blank, so every BOV under one scores null and any test that
- * needs a real scored winner would otherwise exercise the "nothing is scoreable" branch instead.
+ * ⚠ DISPOSITIONS ARE **PRICED** wherever a scored competitor matters — a plain `TestDataFactory`
+ * asset carries no `Target_Sale_Price__c`, so every BOV under a disposition on one scores null and
+ * any test that needs a real scored winner would otherwise exercise the "nothing is scoreable"
+ * branch instead. ⚠ AMENDED 2026-08-25: the basis was `Disposition__c.Asking_Price__c` until that
+ * date; it is now the ASSET's `Target_Sale_Price__c`, which is what `createPricedDisposition`
+ * writes. The conclusion is identical; the record it writes to is not.
  *
  * ⚠ HISTORY IS QUERIED DIRECTLY RATHER THAN THROUGH `BovBrokerChangeSelector`, matching
  * `BovSubmissionServiceTest`: a test of the WRITER must not be able to pass because the READER

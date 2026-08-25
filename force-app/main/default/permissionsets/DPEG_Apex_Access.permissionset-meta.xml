@@ -133,6 +133,16 @@
       The removal is recorded rather than silently dropped because this file's header documents
       THREE live production breaks caused by a MISSING classAccesses entry. A future reader
       finding no DispositionChildDetails* grant here should not conclude it was a fourth.
+
+      ⚠ AMENDED 2026-08-25 (LATER STILL): THE NATIVE REPLACEMENT DESCRIBED ABOVE IS ALSO GONE.
+      Primary_LOI__c, Primary_PSA__c, the nine LOI_*__c / PSA_*__c formulas and the five
+      NDA_*__c formulas were deleted on the user's decision that the disposition record does not
+      need child-mirror fields at all, and the three Details sections on
+      Disposition_Record_Page went with them (manifest/remove-disposition-child-mirrors/). The
+      paragraph above is retained verbatim as history - it is the record of why
+      DispositionChildDetailsController has no grant here - but do not read it as a description
+      of the page as it stands. NOTHING was added back to this file: the sections are gone
+      entirely, not re-implemented in Apex, so there is still nothing to grant.
     -->
     <classAccesses>
         <apexClass>DispositionController</apexClass>

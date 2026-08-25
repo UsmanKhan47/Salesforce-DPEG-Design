@@ -1,9 +1,17 @@
 /**
  * @description Tests DispositionService — the find-or-create Disposition write workflow
  * extracted from DispositionController in P6 controller thinning, plus the server-side
- * sell-meter gate and the On_Market record-type stamp added with Disposition Foundations,
- * plus the Expected Value (Asking_Price__c) stamp copied from the asset's Target_Sale_Price__c
- * on both create paths (2026-08-25).
+ * sell-meter gate and the On_Market record-type stamp added with Disposition Foundations.
+ *
+ * ⚠ THERE IS DELIBERATELY NO EXPECTED-VALUE STAMP TEST HERE, AND ITS ABSENCE IS A DECISION.
+ * For a few hours on 2026-08-25 both create paths copied the asset's `Target_Sale_Price__c` onto
+ * the new Disposition's `Asking_Price__c` ("Expected Value"), and
+ * `initiateAndSubmit_stampsExpectedValueFromTheAssetTargetSalePrice` proved it. The user then
+ * retired `Asking_Price__c` from the disposition flow entirely — `BOV_Score__c` and the
+ * Disposition-Readiness submission gate both read `Property_Asset__r.Target_Sale_Price__c`
+ * directly now — so the stamp was removed and that test with it. 🔴 The field still EXISTS and a
+ * stamp would still COMPILE; do not re-add either. A copy on the Disposition would be a second,
+ * silently-diverging source of truth for a number nothing reads from there.
  *
  * ─────────────────────────────────────────────────────────────────────────────────────
  * NO 251-RECORD BULK TEST — .claude/rules/bulk-test-rule.md PER-TRANSACTION-SINGLETON
@@ -294,39 +302,6 @@ private class DispositionServiceTest {
                 'initiateAndSubmit must stamp the CALLER-CHOSEN type, not the On_Market default '
                 + 'findOrCreate always uses — the whole reason this method takes a parameter');
         }
-    }
-
-    /**
-     * 🔴 THE EXPECTED VALUE IS SEEDED FROM THE ASSET, NOT LEFT BLANK. Asking_Price__c (label
-     * "Expected Value") is what DispositionApprovalService's Disposition Readiness guard demands
-     * before the sale can leave that stage, and what BOV_Score__c's value dimension divides by —
-     * so a disposition created blank is one an analyst must hand-fill before anything downstream
-     * works. The copy comes from Target_Sale_Price__c on the asset the create path already read.
-     *
-     * The target price is set to a DISTINCTIVE value here rather than relying on the factory
-     * default, so a stamp that accidentally wrote some other number (or that never ran) cannot
-     * pass by coincidence. Whole dollars on purpose: Asking_Price__c is scale 0 and
-     * Target_Sale_Price__c is scale 2, so a target carrying cents would be rounded on save and
-     * this assertion would be about platform rounding rather than about the stamp.
-     */
-    @isTest
-    static void initiateAndSubmit_stampsExpectedValueFromTheAssetTargetSalePrice() {
-        Decimal targetPrice = 3450000;
-        Property_Asset__c asset = assetWithPeak(10); // GREEN
-        asset.Target_Sale_Price__c = targetPrice;
-        update asset;
-
-        Test.startTest();
-        DispositionService.InitiateOutcome outcome =
-            DispositionService.initiateAndSubmit(asset.Id, 'On_Market');
-        Test.stopTest();
-
-        Disposition__c created = [
-            SELECT Asking_Price__c FROM Disposition__c WHERE Id = :outcome.dispositionId
-        ];
-        Assert.areEqual(targetPrice, created.Asking_Price__c,
-            'The Expected Value must be copied from the asset Target Sale Price at create time - '
-            + 'a blank one strands the sale at Disposition Readiness and blanks every BOV score');
     }
 
     @isTest

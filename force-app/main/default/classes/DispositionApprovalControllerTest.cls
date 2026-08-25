@@ -30,19 +30,24 @@ private class DispositionApprovalControllerTest {
     }
 
     /**
-     * ⚠ THE ASKING PRICE IS SET EXPLICITLY (2026-08-22) AND IS NOT DECORATION. Since the
+     * ⚠ THE PRICE IS SET EXPLICITLY (2026-08-22) AND IS NOT DECORATION. Since the
      * Disposition-Readiness gate landed in DispositionApprovalService, an unpriced fixture at
      * this stage is REFUSED — so this test would stop proving "the happy path returns the
      * confirmation" and start proving "the refusal is masked", silently, while still being
      * named for the former. The other two Readiness fixtures in this class stay unpriced
      * deliberately: the bare-user walk is denied before the read, and the deleted-Id walk
      * throws in the selector — both BEFORE the gate — so pricing them would weaken them.
+     *
+     * 🔴 IT IS WRITTEN TO THE **PROPERTY ASSET** SINCE 2026-08-25. The line used to be
+     * `d.Asking_Price__c = 2500000` on the Disposition. That field is retired from the disposition
+     * flow and the gate reads `Property_Asset__r.Target_Sale_Price__c` — but the old line STILL
+     * COMPILES, so leaving it would have turned this happy-path test into a masked-refusal test
+     * with nothing to point at.
      */
     @isTest
     static void submitForApproval_positiveScenario_returnsTheConfirmationMessage() {
         Disposition__c d = dispositionAt(TestDataFactory.DISPOSITION_RT_ON_MARKET, 'Disposition Readiness');
-        d.Asking_Price__c = 2500000;
-        update d;
+        update new Property_Asset__c(Id = assetId(), Target_Sale_Price__c = 2500000);
 
         Test.startTest();
         String msg = DispositionApprovalController.submitForApproval(d.Id);

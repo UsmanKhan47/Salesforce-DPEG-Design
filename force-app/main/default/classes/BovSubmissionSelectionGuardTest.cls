@@ -184,10 +184,12 @@ private class BovSubmissionSelectionGuardTest {
      * response, they see `DUPLICATE_SELECTED_MESSAGE` telling them to use Replace Broker on a save
      * that had nothing to do with selection. 100% reproducible, and attributed to the wrong feature.
      *
-     * ⚠ THE FIXTURE MUST BE A **PRICED** DISPOSITION. `BOV_Score__c` is null without an
-     * `Asking_Price__c`, and a null score is not a rank — so on an ordinary factory fixture
-     * auto-selection never promotes anything and this test would pass while exercising nothing.
-     * `TestDataFactory.createPricedDisposition` exists for exactly this.
+     * ⚠ THE FIXTURE MUST BE A **PRICED** DISPOSITION. `BOV_Score__c` is null without a value
+     * basis, and a null score is not a rank — so on an ordinary factory fixture auto-selection
+     * never promotes anything and this test would pass while exercising nothing.
+     * `TestDataFactory.createPricedDisposition` exists for exactly this. ⚠ AMENDED 2026-08-25: the
+     * basis is the PARENT ASSET's `Target_Sale_Price__c` now, not the Disposition's retired
+     * `Asking_Price__c`, and that helper writes it to the asset accordingly.
      *
      * ⚠ IT DELIBERATELY ASSERTS THE ABSENCE OF AN ERROR RATHER THAN CATCHING ONE. The refusal
      * arrives as an `addError` on the inserted row, which surfaces as a `DmlException` from the

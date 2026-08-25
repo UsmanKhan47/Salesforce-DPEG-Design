@@ -23,18 +23,23 @@
  *      EXISTS as a branch to cover.
  * Two tests below (`testGetSubmissions_mapsEveryRowFieldToTheRightRecord` and
  * `testGetSubmissions_tiedScores_orderIsDeterministicOldestFirst`) still assert `bovScore` is
- * null — that is NOT the same stale claim. It is still true today because
- * `TestDataFactory.createDisposition`/`createDispositions` do not set `Asking_Price__c` on the
- * Dispositions they build (confirmed in `TestDataFactory.cls`'s own `createBovSubmissions`
- * header), so the formula's guard clause returns null for every fixture in this file regardless
- * of the conversion being complete. What is genuinely owed and NOT yet added here: a test that
- * gives its OWN Disposition fixture a real `Asking_Price__c` and asserts a non-null, non-
- * truncated score (e.g. against the hand-verified BOV-0015 / BOV-0017 values in
+ * null — that is NOT the same stale claim. It is still true today because the fixtures sit under a
+ * plain `TestDataFactory` Property Asset, which carries NO `Target_Sale_Price__c`, so the formula's
+ * guard clause returns null for every fixture in this file regardless of the conversion being
+ * complete.
+ * ⚠ AMENDED 2026-08-25 — THE FIELD THAT MAKES THAT TRUE CHANGED, AND SO DID WHERE IT LIVES. The
+ * basis was `Disposition__c.Asking_Price__c`, which the factory never set; it is now
+ * `Property_Asset__c.Target_Sale_Price__c`, TWO hops out, which the factory DID set until the
+ * default was removed in that same change (read its comment in `TestDataFactory`). The assertions
+ * below are unchanged; the reason they hold is not.
+ * What is genuinely owed and NOT yet added here: a test that gives its own fixture's ASSET a real
+ * `Target_Sale_Price__c` and asserts a non-null, non-truncated score (e.g. against the
+ * hand-verified BOV-0015 / BOV-0017 values in
  * `manifest/bov-score-formula-conversion/step3-package.xml`) — see
  * `BovSubmissionSelectorTest`'s header for the same deferred-coverage list, item 3.
  * 🔴 Do NOT close the null-fixture gap by adding a @TestVisible seam or by making `bovScore`
  * writable — the whole point of the conversion is that the score is derived and nothing can
- * write it. Give the fixture a real Asking_Price__c instead.
+ * write it. Price the fixture's ASSET instead (`TestDataFactory.createPricedDisposition`).
  *
  * ─────────────────────────────────────────────────────────────────────────────────────
  * DISPOSITION FOUNDATIONS: OutreachSummary.ndaStatus
@@ -77,8 +82,10 @@ private class BovControllerTest {
      * The old name and its `rows[0].brokerFirm == 'CBRE'` assertion were carried entirely by two
      * hard-coded `BOV_Score__c` assignments (91 and 84). `BOV_Score__c` is being recreated as a
      * FORMULA and cannot be assigned in Apex, so the fixture could no longer produce two different
-     * scores and the ordering claim became unprovable — see this class's header for what is owed
-     * once `Disposition__c.Asking_Price__c` and the formula ship.
+     * scores and the ordering claim became unprovable — see this class's header for what is owed.
+     * ⚠ That header line used to end "once `Disposition__c.Asking_Price__c` and the formula ship".
+     * The formula shipped; `Asking_Price__c` was then retired (2026-08-25) and the basis moved to
+     * `Property_Asset__c.Target_Sale_Price__c`. What is owed is unchanged — the field to set is.
      *
      * 🔴 WHAT SURVIVED IS THE PART THAT WAS NEVER ABOUT THE SCORE: that `getSubmissions` maps every
      * BovRow member off the right record. Those assertions are now keyed BY RECORD ID instead of by
@@ -142,8 +149,11 @@ private class BovControllerTest {
         // 🔴 RETRACTED 2026-08-22 (conversion completed). This used to pin a now-deleted ternary's
         // null leg and name a coverage gap on its `.intValue()` leg — both gone, see this class's
         // header. Null is still the only reachable answer HERE because this fixture's Disposition
-        // (@testSetup) has no Asking_Price__c, which is a property of the FIXTURE, not of the
-        // production code path.
+        // (@testSetup) sits under an asset with no Target_Sale_Price__c — which is a property of
+        // the FIXTURE, not of the production code path. ⚠ The basis moved from the Disposition's
+        // own (now retired) Asking_Price__c to the asset on 2026-08-25; this stayed null only
+        // because TestDataFactory.createPropertyAssets lost its Target_Sale_Price__c default in
+        // the same change.
         Assert.isNull(winnerRow.bovScore,
             'bovScore passes through as null while nothing can write or derive a score');
         Assert.isNull(backupRow.bovScore, 'and likewise for the other row');

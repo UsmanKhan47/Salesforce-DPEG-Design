@@ -1274,8 +1274,11 @@ private class DispositionStageEntryServiceTest {
      *     permission-set grant is the only fix. This test is the experiment that settles that
      *     question, which `OpportunityReviewService`'s header has carried as UNDETERMINED since
      *     2026-08-09. Report it; do not soften the assertion.
-     *   TypeException "DML operation UPDATE not allowed on Disposition__c" from
-     *     `DispositionPrimaryChildStampQueueable` at `Test.stopTest()` — that is the FIXTURE, not
+     *   TypeException "DML operation UPDATE not allowed on Disposition__c" at `Test.stopTest()` —
+     *     ⚠ THIS ROW NAMED `DispositionPrimaryChildStampQueueable` UNTIL 2026-08-25, when that
+     *     class was deleted with the child-mirror fields. The symptom can still arrive from
+     *     `DispositionNdaStampQueueable`, which drains at the same point for the same reason, so
+     *     the row is kept with the name corrected rather than removed. It is the FIXTURE, not
      *     the code: no permission set in this org grants `Disposition__c` without also granting
      *     `LOI__c.Disposition_LOI`, so this persona holds none, and the queueable is relying on
      *     `SYSTEM_MODE` lifting object CRUD. Move the assertions ahead of `Test.stopTest()` rather
@@ -1571,37 +1574,49 @@ private class DispositionStageEntryServiceTest {
     }
 
     // ═════════════════════════════════════════════════════════════════════════
-    // 🔴 THE PARENT STAMPS ON THE TWO NEW BLOCKS
+    // 🔴 NO PARENT STAMP ON THE TWO NEW BLOCKS — the falsifier for "add a Queueable
+    // for symmetry"
     //
-    // ⚠ THIS SECTION'S HEADING AND ITS FIRST TEST WERE INVERTED ON 2026-08-25, NOT
-    // DELETED. It used to read "NO PARENT STAMP ON THE TWO NEW BLOCKS — the
-    // falsifier for 'add a Queueable for symmetry'", and the test below used to be
-    // `loiAndPsaAutoCreateEnqueueNothing`, asserting `Assert.areEqual(0, jobsUsed)`.
-    // Both were CORRECT while `Disposition__c` had no `Primary_LOI__c` and no
-    // `Primary_PSA__c`. Those lookups now exist (the record page's LOI/PSA Details
-    // sections are native fieldSections spanning formula fields that traverse them),
-    // so there IS a parent write and it MUST be deferred. Inverting the test keeps a
-    // falsifier pointed at the new claim; deleting it would have left the new
-    // behaviour unpinned, which is how a "for symmetry" Queueable would sneak back in
-    // the other direction.
+    // ⚠ THIS SECTION HAS BEEN INVERTED TWICE IN ONE DAY AND THE ARC IS KEPT ON
+    // PURPOSE. Original heading and test (`loiAndPsaAutoCreateEnqueueNothing`,
+    // asserting `Assert.areEqual(0, jobsUsed)`) were correct while `Disposition__c`
+    // had no `Primary_LOI__c` / `Primary_PSA__c`. On 2026-08-25 those lookups were
+    // added for the record page's native LOI/PSA Details sections, so there WAS a
+    // parent write to defer, and this test was inverted to
+    // `loiAndPsaAutoCreateEachEnqueueOneParentStamp` (assert 2). LATER THE SAME DAY
+    // the user retired the whole child-mirror field family ("we don't need them");
+    // the lookups, the fifteen formula fields, the three Details sections and
+    // `DispositionPrimaryChildStampQueueable` were all deleted
+    // (manifest/remove-disposition-child-mirrors/), so the ORIGINAL assertion is
+    // correct again and has been restored verbatim.
+    // 🔴 A SECOND TEST DIED WITH THE CLASS: `primaryChildStampQueueableIsInertOnAnEmptyOrNullMap`
+    // covered that Queueable's empty/null constructor guard. It is DELETED, not
+    // disabled — there is no class left to cover. The equivalent guard on
+    // `DispositionNdaStampQueueable` is still covered by
+    // `stampQueueableWithNothingToDoIsANoOp` further up this file; do not confuse
+    // the two when reading coverage.
     // ═════════════════════════════════════════════════════════════════════════
 
     /**
-     * Each of the LOI and PSA blocks enqueues EXACTLY ONE `DispositionPrimaryChildStampQueueable`,
-     * and the stamp lands on the right lookup.
+     * The LOI and PSA blocks enqueue NOTHING, and that is asserted rather than left to inspection.
      *
-     * 🔴 THIS IS NOT A PERFORMANCE ASSERTION IN EITHER DIRECTION. The count pins that the deferral
-     * exists at all — a synchronous write back to `Disposition__c` from its own AFTER UPDATE would
-     * hit `ENTITY_IS_LOCKED` whenever an administrator re-stages a record mid-approval
-     * (`recordEditability = AdminOnly` permits exactly that), and `SYSTEM_MODE` does not lift a
-     * lock. TWO, not one: the two blocks each guard and enqueue their own job, which is what the
-     * service header's "≤ 3 enqueues" budget describes.
+     * 🔴 THIS IS NOT A PERFORMANCE ASSERTION. It is the falsifier for someone adding a Queueable to
+     * these two blocks "for symmetry" with the NDA block. The NDA block's Queueable exists SOLELY
+     * because it writes back to the locked parent (`Disposition__c.Primary_NDA__c`), and
+     * `SYSTEM_MODE` does not lift an approval lock. `Disposition__c` has exactly ONE `Primary_*`
+     * lookup again, so these two blocks have no parent write and therefore nothing to defer — a
+     * Queueable here would be a job that does nothing while advertising a hazard that is absent.
      *
-     * The service is invoked DIRECTLY so the count contains this service and nothing else. The
-     * lookups are then read back AFTER `Test.stopTest()`, which is what drains the queue.
+     * ⚠ IF THIS GOES RED WITH `jobsUsed == 2`, CHECK WHETHER A `Primary_LOI__c` / `Primary_PSA__c`
+     * WAS RE-ADDED BEFORE "FIXING" THE TEST. That exact pair of lookups existed for part of
+     * 2026-08-25 and this assertion was legitimately 2 during that window. Re-read
+     * `DispositionStageEntryService`'s LOI-block point 3(a) before changing the number in either
+     * direction.
+     *
+     * The service is invoked DIRECTLY so the count contains this service and nothing else.
      */
     @isTest
-    static void loiAndPsaAutoCreateEachEnqueueOneParentStamp() {
+    static void loiAndPsaAutoCreateEnqueueNothing() {
         Disposition__c loiEntrant = onMarketAtReadiness();
         Disposition__c psaEntrant = onMarketAtReadiness();
 
@@ -1620,60 +1635,15 @@ private class DispositionStageEntryServiceTest {
         Integer jobsUsed = Limits.getQueueableJobs() - jobsBefore;
         Test.stopTest();
 
-        Assert.areEqual(2, jobsUsed,
-            'The LOI and PSA blocks must enqueue exactly ONE parent stamp EACH. Zero here is the '
-            + 'pre-2026-08-25 behaviour, correct only while Disposition__c had no Primary_LOI__c / '
-            + 'Primary_PSA__c — it now means the stamp was dropped and both Details sections will '
-            + 'render blank. More than two means a block enqueued per record rather than per chunk.');
+        Assert.areEqual(0, jobsUsed,
+            'The LOI and PSA blocks must enqueue NOTHING. A non-zero count means a parent stamp '
+            + 'was reintroduced — check whether a Primary_LOI__c / Primary_PSA__c lookup came back '
+            + 'with it, because a Queueable writing a lookup that does not exist fails silently as '
+            + 'an AsyncApexJob and nothing in the UI reports it.');
 
-        List<LOI__c> lois = loisOn(loiEntrant.Id);
-        List<Contract_Review__c> reviews = contractReviewsOn(psaEntrant.Id);
-        Assert.areEqual(1, lois.size(), 'The LOI was still created');
-        Assert.areEqual(1, reviews.size(), 'The Contract Review was still created');
-
-        Map<Id, Disposition__c> stamped = new Map<Id, Disposition__c>([
-            SELECT Id, Primary_LOI__c, Primary_PSA__c
-            FROM Disposition__c
-            WHERE Id IN (:loiEntrant.Id, :psaEntrant.Id)
-        ]);
-        Assert.areEqual(lois[0].Id, stamped.get(loiEntrant.Id).Primary_LOI__c,
-            'Primary_LOI__c must point at the LOI this service just created. Null means the '
-            + 'Queueable never ran or wrote the wrong column; the LOI-stage Details section reads '
-            + 'ENTIRELY through this lookup, so a null renders as an empty section, not an error.');
-        Assert.areEqual(reviews[0].Id, stamped.get(psaEntrant.Id).Primary_PSA__c,
-            'Primary_PSA__c must point at the Contract Review this service just created.');
-        Assert.isNull(stamped.get(loiEntrant.Id).Primary_PSA__c,
-            'The LOI entrant must NOT have gained a Primary_PSA__c. This is the falsifier for the '
-            + 'PrimaryLookup enum being ignored — a stamp that always wrote one column would still '
-            + 'pass both assertions above if the two dispositions were checked separately.');
-        Assert.isNull(stamped.get(psaEntrant.Id).Primary_LOI__c,
-            'The PSA entrant must NOT have gained a Primary_LOI__c — the mirror of the above.');
-    }
-
-    /**
-     * The empty/null constructor guard on `DispositionPrimaryChildStampQueueable`. Production never
-     * reaches it (both call sites build the map from rows they just inserted), but an async class
-     * whose only symptom of failure is a failed `AsyncApexJob` should not be one NullPointerException
-     * away from silence, and the guard is otherwise uncovered.
-     */
-    @isTest
-    static void primaryChildStampQueueableIsInertOnAnEmptyOrNullMap() {
-        Test.startTest();
-        System.enqueueJob(new DispositionPrimaryChildStampQueueable(
-            new Map<Id, Id>(),
-            DispositionPrimaryChildStampQueueable.PrimaryLookup.PRIMARY_LOI
-        ));
-        System.enqueueJob(new DispositionPrimaryChildStampQueueable(
-            null,
-            DispositionPrimaryChildStampQueueable.PrimaryLookup.PRIMARY_PSA
-        ));
-        Test.stopTest();
-
-        Assert.areEqual(0,
-            [SELECT COUNT() FROM AsyncApexJob WHERE Status = 'Failed'],
-            'Neither an empty map nor a null map may throw. A failure here is the shape that is '
-            + 'invisible in production: the job fails, the lookup stays null, and the only symptom '
-            + 'is a Details section that renders blank.');
+        Assert.areEqual(1, loisOn(loiEntrant.Id).size(), 'The LOI was still created');
+        Assert.areEqual(1, contractReviewsOn(psaEntrant.Id).size(),
+            'The Contract Review was still created');
     }
 
     // ═════════════════════════════════════════════════════════════════════════

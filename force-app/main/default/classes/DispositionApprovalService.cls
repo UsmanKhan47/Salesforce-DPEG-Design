@@ -30,18 +30,26 @@
  * joined 2026-08-22 by a THIRD pre-check that is NOT an entry-criterion mitigation (read the ⚠
  * under the table):
  *
- *   `Disposition Readiness`          `Asking_Price__c` must be non-null and greater than zero
+ *   `Disposition Readiness`          the PARENT ASSET's `Target_Sale_Price__c` must be non-null
+ *                                    and greater than zero (via `Property_Asset__r`)
  *   `Broker Selection` (off-market)  `Broker__c` must be non-null
  *   `Closing`                        `Wire_Verification_Completed__c` must be true
  *
  * ⚠ THE FIRST ROW IS NEW ON 2026-08-22 AND IS THE ODD ONE OUT — IT IS NOT MITIGATING AN APPROVAL
- * ENTRY CRITERION. `Sale_Decision_Approval` enters on the STAGE alone, so a blank asking price
+ * ENTRY CRITERION. `Sale_Decision_Approval` enters on the STAGE alone, so a blank price
  * would submit and approve perfectly happily and the platform would never say a word. That
  * pre-check exists because the STAGE ADVANCE the approval triggers is written by a Queueable in
  * SYSTEM_MODE with `allOrNone = false`, where a refusal is SILENT — so submission time is the only
- * place a refusal can still reach a person. Full argument at ASKING_PRICE_REQUIRED_MESSAGE. Do not
- * "harmonise" it by adding an entry criterion or a validation rule without reading design F-4
- * (`objects/Disposition__c/fields/Asking_Price__c.field-meta.xml`) first.
+ * place a refusal can still reach a person. Full argument at TARGET_SALE_PRICE_REQUIRED_MESSAGE. Do
+ * not "harmonise" it by adding an entry criterion or a validation rule without reading design F-4
+ * (`objects/Disposition__c/fields/Asking_Price__c.field-meta.xml` still records it) first.
+ *
+ * 🔴 THE FIRST ROW WAS REPOINTED ON 2026-08-25 AND THE OLD FORM MUST NOT COME BACK. It read
+ * `Asking_Price__c` ("Expected Value") ON THE DISPOSITION until that date. The user retired that
+ * field from the disposition flow and removed it from the record page; `BOV_Score__c`'s value basis
+ * moved to `Property_Asset__c.Target_Sale_Price__c`, and this gate moved WITH the score, because
+ * the score is the only reason the gate exists. The field is NOT deleted — additive retirement —
+ * so `Asking_Price__c` still compiles here and always will. Do not reinstate it because it does.
  *
  * ⚠ THE `Broker Selection` ROW CHANGED ON 2026-08-20 (off-market broker lookup) AND THE OLD FORM
  * MUST NOT COME BACK. (It read "THE FIRST ROW" until 2026-08-22, when the asking-price row was
@@ -228,6 +236,15 @@ public with sharing class DispositionApprovalService {
      * The `Disposition Readiness` branch's ONLY refusal, added 2026-08-22 to the user requirement
      * "asking price should be mandatory before moving to BOV Outreach".
      *
+     * ⚠ RENAMED FROM `ASKING_PRICE_REQUIRED_MESSAGE` ON 2026-08-25, AND THE RENAME IS THE POINT.
+     * The gate now reads `Property_Asset__r.Target_Sale_Price__c` on the PARENT ASSET, not
+     * `Asking_Price__c` ("Expected Value") on the disposition — that field is retired from the
+     * disposition flow (user decision; the field itself is NOT deleted, per this repo's additive
+     * retirement rule) and `BOV_Score__c`'s value basis moved to the asset with it. The constant is
+     * private and had no external caller, so the name was corrected rather than left to describe a
+     * field this class no longer reads. Every argument below survives the move unchanged; only the
+     * FIELD the gate names is different, and the message text names the new one.
+     *
      * ═════════════════════════════════════════════════════════════════════════════
      * 🔴 THIS PRE-CHECK IS THE WHOLE CONTROL. THERE IS NO VALIDATION RULE BEHIND IT,
      *    AND THAT ABSENCE IS A DECISION, NOT AN OMISSION.
@@ -237,16 +254,22 @@ public with sharing class DispositionApprovalService {
      * and that this one is guarded in ONE will assume the other two were forgotten. They were not.
      *
      * WHY NO VALIDATION RULE (design F-4, recorded in
-     * `objects/Disposition__c/fields/Asking_Price__c.field-meta.xml` — read it before adding one):
+     * `objects/Disposition__c/fields/Asking_Price__c.field-meta.xml` — read it before adding one,
+     * and note it is now the historical record of a retired field rather than a live one):
      * the `Disposition Readiness` -> `BOV Outreach` / `Broker Selection` hop IS NOT A USER ACTION.
      * It is written by `DispositionApprovalAdvanceService.advance`, inside
      * `DispositionApprovalAdvanceQueueable`, as
      * `Database.update(rows, false, AccessLevel.SYSTEM_MODE)`. **SYSTEM_MODE lifts CRUD and FLS and
      * NEVER a validation rule**, and `allOrNone = false` DISCARDS the failure. So a rule of the
-     * obvious shape — `ISCHANGED(Disposition_Stage__c) AND PRIORVALUE = 'Disposition Readiness'
-     * AND ISBLANK(Asking_Price__c)` — would fire on the machine's write, be swallowed, and leave
-     * an APPROVED disposition parked at Readiness with `Approval_Advance_Pending__c` stuck true and
-     * nothing shown to the approver. That is strictly worse than no backstop.
+     * obvious shape would fire on the machine's write, be swallowed, and leave an APPROVED
+     * disposition parked at Readiness with `Approval_Advance_Pending__c` stuck true and nothing
+     * shown to the approver. That is strictly worse than no backstop.
+     *
+     * 🔴 AND THE MOVE TO THE ASSET MAKES A VALIDATION RULE WORSE STILL, NOT BETTER. The value now
+     * lives on a DIFFERENT OBJECT, so the only rule that could see it is a cross-object formula on
+     * `Disposition__c` reading `Property_Asset__r.Target_Sale_Price__c` — which would fire on every
+     * disposition save for a value the disposition's own editor may not be able to change, and
+     * would still be swallowed by the Queueable exactly as described above.
      *
      * ⚠ AND THIS IS WHY THE GUARD MUST STAY AT **SUBMISSION** TIME RATHER THAN MOVING TO THE
      * WRITE: refusing here is the last moment a human is still holding the click. One statement
@@ -254,42 +277,46 @@ public with sharing class DispositionApprovalService {
      * user to tell.
      *
      * 🔴 IF A BACKSTOP RULE IS EVER WANTED ANYWAY, THE SAFE SHAPE IS NOT A CLEVERER FORMULA —
-     * it is `Asking_Price__c != null` added to `Sale_Decision_Approval`'s `entryCriteria`, which
-     * makes the blank-price state unreachable BY the approval and therefore unreachable by the
-     * advance — exactly the argument `Wire_Complete_Before_Sale_Closes`'s own XML comment makes
-     * for the wire gate ("it should never trip on that path, because Closing_Approval cannot be
-     * entered unless the flag is already true"). That PAIR overturns F-4 and needs sign-off; do
-     * not add the rule on its own, and do not reach for PRIORVALUE to dodge the Queueable.
+     * it is `Property_Asset__r.Target_Sale_Price__c != null` added to `Sale_Decision_Approval`'s
+     * `entryCriteria`, which makes the blank-price state unreachable BY the approval and therefore
+     * unreachable by the advance — exactly the argument `Wire_Complete_Before_Sale_Closes`'s own
+     * XML comment makes for the wire gate ("it should never trip on that path, because
+     * Closing_Approval cannot be entered unless the flag is already true"). That PAIR overturns F-4
+     * and needs sign-off; do not add the rule on its own, and do not reach for PRIORVALUE to dodge
+     * the Queueable.
      *
      * ── WHY IT COVERS BOTH RECORD TYPES, DELIBERATELY ─────────────────────────
      * This branch is not record-type-guarded (`Sale_Decision_Approval` enters at this stage on BOTH
      * types), so the gate applies to the off-market `Broker Selection` hop as well as the on-market
      * `BOV Outreach` one. The user asked for "before moving to BOV Outreach"; the business reason —
-     * an asset cannot be taken to market with no asking price — is record-type independent, and an
-     * off-market sale has no BOV Outreach stage to be stopped at, so scoping the gate to that stage
-     * name would exempt an entire record type for good. No later stage asks for this field.
+     * an asset cannot be taken to market with no target sale price — is record-type independent,
+     * and an off-market sale has no BOV Outreach stage to be stopped at, so scoping the gate to
+     * that stage name would exempt an entire record type for good. No later stage asks for this.
      *
      * ── WHY ZERO IS REFUSED TOO, AND WHERE THAT COMES FROM ───────────────────
-     * Not an invented rule: the field's own `description` states that "a blank OR ZERO value makes
-     * every BOV score on this sale blank", because `BOV_Submission__c.BOV_Score__c`'s value
-     * dimension is computed against it. A zero asking price satisfies "populated" and still breaks
-     * every downstream score, so `<= 0` is refused with the same message. A currency of 0 is not a
-     * price.
+     * Not an invented rule: `BOV_Submission__c.BOV_Score__c`'s own guard returns **null** for a
+     * blank OR ZERO OR NEGATIVE basis, because the score's 50-point value dimension divides by it.
+     * A zero target sale price satisfies "populated" and still blanks every BOV score on the sale,
+     * so `<= 0` is refused with the same message. A currency of 0 is not a price.
      *
-     * ⚠ IT NAMES THE ON-SCREEN LABEL, NOT the API name, per this class's stated convention.
-     * Verified 2026-08-22: the field is on the Details fieldSection of `Disposition_Record_Page`,
-     * on `Disposition__c-Disposition Layout`, and editable for `DPEG_Disposition_Edit` — so the
-     * label the message names is the label the user is looking at while they read it. A gate
-     * demanding a field the user cannot see is the LOI `Final_Agreed_Price__c` dead end, and it
-     * was checked rather than assumed.
-     * ⚠ 2026-08-24: `Asking_Price__c`'s `<label>` was renamed to `Expected Value` (API name
-     * unchanged — the field, this constant's name, and every reference to it below stay
-     * `Asking_Price__c`/`ASKING_PRICE_REQUIRED_MESSAGE`). Only the message text below was updated
-     * to match the new on-screen label, per the rule immediately above.
+     * ⚠ IT NAMES THE ON-SCREEN LABEL, NOT the API name, per this class's stated convention —
+     * "Target Sale Price", which is `Target_Sale_Price__c`'s `<label>` on `Property_Asset__c`.
+     * 🔴 AND THE FIELD IT NAMES IS ON A **DIFFERENT RECORD FROM THE ONE THE USER IS LOOKING AT**,
+     * WHICH IS NEW AND IS WHY THE MESSAGE SAYS SO EXPLICITLY. The 2026-08-22 version of this
+     * constant could rely on the field being on the very page the Submit button sits on (it was
+     * verified to be on `Disposition_Record_Page`'s Details section). That is no longer true: the
+     * user must open the PROPERTY ASSET. A message reading "enter the Target Sale Price" with no
+     * hint of where would be the LOI `Final_Agreed_Price__c` dead end again — a gate demanding a
+     * field the user cannot find — so the wording names the property asset outright.
+     * ⚠ HISTORY, KEPT: on 2026-08-24 `Asking_Price__c`'s `<label>` was renamed to `Expected Value`
+     * and this message was reworded to match. Both that field and that wording are gone from this
+     * gate as of 2026-08-25; the paragraph stays because the CONVENTION it records (name the label,
+     * never the API name, and verify the user can actually reach it) still governs.
      */
-    private static final String ASKING_PRICE_REQUIRED_MESSAGE =
-        'An expected value is required before this sale can leave Disposition Readiness. '
-        + 'Enter the Expected Value on this disposition, then submit for approval.';
+    private static final String TARGET_SALE_PRICE_REQUIRED_MESSAGE =
+        'A target sale price is required before this sale can leave Disposition Readiness. '
+        + 'Enter the Target Sale Price on this disposition\'s property asset, then submit for '
+        + 'approval.';
 
     /**
      * 🔴 THE AUTHORED REPLACEMENT FOR "no applicable approval process was found". See the class
@@ -388,23 +415,48 @@ public with sharing class DispositionApprovalService {
         String successMessage;
 
         if (STAGE_READINESS.equals(stage)) {
-            // 🔴 THE ASKING-PRICE GATE (2026-08-22). Same shape as the `Closing` branch's wire
-            // pre-check below, and the last point in the flow where a human is still present to
-            // be told: everything after this line is an approval process and an async Queueable
-            // whose refusals are silent. See ASKING_PRICE_REQUIRED_MESSAGE for why there is
-            // deliberately NO validation rule behind it (design F-4).
-            // `<= 0` as well as null: the field's own description records that a ZERO asking
-            // price blanks every BOV score exactly as a null one does. Mutation-tested
-            // 2026-08-22 — narrowing this to `== null` reds exactly one test
-            // (submitAtReadiness_zeroAskingPrice_isRefusedLikeABlankOne) and nothing else, so
-            // that test is the ONLY thing holding the zero half of the rule.
-            // ⚠ `Asking_Price__c` MUST STAY IN `DispositionSelector.selectApprovalContextById`.
-            // Dropping it does NOT degrade to null — measured 2026-08-22, Apex throws
+            // 🔴 THE PRICE GATE (2026-08-22; REPOINTED TO THE ASSET 2026-08-25). Same shape as the
+            // `Closing` branch's wire pre-check below, and the last point in the flow where a human
+            // is still present to be told: everything after this line is an approval process and an
+            // async Queueable whose refusals are silent. See TARGET_SALE_PRICE_REQUIRED_MESSAGE for
+            // why there is deliberately NO validation rule behind it (design F-4).
+            //
+            // ⚠ IT READS THE **PROPERTY ASSET**, NOT THE DISPOSITION, SINCE 2026-08-25. It used to
+            // read `disposition.Asking_Price__c` ("Expected Value"); that field is retired from the
+            // disposition flow (the user removed it from the record page) and `BOV_Score__c`'s value
+            // basis moved with it to `Property_Asset__c.Target_Sale_Price__c`. The gate follows the
+            // score, because the score is the reason the gate exists — a sale whose price gate reads
+            // one field while its BOV ranking divides by another would refuse submissions it can
+            // score and accept submissions it cannot.
+            //
+            // 🔴 THE NULL CHAIN IS A REFUSAL, NOT AN ERROR, AND THAT IS DELIBERATE.
+            // `Disposition__c.Property_Asset__c` is a NOT-REQUIRED lookup, so `Property_Asset__r` is
+            // null on an asset-less disposition and dereferencing it directly would throw a raw
+            // `NullPointerException` that the controller masks as the generic "could not be
+            // submitted". A disposition with no asset has no target sale price BY DEFINITION, so it
+            // takes the same authored refusal as a blank one — the user is told what to fix either
+            // way, which is the whole point of pre-checking here rather than at the write.
+            //
+            // `<= 0` as well as null: `BOV_Score__c`'s own guard returns null for a zero or negative
+            // basis exactly as it does for a blank one, so a zero target blanks every BOV score on
+            // the sale. Mutation-tested 2026-08-22 (against the old field, same branch) — narrowing
+            // this to `== null` reds exactly one test
+            // (submitAtReadiness_zeroAskingPrice_isRefusedLikeABlankOne) and nothing else, so that
+            // test is the ONLY thing holding the zero half of the rule.
+            //
+            // ⚠ `Property_Asset__r.Target_Sale_Price__c` MUST STAY IN
+            // `DispositionSelector.selectApprovalContextById`. Dropping it does NOT degrade to null
+            // — measured 2026-08-22 for the field this replaced, Apex throws
             // `System.SObjectException: SObject row was retrieved via SOQL without querying the
-            // requested field`, the controller masks it as the generic "could not be submitted",
-            // and Submit for Approval breaks at Readiness for every user on both record types.
-            if (disposition.Asking_Price__c == null || disposition.Asking_Price__c <= 0) {
-                throw new ApprovalException(ASKING_PRICE_REQUIRED_MESSAGE);
+            // requested field`, the controller masks it as the generic "could not be submitted", and
+            // Submit for Approval breaks at Readiness for every user on both record types. The span
+            // also carries an FLS/CRUD gate on a SECOND object; that is argued in full at the
+            // selector, and the fix if it ever throws is the permission set, never SYSTEM_MODE.
+            Decimal targetSalePrice = disposition.Property_Asset__r == null
+                ? null
+                : disposition.Property_Asset__r.Target_Sale_Price__c;
+            if (targetSalePrice == null || targetSalePrice <= 0) {
+                throw new ApprovalException(TARGET_SALE_PRICE_REQUIRED_MESSAGE);
             }
             targetId = disposition.Id;
             successMessage = SUBMITTED_SALE_DECISION_MESSAGE;

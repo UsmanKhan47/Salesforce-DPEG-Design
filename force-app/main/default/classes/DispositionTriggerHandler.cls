@@ -1,7 +1,9 @@
 /**
- * Trigger handler for Disposition__c. Routes four contexts to FOUR services (⚠ this line said
- * "THREE services" until 2026-08-24; corrected in place — the fourth is the BOV re-ranking hook,
- * and it is the only one wired to a SINGLE context):
+ * Trigger handler for Disposition__c. Routes four contexts to THREE services (⚠ THIS COUNT HAS NOW
+ * MOVED TWICE AND BOTH MOVES ARE RECORDED RATHER THAN OVERWRITTEN: it said "THREE" until
+ * 2026-08-24, became "FOUR" when the BOV re-ranking hook was added, and is THREE again as of
+ * 2026-08-25 because that hook MOVED TO `Property_Asset__c` — see the ⚠ below. Re-count against
+ * the methods, never against this sentence):
  *
  *   before insert / before update  -> DispositionStageEntryService.stampListingDates
  *                                        (in-memory, no DML)
@@ -11,10 +13,15 @@
  *                                        (the four child auto-creates)
  *                                  -> DispositionApprovalAdvanceService.enqueuePendingAdvances
  *                                        (the D-1 approval semaphore, added 2026-08-19)
- *   after update ONLY              -> BovAutoSelectionService.reselectForRepricedDispositions
- *                                        (re-rank the BOV submissions when Asking_Price__c
- *                                         changes, added 2026-08-24 — see afterUpdate below for
- *                                         why it is NOT in `route`)
+ *
+ * ⚠ THE BOV RE-RANKING HOOK IS GONE FROM THIS HANDLER (2026-08-25) AND MUST NOT BE ADDED BACK.
+ * `BovAutoSelectionService.reselectForRepricedDispositions` lived on `afterUpdate` here from
+ * 2026-08-24, keyed on `Asking_Price__c`. The user retired `Asking_Price__c` from the disposition
+ * flow and `BOV_Score__c`'s value basis moved to `Property_Asset__c.Target_Sale_Price__c`, so the
+ * same service is now called from `PropertyAssetTriggerHandler.afterUpdate` instead. 🔴 A copy
+ * here would not merely be redundant — it would be DEAD, because no disposition field feeds the
+ * score any more, and `Asking_Price__c` still COMPILES (the field was not deleted), so the dead
+ * copy would look alive. `afterUpdate` is therefore a plain `route` call again.
  *
  * The Opportunity twin (OpportunityReviewTriggerHandler) is the shape this copies, including its
  * "old-map on update, null on insert" convention: the SERVICE decides what each context means, so
@@ -134,38 +141,16 @@ public with sharing class DispositionTriggerHandler extends TriggerHandler {
     }
 
     /**
-     * ── ⚠ A THIRD SERVICE ON THE AFTER-UPDATE CONTEXT SINCE 2026-08-24, AND IT IS ON **UPDATE
-     *      ONLY** — WHICH IS WHY IT IS NOT IN `route` ──────────────────────────
-     * `BovAutoSelectionService.reselectForRepricedDispositions` re-ranks a sale's BOV submissions
-     * when its `Asking_Price__c` changes. `route` is shared with `afterInsert`, and this job has
-     * nothing to do there: a Disposition has NO BOV children at the moment it is created, so an
-     * insert-context call would query for rows that cannot exist. Putting it here rather than in
-     * `route` is what keeps that true by construction instead of by an `if`.
-     *
-     * 🔴 IT IS MANDATORY, NOT A NICETY. `BOV_Score__c` is PARENT-DERIVED — its 50-point Value term
-     * is `BOV_Amount__c / Disposition__r.Asking_Price__c` — so on a sale priced AFTER its BOV
-     * responses arrived, EVERY child's score materialises in ONE PARENT SAVE with ZERO child DML.
-     * Without this hook no broker is ever auto-appointed on such a sale, and there is no error
-     * anywhere: the deploy is green, the tests are green, and UAT reports "it doesn't work". On the
-     * evidence (no disposition in the org carried an asking price when the formula was built) that
-     * is the PRIMARY path, not an edge case.
-     *
-     * ⚠ IT COSTS ZERO QUERIES AND ZERO DML UNLESS `Asking_Price__c` ACTUALLY CHANGED — the same
-     * "an ordinary Disposition save costs nothing" contract both other hooks already carry, so
-     * adding it did not move this trigger's governor budget.
-     *
-     * ⚠ ORDER: it runs LAST, after `route`. `createStageEntryRecords` is `allOrNone = true` and
-     * WILL roll the transaction back on failure, and auto-selection's own write is `allOrNone = true`
-     * too; running the child auto-creates first keeps the more consequential failure the earlier
-     * one. The two touch disjoint objects and neither reads the other's output, so nothing else
-     * depends on the sequence.
+     * ⚠ THIS METHOD CARRIED A THIRD SERVICE FROM 2026-08-24 TO 2026-08-25 AND NO LONGER DOES.
+     * `BovAutoSelectionService.reselectForRepricedDispositions` was called here, after `route`,
+     * keyed on `Asking_Price__c`. It now lives on `PropertyAssetTriggerHandler.afterUpdate` keyed
+     * on `Target_Sale_Price__c`, because that is the field `BOV_Score__c` actually divides by since
+     * `Asking_Price__c` was retired from the disposition flow. See this class's header for why a
+     * copy here would be dead code that still compiles. `afterUpdate` and `afterInsert` are
+     * identical again, which is why both are one line into the shared `route`.
      */
     protected override void afterUpdate() {
         route((List<Disposition__c>) newList, (Map<Id, Disposition__c>) oldMap);
-        BovAutoSelectionService.reselectForRepricedDispositions(
-            (List<Disposition__c>) newList,
-            (Map<Id, Disposition__c>) oldMap
-        );
     }
 
     /**

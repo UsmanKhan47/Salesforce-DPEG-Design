@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+    REMOVE DISPOSITION CHILD-MIRROR FIELDS - 2026-08-25. THE DESTRUCTIVE HALF.
+
+    STATUS: PREPARED, NOT DEPLOYED. This file only DESCRIBES a deletion; it performs nothing on
+    its own. Deploy only together with manifest/remove-disposition-child-mirrors/package.xml, and
+    only once the user authorises it - read that file for the command, the ordering argument and
+    the two pre-flight checks.
+
+    🔴 POST-destructive, NOT PRE, AND THE ORDER IS LOAD-BEARING. Every one of the 17 fields below
+    is named by at least one component in the constructive half:
+      - Disposition_Record_Page names 15 of them as fieldItems;
+      - DPEG_Disposition_Edit and DPEG_Disposition_View name all 17 as fieldPermissions;
+      - DispositionStageEntryService references DispositionPrimaryChildStampQueueable.
+    Deleting first fails the deploy in three different ways. `post-destructive-changes` lands the
+    rewritten page, permission sets and Apex FIRST, then removes what they no longer reference.
+
+    ══════════════════════════════════════════════════════════════════════════════
+    🔴 MEMBER ORDER IS DELIBERATE: FORMULAS BEFORE THE LOOKUPS THEY SPAN
+    ══════════════════════════════════════════════════════════════════════════════
+    The nine LOI_*__c / PSA_*__c formulas span Primary_LOI__c / Primary_PSA__c, and deleting a
+    lookup while a formula still references it is refused. They are listed formulas-first for that
+    reason. The Metadata API normally resolves intra-package dependencies; if it does not, split
+    this into TWO sequential deploys - the fifteen formulas, then the two lookups.
+    ⚠ THE FIVE NDA_*__c FORMULAS SPAN Primary_NDA__c, WHICH IS **NOT** BEING DELETED, so they carry
+    no such ordering constraint. They are grouped with the rest only for readability.
+
+    ══════════════════════════════════════════════════════════════════════════════
+    THE 17 FIELDS, AND WHAT EACH ONE WAS FOR
+    ══════════════════════════════════════════════════════════════════════════════
+      Two lookups (2026-08-25) - the things the formulas spanned:
+        Primary_LOI__c   -> LOI__c              stamped by the (also deleted) queueable
+        Primary_PSA__c   -> Contract_Review__c  same
+      Six LOI formulas (2026-08-25) - fed flexipage_fieldSection_loiDetails:
+        LOI_Stage__c, LOI_Status__c, LOI_Signed_Date__c, LOI_Final_Agreed_Price__c,
+        LOI_Counter_Price__c, LOI_Counter_Received_Date__c
+      Four PSA formulas (2026-08-25) - fed flexipage_fieldSection_psaDetails:
+        PSA_Negotiation_Status__c, PSA_Stage__c, PSA_Ball_In_Court__c, PSA_Execution_Date__c
+      Five NDA formulas (2026-08-24) - fed flexipage_fieldSection_ndaDetails:
+        NDA_Broker__c, NDA_Status__c, NDA_Date_Sent__c, NDA_Date_Signed__c, NDA_Expiry_Date__c
+
+    ⚠ NAME COLLISIONS ACROSS OBJECTS - READ THE OBJECT PREFIX, NOT THE FIELD NAME. Six of these
+    names also exist on OTHER objects and those are NOT touched:
+        LOI__c.LOI_Status__c, LOI__c.LOI_Signed_Date__c   (the real fields, on the real LOI)
+        NDA__c.NDA_Expiry_Date__c                          (read by NdaExpiryAlertBatch)
+        Disposition_Offer__c.NDA_Status__c                 (read by dispositionLogOfferModal)
+        Opportunity.Primary_LOI__c, Opportunity.Primary_NDA__c
+    Every member below is object-qualified. Do not "simplify" them.
+
+    ⚠ THESE Disposition__c FIELDS ARE **NOT** IN THIS LIST AND MUST NOT BE ADDED TO IT:
+        Primary_NDA__c        pre-dates the mirror work (D16.2 / Tranche 3A); still written by
+                              DispositionNdaStampQueueable, which eleven other class headers cite as the
+                              canonical ENTITY_IS_LOCKED -> defer-to-Queueable example. Nothing
+                              READS it as of 2026-08-25 - that is stated openly in its own file -
+                              but removing it is a separate change needing its own sign-off.
+        NDA_Count__c          Number fields, not formulas. Maintained by the NDA_Signed_Rollup
+        Signed_NDA_Count__c   flow and read by the All_NDAs_Signed_Before_Progression release
+                              gate. Deleting either silently disables that gate.
+        PSA_Executed__c       a plain checkbox on the disposition itself.
+
+    ══════════════════════════════════════════════════════════════════════════════
+    THE APEX CLASS
+    ══════════════════════════════════════════════════════════════════════════════
+      DispositionPrimaryChildStampQueueable - existed for ~half a day (2026-08-25) with the sole
+      job of writing Primary_LOI__c / Primary_PSA__c after commit. With both lookups gone it has
+      nothing to write.
+      ⚠ IT HAS NO TEST CLASS OF ITS OWN to delete alongside it, matching its NDA twin: it was
+      covered through DispositionStageEntryServiceTest, whose two covering methods are rewritten /
+      removed in the constructive half.
+      ⚠ DO NOT CONFUSE IT WITH DispositionNdaStampQueueable OR LoiPrimaryStampQueueable. Both of
+      those survive untouched. Only the class named below is deleted.
+
+    ══════════════════════════════════════════════════════════════════════════════
+    ROLLBACK
+    ══════════════════════════════════════════════════════════════════════════════
+    Everything here is recoverable from git history - the repo held all 18 files up to the commit
+    that accompanies this manifest. Restoring means a fresh deploy of the field XML plus re-adding
+    the FlexiPage sections, the facet regions, the three NE criteria (and the booleanFilter
+    renumbering), the 34 fieldPermissions and the two enqueues.
+    🔴 FIELD DATA IS NOT RECOVERABLE. Deleting a CustomField deletes its data. The nine LOI/PSA
+    formulas and five NDA formulas are DERIVED, so they lose nothing; the two LOOKUPS hold real
+    Ids, and restoring them would need the backfill described in manifest/native-loi-psa/ to be
+    run again.
+    -->
+    <types>
+        <members>Disposition__c.LOI_Stage__c</members>
+        <members>Disposition__c.LOI_Status__c</members>
+        <members>Disposition__c.LOI_Signed_Date__c</members>
+        <members>Disposition__c.LOI_Final_Agreed_Price__c</members>
+        <members>Disposition__c.LOI_Counter_Price__c</members>
+        <members>Disposition__c.LOI_Counter_Received_Date__c</members>
+        <members>Disposition__c.PSA_Negotiation_Status__c</members>
+        <members>Disposition__c.PSA_Stage__c</members>
+        <members>Disposition__c.PSA_Ball_In_Court__c</members>
+        <members>Disposition__c.PSA_Execution_Date__c</members>
+        <members>Disposition__c.NDA_Broker__c</members>
+        <members>Disposition__c.NDA_Status__c</members>
+        <members>Disposition__c.NDA_Date_Sent__c</members>
+        <members>Disposition__c.NDA_Date_Signed__c</members>
+        <members>Disposition__c.NDA_Expiry_Date__c</members>
+        <members>Disposition__c.Primary_LOI__c</members>
+        <members>Disposition__c.Primary_PSA__c</members>
+        <name>CustomField</name>
+    </types>
+    <types>
+        <members>DispositionPrimaryChildStampQueueable</members>
+        <name>ApexClass</name>
+    </types>
+    <version>67.0</version>
+</Package>

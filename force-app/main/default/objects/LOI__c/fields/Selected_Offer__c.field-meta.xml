@@ -11,10 +11,21 @@
         This lookup is that route in one click. Nothing is denormalised onto the LOI: the offer's
         own fields stay on the offer.
 
-        🔴 IT IS STAMPED ONTO THE CHILD AT INSERT, WHICH IS WHY IT NEEDS NO QUEUEABLE. Contrast
-        Disposition__c.Primary_LOI__c in the same change: that one writes BACK to the parent
-        mid-save and must be deferred. This field is set on the row being created, in the same
-        Database.insert, by DispositionStageEntryService.openDispositionLois.
+        🔴 IT IS STAMPED ONTO THE CHILD AT INSERT, WHICH IS WHY IT NEEDS NO QUEUEABLE. This field
+        is set on the row being created, in the same Database.insert, by
+        DispositionStageEntryService.openDispositionLois.
+        ⚠ AMENDED 2026-08-25 (LATER THE SAME DAY): the sentence above used to contrast this with
+        "Disposition__c.Primary_LOI__c in the same change: that one writes BACK to the parent
+        mid-save and must be deferred". THAT LOOKUP NO LONGER EXISTS - the user retired the whole
+        child-mirror field family ("we don't need them") and it was deleted along with the nine
+        LOI_*__c / PSA_*__c formulas, the five NDA_*__c formulas and
+        DispositionPrimaryChildStampQueueable (manifest/remove-disposition-child-mirrors/). The
+        surviving contrast, if one is wanted, is Disposition__c.Primary_NDA__c, which is still
+        stamped by a Queueable for exactly the deferral reason described.
+        🔴 THIS FIELD IS NOT AFFECTED BY THAT REMOVAL AND WAS DELIBERATELY LEFT IN PLACE. It
+        lives on LOI__c, not on Disposition__c, and it is a navigational link to a real child
+        record rather than a mirrored copy of one - which is the distinction the user's decision
+        turned on.
 
         ⚠ NULL IS A NORMAL, NON-ERROR STATE AND THE INSERT MUST NEVER BLOCK ON IT. A disposition
         can legitimately reach the LOI stage with no selected offer (an off-market deal that
@@ -25,8 +36,10 @@
         LOI. relationshipName Selected_Offer_LOIs, distinct from the Contract_Review__c twin's
         Selected_Offer_PSAs so the two child relationships on Disposition_Offer__c do not collide.
 
-        FLS: read + edit on DPEG_Disposition_Edit (a lookup CAN carry editable = true, and the
-        one-off backfill runs in USER mode and is refused on a non-editable field), read-only on
+        FLS: read + edit on DPEG_Disposition_Edit (a lookup CAN carry editable = true, and a user
+        working a hand-created second-round LOI may need to set the link; the one-off backfill
+        that was the OTHER half of this reason went with the Disposition__c lookups on
+        2026-08-25), read-only on
         DPEG_Disposition_View.
     -->
     <fullName>Selected_Offer__c</fullName>

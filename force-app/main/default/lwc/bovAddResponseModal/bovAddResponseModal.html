@@ -212,9 +212,14 @@
                          this form rather than left in place with `disabled`. The score is still
                          visible to the analyst — it now renders read-only wherever
                          BovSubmissionSelector's queried rows are displayed (the comparison matrix),
-                         computed live from Disposition__r.Asking_Price__c, BOV_Amount__c,
-                         Commission_Rate__c and Days_To_Market__c, all of which ARE still on this
-                         form. There is nothing left to type.
+                         computed live from BOV_Amount__c, Commission_Rate__c and Days_To_Market__c
+                         — all three of which ARE still on this form — divided by the PROPERTY
+                         ASSET's Target_Sale_Price__c, which is NOT on this form and is not meant to
+                         be. ⚠ AMENDED 2026-08-25: the value basis was Disposition__r.Asking_Price__c
+                         ("Expected Value") until that date; the user retired it from the disposition
+                         flow, so the basis is now Disposition__r.Property_Asset__r.
+                         Target_Sale_Price__c and it is edited on the property asset, not here.
+                         There is still nothing left to type on this form.
                          ═══════════════════════════════════════════════════════════════
                          RETRACTED 2026-08-21 (later the same day), KEPT FOR CONTEXT: the note that
                          used to sit here said `BOV_Score__c` is deliberately absent — do not add

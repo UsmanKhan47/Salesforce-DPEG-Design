@@ -4,9 +4,13 @@
         ADDED 2026-08-25 (native LOI/PSA Details, scope addition). Twin of
         LOI__c/fields/Selected_Offer__c - read that file for the full reasoning; everything it
         says about being a LINK rather than a copy, about being stamped onto the CHILD at insert
-        (and therefore needing no Queueable, unlike Disposition__c.Primary_PSA__c), and about
-        null being a normal non-error state applies here unchanged. THIS COMMENT SITS INSIDE THE
-        ROOT ELEMENT DELIBERATELY.
+        (and therefore needing no Queueable), and about null being a normal non-error state
+        applies here unchanged. THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY.
+        ⚠ AMENDED 2026-08-25: the parenthesis above used to read "unlike
+        Disposition__c.Primary_PSA__c". That lookup was deleted later the same day with the rest
+        of the child-mirror field family (manifest/remove-disposition-child-mirrors/). This
+        field is UNAFFECTED - it lives on Contract_Review__c and links to a real child record
+        rather than mirroring one onto the parent.
 
         Stamped by DispositionStageEntryService.openDispositionContractReviews, in the same
         Database.insert that creates the Contract Review.
@@ -21,9 +25,9 @@
         twin's Selected_Offer_LOIs so the two child relationships on Disposition_Offer__c do not
         collide.
 
-        FLS: read + edit on DPEG_Disposition_Edit (a lookup CAN carry editable = true, and the
-        one-off backfill runs in USER mode and is refused on a non-editable field), read-only on
-        DPEG_Disposition_View.
+        FLS: read + edit on DPEG_Disposition_Edit (a lookup CAN carry editable = true; the
+        one-off backfill that was half this reason was retired with the Disposition__c lookups
+        on 2026-08-25, leaving the human-editing half), read-only on DPEG_Disposition_View.
     -->
     <fullName>Selected_Offer__c</fullName>
     <deleteConstraint>SetNull</deleteConstraint>

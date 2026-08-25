@@ -1365,7 +1365,23 @@ public with sharing class TestDataFactory {
                 NOI__c = 65000 + (i * 100),
                 Market_Cap_Rate__c = 6.0,
                 Argus_Value__c = 1000000 + (i * 1000),
-                Target_Sale_Price__c = 1200000 + (i * 1000),
+                // 🔴 `Target_Sale_Price__c` IS DELIBERATELY NOT SET — REMOVED 2026-08-25.
+                // It used to default to `1200000 + (i * 1000)`. On 2026-08-25 `BOV_Score__c`'s
+                // value basis moved from `Disposition__c.Asking_Price__c` (retired) to THIS FIELD,
+                // two hops out, which turned this innocuous default into a suite-wide silent
+                // inversion: every Disposition under a factory asset became SCOREABLE, so every
+                // test whose premise is "a null score is not a rank" — nothing is appointed, the
+                // matrix ties at null, the Disposition-Readiness price gate refuses — would have
+                // gone on passing while proving the OPPOSITE of what it says. The same class of
+                // defect the old default protected against, pointing the other way.
+                // ⚠ THE RULE IT RESTORES IS THE ONE `DispositionApprovalServiceTest`'s fixture
+                // block already stated: A FIXTURE MUST NOT SATISFY A GATE BY CONSTRUCTION. Do not
+                // re-add a default here to make some future test pass — set it AT THE CALL SITE
+                // (`createPricedDisposition(...)`, or a plain `update` on the asset) so a reader
+                // can see whether the gate is being satisfied or exercised.
+                // ⚠ Nothing asserted the old default: `SellMeterControllerTest` and
+                // `PropertyAssetSelectorTest` both set their own values (checked 2026-08-25), and
+                // `SellMeterController` is null-safe on this field.
                 Sell_Readiness_Score__c = 50,
                 Vacant_Area__c = 0
             ));
@@ -2867,27 +2883,50 @@ public with sharing class TestDataFactory {
     }
 
     /**
-     * 🔴 DISPOSITIONS THAT CARRY AN `Asking_Price__c` — THE ONLY FIXTURE ON WHICH
-     * `BOV_Score__c` IS NON-NULL. Added 2026-08-24 with BOV auto-selection.
+     * 🔴 A DISPOSITION WHOSE **PROPERTY ASSET** CARRIES A KNOWN `Target_Sale_Price__c` — the
+     * fixture on which `BOV_Score__c` is non-null AND PREDICTABLE. Added 2026-08-24; REPOINTED
+     * FROM THE DISPOSITION TO THE ASSET ON 2026-08-25.
      *
      * ══════════════════════════════════════════════════════════════════════════════════════════
-     * WHY IT IS A NEW METHOD AND NOT A LINE ADDED TO `createDispositions`
+     * 🔴 READ THIS BEFORE TRUSTING ANY SCORE-RELATED FIXTURE — THE DEFAULT INVERTED ON 2026-08-25
      * ══════════════════════════════════════════════════════════════════════════════════════════
-     * `BOV_Score__c` is a FORMULA whose 50-point Value term is
-     * `BOV_Amount__c / Disposition__r.Asking_Price__c`, guarded by an explicit `ISBLANK` that
-     * returns **null** for the whole score when the parent has no asking price or it is `<= 0`.
-     * Every Disposition `createDispositions` builds leaves that field blank, so **every BOV
-     * submission this factory has ever produced scores null** — which `createBovSubmissions`' own
-     * header states, and which is DESIGNED (it is what keeps `ORDER BY … DESC NULLS LAST`
-     * meaningful).
+     * `BOV_Score__c`'s 50-point Value term used to be
+     * `BOV_Amount__c / Disposition__r.Asking_Price__c`. `Asking_Price__c` is now retired from the
+     * disposition flow and the basis is `Disposition__r.Property_Asset__r.Target_Sale_Price__c` —
+     * TWO hops out, on the ASSET.
      *
-     * 🔴 THAT DEFAULT MUST NOT CHANGE, AND THIS IS THE REASON THIS IS AN ADDITIVE METHOD:
-     * `DispositionApprovalService.submitForApproval`'s Readiness branch REFUSES a submit when
-     * `Asking_Price__c` is null or `<= 0`, and `submitAtReadiness_zeroAskingPrice_isRefusedLikeABlankOne`
-     * plus its blank twin are the tests holding that gate. Giving every factory Disposition a price
-     * would flip those negative fixtures into positives across the whole suite, silently. Same
-     * argument, in the opposite direction, as the "do not reintroduce a `BOV_Score__c` assignment"
-     * instruction on `createBovSubmissions`.
+     * 🔴 THAT MOVE ALMOST INVERTED THIS FACTORY'S LONG-STANDING DEFAULT, AND THE FIX IS ELSEWHERE —
+     * READ IT BEFORE CHANGING EITHER PLACE:
+     *   BEFORE — `createDispositions` never set `Asking_Price__c`, so every BOV scored NULL. A test
+     *            that forgot to price its parent quietly proved nothing.
+     *   ALMOST — the basis moved to the ASSET, and `createPropertyAssets` shipped
+     *            `Target_Sale_Price__c = 1200000 + (i*1000)` on every asset it built. That would
+     *            have made a Disposition under ANY factory asset SCOREABLE BY DEFAULT, so every
+     *            test meaning to exercise the null-score branch would have quietly proved the
+     *            OPPOSITE — the same defect pointing the other way, and invisible in both.
+     *   NOW    — that default was REMOVED from `createPropertyAssets` in the same change (its own
+     *            comment carries the argument). The suite-wide default is null-scored again.
+     * ⇒ Set the basis EXPLICITLY: this method for a pinned, known value; `unpriceAsset(...)` below
+     *   when a test has already priced the asset and needs it blank again.
+     *
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * WHY IT IS STILL A SEPARATE METHOD RATHER THAN A FLAG ON `createDispositions`
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * Because a test that asserts a RANKING needs the basis PINNED, not merely non-null, and the
+     * pinned value has to be chosen against the BOV amounts. `createBovSubmissions` uses
+     * `BOV_Amount__c = 1200000 + (i*1000)`; a basis at or below that makes every row saturate the
+     * formula's `MIN(ratio, 1.10)` cap, so the scores come out non-null AND ALL EQUAL and a ranking
+     * test is decided by the tie-break while looking like it passed. Pass an `askingPrice` well
+     * ABOVE the amounts to keep the Value term strictly increasing in `BOV_Amount__c`.
+     *
+     * 🔴 IT WRITES TO THE **ASSET**, NOT THE DISPOSITION, AND THAT HAS A BLAST RADIUS.
+     * `propertyAssetId` is UPDATED in place, so EVERY disposition under that asset — including ones
+     * built earlier in the same test — becomes priced at the same basis. A test that needs a priced
+     * AND an unpriced disposition in ONE transaction must use TWO assets. (Checked 2026-08-25: no
+     * test in this repo does; `BovAutoSelectionServiceTest` uses one or the other per test method,
+     * never both.) It also fires `PropertyAssetTrigger` and therefore `BovAutoSelectionService`'s
+     * asset hook — cheap here because it runs before this method's dispositions exist, but do not
+     * call it inside a `Limits` measurement window.
      *
      * ⚠ USE IT WITH `createBovSubmissions(count, dispositionId, ...)` — count > 1 — TO GET
      * DIFFERING, NON-NULL SCORES, AND HERE IS EXACTLY WHY THAT WORKS. That method sets
@@ -2903,12 +2942,17 @@ public with sharing class TestDataFactory {
      * looking like a full test. That is the single most likely way this feature ships untested.
      *
      * @param count           Number of Dispositions.
-     * @param propertyAssetId Parent Property_Asset__c (nullable).
-     * @param askingPrice     `Asking_Price__c` for every row. Must be > 0 — a null or `<= 0` price
-     *                        is exactly the state this method exists to avoid, so it throws rather
-     *                        than silently building the vacuous fixture above.
-     * @param doInsert        Insert when true.
-     * @return Dispositions at stage 'Disposition Readiness', record type On_Market, priced.
+     * @param propertyAssetId Parent Property_Asset__c. 🔴 REQUIRED SINCE 2026-08-25 — the price
+     *                        lives on the ASSET now, so an asset-less "priced" disposition is a
+     *                        contradiction that would score null. It throws rather than build one.
+     * @param askingPrice     `Target_Sale_Price__c` written to THAT ASSET, and therefore the value
+     *                        basis for every BOV under every disposition on it. Must be > 0 — a
+     *                        null or `<= 0` basis is exactly the state this method exists to avoid.
+     * @param doInsert        Insert the Dispositions when true. ⚠ The ASSET is updated either way:
+     *                        the basis must be in place before any score is read, and an unsaved
+     *                        Disposition has no score to read regardless.
+     * @return Dispositions at stage 'Disposition Readiness', record type On_Market, under an asset
+     *         priced at `askingPrice`.
      * @example
      * Disposition__c d = TestDataFactory.createPricedDisposition(assetId, 1500000, false);
      * d.Disposition_Stage__c = 'BOV Outreach';
@@ -2924,20 +2968,53 @@ public with sharing class TestDataFactory {
         if (askingPrice == null || askingPrice <= 0) {
             throw new TestDataFactoryException(
                 'createPricedDispositions requires a POSITIVE askingPrice; got ' + askingPrice
-                + '. BOV_Score__c returns null for a blank or non-positive asking price, so this '
-                + 'fixture would produce exactly the all-null scores it exists to avoid — and every '
-                + 'auto-selection assertion built on it would pass without exercising anything.');
+                + '. BOV_Score__c returns null for a blank or non-positive Target_Sale_Price__c, so '
+                + 'this fixture would produce exactly the all-null scores it exists to avoid — and '
+                + 'every auto-selection assertion built on it would pass without exercising '
+                + 'anything.');
         }
+        if (propertyAssetId == null) {
+            throw new TestDataFactoryException(
+                'createPricedDispositions requires a propertyAssetId since 2026-08-25: '
+                + 'BOV_Score__c\'s value basis is Disposition__r.Property_Asset__r.'
+                + 'Target_Sale_Price__c, so a Disposition with no asset can never be "priced" and '
+                + 'every score under it would be null. Pass the asset whose price you want pinned.');
+        }
+        // 🔴 THE PRICE GOES ON THE ASSET. See this method's header for the blast radius: every
+        // disposition under this asset is scored against `askingPrice` from here on.
+        update new Property_Asset__c(Id = propertyAssetId, Target_Sale_Price__c = askingPrice);
         List<Disposition__c> dispositions = createDispositions(
             count, propertyAssetId, DISPOSITION_RT_ON_MARKET, false);
-        for (Disposition__c disposition : dispositions) {
-            disposition.Asking_Price__c = askingPrice;
-        }
         insertIf(doInsert, dispositions);
         return dispositions;
     }
 
-    /** Single priced Disposition. @param propertyAssetId Parent asset. @param askingPrice Positive Asking_Price__c. @param doInsert Insert when true. @return The Disposition. */
+    /**
+     * 🔴 THE DELIBERATE NULL-SCORE FIXTURE — clears `Target_Sale_Price__c` on an asset so that
+     * every BOV under every disposition on it scores NULL. Added 2026-08-25.
+     *
+     * ⚠ IT IS **NOT** NEEDED TO GET THE DEFAULT — `createPropertyAssets` no longer ships a target
+     * sale price (removed 2026-08-25; read its comment), so a plain factory asset is already
+     * unpriced. This method exists for the case a plain `createDisposition` cannot cover: a test
+     * that has ALREADY priced the asset — directly, or via `createPricedDisposition` — and now
+     * needs the blank state back within the SAME transaction. Calling it defensively at the top of
+     * a null-score fixture is cheap and states the intent, which is why
+     * `BovAutoSelectionServiceTest.unpricedDispositionAt` does exactly that.
+     *
+     * ⚠ ONE ASSET, TRANSACTION-WIDE. It blanks the basis for EVERY disposition on that asset.
+     *
+     * ⚠ CALL IT BEFORE BUILDING THE BOV ROWS AND OUTSIDE ANY `Limits` MEASUREMENT WINDOW: it is a
+     * real `update` on `Property_Asset__c`, so it fires `PropertyAssetTrigger` ->
+     * `BovAutoSelectionService`'s asset hook, which costs a query once dispositions exist.
+     *
+     * @param propertyAssetId the asset to blank. Required.
+     */
+    public static void unpriceAsset(Id propertyAssetId) {
+        requireId(propertyAssetId, 'propertyAssetId (TestDataFactory.unpriceAsset)');
+        update new Property_Asset__c(Id = propertyAssetId, Target_Sale_Price__c = null);
+    }
+
+    /** Single priced Disposition. @param propertyAssetId Parent asset (required). @param askingPrice Positive Target_Sale_Price__c stamped on that asset. @param doInsert Insert when true. @return The Disposition. */
     public static Disposition__c createPricedDisposition(
         Id propertyAssetId,
         Decimal askingPrice,
@@ -3033,22 +3110,32 @@ public with sharing class TestDataFactory {
      *
      * ⚠ WHAT REPLACES IT: THE FORMULA'S INPUTS, WHICH THIS FACTORY ALREADY SET. THE FORMULA IS
      * THREE DIMENSIONS, NOT FIVE (user-approved weights, 2026-08-21): `BOV_Amount__c` (Price,
-     * 50 pts, measured against `Disposition__r.Asking_Price__c`), `Commission_Rate__c`
+     * 50 pts, measured against `Disposition__r.Property_Asset__r.Target_Sale_Price__c` since
+     * 2026-08-25 — it was `Disposition__r.Asking_Price__c` until then), `Commission_Rate__c`
      * (Commission, 25 pts, lower is better) and `Days_To_Market__c` (Speed, 25 pts, lower is
      * better). `Cap_Rate__c` and `Hist_Success_Rate__c` are still populated above for other
      * consumers of this fixture but carry NO WEIGHT in `BOV_Score__c` — `Hist_Success_Rate__c` is
      * null on every row in the org today, and giving it weight would collapse every score to null.
      *
-     * 🔴 RETRACTED: this comment used to say `Disposition__r.Asking_Price__c` "does not exist on
-     * `Disposition__c` yet." IT EXISTS NOW
-     * (`objects/Disposition__c/fields/Asking_Price__c.field-meta.xml`). What is still true, and is
-     * why every fixture built here still scores null: the Dispositions this factory builds do not
-     * set `Asking_Price__c`, so the formula's guard returns null regardless of the other five
-     * fields above (a designed answer, not a gap — it is what keeps `ORDER BY … DESC NULLS LAST`
-     * meaningful). A test that needs DIFFERING scores must give its OWN disposition fixture an
-     * `Asking_Price__c`; see the deferred-coverage note in `BovSubmissionSelectorTest`'s header.
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * 🔴 RETRACTED TWICE. THE CURRENT ANSWER IS: **THESE FIXTURES ARE SCOREABLE BY DEFAULT.**
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     *   V1 said `Disposition__r.Asking_Price__c` "does not exist on `Disposition__c` yet." ❌ It
+     *      did exist (`objects/Disposition__c/fields/Asking_Price__c.field-meta.xml`).
+     *   V2 said "every fixture built here still scores null, because the Dispositions this factory
+     *      builds do not set `Asking_Price__c`." ✅ STILL TRUE, BUT NOT FOR THAT REASON ANY MORE,
+     *      and the difference is what a future reader needs. The basis moved to the PROPERTY ASSET
+     *      on 2026-08-25, where `createPropertyAssets` DID ship `Target_Sale_Price__c = 1200000 +
+     *      (i*1000)` — which would have made every fixture here scoreable and silently inverted
+     *      every null-score test in the repo. That default was removed in the same change. The
+     *      conclusion holds; the mechanism behind it does not.
+     * ⇒ A BOV built here still scores NULL unless its Disposition's ASSET is priced. ⚠ And when
+     *   you do price it, pick the basis deliberately: against this factory's own
+     *   `BOV_Amount__c = 1200000 + i*1000`, a target at or below 1,200,000 saturates the formula's
+     *   `MIN(ratio, 1.10)` cap and every row TIES — non-null, all equal, and a ranking test reads
+     *   "non-null" as proof. Use `createPricedDisposition(...)` with a basis ABOVE the amounts.
      * Do not reintroduce a `BOV_Score__c` assignment here to make such a test possible — it will
-     * not compile once the field is a formula.
+     * not compile: the field is a formula.
      */
     public static List<BOV_Submission__c> createBovSubmissions(Integer count, Id dispositionId, Boolean doInsert) {
         requirePositive(count);

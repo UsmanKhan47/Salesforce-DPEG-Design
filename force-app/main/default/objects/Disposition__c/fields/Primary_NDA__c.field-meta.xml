@@ -12,6 +12,42 @@
         resolution with nothing to find, and the failure is silent - the same shape as the
         Underwriting-gate defect that Opportunity.Primary_LOI__c was added to prevent.
 
+        🔴 THE PARAGRAPH ABOVE IS FALSE AS OF 2026-08-25 AND IS KEPT ONLY BECAUSE IT IS
+        QUOTED ELSEWHERE. NOTHING IN THIS REPO READS THIS FIELD. A full grep of force-app on
+        2026-08-25 found exactly four kinds of reference and no reader:
+          - DispositionNdaStampQueueable, which WRITES it;
+          - DispositionStageEntryService, which enqueues that job;
+          - DispositionStageEntryServiceTest, which asserts the write landed;
+          - comments.
+        The "downstream automation" the paragraph describes is the OPPORTUNITY twin's:
+        NDA_Signed_Before_Deal_Progression reads Opportunity.Primary_NDA__r.NDA_Signed__c,
+        and NdaSelector's primary-NDA method is documented against Opportunity. Neither
+        touches Disposition__c. The five NDA_*__c formula fields that DID span this lookup,
+        and the NDA-stage Details section on Disposition_Record_Page that rendered them, were
+        deleted on 2026-08-25 (manifest/remove-disposition-child-mirrors/) when the user
+        retired the child-mirror idea. So this lookup is, today, bookkeeping.
+
+        ⚠ IT IS RETAINED DELIBERATELY, AND NOT BECAUSE IT IS USED. Three reasons, none of
+        them "it might be needed later":
+          1. It PRE-DATES the mirror work by several tranches (D16.2 / Tranche 3A). The
+             user's decision named the fields created for the LOI/PSA/NDA Details sections;
+             this is not one of them.
+          2. ELEVEN other class headers across the disposition Apex layer cite
+             DispositionNdaStampQueueable as the canonical worked example of the
+             ENTITY_IS_LOCKED -> defer-to-Queueable pattern (DispositionOfferTriggerHandler,
+             DispositionApprovalAdvanceService, DispositionBrokerStampService,
+             ContractExecutionService, PropertyAssetService, OfferingService and others).
+             Deleting the field deletes that class and turns every one of those citations
+             into a pointer at nothing.
+          3. Deleting a lookup is a destructive, data-losing change; keeping an unread one
+             costs one guarded enqueue per NDA auto-create and nothing else.
+        🔴 IF SOMEONE DECIDES TO REMOVE IT, THAT IS A SEPARATE CHANGE NEEDING ITS OWN
+        SIGN-OFF, and its blast radius is this field + DispositionNdaStampQueueable + the
+        enqueue in DispositionStageEntryService.openBuyerNdas + two tests
+        (stampQueueableWithNothingToDoIsANoOp and the stamp assertions around it) + the
+        eleven header citations above + the read-only grants in DPEG_Disposition_Edit,
+        DPEG_Disposition_View and DPEG_Admin_Access.
+
         relationshipName is PrimaryDispositions, so the child relationship it creates on
         NDA__c does not collide with PrimaryOpportunities (Opportunity.Primary_NDA__c).
 
@@ -21,8 +57,8 @@
         FLS is read-only in every set that carries it, because the trigger is the writer.
     -->
     <deleteConstraint>SetNull</deleteConstraint>
-    <description>The primary NDA for this disposition - stamped by the NDA auto-create trigger and used to resolve the NDA that the disposition page and downstream automation act on.</description>
-    <inlineHelpText>Set automatically when the disposition NDA is created. It points automation at the right NDA, so it is not maintained by hand.</inlineHelpText>
+    <description>The primary NDA for this disposition - stamped by the NDA auto-create automation. As of 2026-08-25 nothing reads it: the NDA_*__c formula fields that spanned it were removed with the NDA-stage Details section. Retained deliberately; see this field&apos;s comment.</description>
+    <inlineHelpText>Set automatically when the disposition NDA is created, so it is not maintained by hand.</inlineHelpText>
     <label>Primary NDA</label>
     <referenceTo>NDA__c</referenceTo>
     <relationshipLabel>Dispositions (Primary NDA)</relationshipLabel>

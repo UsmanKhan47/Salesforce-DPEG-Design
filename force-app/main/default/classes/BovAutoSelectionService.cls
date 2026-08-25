@@ -83,8 +83,8 @@
  * ══════════════════════════════════════════════════════════════════════════════════════════
  * 🔴 A NULL SCORE IS NOT A RANK. IF EVERY CANDIDATE SCORES NULL, NOTHING IS SELECTED.
  * ══════════════════════════════════════════════════════════════════════════════════════════
- * `BOV_Score__c` is a FORMULA that returns null when the parent Disposition has no
- * `Asking_Price__c` (or it is `<= 0`), or when the row has no `BOV_Amount__c`. That null means
+ * `BOV_Score__c` is a FORMULA that returns null when the Disposition's PROPERTY ASSET has no
+ * `Target_Sale_Price__c` (or it is `<= 0`), or when the row has no `BOV_Amount__c`. That null means
  * "NOT SCOREABLE", not "worst" — the formula says so with an explicit `ISBLANK` guard and
  * `formulaTreatBlanksAs = BlankAsBlank`. Treating it as rankable would mean the tie-break decides
  * everything, i.e. "auto-select whichever BOV arrived first", appointing a broker for a sale nobody
@@ -98,10 +98,16 @@
  * every broker who has not quoted, which is most of them.
  *
  * ⚠ THE PRICE OF THAT RULE, STATED PLAINLY, BECAUSE IT MAKES A GREEN SUITE MEANINGLESS: every
- * `TestDataFactory` BOV fixture scores null, because the Dispositions that factory builds set no
- * `Asking_Price__c` (its own header says so). A test of this service that does not give its
- * disposition an asking price PASSES WITHOUT EXERCISING ANY OF IT. Use
- * `TestDataFactory.createPricedDisposition(...)`.
+ * `TestDataFactory` BOV fixture scores null — the statement SURVIVED the 2026-08-25 basis move,
+ * but only because the factory was changed to keep it true, and that is worth knowing before
+ * trusting it. It used to hold because `createDispositions` never set `Asking_Price__c`. The basis
+ * is now the ASSET's `Target_Sale_Price__c`, and `createPropertyAssets` DID ship a non-null default
+ * (1200000 + i*1000) — which would have made every factory fixture SCOREABLE and silently inverted
+ * every "a null score is not a rank" test in the repo. That default was REMOVED in the same change
+ * (see its comment in `TestDataFactory`). ⇒ A test of this service that does not give its
+ * disposition's ASSET a target sale price still PASSES WITHOUT EXERCISING ANY OF IT. Use
+ * `TestDataFactory.createPricedDisposition(...)`, which prices the ASSET; `unpriceAsset(...)`
+ * exists to blank it again when a test has already priced it.
  *
  * ══════════════════════════════════════════════════════════════════════════════════════════
  * 🔴 TWO SLOTS, NOT ONE. THE PREFERRED BROKER AND THE SCORED WINNER **COEXIST**.
@@ -193,7 +199,7 @@
  * ══════════════════════════════════════════════════════════════════════════════════════════
  *   `BOV_Submission__c` after insert / after update  -> `reselect(newList, oldMap)`
  *   `BOV_Submission__c` after delete                 -> `reselectForDeleted(oldList)`
- *   `Disposition__c`    after update                 -> `reselectForRepricedDispositions(...)`
+ *   `Property_Asset__c` after update                 -> `reselectForRepricedDispositions(...)`
  *
  * ⚠ `BovPreferredBrokerService.retireReplacedPreferred` RUNS **BEFORE** `reselect` IN THE SAME TWO
  * CHILD CONTEXTS, and the order is load-bearing rather than cosmetic — see that method's header.
@@ -202,15 +208,35 @@
  * re-rank fills the preferred slot with the right row and there is never an interim winner.
  *
  * 🔴 THE PARENT HOOK IS NOT A NICETY, IT IS THE PRIMARY PATH. The score's 50-point Value term is
- * `BOV_Amount__c / Disposition__r.Asking_Price__c`, so the real sequence on a live sale is:
- * an analyst logs three BOV responses (all score null, nothing is selectable), then LATER types the
- * asking price ON THE DISPOSITION — at which point all three scores materialise in one parent save
- * WITH ZERO CHILD DML. Without the parent hook no broker is ever auto-selected on such a sale,
- * there may be no further reason to edit a BOV again, and the feature looks broken with no error
- * anywhere.
+ * `BOV_Amount__c / Disposition__r.Property_Asset__r.Target_Sale_Price__c`, so the real sequence on
+ * a live sale is: an analyst logs three BOV responses (all score null, nothing is selectable), then
+ * LATER a target sale price is typed ON THE PROPERTY ASSET — at which point all three scores
+ * materialise with ZERO CHILD DML. Without the parent hook no broker is ever auto-selected on such
+ * a sale, there may be no further reason to edit a BOV again, and the feature looks broken with no
+ * error anywhere.
+ *
+ * 🔴 THE HOOK MOVED FROM `Disposition__c` TO `Property_Asset__c` ON 2026-08-25, AND THE OLD FORM
+ * MUST NOT COME BACK. It keyed on `Disposition__c.Asking_Price__c` ("Expected Value") until that
+ * date. The user retired that field from the disposition flow, `BOV_Score__c`'s value basis moved
+ * to the asset's `Target_Sale_Price__c`, and a hook watching a field the score no longer reads is
+ * WORSE THAN NO HOOK — it is dead code that looks like coverage, and the real reprice event would
+ * pass unobserved. ⚠ The field was NOT deleted (additive retirement), so the old `prior.
+ * Asking_Price__c != disposition.Asking_Price__c` line still compiles. Do not restore it.
+ *
+ * ⚠ IT IS A GENUINELY DIFFERENT BLAST RADIUS AND THAT IS THE PRICE OF THE MOVE. One asset can
+ * parent MANY dispositions, so one Target Sale Price edit can re-rank several sales at once —
+ * correct (every one of their scores really did change), but it is why the asset-side entry point
+ * costs a query the disposition-side one did not: the disposition Ids are no longer in the trigger
+ * context and must be looked up.
  *
  * ── BUDGET / BULK ───────────────────────────────────────────────────────────────────────────
- * **AT MOST 1 SOQL AND AT MOST 1 DML PER CHUNK — CONSTANT IN THE NUMBER OF SUBMISSIONS.**
+ * **AT MOST 1 SOQL AND AT MOST 1 DML PER CHUNK ON THE THREE CHILD CONTEXTS — CONSTANT IN THE
+ * NUMBER OF SUBMISSIONS.**
+ * ⚠ THE ASSET CONTEXT COSTS **2 SOQL**, NOT 1, AND THE SECOND ONE IS NEW ON 2026-08-25. It must
+ * resolve asset Ids -> disposition Ids through `DispositionSelector.selectIdsByPropertyAssetIds`
+ * before it can do anything, because — unlike the retired Disposition-side hook — the disposition
+ * Ids are not in its trigger context. Still CONSTANT in the number of assets: one lookup for the
+ * whole chunk, never one per asset.
  * 🔴 ZERO-QUERY FAST PATH: a chunk in which no ranking input, status, preferred flag, parent or
  * `Approval_Pending__c` changed returns BEFORE the query, which is what keeps this service
  * invisible to every unrelated feature's 251-record bulk test — the same "an ordinary save costs
@@ -389,45 +415,84 @@ public with sharing class BovAutoSelectionService {
     }
 
     /**
-     * The `Disposition__c` after-update hook — re-ranks a sale's BOV submissions when its
-     * `Asking_Price__c` changes.
+     * The `Property_Asset__c` after-update hook — re-ranks the BOV submissions of EVERY disposition
+     * under an asset whose `Target_Sale_Price__c` changes.
+     *
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * 🔴 IT WAS THE `Disposition__c` HOOK UNTIL 2026-08-25, KEYED ON `Asking_Price__c`.
+     *    THE NAME IS UNCHANGED ON PURPOSE; THE OBJECT IT WATCHES IS NOT.
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * `BOV_Score__c`'s 50-point Value term divides by
+     * `Disposition__r.Property_Asset__r.Target_Sale_Price__c` as of that date — `Asking_Price__c`
+     * ("Expected Value") is retired from the disposition flow. A hook watching the retired field
+     * would still COMPILE (the field was not deleted — additive retirement) and would still be
+     * green in every test that pokes it, while never firing on the event that actually moves a
+     * score. That is worse than having no hook at all, so the whole hook moved rather than being
+     * duplicated.
      *
      * 🔴 MANDATORY, NOT OPTIONAL, AND THE CLASS HEADER ARGUES IT IN FULL: `BOV_Score__c` is
-     * PARENT-DERIVED, so pricing a sale AFTER its BOV responses arrived re-ranks every child with
-     * ZERO child DML — and on the evidence that is the PRIMARY path, not an edge case. Without this
-     * hook such a sale never gets an appointed broker and there is no error anywhere.
+     * GRANDPARENT-DERIVED, so pricing an asset AFTER its sale's BOV responses arrived re-ranks
+     * every child with ZERO child DML — and on the evidence that is the PRIMARY path, not an edge
+     * case. Without this hook such a sale never gets an appointed broker and there is no error
+     * anywhere: green deploy, green tests, and UAT reports "it doesn't work".
      *
-     * ⚠ KEYED ON THE CHANGE, SO AN ORDINARY DISPOSITION SAVE COSTS ZERO QUERIES AND ZERO DML —
-     * the same contract `DispositionTrigger`'s header already carries for both of its other hooks.
-     * ⚠ INSERT IS DELIBERATELY NOT WIRED: a Disposition has no BOV children at the moment it is
-     * created, so there is nothing to rank.
-     * ⚠ THE DIRECTION IS SAFE. This writes PARENT -> CHILD. `Disposition__c` is the entry object
-     * of three `AdminOnly` approvals, which lock THE DISPOSITION, not its children; the only process
-     * that locks a child is `Broker_Finalize_Approval`, and a locked child is precisely the locked
-     * state this service refuses to write.
+     * ⚠ KEYED ON THE CHANGE, SO AN ORDINARY PROPERTY ASSET SAVE COSTS ZERO QUERIES AND ZERO DML.
+     * That contract matters MORE here than it did on `Disposition__c`: `Property_Asset__c` is a
+     * Property Management object edited constantly by a team that has nothing to do with
+     * dispositions, and this service must stay invisible to every one of their bulk tests. The
+     * `repricedAssetIds.isEmpty()` return below is what enforces it, and it sits AHEAD of the
+     * selector call deliberately — moving the query above it would put one SOQL on every asset save
+     * in the org.
      *
-     * @param dispositions Trigger.new. Null/empty-safe.
-     * @param priorById    Trigger.oldMap. Null-safe (nothing is re-ranked without an old value —
-     *                     see the insert note above).
+     * ⚠ ONE ASSET, MANY DISPOSITIONS. The mapping is 1:N, so a single price edit can legitimately
+     * re-rank several sales. The lookup is ONE query for the whole chunk
+     * (`DispositionSelector.selectIdsByPropertyAssetIds`, `WITH SYSTEM_MODE` — justified there:
+     * the person repricing an asset is typically a PM user with no disposition access, and
+     * USER_MODE would throw INTO THEIR SAVE rather than degrade).
+     *
+     * ⚠ INSERT IS DELIBERATELY NOT WIRED: a brand-new asset has no dispositions and therefore no
+     * BOV submissions, so there is nothing to rank. `PropertyAssetTriggerHandler.afterInsert`
+     * routes only to `OnboardingAutoCreateService`.
+     *
+     * ⚠ THE DIRECTION IS SAFE. This writes GRANDPARENT -> GRANDCHILD. `Disposition__c` is the entry
+     * object of three `AdminOnly` approvals, which lock THE DISPOSITION, not its children; the only
+     * process that locks a child is `Broker_Finalize_Approval`, and a locked child is precisely the
+     * locked state this service refuses to write. Nothing here touches the Disposition itself.
+     *
+     * @param assets    Trigger.new from `Property_Asset__c`. Null/empty-safe.
+     * @param priorById Trigger.oldMap. Null-safe (nothing is re-ranked without an old value — see
+     *                  the insert note above).
      * @example
      * BovAutoSelectionService.reselectForRepricedDispositions(newList, oldMap);
      */
     public static void reselectForRepricedDispositions(
-        List<Disposition__c> dispositions,
-        Map<Id, Disposition__c> priorById
+        List<Property_Asset__c> assets,
+        Map<Id, Property_Asset__c> priorById
     ) {
-        if (dispositions == null || dispositions.isEmpty() || priorById == null) {
+        if (assets == null || assets.isEmpty() || priorById == null) {
             return;
         }
-        Set<Id> dispositionIds = new Set<Id>();
-        for (Disposition__c disposition : dispositions) {
-            Disposition__c prior = priorById.get(disposition.Id);
+        Set<Id> repricedAssetIds = new Set<Id>();
+        for (Property_Asset__c asset : assets) {
+            Property_Asset__c prior = priorById.get(asset.Id);
             if (prior == null) {
                 continue;
             }
-            if (prior.Asking_Price__c != disposition.Asking_Price__c) {
-                dispositionIds.add(disposition.Id);
+            if (prior.Target_Sale_Price__c != asset.Target_Sale_Price__c) {
+                repricedAssetIds.add(asset.Id);
             }
+        }
+        // 🔴 THE ZERO-QUERY FAST PATH, AND IT MUST STAY ABOVE THE SELECTOR CALL. Every Property
+        // Asset save in the org runs this method; only the ones that moved the price may pay for a
+        // query. See the header.
+        if (repricedAssetIds.isEmpty()) {
+            return;
+        }
+        // ONE lookup for the whole chunk — never one per asset.
+        Set<Id> dispositionIds = new Set<Id>();
+        for (Disposition__c disposition
+                : DispositionSelector.selectIdsByPropertyAssetIds(repricedAssetIds)) {
+            dispositionIds.add(disposition.Id);
         }
         reselectFor(dispositionIds);
     }

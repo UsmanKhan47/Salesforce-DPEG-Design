@@ -5,6 +5,30 @@
 
     STATUS: PREPARED, NOT DEPLOYED. Do not deploy without the user's explicit go-ahead.
 
+    🔴 SUPERSEDED 2026-08-25 (LATER THE SAME DAY) - DO NOT DEPLOY THIS MANIFEST. The user's
+    decision retired the fields it creates: "why have you created NDA, PSA and LOI fields on
+    Disposition object - we don't need them. Remove them." The replacement is
+    manifest/remove-disposition-child-mirrors/, which DELETES eleven of the thirteen CustomFields
+    listed below (both lookups plus the nine LOI_*/PSA_* formulas), deletes
+    DispositionPrimaryChildStampQueueable, and strips the three Details sections from
+    Disposition_Record_Page. LOI__c.Selected_Offer__c and Contract_Review__c.Selected_Offer__c -
+    the two CHILD-side links - SURVIVE; the user asked about those separately.
+
+    ⚠ AND THE "NOT DEPLOYED" STATUS LINE ABOVE IS PROBABLY STALE. Disposition_Record_Page was
+    RETRIEVED from usman-dpeg at commit 472155f WITH all three Details sections present, and a
+    FlexiPage cannot name a fieldItem for a field that does not exist in the org - so these fields
+    appear to have reached the org after this line was written and it was never updated. That
+    matters because the destructive half of the replacement manifest fails on a component the org
+    does not have unless the ignore-warnings flag is passed. CONFIRM AGAINST THE ORG rather than trusting
+    either status line.
+
+    ⚠ THE BACKFILL THIS FILE PROMISED AT THE BOTTOM IS CANCELLED. If it was already run, the two
+    lookups it populated are being deleted, so its effect is discarded with them.
+
+    Everything below this point is retained VERBATIM as the record of what was built and why - it
+    is quoted by the field files, the permission sets and the page header. It is history, not an
+    instruction.
+
     Replaces the Apex-backed c/dispositionChildDetails LWC (added earlier the same day) with the
     SAME native mechanism the NDA-stage Details section already uses: lookups on Disposition__c ->
     formula fields spanning them -> native flexipage:fieldSections scoped by stage.

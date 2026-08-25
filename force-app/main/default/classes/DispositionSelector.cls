@@ -22,14 +22,19 @@
  *                                              Asset joined the same read)
  *   - DispositionOfferFormService.getFormContext -> selectBrokerContextById (Log Offer modal,
  *                                              2026-08-21)
+ *   - BovAutoSelectionService.reselectForRepricedDispositions
+ *                                             -> selectIdsByPropertyAssetIds (asset-side BOV
+ *                                              re-rank, 2026-08-25 — replaced the Disposition-side
+ *                                              Asking_Price__c hook when that field was retired)
  *
  * ⚠ MIXED MODES SINCE 2026-08-09 (Tranche 3C) — READ THE METHOD, NEVER THIS HEADER. SIX
  * controller-backed reads are `WITH USER_MODE` (selectMostRecentByPropertyAssetId,
  * selectClosingSummaryById, selectOutreachById, selectApprovalContextById, selectDealSummaryParentById
  * and, since 2026-08-21, selectBrokerContextById);
- * four are
+ * FIVE are
  * `WITH SYSTEM_MODE` under the ARCHITECTURE.md §2 automation-path exception (selectStagesByIds,
- * selectListingClockByIds, selectStageRequiredById, selectStageAndTypeByIds), each justified at
+ * selectListingClockByIds, selectStageRequiredById, selectStageAndTypeByIds and, since 2026-08-25,
+ * selectIdsByPropertyAssetIds), each justified at
  * its own declaration — which is where §2 says the authoritative inventory lives. The sentence
  * this replaced — "There is no guest path for the Disposition module, so no SYSTEM_MODE appears
  * here" — was reasoning from the wrong test: the exception is about reads the running user never
@@ -56,14 +61,18 @@
  * MODE (the six USER_MODE reads) — Disposition__c is a custom object; P3 proved the custom-field
  * FLS gap is 0, so USER_MODE is safe and enforces the running user's sharing + FLS. USER_MODE also
  * covers the Wires__r relationship subquery (Wire__c is likewise custom, FLS gap 0).
- * ⚠ TWO OF THE SIX TRAVERSE TO A SECOND OBJECT, WHICH ADDS AN OBJECT-LEVEL GATE NO DISPOSITION
- * PERMISSION SET GRANTS — a gate of a different KIND from the custom-FIELD one P3 measured, so
+ * ⚠ THREE OF THE SIX TRAVERSE TO A SECOND OBJECT (it said TWO until 2026-08-25 — re-count
+ * against the SELECT clauses, never against this sentence), WHICH ADDS AN OBJECT-LEVEL GATE NO
+ * DISPOSITION PERMISSION SET GRANTS — a gate of a different KIND from the custom-FIELD one P3 measured, so
  * "the FLS gap is 0" does not cover either of them. Each is argued at its own method:
  *   - `selectBrokerContextById` traverses `Broker__r.Name` to `Contact` (granted by
  *     `DPEG_Contact_View` / `DPEG_Contact_Edit` in the same permission-set GROUPS);
  *   - `selectDealSummaryParentById` traverses `Property_Asset__r.Name` to `Property_Asset__c`
  *     (granted by `DPEG_PropertyMgmt_View`, which is in both PSGs that can open a Disposition
- *     record page) — added 2026-08-24.
+ *     record page) — added 2026-08-24;
+ *   - `selectApprovalContextById` traverses `Property_Asset__r.Target_Sale_Price__c` to the SAME
+ *     object, on the SAME grant, and for the SAME reason — added 2026-08-25 when `Asking_Price__c`
+ *     was retired from the disposition flow and the Readiness price gate moved to the asset.
  *
  * NOT-FOUND CONTRACT is per-caller and encoded in the method shape:
  *   - read-for-display  (selectMostRecentByPropertyAssetId) -> a missing
@@ -553,6 +562,10 @@ public with sharing class DispositionSelector {
      *   `Broker__c`                       the Off-market `Broker Selection` pre-check;
      *   `Wire_Verification_Completed__c`  the `Closing` pre-check;
      *   `Selected_Broker__c`              DISPLAY-ONLY CARRY. No longer read by any gate.
+     *   `Property_Asset__r.Target_Sale_Price__c`  the `Disposition Readiness` price pre-check
+     *                                     (2026-08-25 — it replaced `Asking_Price__c`, which is
+     *                                      retired from this flow; see the FLS note below, the
+     *                                      span is a DIFFERENT KIND of gate from a plain field).
      *
      * ⚠ THE THIRD AND FIFTH ROWS SWAPPED ROLES ON 2026-08-20 (off-market broker lookup) AND THE OLD
      * ROLE MUST NOT BE RESTORED. `Selected_Broker__c` (Text) WAS the off-market pre-check —
@@ -606,22 +619,41 @@ public with sharing class DispositionSelector {
      * provisioning gap that a two-line permission-set edit closes properly. Deploy order is
      * load-bearing: field -> permission sets -> this Apex, and NEVER Apex first.
      *
-     * ⚠ `Asking_Price__c` JOINED THIS LIST 2026-08-22 (the Disposition-Readiness asking-price gate).
-     * It adds a SIXTH FLS gate to the method that backs all four approval branches, so the
-     * paragraph above applies to it in full — and it was checked rather than assumed. Measured
-     * against `usman-dpeg` on 2026-08-22, `FieldPermissions` for `Asking_Price__c` names exactly
-     * the same five parents as `Broker__c` (DPEG_Disposition_Edit, DPEG_Disposition_View,
-     * DPEG_Principal_PSG, DPEG_Junior_Analyst_PSG, sfdc_slack). `Broker__c` is already in this
-     * SELECT and already works for every disposition persona, so this field widens the failure
-     * surface by NOTHING: any principal who can run this query today can read the new column too.
-     * 🔴 THE SAME BAN APPLIES — if this ever throws `No such column 'Asking_Price__c'`, the fix is
-     * the permission set, never `WITH SYSTEM_MODE`.
+     * ⚠ `Asking_Price__c` JOINED THIS LIST 2026-08-22 AND **LEFT IT AGAIN 2026-08-25** — the note
+     * is amended in place rather than deleted, because the paragraph it was making is still the
+     * live one, just about a different column. `Asking_Price__c` ("Expected Value") is RETIRED
+     * from the disposition flow (user decision, 2026-08-25; the field is NOT deleted, it is simply
+     * no longer read here), and the Disposition-Readiness price gate now reads the PROPERTY
+     * ASSET's own `Target_Sale_Price__c` through `Property_Asset__r`.
+     *
+     * 🔴 THAT SWAPPED A FIELD-LEVEL GATE FOR A **CROSS-OBJECT** ONE, WHICH IS A DIFFERENT KIND OF
+     * GATE, AND IT WAS CHECKED RATHER THAN ASSUMED. Under `WITH USER_MODE` this span now requires
+     * (a) read on `Property_Asset__c` itself and (b) FLS read on `Target_Sale_Price__c`, NEITHER of
+     * which any `DPEG_Disposition_*` permission set grants. Measured against this repo on
+     * 2026-08-25: both are granted by `DPEG_PropertyMgmt_View`, which is a member of BOTH permission
+     * set groups that can open a Disposition record page (`DPEG_Junior_Analyst_PSG` and
+     * `DPEG_Principal_PSG`) — the identical argument `selectDealSummaryParentById` below already
+     * makes for its own `Property_Asset__r.Name` traversal, and this method is now the SECOND
+     * disposition read to depend on it. `Target_Sale_Price__c` is also granted by
+     * `DPEG_PropertyAsset_View` and `DPEG_PropertyMgmt_Edit`.
+     *
+     * 🔴 THE SAME BAN APPLIES, AND IT MATTERS MORE NOW THAN IT DID FOR `Asking_Price__c`. If this
+     * ever throws `No such column 'Target_Sale_Price__c'` — or the object-level equivalent — the
+     * fix is to put `DPEG_PropertyMgmt_View` on the principal, NEVER `WITH SYSTEM_MODE` here. This
+     * one method backs ALL FOUR approval branches, so flipping it to fix a provisioning gap would
+     * re-authorise five other fields for principals the org deliberately withholds them from.
+     * ⚠ A principal assigned a bare `DPEG_Disposition_Edit` WITHOUT the PSG around it has no route
+     * to this column. That is a real, named residual: assignment in this org is by PSG, and both
+     * PSGs carry it, but a hand-assigned standalone permission set would break Submit for Approval
+     * at every stage. Assign the group, not the set.
      *
      * FETCH-FOR-USE: a miss is an error (the caller was handed an Id by a record page), so this is
      * a single-row assignment that throws.
      *
      * @param dispositionId Disposition__c Id; must reference an existing, visible row.
-     * @return The Disposition with the six decision/display fields populated.
+     * @return The Disposition with the decision/display fields populated, including the parent
+     *         asset's `Target_Sale_Price__c` through `Property_Asset__r` (may itself be null —
+     *         a Disposition need not have an asset, and an asset need not carry a target).
      * @throws System.QueryException when no visible Disposition__c matches the Id, OR when the
      *         running user lacks FLS read on any selected field — see the Broker__c note above.
      * @example
@@ -631,7 +663,7 @@ public with sharing class DispositionSelector {
         return [
             SELECT Id, Disposition_Stage__c, RecordTypeId,
                    Broker__c, Selected_Broker__c, Wire_Verification_Completed__c,
-                   Asking_Price__c
+                   Property_Asset__r.Target_Sale_Price__c
             FROM Disposition__c
             WHERE Id = :dispositionId
             WITH USER_MODE
@@ -714,5 +746,61 @@ public with sharing class DispositionSelector {
             LIMIT 1
         ];
         return rows.isEmpty() ? null : rows[0];
+    }
+
+    /**
+     * EVERY DISPOSITION HANGING OFF A SET OF PROPERTY ASSETS — Ids only. Backs
+     * `BovAutoSelectionService.reselectForRepricedDispositions`, the asset-side re-ranking hook
+     * added 2026-08-25 when `Asking_Price__c` was retired and `BOV_Score__c`'s value basis moved
+     * to `Property_Asset__c.Target_Sale_Price__c`.
+     *
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * 🔴 MODE — `WITH SYSTEM_MODE`, UNDER ARCHITECTURE.md §2's AUTOMATION-PATH EXCEPTION,
+     *    JUSTIFIED HERE AT THE DECLARATION AS §2 REQUIRES.
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * This read happens ON A PRINCIPAL'S BEHALF, never at their request: it runs inside
+     * `PropertyAssetTriggerHandler.afterUpdate` because somebody typed a Target Sale Price on a
+     * PROPERTY ASSET. That person is a Property Management user; they may hold no Disposition
+     * access whatsoever, and they are not asking to see dispositions. Under `WITH USER_MODE` an
+     * FLS or CRUD gap does NOT degrade to an empty list — it throws
+     * `System.QueryException: No such column`, which inside a trigger escapes as
+     * `CANNOT_INSERT_UPDATE_ACTIVATE_ENTITY` and rolls back the PM user's own save. Repricing an
+     * asset would fail with a schema error naming an object they never touched.
+     *
+     * 🔴 AND `SYSTEM_MODE` DOES NOT LIFT SHARING — THAT IS A SEPARATE QUESTION AND IT IS ANSWERED
+     * "LEAVE IT" HERE, DELIBERATELY. `Disposition__c` is OWD Private, so a PM user who owns no
+     * disposition sees an EMPTY list from this query and the re-rank silently does nothing. That is
+     * accepted, and it is accepted because of what the caller does with the result: it re-ranks
+     * children whose SCORES ALREADY CHANGED THE INSTANT THE FORMULA'S INPUT DID. A missed re-rank
+     * leaves the appointment stale until the next BOV edit; it does not corrupt anything and it
+     * does not double anything. This is NOT the idempotency-guard case where a sharing-filtered
+     * read inverts the feature into a duplicate-maker — there is no insert on this path, only an
+     * update of an exclusive flag that is recomputed from scratch every time.
+     * ⚠ IF THAT EVER STOPS BEING ACCEPTABLE the fix is a narrow `private without sharing` inner
+     * class holding ONLY this query, argued on its own — not `without sharing` on this selector.
+     *
+     * ⚠ ID-ONLY BY DESIGN. The caller feeds the result straight back into
+     * `BovSubmissionSelector.selectSelectionContextByDispositionIds`, which reads everything the
+     * ranking needs off the CHILDREN. Adding a field here would buy nothing and widen a query that
+     * runs on every Property Asset save that touches the target price.
+     *
+     * BULK: one query for the whole chunk. Never call this inside a loop.
+     *
+     * @param propertyAssetIds Property_Asset__c Ids. Null/empty-safe.
+     * @return The Dispositions under those assets, Id only; an empty list when the input is
+     *         null/empty or no row is shared with the running user.
+     * @example
+     * List&lt;Disposition__c&gt; rows = DispositionSelector.selectIdsByPropertyAssetIds(assetIds);
+     */
+    public static List<Disposition__c> selectIdsByPropertyAssetIds(Set<Id> propertyAssetIds) {
+        if (propertyAssetIds == null || propertyAssetIds.isEmpty()) {
+            return new List<Disposition__c>();
+        }
+        return [
+            SELECT Id
+            FROM Disposition__c
+            WHERE Property_Asset__c IN :propertyAssetIds
+            WITH SYSTEM_MODE
+        ];
     }
 }

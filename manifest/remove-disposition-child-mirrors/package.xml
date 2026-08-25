@@ -1,0 +1,178 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+    REMOVE DISPOSITION CHILD-MIRROR FIELDS - 2026-08-25. THE CONSTRUCTIVE HALF.
+
+    STATUS: PREPARED, NOT DEPLOYED. Do not deploy without the user's explicit go-ahead.
+    NOTHING IN THIS CHANGE WAS RUN AGAINST ANY ORG BY THE AGENT THAT WROTE IT - no deploy, no
+    dry run, no `sf apex run`, no data query. Every claim below about org state is inference from
+    the repo and is labelled as such.
+
+    WHY: the user's decision, verbatim - "why have you created NDA, PSA and LOI fields on
+    Disposition object - we don't need them. Remove them."
+
+    WHAT IS BEING RETIRED: the whole child-mirror display idea. Between 2026-08-24 and 2026-08-25
+    seventeen fields were added to Disposition__c so three stage-scoped Details sections on
+    Disposition_Record_Page could render an LOI / PSA / NDA child's values as ordinary
+    `Record.` fields (a FlexiPage fieldInstance cannot traverse a relationship, so the route was
+    lookup -> spanning formula -> native fieldSection). The user does not want those values
+    duplicated onto the parent. The child records are read on their OWN pages, reached from the
+    loisList / contractReviewsList / ndasList related lists that remain on the page.
+
+    ══════════════════════════════════════════════════════════════════════════════
+    🔴 THE TWO HALVES MUST BE ONE DEPLOY, AND CONSTRUCTIVE MUST LAND FIRST
+    ══════════════════════════════════════════════════════════════════════════════
+      - Disposition_Record_Page naming a fieldItem for a deleted field fails the deploy.
+      - DPEG_Disposition_Edit / _View naming a fieldPermissions for a deleted field fails the
+        deploy.
+      - DispositionStageEntryService referencing DispositionPrimaryChildStampQueueable while that
+        class is deleted fails to compile.
+    `post-destructive-changes` lands everything in THIS file first, then performs the deletions
+    in destructiveChangesPost.xml. That single ordering satisfies all three.
+
+    ══════════════════════════════════════════════════════════════════════════════
+    WHAT IS IN HERE AND WHY
+    ══════════════════════════════════════════════════════════════════════════════
+      FlexiPage (1)  Disposition_Record_Page
+        Loses THREE flexipage:fieldSection itemInstances (ndaDetails / loiDetails / psaDetails)
+        and the NINE facet flexiPageRegions that fed them.
+        🔴 AND IT LOSES THREE NE CRITERIA FROM flexipage_fieldSection'S OWN visibilityRule, WITH
+        booleanFilter RENUMBERED FROM "1 AND 2 AND 3 AND 4 AND 5 AND 6 AND 7 AND 8" TO
+        "1 AND 2 AND 3 AND 4 AND 5". THIS IS NOT TIDYING - IT IS THE WHOLE CORRECTNESS ARGUMENT.
+        That page's `main` region partitions the Disposition_Stage__c value set: c_dispositionMain
+        claims 5 stages by an OR-of-EQUAL allowlist, flexipage_fieldSection claims the rest by the
+        AND-of-NE inverse. Removing the three single-EQUAL Details sections WITHOUT removing their
+        stages from the NE chain would leave NDA / LOI / PSA claimed by nobody and excluded by the
+        inverse - three stages rendering NO Details section at all, silently. That is the 2026-08-24
+        "Release Materials fell through to neither surface" defect in mirror image. Post-change the
+        partition is 5 + 6 = 11 again. Full arc is in the page file's own header.
+
+      PermissionSet (3)
+        DPEG_Disposition_Edit   drops 17 fieldPermissions (2 lookups editable + 15 read-only)
+        DPEG_Disposition_View   drops the same 17, all read-only
+        DPEG_Apex_Access        COMMENT-ONLY. Its DispositionChildDetailsController paragraph
+                                described the native replacement that is now also gone.
+        ⚠ A PERMISSION-SET DEPLOY REPLACES ITS ENTIRE fieldPermissions SET - it does not merge.
+        These three files were edited by exact hunk, and nothing else in them was touched. If any
+        other stream has uncommitted edits to the same three files, DIFF THEM BEFORE DEPLOYING:
+        a merged file silently revokes the other stream's grants.
+        ⚠ DPEG_Admin_Access is NOT in this payload. It grants Disposition__c.Primary_NDA__c, which
+        SURVIVES (see below), and holds no grant for any of the 17.
+
+      ApexClass (2)
+        DispositionStageEntryService      LOI and PSA blocks lose their parent-stamp map build and
+                                          their System.enqueueJob. Both blocks are back to "no
+                                          parent stamp and no Queueable", which is what they were
+                                          before 2026-08-25 and for the original reason: there is
+                                          no Primary_LOI__c / Primary_PSA__c to write back to.
+        DispositionStageEntryServiceTest  `loiAndPsaAutoCreateEachEnqueueOneParentStamp` is
+                                          re-inverted to `loiAndPsaAutoCreateEnqueueNothing`
+                                          (assert 0, its pre-08-25 form), and
+                                          `primaryChildStampQueueableIsInertOnAnEmptyOrNullMap`
+                                          is DELETED - there is no class left for it to cover.
+        ⚠ BOTH MUST BE IN THE PAYLOAD. the tests flag runs the ORG's copy of a test class, so a
+        committed-but-undeployed test method silently never runs and the deploy still reports
+        success. The test class is the only falsifier for the enqueue count in either direction.
+
+      CustomField (3) - ALL THREE ARE COMMENT / description CHANGES, NOT SHAPE CHANGES
+        Disposition__c.Primary_NDA__c        SURVIVES. Its header claimed "downstream automation
+                                             resolves the NDA it acts on THROUGH this lookup" -
+                                             that is now FALSE and is retracted in place. A full
+                                             repo grep on 2026-08-25 found NO reader: the
+                                             "downstream automation" is the OPPORTUNITY twin's
+                                             (NDA_Signed_Before_Deal_Progression reads
+                                             Opportunity.Primary_NDA__r.NDA_Signed__c). See the
+                                             field file for why it is retained anyway.
+        LOI__c.Selected_Offer__c             UNAFFECTED by the removal; its comment cross-referenced
+        Contract_Review__c.Selected_Offer__c Primary_LOI__c / Primary_PSA__c and the one-off
+                                             backfill, both of which are gone. Amended, not
+                                             rewritten. These two are LINKS to real child records,
+                                             not mirrors of one onto the parent - which is exactly
+                                             the distinction the user's decision turns on.
+
+    ══════════════════════════════════════════════════════════════════════════════
+    🔴 THINGS DELIBERATELY **NOT** IN EITHER HALF
+    ══════════════════════════════════════════════════════════════════════════════
+      Disposition__c.Primary_NDA__c        kept - pre-dates the mirror work (D16.2, Tranche 3A),
+                                           and eleven other class headers cite its
+                                           DispositionNdaStampQueueable as the canonical
+                                           ENTITY_IS_LOCKED -> defer-to-Queueable example.
+                                           Deleting it orphans all of them. Separate sign-off.
+      DispositionNdaStampQueueable         kept, for the same reason. Still the writer.
+      Disposition__c.NDA_Count__c          kept - NOT mirrors. Number fields maintained by the
+      Disposition__c.Signed_NDA_Count__c   NDA_Signed_Rollup flow and read by the
+                                           All_NDAs_Signed_Before_Progression release gate.
+      Disposition__c.PSA_Executed__c       kept - a plain checkbox on the disposition itself, not
+                                           a formula spanning anything.
+      LOI__c.Selected_Offer__c             kept - the user asked about these separately.
+      Contract_Review__c.Selected_Offer__c
+      NDA__c.Tracking_Status__c            untouched, explicitly out of scope.
+
+    ══════════════════════════════════════════════════════════════════════════════
+    ⚠ TWO THINGS TO CHECK BEFORE RUNNING THIS
+    ══════════════════════════════════════════════════════════════════════════════
+    1. DOES THE ORG ACTUALLY HAVE ALL 17 FIELDS? A destructive delete naming a component the org
+       does not have fails the deploy unless `the ignore-warnings flag` is passed. The repo's evidence
+       says yes - Disposition_Record_Page was RETRIEVED from the org at commit 472155f WITH the
+       three Details sections in it, and a FlexiPage cannot name a field that does not exist -
+       but that is inference, not a measurement. Confirm with a describe, or pass
+       `the ignore-warnings flag`.
+       ⚠ manifest/native-loi-psa/package.xml says "STATUS: PREPARED, NOT DEPLOYED" for the eleven
+       LOI/PSA fields. That status line is STALE if the 472155f retrieve means what it appears to
+       mean. Trust the retrieve over the status line, and check.
+    2. ORDERING INSIDE THE DESTRUCTIVE HALF. Deleting Primary_LOI__c / Primary_PSA__c while a
+       formula field still spans them fails. Both are in the same destructive package and the
+       formulas are listed FIRST; the Metadata API resolves intra-package dependencies, but if it
+       refuses, split into two deploys - formulas first, lookups second.
+
+    ══════════════════════════════════════════════════════════════════════════════
+    ══════════════════════════════════════════════════════════════════════════════
+    HOW TO DEPLOY IT
+    ══════════════════════════════════════════════════════════════════════════════
+    🔴 THE RUNNABLE COMMANDS LIVE IN DEPLOY.md BESIDE THIS FILE, NOT HERE, AND THAT IS NOT A
+    STYLE CHOICE. An XML comment may not contain a double hyphen, so every `sf` flag written
+    inside one makes the manifest itself unparseable - which is exactly the shape of latent trap
+    this repo keeps paying for, and manifest/native-loi-psa/package.xml already carries it.
+    Flags are therefore named WITHOUT their leading dashes in this comment.
+
+    Shape: `sf project deploy start`, with `manifest` pointing at this file, `post-destructive-changes`
+    pointing at destructiveChangesPost.xml, `target-org usman-dpeg`,
+    `test-level RunSpecifiedTests`, `tests DispositionStageEntryServiceTest`, plus `dry-run` and
+    `wait 60`. The real deploy is the same command with the dry-run flag removed.
+
+    ⚠ A GREEN DRY RUN IS WEAKER EVIDENCE THAN IT LOOKS, TWICE OVER, AND BOTH TRAPS ARE DOCUMENTED
+    IN THIS REPO'S HISTORY:
+      - Byte-identical components report `Unchanged` and are SKIPPED rather than validated. That
+        applies to DPEG_Apex_Access here, which is a comment-only edit.
+      - "N/N deployed, 0 errors" has been observed on a deploy that rolled everything back:
+        `numberComponentsDeployed` is a PRE-rollback tally, and RunSpecifiedTests can fail on
+        per-class 75% coverage through `codeCoverageWarnings` that no error counter surfaces.
+        Read the coverage section of the result, not just the error count.
+    ⚠ IF PER-CLASS COVERAGE IS THE BLOCKER, RE-RUN AT test-level RunLocalTests. Deleting
+    `primaryChildStampQueueableIsInertOnAnEmptyOrNullMap` removes coverage from
+    DispositionStageEntryService's LOI/PSA enqueue lines - but those lines are deleted in the same
+    change, so the ratio should improve, not fall.
+    -->
+    <types>
+        <members>Disposition_Record_Page</members>
+        <name>FlexiPage</name>
+    </types>
+    <types>
+        <members>DPEG_Disposition_Edit</members>
+        <members>DPEG_Disposition_View</members>
+        <members>DPEG_Apex_Access</members>
+        <name>PermissionSet</name>
+    </types>
+    <types>
+        <members>DispositionStageEntryService</members>
+        <members>DispositionStageEntryServiceTest</members>
+        <name>ApexClass</name>
+    </types>
+    <types>
+        <members>Disposition__c.Primary_NDA__c</members>
+        <members>LOI__c.Selected_Offer__c</members>
+        <members>Contract_Review__c.Selected_Offer__c</members>
+        <name>CustomField</name>
+    </types>
+    <version>67.0</version>
+</Package>

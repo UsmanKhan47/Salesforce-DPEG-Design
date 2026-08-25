@@ -61,33 +61,48 @@ private class DispositionApprovalServiceTest {
     }
 
     /**
-     * A satisfying asking price for the 2026-08-22 Disposition-Readiness gate. Any positive
-     * number passes; this one is a plausible sale price so a failure message reads like data.
+     * A satisfying target sale price for the Disposition-Readiness gate. Any positive number
+     * passes; this one is a plausible sale price so a failure message reads like data.
      */
     private static final Decimal ASKING_PRICE = 2500000;
 
     /**
      * ══════════════════════════════════════════════════════════════════════════════
-     * 🔴 THE ASKING PRICE DEFAULTS TO **BLANK** AND MUST KEEP DEFAULTING TO BLANK.
+     * 🔴 THE PRICE DEFAULTS TO **BLANK** AND MUST KEEP DEFAULTING TO BLANK — BUT THE
+     *    DEFAULT IS NO LONGER FREE, AND THAT IS THE 2026-08-25 CHANGE.
      * ══════════════════════════════════════════════════════════════════════════════
-     * `TestDataFactory.createDispositions` does not populate `Asking_Price__c`, which mirrors
-     * production (measured 2026-08-22: 1 of the 3 live dispositions has it, and the one sitting
-     * at Disposition Readiness does NOT). The obvious "fix" when the 2026-08-22 gate turned two
-     * existing tests red was to teach the FACTORY to set a price — do not do that. Every fixture
-     * in the repo would then satisfy the gate by construction, the gate would be unfalsifiable
-     * from any other test class, and the three refusal tests below would be the only thing left
-     * proving it exists. Instead the price is passed EXPLICITLY at the call sites that need one,
-     * so a reader can see at each site whether the gate is being satisfied or exercised.
+     * The gate reads the PARENT ASSET's `Target_Sale_Price__c` since 2026-08-25 (the user retired
+     * `Disposition__c.Asking_Price__c` from the disposition flow; the field still exists and still
+     * compiles, so the old fixture line would have kept "working" while proving nothing).
+     *
+     * ⚠ `TestDataFactory.createPropertyAssets` SHIPPED `Target_Sale_Price__c = 1200000 + (i*1000)`
+     * ON EVERY ASSET IT BUILT UNTIL 2026-08-25, when it was removed precisely because the gate
+     * moved onto that field. Blank is the factory default again — but the helpers below write the
+     * asset UNCONDITIONALLY, including with `null`, and that is not redundancy. It is what keeps
+     * the three refusal tests independent of a factory default that has already been the wrong way
+     * round once, and it is also required outright within a transaction where an earlier fixture
+     * priced the shared asset.
+     *
+     * ⚠ THE ORIGINAL 2026-08-22 ARGUMENT STILL STANDS AND STILL FORBIDS THE OBVIOUS SHORTCUT: do
+     * not teach `TestDataFactory.createDispositions` (or `createPropertyAssets`) to satisfy the
+     * gate. Every fixture in the repo would then pass it by construction, the gate would be
+     * unfalsifiable from any other test class, and the refusal tests below would be the only thing
+     * left proving it exists. The price is set EXPLICITLY at each call site so a reader can see
+     * whether the gate is being satisfied or exercised.
+     *
+     * ⚠ ONE SHARED ASSET, SO THE PRICE IS TRANSACTION-WIDE. A test that needs a priced AND an
+     * unpriced disposition simultaneously must build a SECOND asset. Checked 2026-08-25: none does
+     * — the only test that calls a fixture helper twice passes the same price both times.
      */
     private static Disposition__c onMarketAt(String stage) {
         return onMarketAt(stage, null);
     }
 
-    private static Disposition__c onMarketAt(String stage, Decimal askingPrice) {
+    private static Disposition__c onMarketAt(String stage, Decimal targetSalePrice) {
+        priceTheAsset(targetSalePrice);
         Disposition__c d = TestDataFactory.createDisposition(
             assetId(), TestDataFactory.DISPOSITION_RT_ON_MARKET, false);
         d.Disposition_Stage__c = stage;
-        d.Asking_Price__c = askingPrice;
         insert d;
         return d;
     }
@@ -96,13 +111,26 @@ private class DispositionApprovalServiceTest {
         return offMarketAt(stage, null);
     }
 
-    private static Disposition__c offMarketAt(String stage, Decimal askingPrice) {
+    private static Disposition__c offMarketAt(String stage, Decimal targetSalePrice) {
+        priceTheAsset(targetSalePrice);
         Disposition__c d = TestDataFactory.createDisposition(
             assetId(), TestDataFactory.DISPOSITION_RT_OFF_MARKET, false);
         d.Disposition_Stage__c = stage;
-        d.Asking_Price__c = askingPrice;
         insert d;
         return d;
+    }
+
+    /**
+     * Writes `Target_Sale_Price__c` on the shared setup asset — including `null`, which is the
+     * whole point (see the block above: blank is not the factory default any more).
+     */
+    private static void priceTheAsset(Decimal targetSalePrice) {
+        update new Property_Asset__c(Id = assetId(), Target_Sale_Price__c = targetSalePrice);
+    }
+
+    /** The gate's actual input, read back from the asset — used by the refusal preconditions. */
+    private static Decimal storedTargetSalePrice() {
+        return [SELECT Target_Sale_Price__c FROM Property_Asset__c LIMIT 1].Target_Sale_Price__c;
     }
 
     /** Satisfies All_NDAs_Signed_Before_Progression, which gates BOTH record types since the redesign. */
@@ -121,14 +149,16 @@ private class DispositionApprovalServiceTest {
     // ═══════════════════════════════════════════════════════════════════════════
 
     /**
-     * ⚠ THIS FIXTURE GAINED AN EXPLICIT ASKING PRICE ON 2026-08-22 AND THE ARGUMENT IS THE TEST.
-     * Before the Disposition-Readiness gate this test passed with `Asking_Price__c` blank. It now
-     * REQUIRES a price, which is the cheapest available proof that the gate is wired into the
+     * ⚠ THIS FIXTURE GAINED AN EXPLICIT PRICE ON 2026-08-22 AND THE ARGUMENT IS THE TEST.
+     * Before the Disposition-Readiness gate this test passed with the price blank. It now
+     * REQUIRES one, which is the cheapest available proof that the gate is wired into the
      * production path rather than only into the three refusal tests below: delete the second
      * argument and this test goes red.
+     * ⚠ Since 2026-08-25 that argument lands on the ASSET's `Target_Sale_Price__c`, not on
+     * `Disposition__c.Asking_Price__c`. The retired field would still have compiled here.
      */
     @isTest
-    static void submitAtReadiness_withAskingPrice_submitsTheDispositionItself() {
+    static void submitAtReadiness_withTargetSalePrice_submitsTheDispositionItself() {
         Disposition__c d = onMarketAt(STAGE_READINESS, ASKING_PRICE);
 
         Test.startTest();
@@ -142,7 +172,7 @@ private class DispositionApprovalServiceTest {
 
     /**
      * ══════════════════════════════════════════════════════════════════════════════
-     * 🔴 THE ASKING-PRICE GATE, AND WHY IT IS TESTED **HERE** AND NOT AS A RULE.
+     * 🔴 THE PRICE GATE, AND WHY IT IS TESTED **HERE** AND NOT AS A RULE.
      * ══════════════════════════════════════════════════════════════════════════════
      * User requirement, 2026-08-22: "asking price should be mandatory before moving to BOV
      * Outreach". The hop off `Disposition Readiness` is written by
@@ -152,26 +182,34 @@ private class DispositionApprovalServiceTest {
      * that the machine advance is therefore NOT blocked, is
      * `DispositionApprovalProcessesTest.saleDecisionApproved_blankAskingPrice_stillAdvances`;
      * these two suites are complements and neither is sufficient alone.
+     *
+     * ⚠ THE FIELD THE GATE READS CHANGED ON 2026-08-25 — the requirement did not. It reads the
+     * PARENT ASSET's `Target_Sale_Price__c` now, because that is what `BOV_Score__c` divides by
+     * since `Asking_Price__c` was retired from the disposition flow.
      */
     @isTest
-    static void submitAtReadiness_blankAskingPrice_isRefusedWithTheAuthoredMessage() {
-        Disposition__c d = onMarketAt(STAGE_READINESS); // no price — the production default
-        Assert.isNull(
-            [SELECT Asking_Price__c FROM Disposition__c WHERE Id = :d.Id].Asking_Price__c,
-            'PRECONDITION: the fixture must have NO asking price, or this test proves nothing');
+    static void submitAtReadiness_blankTargetSalePrice_isRefusedWithTheAuthoredMessage() {
+        Disposition__c d = onMarketAt(STAGE_READINESS); // no price — written blank on purpose
+        Assert.isNull(storedTargetSalePrice(),
+            'PRECONDITION: the ASSET must have NO Target_Sale_Price__c, or this test proves '
+            + 'nothing. ⚠ Blank is NOT the factory default here — TestDataFactory ships a target '
+            + 'on every asset, so onMarketAt(stage) has to write the null explicitly.');
 
         Test.startTest();
         Boolean refused = false;
         try {
             DispositionApprovalService.submitForApproval(d.Id);
-            Assert.fail('A blank asking price must refuse the Sale Decision submission');
+            Assert.fail('A blank target sale price must refuse the Sale Decision submission');
         } catch (DispositionApprovalService.ApprovalException e) {
             refused = true;
-            Assert.isTrue(e.getMessage().contains('expected value is required'),
+            Assert.isTrue(e.getMessage().contains('target sale price is required'),
                 'The refusal must be the AUTHORED message, not the platform\'s: ' + e.getMessage());
-            Assert.isTrue(e.getMessage().contains('Expected Value'),
+            Assert.isTrue(e.getMessage().contains('Target Sale Price'),
                 'The refusal must name the ON-SCREEN LABEL so the user knows what to fill in: '
                 + e.getMessage());
+            Assert.isTrue(e.getMessage().contains('property asset'),
+                'And it must say WHERE — the field is on a DIFFERENT RECORD from the one the user '
+                + 'is looking at, which is new as of 2026-08-25: ' + e.getMessage());
         }
         Test.stopTest();
 
@@ -191,7 +229,7 @@ private class DispositionApprovalServiceTest {
      * being added to that branch.
      */
     @isTest
-    static void submitAtReadiness_offMarket_blankAskingPrice_isRefusedToo() {
+    static void submitAtReadiness_offMarket_blankTargetSalePrice_isRefusedToo() {
         Disposition__c d = offMarketAt(STAGE_READINESS);
 
         Test.startTest();
@@ -201,7 +239,7 @@ private class DispositionApprovalServiceTest {
             Assert.fail('An off-market sale must not leave Disposition Readiness unpriced either');
         } catch (DispositionApprovalService.ApprovalException e) {
             refused = true;
-            Assert.isTrue(e.getMessage().contains('expected value is required'),
+            Assert.isTrue(e.getMessage().contains('target sale price is required'),
                 'Same authored message on both record types: ' + e.getMessage());
         }
         Test.stopTest();
@@ -211,26 +249,29 @@ private class DispositionApprovalServiceTest {
     }
 
     /**
-     * ⚠ ZERO IS NOT A PRICE, AND THIS IS THE ONLY TEST THAT SAYS SO. `Asking_Price__c`'s own
-     * `description` records that "a blank OR ZERO value makes every BOV score on this sale blank"
-     * — so a gate that only checked `!= null` would let through the exact state the field exists
-     * to prevent, while LOOKING satisfied on screen. Narrowing the guard to `== null` leaves every
-     * other test in this class green.
+     * ⚠ ZERO IS NOT A PRICE, AND THIS IS THE ONLY TEST THAT SAYS SO. `BOV_Score__c`'s own formula
+     * guard returns null for a blank OR ZERO OR NEGATIVE basis — so a gate that only checked
+     * `!= null` would let through the exact state the gate exists to prevent, while LOOKING
+     * satisfied on screen. Narrowing the guard to `== null` leaves every other test in this class
+     * green, which is what makes this one load-bearing.
+     * ⚠ The zero now lands on the ASSET's `Target_Sale_Price__c` (2026-08-25), not on the
+     * disposition. Same rule, different record.
      */
     @isTest
-    static void submitAtReadiness_zeroAskingPrice_isRefusedLikeABlankOne() {
+    static void submitAtReadiness_zeroTargetSalePrice_isRefusedLikeABlankOne() {
         Disposition__c d = onMarketAt(STAGE_READINESS, 0);
-        Assert.areEqual(0, [SELECT Asking_Price__c FROM Disposition__c WHERE Id = :d.Id].Asking_Price__c,
-            'PRECONDITION: the fixture must hold a stored ZERO, not a null');
+        Assert.areEqual(0, storedTargetSalePrice(),
+            'PRECONDITION: the ASSET must hold a stored ZERO, not a null and not the factory '
+            + 'default of 1,200,000');
 
         Test.startTest();
         Boolean refused = false;
         try {
             DispositionApprovalService.submitForApproval(d.Id);
-            Assert.fail('A zero asking price must be refused exactly like a blank one');
+            Assert.fail('A zero target sale price must be refused exactly like a blank one');
         } catch (DispositionApprovalService.ApprovalException e) {
             refused = true;
-            Assert.isTrue(e.getMessage().contains('expected value is required'),
+            Assert.isTrue(e.getMessage().contains('target sale price is required'),
                 'Zero must produce the SAME authored message, not a different one: ' + e.getMessage());
         }
         Test.stopTest();
@@ -311,8 +352,9 @@ private class DispositionApprovalServiceTest {
      */
     @isTest
     static void submitAtBovOutreach_preferredAndScored_submitsThePreferredRow() {
-        // 🔴 PRICED, AND IT IS LOAD-BEARING. `onMarketAt(stage)` leaves Asking_Price__c null, and
-        // BOV_Score__c is null without it — so the scored competitor would never be appointed and
+        // 🔴 PRICED, AND IT IS LOAD-BEARING. `onMarketAt(stage)` writes the ASSET's
+        // Target_Sale_Price__c to NULL (blank is not the factory default — see the fixture block),
+        // and BOV_Score__c is null without it — so the scored competitor would never be appointed and
         // the preferred row would be the ONLY Selected row, making the routing assertion vacuous.
         Disposition__c d = onMarketAt(STAGE_BOV_OUTREACH, ASKING_PRICE);
         BOV_Submission__c scored = TestDataFactory.createBovSubmission(d.Id, false);

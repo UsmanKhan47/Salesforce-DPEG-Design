@@ -2198,129 +2198,40 @@
         <readable>true</readable>
     </fieldPermissions>
     <!--
-        ADDED 2026-08-24 (NDA-stage Details redesign). Five formula fields mirroring the
-        primary NDA's own fields onto Disposition__c - see NDA_Broker__c.field-meta.xml for the
-        full reasoning. Read-only in both disposition permission sets: a formula field cannot
-        carry editable=true (hard deploy error, same reasoning already documented against
-        BOV_Score__c above). Must land with Disposition_Record_Page.flexipage-meta.xml, which
-        is the only place these fields are surfaced.
-    -->
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>Disposition__c.NDA_Broker__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>Disposition__c.NDA_Status__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>Disposition__c.NDA_Date_Sent__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>Disposition__c.NDA_Date_Signed__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>Disposition__c.NDA_Expiry_Date__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <!--
-        ADDED 2026-08-25 (native LOI/PSA Details). The LOI/PSA twin of the NDA block immediately
-        above, and it lands for the same reason: a Metadata-API-deployed field arrives with NO
-        field permissions for ANY profile, System Administrator included, so every field below is
-        invisible to everyone until this set deploys. These must land WITH
-        objects/Disposition__c/fields/ and Disposition_Record_Page.flexipage-meta.xml - the
-        FlexiPage renders nothing for a field the running user cannot read, and a missing grant
-        looks exactly like an empty field rather than an error.
+        🔴 REMOVED 2026-08-25 - SEVENTEEN Disposition__c GRANTS DELETED HERE, AND THE FIELDS
+        THEMSELVES ARE GONE FROM THE ORG (manifest/remove-disposition-child-mirrors/).
+        What stood here until this date was two blocks: the 2026-08-24 "NDA-stage Details
+        redesign" five-formula block (NDA_Broker__c, NDA_Status__c, NDA_Date_Sent__c,
+        NDA_Date_Signed__c, NDA_Expiry_Date__c) and the 2026-08-25 "native LOI/PSA Details"
+        block (Primary_LOI__c and Primary_PSA__c at editable = true, plus the nine LOI_*__c /
+        PSA_*__c read-only formulas). Both argued at length that the grants had to land WITH
+        Disposition_Record_Page.flexipage-meta.xml, because a Metadata-API-deployed field is
+        invisible to everyone - System Administrator included - until a permission set grants
+        it, and a missing grant renders as an empty field rather than an error. THAT REASONING
+        WAS CORRECT AND IS NOW MOOT: the user's decision of 2026-08-25 - "why have you created
+        NDA, PSA and LOI fields on Disposition object, we don't need them" - retires the whole
+        child-mirror display idea. The three FlexiPage Details sections they fed were removed
+        in the same change; the LOI / PSA / NDA records are read on their own pages, reached
+        from the related lists further down that page.
 
-        🔴 THE TWO LOOKUPS ARE editable = true AND THE NINE FORMULAS ARE NOT. That is not an
-        inconsistency, it is two different constraints meeting:
-          - A FORMULA field CANNOT carry editable = true (hard deploy error - same reasoning
-            already recorded against BOV_Score__c and the NDA_*__c block above).
-          - The two LOOKUPS need edit because they have a SECOND writer besides the Apex stamp:
-            the one-off `sf data update record` backfill over pre-existing dispositions, which
-            runs in USER mode and is refused outright on a field the running user cannot edit.
-            ⚠ THIS DIVERGES FROM Primary_NDA__c THREE LINES UP, WHICH IS READ-ONLY HERE. That
-            field never needed a backfill (its trigger has always been its only writer). Do not
-            "harmonise" these to match it without first checking whether a backfill is still
-            pending - see Primary_LOI__c.field-meta.xml.
-
-        ⚠ Disposition__c.Primary_LOI__c / Primary_PSA__c are written by
-        DispositionPrimaryChildStampQueueable in SYSTEM_MODE, which needs no FLS at all. The grant
-        here exists for the HUMAN and the backfill, not for the automation.
+        ⚠ Disposition__c.Primary_NDA__c IS DELIBERATELY STILL GRANTED (read-only, further UP
+        this file) AND WAS NOT PART OF THIS REMOVAL. It pre-dates the mirror work (decision
+        D16.2, Tranche 3A) and DispositionNdaStampQueueable is still its writer. Read that
+        field's own header for what is and is not true about it as of this date.
     -->
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Disposition__c.Primary_LOI__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Disposition__c.Primary_PSA__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>Disposition__c.LOI_Stage__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>Disposition__c.LOI_Status__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>Disposition__c.LOI_Signed_Date__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>Disposition__c.LOI_Final_Agreed_Price__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>Disposition__c.LOI_Counter_Price__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>Disposition__c.LOI_Counter_Received_Date__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>Disposition__c.PSA_Negotiation_Status__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>Disposition__c.PSA_Stage__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>Disposition__c.PSA_Ball_In_Court__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>Disposition__c.PSA_Execution_Date__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
     <!--
         The two CHILD-side offer links (scope addition, same day). These sit on LOI__c and
         Contract_Review__c, not on Disposition__c, and they are stamped onto the child inside the
         same Database.insert that creates it - no queueable, no backfill dependency for NEW rows.
-        editable = true for the same backfill reason as the two lookups above, and because a user
-        working a hand-created second-round LOI may legitimately need to set the link themselves.
+        editable = true because a user working a hand-created second-round LOI may legitimately
+        need to set the link themselves.
+        ⚠ AMENDED 2026-08-25: this sentence previously opened "editable = true for the same
+        backfill reason as the two lookups above". Those two lookups
+        (Disposition__c.Primary_LOI__c / Primary_PSA__c) and the one-off `sf data update record`
+        backfill that justified their edit grant were BOTH deleted on this date - see the removal
+        note further up this file - so only the human-editing half of the reason survives. These
+        two child-side fields are NOT affected by that removal: they live on LOI__c and
+        Contract_Review__c, and the user's decision named Disposition__c only.
 
         ⚠ BOTH OBJECTS ARE SHARED WITH THE ACQUISITION SIDE. The field is simply blank on every
         acquisition row (they have no Disposition__c and therefore no offers); granting read here

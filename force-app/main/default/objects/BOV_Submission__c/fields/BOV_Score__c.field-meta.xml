@@ -1,19 +1,47 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!-- ═══════════════════════════════════════════════════════════════════════════════════════
+         🔴 THE VALUE BASIS MOVED OFF THE DISPOSITION ON 2026-08-25 (user decision), AND THE OLD
+            FORM MUST NOT COME BACK.
+         Until this date the 50-point Value term divided by `Disposition__r.Asking_Price__c`
+         (label "Expected Value"). `Asking_Price__c` is RETIRED from the disposition flow — the
+         user removed it from the record page — and the basis is now the property asset's own
+         `Target_Sale_Price__c`, TWO hops out: Disposition__r.Property_Asset__r.
+         The field itself is NOT deleted (additive retirement, per this repo's standing rule); it
+         is simply no longer read by anything on the disposition side. Do not "restore" it here.
+
+         ⚠ THE GUARD IS DELIBERATELY IDENTICAL IN SHAPE TO THE OLD ONE — blank OR <= 0 OR no
+         BOV_Amount__c returns **null**, with formulaTreatBlanksAs = BlankAsBlank. That null means
+         "NOT SCOREABLE", never "worst": `BovAutoSelectionService` skips null-scored rows entirely
+         and `BovSubmissionSelector`'s `ORDER BY BOV_Score__c DESC NULLS LAST` only keeps them off
+         the front of the list. Changing the guard to a 0 would silently make every unpriced sale
+         auto-appoint whichever broker quoted first.
+
+         ⚠ A NULL `Property_Asset__c` LOOKUP ON THE DISPOSITION IS COVERED BY THE SAME `ISBLANK`.
+         The lookup is not required (deleteConstraint SetNull), so the whole chain can be null;
+         ISBLANK over a broken chain is TRUE, so such a row scores null rather than erroring.
+
+         ⚠ CROSS-OBJECT COST: two relationship hops, well inside the platform's limits, and
+         formula fields compute in SYSTEM context so the FLS on Target_Sale_Price__c does not
+         gate this field. The USER_MODE FLS question applies only to the SOQL that reads the same
+         value — see DispositionSelector.selectApprovalContextById.
+         ═══════════════════════════════════════════════════════════════════════════════════════ -->
     <fullName>BOV_Score__c</fullName>
+    <description>Composite BOV ranking score, 0-100. Value 50 pts (BOV Amount vs the Disposition&apos;s Property Asset Target Sale Price), Commission 25 pts, Speed 25 pts. Blank when the asset has no Target Sale Price (or it is zero or less), or the BOV has no amount.</description>
     <externalId>false</externalId>
     <formula>IF(
     OR(
-        ISBLANK(Disposition__r.Asking_Price__c),
-        Disposition__r.Asking_Price__c &lt;= 0,
+        ISBLANK(Disposition__r.Property_Asset__r.Target_Sale_Price__c),
+        Disposition__r.Property_Asset__r.Target_Sale_Price__c &lt;= 0,
         ISBLANK(BOV_Amount__c)
     ),
     null,
-    (50 * MIN(BOV_Amount__c / Disposition__r.Asking_Price__c, 1.10) / 1.10)
+    (50 * MIN(BOV_Amount__c / Disposition__r.Property_Asset__r.Target_Sale_Price__c, 1.10) / 1.10)
     + IF(ISBLANK(Commission_Rate__c), 0, 25 * (3 - MAX(1, MIN(3, Commission_Rate__c * 100))) / 2)
     + IF(ISBLANK(Days_To_Market__c), 0, 25 * (60 - MAX(15, MIN(60, Days_To_Market__c))) / 45)
 )</formula>
     <formulaTreatBlanksAs>BlankAsBlank</formulaTreatBlanksAs>
+    <inlineHelpText>Auto-calculated. The value half is scored against the property asset&apos;s Target Sale Price - if that is blank or zero this score stays blank, and a blank score is not a rank, so the response cannot be auto-selected.</inlineHelpText>
     <label>BOV Score</label>
     <precision>5</precision>
     <required>false</required>

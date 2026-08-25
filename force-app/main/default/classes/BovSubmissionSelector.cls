@@ -716,7 +716,10 @@ public with sharing class BovSubmissionSelector {
      * unfalsifiable from the UI.
      * ⚠ `NULLS LAST` is load-bearing and is NOT the same as "nulls are worst". The CALLER skips
      * null-scored rows entirely (a null score is not a rank — `BOV_Score__c` returns null until the
-     * parent has an `Asking_Price__c`); `NULLS LAST` merely keeps them from crowding the front of
+     * parent Disposition's PROPERTY ASSET has a `Target_Sale_Price__c`; ⚠ it said `Asking_Price__c`
+     * on the Disposition until 2026-08-25, when that field was retired from the disposition flow and
+     * the score's value basis moved two hops out to the asset); `NULLS LAST` merely keeps them from
+     * crowding the front of
      * the list. `Id ASC` is not decoration either: `CreatedDate` alone ties for two rows created in
      * the same transaction — every bulk insert and every seed script — and SOQL promises no order
      * for a fully-tied sort.

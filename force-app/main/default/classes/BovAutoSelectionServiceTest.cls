@@ -6,20 +6,37 @@
  * ══════════════════════════════════════════════════════════════════════════════════════════
  * 🔴 READ THIS FIRST: WHY THE OBVIOUS VERSION OF EVERY TEST BELOW WOULD BE VACUOUS
  * ══════════════════════════════════════════════════════════════════════════════════════════
- * `BOV_Score__c` is a FORMULA returning **null** when the parent Disposition has no
- * `Asking_Price__c`, and **every Disposition `TestDataFactory.createDispositions` builds leaves
- * that field blank** — the factory's own header says so. Under this service's "a null score is not
- * a rank" rule, a test written on an ordinary factory fixture therefore exercises the
+ * `BOV_Score__c` is a FORMULA returning **null** when its value basis is blank or `<= 0`, and the
+ * default factory fixture has no basis — so a test written on one exercises the
  * NO-SCOREABLE-CANDIDATE branch and NOTHING ELSE, while passing and looking complete. That is the
  * single most likely way this feature ships untested.
  *
- * THE COUNTERMEASURE IS TWO-PART AND BOTH PARTS ARE MANDATORY:
+ * ⚠ THE BASIS MOVED ON 2026-08-25 AND THE SENTENCE ABOVE ONLY SURVIVED BECAUSE THE FACTORY WAS
+ * CHANGED TO KEEP IT TRUE. Read this before trusting any fixture in this file:
+ *   BEFORE — basis = `Disposition__r.Asking_Price__c`, never set by `createDispositions`.
+ *   ALMOST — basis = `Disposition__r.Property_Asset__r.Target_Sale_Price__c`, and
+ *            `TestDataFactory.createPropertyAssets` shipped a non-null default (1200000 + i*1000).
+ *            Every fixture here would have become SCOREABLE, and every test whose SUBJECT is the
+ *            null-score branch — `everyScoreNull_appointsNobodyAndWritesNothing`, the two
+ *            `unpricedDispositionAt` tests — would have gone on passing while proving the
+ *            OPPOSITE. Same defect, opposite direction, invisible from inside the test either way.
+ *   NOW    — that default was REMOVED from `createPropertyAssets`. Unpriced is the default again.
+ *
+ * THE COUNTERMEASURE IS NOW THREE-PART AND ALL THREE ARE MANDATORY:
  *   1. Every test that needs a real ranking builds its parent with
- *      `TestDataFactory.createPricedDisposition(assetId(), ASKING_PRICE, false)`.
- *   2. `assertScoresAreRanked(...)` is called INSIDE those tests, BEFORE the assertions that
- *      matter. It re-reads `BOV_Score__c` from the database and fails if any score is null or if
+ *      `TestDataFactory.createPricedDisposition(assetId(), ASKING_PRICE, false)` — which pins the
+ *      ASSET's `Target_Sale_Price__c` to `ASKING_PRICE`. ⚠ PIN IT WELL ABOVE THE BOV AMOUNTS: a
+ *      basis at or under them saturates the formula's `MIN(ratio, 1.10)` cap and every score TIES,
+ *      non-null and useless, which is why `ASKING_PRICE` is 1,500,000 and not the old default.
+ *   2. 🔴 Every test whose subject is the NULL-score branch goes through
+ *      `unpricedDispositionAt(...)`, which calls `TestDataFactory.unpriceAsset(...)` explicitly
+ *      rather than relying on the factory default staying blank. The factory default has now been
+ *      the wrong way round once; the explicit call is what makes these tests independent of it.
+ *   3. `assertScoresAreRanked(...)` is called INSIDE the ranking tests, BEFORE the assertions that
+ *      matter. It re-reads `BOV_Score__c` from the database and fails if any score is null OR if
  *      they are all equal. 🔴 IT IS NOT DEFENSIVE CLUTTER — it is the only thing standing between
- *      this class and a suite that is green because nothing was scoreable.
+ *      this class and a suite that is green because nothing was scoreable, and the only thing that
+ *      would catch an all-saturated tie.
  *
  * HOW THE SCORES ARE MADE TO DIFFER, CONCRETELY. `TestDataFactory.createBovSubmissions` holds
  * `Commission_Rate__c` (2.5) and `Days_To_Market__c` (30) constant, so with a fixed
@@ -78,8 +95,21 @@ private class BovAutoSelectionServiceTest {
         return d;
     }
 
-    /** An ordinary factory disposition — NO asking price, so every child scores null. */
+    /**
+     * A disposition whose ASSET carries NO `Target_Sale_Price__c`, so every child scores null.
+     *
+     * 🔴 THE `unpriceAsset` CALL IS DELIBERATE AND IS NOT REDUNDANT WITH THE FACTORY DEFAULT.
+     * `createPropertyAssets` ships no target sale price today, so a plain `createDisposition` would
+     * also score null — but it shipped one until 2026-08-25, when the score's basis moved onto the
+     * asset and that default had to be removed to stop it inverting this very fixture. The explicit
+     * call is what makes this method independent of that decision being re-made: if a target sale
+     * price ever comes back to the factory, these tests keep testing what they say.
+     * ⚠ It updates the SHARED @testSetup asset, so every disposition in this transaction is
+     * unpriced afterwards. No test here mixes priced and unpriced fixtures; if one ever needs to,
+     * it must build a SECOND asset rather than re-price this one mid-test.
+     */
     private static Disposition__c unpricedDispositionAt(String stage) {
+        TestDataFactory.unpriceAsset(assetId());
         Disposition__c d = TestDataFactory.createDisposition(
             assetId(), TestDataFactory.DISPOSITION_RT_ON_MARKET, false);
         d.Disposition_Stage__c = stage;
@@ -277,7 +307,8 @@ private class BovAutoSelectionServiceTest {
         for (BOV_Submission__c s : stateOf(dispositionId).values()) {
             Assert.isNotNull(s.BOV_Score__c,
                 '🔴 FIXTURE PRECONDITION FAILED: BOV_Score__c is NULL on ' + s.Id + '. The parent '
-                + 'Disposition has no Asking_Price__c (use TestDataFactory.createPricedDisposition) '
+                + 'Disposition\'s ASSET has no Target_Sale_Price__c (use '
+                + 'TestDataFactory.createPricedDisposition) '
                 + 'or the row has no BOV_Amount__c. Every ranking assertion in this test would pass '
                 + 'VACUOUSLY, by exercising the no-scoreable-candidate branch instead.');
             distinct.add(s.BOV_Score__c);
@@ -404,8 +435,9 @@ private class BovAutoSelectionServiceTest {
 
         for (BOV_Submission__c s : stateOf(d.Id).values()) {
             Assert.isNull(s.BOV_Score__c,
-                'precondition: an unpriced disposition must score every child NULL — if this row '
-                + 'has a score the fixture gained an Asking_Price__c and the test below is a lie');
+                'precondition: a disposition whose ASSET has no Target_Sale_Price__c must score '
+                + 'every child NULL — if this row has a score, unpricedDispositionAt stopped '
+                + 'calling TestDataFactory.unpriceAsset and every assertion below is a lie');
         }
         Assert.areEqual(0, selectedIdsOn(d.Id).size(),
             '🔴 NOTHING may be appointed when no candidate is scoreable. Selecting the oldest row '
@@ -417,56 +449,123 @@ private class BovAutoSelectionServiceTest {
     }
 
     /**
-     * 🔴 THE PRIMARY PRODUCTION PATH: responses arrive first, the sale is priced LATER, and the
-     * appointment must happen on the PARENT save with the user issuing no child DML at all.
-     * Without `DispositionTriggerHandler.afterUpdate` -> `reselectForRepricedDispositions` this
-     * fails, and in production it would fail SILENTLY — green deploy, green tests, no error.
+     * 🔴 THE PRIMARY PRODUCTION PATH: responses arrive first, the TARGET SALE PRICE is set LATER on
+     * the PROPERTY ASSET, and the appointment must happen on THAT save with the user issuing no
+     * child DML at all. Without `PropertyAssetTriggerHandler.afterUpdate` ->
+     * `reselectForRepricedDispositions` this fails, and in production it would fail SILENTLY —
+     * green deploy, green tests, no error.
+     *
+     * ⚠ THE TRIGGERING SAVE IS ON `Property_Asset__c`, NOT `Disposition__c`, SINCE 2026-08-25.
+     * This test used to `update new Disposition__c(Id = d.Id, Asking_Price__c = ASKING_PRICE)`.
+     * `Asking_Price__c` is retired from the disposition flow and still COMPILES, so the old line
+     * would still have run — and would have asserted nothing, because no disposition field feeds
+     * `BOV_Score__c` any more. This is the falsifier for the hook having moved objects.
      */
     @isTest
-    static void pricingTheSaleAfterTheResponsesArrived_appointsTheWinner() {
+    static void pricingTheAssetAfterTheResponsesArrived_appointsTheWinner() {
         Disposition__c d = unpricedDispositionAt('BOV Outreach');
         BOV_Submission__c weak = bov(d.Id, 900000);
         BOV_Submission__c strong = bov(d.Id, 1400000);
         insert new List<BOV_Submission__c>{ weak, strong };
         Assert.areEqual(0, selectedIdsOn(d.Id).size(),
-            'precondition: nothing is appointed while the sale is unpriced');
+            'precondition: nothing is appointed while the asset carries no target sale price');
 
         Test.startTest();
         Integer dmlBefore = Limits.getDmlStatements();
-        update new Disposition__c(Id = d.Id, Asking_Price__c = ASKING_PRICE);
+        update new Property_Asset__c(Id = assetId(), Target_Sale_Price__c = ASKING_PRICE);
         Integer dmlUsed = Limits.getDmlStatements() - dmlBefore;
         Test.stopTest();
 
         assertScoresAreRanked(d.Id);
         assertExactlyOneSelected(d.Id, strong.Id,
-            '🔴 Pricing the sale must re-rank every child and appoint the winner. Zero Selected '
-            + 'rows means the PARENT hook is missing — and on a live sale there may be no further '
-            + 'reason to edit a BOV again, so the feature would simply never fire.');
+            '🔴 Pricing the ASSET must re-rank every child of every disposition under it and '
+            + 'appoint the winner. Zero Selected rows means the asset-side hook is missing or is '
+            + 'still watching Disposition__c.Asking_Price__c — and on a live sale there may be no '
+            + 'further reason to edit a BOV again, so the feature would simply never fire.');
         Assert.areEqual(2, dmlUsed,
-            'ONE for this test\'s own parent update, plus ONE for the service\'s single bulk child '
+            'ONE for this test\'s own ASSET update, plus ONE for the service\'s single bulk child '
             + 'write. The USER issues zero child DML — that is the whole point of the parent hook.');
     }
 
-    /** An ordinary Disposition save that does not touch the price must cost nothing. */
+    /**
+     * An ordinary Property Asset save that does not touch the target sale price must cost nothing.
+     *
+     * 🔴 THIS CONTRACT MATTERS MORE ON `Property_Asset__c` THAN IT EVER DID ON `Disposition__c`.
+     * The asset is a Property Management object saved constantly by a team with no disposition
+     * involvement; a query on every asset save would land in every PM bulk test in the repo. The
+     * `repricedAssetIds.isEmpty()` early return in the service is what this asserts.
+     *
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * 🔴 IT CALLS THE SERVICE DIRECTLY INSTEAD OF SAVING AN ASSET, AND BOTH HALVES OF THAT ARE
+     *    DELIBERATE. REWRITTEN 2026-08-25 AFTER IT FAILED IN DEPLOY (expected 0, actual 1).
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * REASON 1 — A TRIGGER-LEVEL QUERY COUNT IS THE WRONG INSTRUMENT FOR A ONE-HOOK CONTRACT.
+     * `Limits.getQueries()` around an `update` measures EVERY consumer on
+     * `PropertyAssetTriggerHandler`, not this one. `OnboardingAutoCreateService.ensureOnClosing`
+     * runs first and is at zero cost only because the factory asset has no `Closing_Date__c` — so
+     * the old assertion silently depended on an unrelated fixture detail, and the day a third
+     * consumer joins that trigger (or the factory starts stamping a closing date) it fails while
+     * naming THIS hook. The claim is "the reprice hook does not query when the price is unchanged";
+     * the measurement must therefore bracket the reprice hook and nothing else.
+     *
+     * REASON 2 — THE ACTUAL CAUSE OF THE DEPLOY FAILURE, RECORDED SO IT IS NOT RE-DIAGNOSED WRONG.
+     * It was NOT `ensureOnClosing` (measured: it early-returns at zero cost here). The one query
+     * was `assetId()` — `[SELECT Id FROM Property_Asset__c LIMIT 1]` — sitting in the ARGUMENT LIST
+     * of the `update` and therefore evaluated AFTER `queriesBefore` had already been read. ⚠ THIS
+     * IS THE SECOND TIME THIS CLASS HAS BEEN BITTEN BY IT: the identical trap is written up at
+     * `everyScoreNull_appointsNobodyAndWritesNothing` ("a governor assertion that brackets its own
+     * arguments measures the helper, not the code under test"). Every value the measured statement
+     * needs is now hoisted ABOVE `Test.startTest()`.
+     *
+     * REASON 3 — WHY THE FALSIFIER CALL IS NOT PADDING. A method that had been deleted, stubbed, or
+     * short-circuited at its first line would also report zero queries, so a lone `areEqual(0, ...)`
+     * cannot tell "the equality check worked" from "nothing ran". The second call, with the price
+     * genuinely changed, is what makes the zero mean something: it must cost AT LEAST the
+     * disposition lookup. Delete it and this test stops being able to fail for the right reason.
+     */
     @isTest
-    static void aDispositionSaveThatDoesNotChangeThePrice_costsNothing() {
+    static void anAssetSaveThatDoesNotChangeThePrice_costsNothing() {
         Disposition__c d = pricedDispositionAt('BOV Outreach');
         BOV_Submission__c only = bov(d.Id, 1000000);
         insert only;
 
+        // 🔴 EVERYTHING THE MEASURED CALLS NEED IS BUILT HERE, ABOVE THE WINDOW. See REASON 2.
+        Id aId = assetId();
+        List<Property_Asset__c> unchanged = new List<Property_Asset__c>{
+            new Property_Asset__c(Id = aId, Target_Sale_Price__c = ASKING_PRICE)
+        };
+        Map<Id, Property_Asset__c> samePrice = new Map<Id, Property_Asset__c>{
+            aId => new Property_Asset__c(Id = aId, Target_Sale_Price__c = ASKING_PRICE)
+        };
+        // The falsifier's inputs — a REAL change, same asset. Also hoisted.
+        List<Property_Asset__c> repriced = new List<Property_Asset__c>{
+            new Property_Asset__c(Id = aId, Target_Sale_Price__c = ASKING_PRICE + 250000)
+        };
+
         Test.startTest();
         Integer queriesBefore = Limits.getQueries();
         Integer dmlBefore = Limits.getDmlStatements();
-        update new Disposition__c(Id = d.Id, Title_Company__c = 'Unrelated Edit Title Co');
+        BovAutoSelectionService.reselectForRepricedDispositions(unchanged, samePrice);
         Integer queriesUsed = Limits.getQueries() - queriesBefore;
         Integer dmlUsed = Limits.getDmlStatements() - dmlBefore;
+
+        // THE FALSIFIER — same method, same asset, price genuinely moved. See REASON 3.
+        Integer queriesBeforeReprice = Limits.getQueries();
+        BovAutoSelectionService.reselectForRepricedDispositions(repriced, samePrice);
+        Integer queriesUsedOnReprice = Limits.getQueries() - queriesBeforeReprice;
         Test.stopTest();
 
-        Assert.areEqual(1, dmlUsed,
-            'The zero-DML fast path: an unrelated Disposition edit must not write any submission');
-        Assert.isTrue(queriesUsed <= 2, // the stage-entry idempotency read is pre-existing
-            'The ZERO-QUERY fast path on the reprice hook: an edit that does not change '
-            + 'Asking_Price__c must not issue the selection query. Queries used: ' + queriesUsed);
+        Assert.areEqual(0, queriesUsed,
+            'The ZERO-QUERY fast path on the reprice hook: a chunk in which no asset changed '
+            + 'Target_Sale_Price__c must return BEFORE the disposition lookup, let alone the '
+            + 'selection query. Queries used: ' + queriesUsed);
+        Assert.areEqual(0, dmlUsed,
+            'and ZERO DML — an unchanged price must not write any submission');
+        Assert.isTrue(queriesUsedOnReprice >= 1,
+            'FALSIFIER: with the price actually changed the SAME method must issue at least the '
+            + 'disposition lookup. Zero here means the assertions above are passing because the '
+            + 'method does nothing at all, not because the equality check works. '
+            + 'Queries used: ' + queriesUsedOnReprice);
     }
 
     // ═════════════════════════════════════════════════════════════════════════════════════════
@@ -724,25 +823,25 @@ private class BovAutoSelectionServiceTest {
             + 'planFor have been collapsed back into one winner.');
     }
 
-    /** The parent-reprice path must not displace a preferred broker either. */
+    /** The asset-reprice path must not displace a preferred broker either. */
     @isTest
-    static void pricingTheSale_cannotDisplaceAPreferredBroker() {
+    static void pricingTheAsset_cannotDisplaceAPreferredBroker() {
         Disposition__c d = unpricedDispositionAt('BOV Outreach');
         BOV_Submission__c preferred = unquotedPreferredBov(d.Id);
         BOV_Submission__c strong = bov(d.Id, 1400000);
         insert new List<BOV_Submission__c>{ preferred, strong };
         assertSlots(d.Id, preferred.Id, null,
-            'precondition: the preferred row holds its slot even while the sale is unpriced (score '
-            + 'is irrelevant on that path), and the SCORED slot is EMPTY because nothing is '
-            + 'scoreable yet — which is what makes the reprice below observable');
+            'precondition: the preferred row holds its slot even while the asset carries no target '
+            + 'sale price (score is irrelevant on that path), and the SCORED slot is EMPTY because '
+            + 'nothing is scoreable yet — which is what makes the reprice below observable');
 
         Test.startTest();
-        update new Disposition__c(Id = d.Id, Asking_Price__c = ASKING_PRICE);
+        update new Property_Asset__c(Id = assetId(), Target_Sale_Price__c = ASKING_PRICE);
         Test.stopTest();
 
         assertSlots(d.Id, preferred.Id, strong.Id,
-            'Pricing the sale materialises every scored response. None of them may touch the '
-            + 'PREFERRED slot — and the parent hook must still fill the SCORED slot, which is the '
+            'Pricing the asset materialises every scored response. None of them may touch the '
+            + 'PREFERRED slot — and the asset hook must still fill the SCORED slot, which is the '
             + 'whole reason that hook exists (a sale priced after its BOV responses arrived gets '
             + 'no scored appointment at all without it).');
     }

@@ -486,6 +486,29 @@
          and renders the disposition-fields Details section by default - silently, which is
          precisely how Release Materials broke.
 
+         🔴 AMENDED AGAIN 2026-08-25 (LATEST) - THE FIVE-WAY PARTITION IS BACK TO TWO WAYS.
+         THE TABLE ABOVE IS HISTORY, NOT THE CURRENT STATE. The three single-EQUAL Details
+         surfaces were deleted with the child-mirror fields they rendered (see the retraction
+         at the end of the LOI/PSA entry below). The main region now holds exactly TWO stage
+         surfaces again, and they are once more exact complements:
+             c_dispositionMain       BOV Outreach, Active Listing, Closing, Sale Closes,
+                                     Release Materials          (5, OR-of-EQUAL allowlist)
+             flexipage_fieldSection  Disposition Readiness, Broker Selection, Offer Selection,
+                                     NDA, LOI, PSA              (6, AND-of-NE inverse)
+         5 + 6 = 11, the full Disposition_Stage__c value set, every stage still rendering
+         EXACTLY ONE surface.
+         🔴 THREE NE CRITERIA WERE REMOVED FROM flexipage_fieldSection IN THE SAME CHANGE AS THE
+         THREE SECTIONS, AND THAT PAIRING IS THE WHOLE POINT. Deleting the sections alone would
+         have left NDA / LOI / PSA excluded by the NE chain AND claimed by nobody - three stages
+         rendering NO Details section at all, silently. That is the Release Materials bug in
+         mirror image, and it is exactly what the operational rule above predicts. Its
+         booleanFilter went from "1 AND 2 AND 3 AND 4 AND 5 AND 6 AND 7 AND 8" to
+         "1 AND 2 AND 3 AND 4 AND 5" in the same edit - a stale filter numbering is its own
+         silent failure.
+         ⚠ THE OPERATIONAL RULE ITSELF IS UNCHANGED and still governs: the NE chain must exclude
+         every stage claimed by any OTHER surface in this region and nothing else. It now happens
+         to have only one other surface to answer to.
+
          =====================================================================
          2026-08-25 - LOI-STAGE AND PSA-STAGE DETAILS ADDED (flexipage_fieldSection_loiDetails,
          flexipage_fieldSection_psaDetails - two native fieldSections).
@@ -523,6 +546,25 @@
          itemInstances. lightning-output-field renders NOTHING for an unreadable field - it looks
          like an empty value, not an error - so read on all nine must be confirmed in
          DPEG_Disposition_View and DPEG_Disposition_Edit.
+
+         🔴 RETRACTED IN FULL 2026-08-25 (LATEST) - flexipage_fieldSection_loiDetails AND
+         flexipage_fieldSection_psaDetails NO LONGER EXIST, AND NEITHER DOES
+         flexipage_fieldSection_ndaDetails. The entry above (and the 2026-08-24 NDA one it
+         copies) is kept verbatim because it records TWO rejected approaches and one measured
+         platform fact worth keeping - a FlexiPage fieldInstance cannot traverse a relationship,
+         which is why the mirror-formula route was chosen over naming Primary_*__r fields
+         directly. That fact is still true. What died is the REQUIREMENT it served.
+         The user's decision: "why have you created NDA, PSA and LOI fields on Disposition
+         object - we don't need them. Remove them." All three sections, their nine facet
+         regions, the two lookups (Primary_LOI__c / Primary_PSA__c), the nine LOI_*__c /
+         PSA_*__c formulas and the five NDA_*__c formulas were deleted together
+         (manifest/remove-disposition-child-mirrors/). The LOI / PSA / NDA records are read on
+         their OWN pages, reached from the loisList / contractReviewsList / ndasList related
+         lists still present in this region.
+         ⚠ Disposition__c.Primary_NDA__c SURVIVES - it pre-dates all of this work (D16.2,
+         Tranche 3A) and DispositionNdaStampQueueable still writes it - but NOTHING ON THIS PAGE
+         READS IT ANY MORE. Do not re-add a field to this page on the strength of the paragraphs
+         above without re-reading the retraction below the partition table.
 
          =====================================================================
          2026-08-25 - BOV PREFERRED BROKER / RESPONSES CARDS ADDED TO THE SIDEBAR AS A THREE-CARD
@@ -997,242 +1039,6 @@
     </flexiPageRegions>
     <flexiPageRegions>
         <itemInstances>
-            <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>readonly</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.NDA_Broker__c</fieldItem>
-                <identifier>FieldNdaBroker</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <itemInstances>
-            <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>readonly</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.NDA_Status__c</fieldItem>
-                <identifier>FieldNdaStatus</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <itemInstances>
-            <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>readonly</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.NDA_Date_Sent__c</fieldItem>
-                <identifier>FieldNdaDateSent</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <name>Facet_NdaDetailsColumn1</name>
-        <type>Facet</type>
-    </flexiPageRegions>
-    <flexiPageRegions>
-        <itemInstances>
-            <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>readonly</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.NDA_Date_Signed__c</fieldItem>
-                <identifier>FieldNdaDateSigned</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <itemInstances>
-            <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>readonly</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.NDA_Expiry_Date__c</fieldItem>
-                <identifier>FieldNdaExpiryDate</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <name>Facet_NdaDetailsColumn2</name>
-        <type>Facet</type>
-    </flexiPageRegions>
-    <flexiPageRegions>
-        <itemInstances>
-            <componentInstance>
-                <componentInstanceProperties>
-                    <name>body</name>
-                    <value>Facet_NdaDetailsColumn1</value>
-                </componentInstanceProperties>
-                <componentName>flexipage:column</componentName>
-                <identifier>flexipage_column_ndaDetails1</identifier>
-            </componentInstance>
-        </itemInstances>
-        <itemInstances>
-            <componentInstance>
-                <componentInstanceProperties>
-                    <name>body</name>
-                    <value>Facet_NdaDetailsColumn2</value>
-                </componentInstanceProperties>
-                <componentName>flexipage:column</componentName>
-                <identifier>flexipage_column_ndaDetails2</identifier>
-            </componentInstance>
-        </itemInstances>
-        <name>Facet_NdaDetailsColumns</name>
-        <type>Facet</type>
-    </flexiPageRegions>
-    <flexiPageRegions>
-        <itemInstances>
-            <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>readonly</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.LOI_Stage__c</fieldItem>
-                <identifier>FieldLoiStage</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <itemInstances>
-            <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>readonly</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.LOI_Signed_Date__c</fieldItem>
-                <identifier>FieldLoiSignedDate</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <itemInstances>
-            <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>readonly</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.LOI_Final_Agreed_Price__c</fieldItem>
-                <identifier>FieldLoiFinalAgreedPrice</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <name>Facet_LoiDetailsColumn1</name>
-        <type>Facet</type>
-    </flexiPageRegions>
-    <flexiPageRegions>
-        <itemInstances>
-            <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>readonly</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.LOI_Counter_Price__c</fieldItem>
-                <identifier>FieldLoiCounterPrice</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <itemInstances>
-            <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>readonly</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.LOI_Counter_Received_Date__c</fieldItem>
-                <identifier>FieldLoiCounterReceivedDate</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <name>Facet_LoiDetailsColumn2</name>
-        <type>Facet</type>
-    </flexiPageRegions>
-    <flexiPageRegions>
-        <itemInstances>
-            <componentInstance>
-                <componentInstanceProperties>
-                    <name>body</name>
-                    <value>Facet_LoiDetailsColumn1</value>
-                </componentInstanceProperties>
-                <componentName>flexipage:column</componentName>
-                <identifier>flexipage_column_loiDetails1</identifier>
-            </componentInstance>
-        </itemInstances>
-        <itemInstances>
-            <componentInstance>
-                <componentInstanceProperties>
-                    <name>body</name>
-                    <value>Facet_LoiDetailsColumn2</value>
-                </componentInstanceProperties>
-                <componentName>flexipage:column</componentName>
-                <identifier>flexipage_column_loiDetails2</identifier>
-            </componentInstance>
-        </itemInstances>
-        <name>Facet_LoiDetailsColumns</name>
-        <type>Facet</type>
-    </flexiPageRegions>
-    <flexiPageRegions>
-        <itemInstances>
-            <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>readonly</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.PSA_Negotiation_Status__c</fieldItem>
-                <identifier>FieldPsaNegotiationStatus</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <itemInstances>
-            <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>readonly</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.PSA_Stage__c</fieldItem>
-                <identifier>FieldPsaStage</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <name>Facet_PsaDetailsColumn1</name>
-        <type>Facet</type>
-    </flexiPageRegions>
-    <flexiPageRegions>
-        <itemInstances>
-            <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>readonly</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.PSA_Ball_In_Court__c</fieldItem>
-                <identifier>FieldPsaBallInCourt</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <itemInstances>
-            <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>readonly</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.PSA_Execution_Date__c</fieldItem>
-                <identifier>FieldPsaExecutionDate</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <name>Facet_PsaDetailsColumn2</name>
-        <type>Facet</type>
-    </flexiPageRegions>
-    <flexiPageRegions>
-        <itemInstances>
-            <componentInstance>
-                <componentInstanceProperties>
-                    <name>body</name>
-                    <value>Facet_PsaDetailsColumn1</value>
-                </componentInstanceProperties>
-                <componentName>flexipage:column</componentName>
-                <identifier>flexipage_column_psaDetails1</identifier>
-            </componentInstance>
-        </itemInstances>
-        <itemInstances>
-            <componentInstance>
-                <componentInstanceProperties>
-                    <name>body</name>
-                    <value>Facet_PsaDetailsColumn2</value>
-                </componentInstanceProperties>
-                <componentName>flexipage:column</componentName>
-                <identifier>flexipage_column_psaDetails2</identifier>
-            </componentInstance>
-        </itemInstances>
-        <name>Facet_PsaDetailsColumns</name>
-        <type>Facet</type>
-    </flexiPageRegions>
-    <flexiPageRegions>
-        <itemInstances>
             <componentInstance>
                 <componentInstanceProperties>
                     <name>recordId</name>
@@ -1286,7 +1092,7 @@
                 <componentName>flexipage:fieldSection</componentName>
                 <identifier>flexipage_fieldSection</identifier>
                 <visibilityRule>
-                    <booleanFilter>1 AND 2 AND 3 AND 4 AND 5 AND 6 AND 7 AND 8</booleanFilter>
+                    <booleanFilter>1 AND 2 AND 3 AND 4 AND 5</booleanFilter>
                     <criteria>
                         <leftValue>{!Record.Disposition_Stage__c}</leftValue>
                         <operator>NE</operator>
@@ -1310,97 +1116,7 @@
                     <criteria>
                         <leftValue>{!Record.Disposition_Stage__c}</leftValue>
                         <operator>NE</operator>
-                        <rightValue>NDA</rightValue>
-                    </criteria>
-                    <criteria>
-                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
-                        <operator>NE</operator>
                         <rightValue>Release Materials</rightValue>
-                    </criteria>
-                    <criteria>
-                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
-                        <operator>NE</operator>
-                        <rightValue>LOI</rightValue>
-                    </criteria>
-                    <criteria>
-                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
-                        <operator>NE</operator>
-                        <rightValue>PSA</rightValue>
-                    </criteria>
-                </visibilityRule>
-            </componentInstance>
-        </itemInstances>
-        <itemInstances>
-            <componentInstance>
-                <componentInstanceProperties>
-                    <name>columns</name>
-                    <value>Facet_NdaDetailsColumns</value>
-                </componentInstanceProperties>
-                <componentInstanceProperties>
-                    <name>horizontalAlignment</name>
-                    <value>false</value>
-                </componentInstanceProperties>
-                <componentInstanceProperties>
-                    <name>label</name>
-                    <value>NDA Details</value>
-                </componentInstanceProperties>
-                <componentName>flexipage:fieldSection</componentName>
-                <identifier>flexipage_fieldSection_ndaDetails</identifier>
-                <visibilityRule>
-                    <criteria>
-                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
-                        <operator>EQUAL</operator>
-                        <rightValue>NDA</rightValue>
-                    </criteria>
-                </visibilityRule>
-            </componentInstance>
-        </itemInstances>
-        <itemInstances>
-            <componentInstance>
-                <componentInstanceProperties>
-                    <name>columns</name>
-                    <value>Facet_LoiDetailsColumns</value>
-                </componentInstanceProperties>
-                <componentInstanceProperties>
-                    <name>horizontalAlignment</name>
-                    <value>false</value>
-                </componentInstanceProperties>
-                <componentInstanceProperties>
-                    <name>label</name>
-                    <value>LOI Details</value>
-                </componentInstanceProperties>
-                <componentName>flexipage:fieldSection</componentName>
-                <identifier>flexipage_fieldSection_loiDetails</identifier>
-                <visibilityRule>
-                    <criteria>
-                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
-                        <operator>EQUAL</operator>
-                        <rightValue>LOI</rightValue>
-                    </criteria>
-                </visibilityRule>
-            </componentInstance>
-        </itemInstances>
-        <itemInstances>
-            <componentInstance>
-                <componentInstanceProperties>
-                    <name>columns</name>
-                    <value>Facet_PsaDetailsColumns</value>
-                </componentInstanceProperties>
-                <componentInstanceProperties>
-                    <name>horizontalAlignment</name>
-                    <value>false</value>
-                </componentInstanceProperties>
-                <componentInstanceProperties>
-                    <name>label</name>
-                    <value>PSA Details</value>
-                </componentInstanceProperties>
-                <componentName>flexipage:fieldSection</componentName>
-                <identifier>flexipage_fieldSection_psaDetails</identifier>
-                <visibilityRule>
-                    <criteria>
-                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
-                        <operator>EQUAL</operator>
-                        <rightValue>PSA</rightValue>
                     </criteria>
                 </visibilityRule>
             </componentInstance>
