@@ -577,6 +577,24 @@
          Comparison Matrix. The rule was left untouched by instruction; widening it is a
          one-criterion edit if that changes.
          input (`@api recordId` in each JS). -->
+    <!--
+         =====================================================================
+         2026-08-25 - RETRIEVED FROM usman-dpeg AFTER USER EDITS IN APP BUILDER.
+         =====================================================================
+         The retrieve STRIPS every comment; the header block above was spliced back from the
+         previous commit, but the ~20 smaller inline comments that sat beside individual
+         components were NOT restored - they were position-bound to a layout the user has
+         since rearranged. Read `git show 52acda1:<this file>` for them.
+         Functional changes taken from the org in this retrieve (comment-stripped diff):
+           - Details section rebuilt: Property_Asset__r.Target_Sale_Price__c / NOI__c /
+             Market_Cap_Rate__c / Peak_Sell_Date__c spanned in.
+           - Submission_Deadline__c and Package_Sent__c now visible only at BOV Outreach;
+             Selected_Broker__c only at Broker Selection.
+           - Removed from Details: Responses_Received__c, Brokers_Contacted__c,
+             Disposition_Stage__c, Asking_Price__c, PSA_Executed__c, Title_Company__c,
+             Closing_Statement_Uploaded__c (the closing card and deal summary already show these).
+           - A second flexipage:column added inside the section.
+    -->
     <flexiPageRegions>
         <itemInstances>
             <componentInstance>
@@ -808,13 +826,6 @@
                 <identifier>highlightsPanel</identifier>
             </componentInstance>
         </itemInstances>
-        <!-- APPROVAL HISTORY (C-3). Renders the layout's related lists, one of which is
-             RelatedProcessHistoryList. The three property values below are copied verbatim from
-             the Opportunity_Record_Page and Portfolio_Deal_Record_Page instances of this same
-             component, so none of them is a guess. showActionBar matters most: Recall Approval
-             Request is a LIST LEVEL button on Approval History, so suppressing the action bar
-             would put the page back in the exact state C-3 describes.
-             MOVED main -> header 2026-08-21 (see the root comment's 2026-08-21 entry above for why). -->
         <itemInstances>
             <componentInstance>
                 <componentInstanceProperties>
@@ -863,12 +874,14 @@
         </itemInstances>
         <itemInstances>
             <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.Package_Sent__c</fieldItem>
-                <identifier>FieldPackageSent</identifier>
+                <fieldItem>Record.Property_Asset__r.Target_Sale_Price__c</fieldItem>
+                <identifier>RecordProperty_Asset_rTarget_Sale_Price_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Property_Asset__r.NOI__c</fieldItem>
+                <identifier>RecordProperty_Asset_rNOI_cField</identifier>
             </fieldInstance>
         </itemInstances>
         <itemInstances>
@@ -878,27 +891,14 @@
                     <value>none</value>
                 </fieldInstanceProperties>
                 <fieldItem>Record.Submission_Deadline__c</fieldItem>
-                <identifier>FieldSubmissionDeadline</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <itemInstances>
-            <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.Responses_Received__c</fieldItem>
-                <identifier>FieldResponsesReceived</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <itemInstances>
-            <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.Brokers_Contacted__c</fieldItem>
-                <identifier>FieldBrokersContacted</identifier>
+                <identifier>RecordSubmission_Deadline_cField</identifier>
+                <visibilityRule>
+                    <criteria>
+                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
+                        <operator>EQUAL</operator>
+                        <rightValue>BOV Outreach</rightValue>
+                    </criteria>
+                </visibilityRule>
             </fieldInstance>
         </itemInstances>
         <name>Facet-45162e4e-45bb-485f-9f9e-900e8998bd8e</name>
@@ -907,60 +907,33 @@
     <flexiPageRegions>
         <itemInstances>
             <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.Disposition_Stage__c</fieldItem>
-                <identifier>FieldDispositionStage</identifier>
+                <fieldItem>Record.Property_Asset__r.Market_Cap_Rate__c</fieldItem>
+                <identifier>RecordProperty_Asset_rMarket_Cap_Rate_cField</identifier>
             </fieldInstance>
         </itemInstances>
-        <!-- ASKING PRICE (added 2026-08-21, design item 2). Placed in this Details fieldSection
-             alongside Disposition_Stage__c/Broker__c/Selected_Broker__c per design §2.3. 🔴 THIS
-             SECTION'S OWN visibilityRule (further down this facet's parent flexipage_fieldSection,
-             a few hundred lines below) hides the WHOLE section - and this field with it - at BOV
-             Outreach, Active Listing, Closing and Sale Closes. That is an ACCEPTED, KNOWN
-             consequence (design Q-3), not a bug: see the field's own XML comment
-             (objects/Disposition__c/fields/Asking_Price__c.field-meta.xml) for the full writeup.
-             No field-level visibilityRule is added here - none is needed; the field should be
-             visible/editable at every stage this section already renders at, unlike Broker__c
-             below which needs a record-type-scoped rule of its own. -->
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Property_Asset__r.Peak_Sell_Date__c</fieldItem>
+                <identifier>RecordProperty_Asset_rPeak_Sell_Date_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
         <itemInstances>
             <fieldInstance>
                 <fieldInstanceProperties>
                     <name>uiBehavior</name>
                     <value>none</value>
                 </fieldInstanceProperties>
-                <fieldItem>Record.Asking_Price__c</fieldItem>
-                <identifier>FieldAskingPrice</identifier>
+                <fieldItem>Record.Package_Sent__c</fieldItem>
+                <identifier>RecordPackage_Sent_cField</identifier>
+                <visibilityRule>
+                    <criteria>
+                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
+                        <operator>EQUAL</operator>
+                        <rightValue>BOV Outreach</rightValue>
+                    </criteria>
+                </visibilityRule>
             </fieldInstance>
         </itemInstances>
-        <!-- BROKER LOOKUP (added 2026-08-20). The off-market broker pick becomes a validated
-             Contact lookup; Selected_Broker__c below stays as the read back of the string
-             stamped from it, so the two are DECISION and DISPLAY, not duplicates.
-
-             🔴 THE FIELD LEVEL visibilityRule IS REQUIRED, NOT DEFENSIVE. The enclosing Details
-             fieldSection's own rule (further down this file) is STAGE scoped, not record type
-             scoped: it hides the section at BOV Outreach, Active Listing, Closing and Sale
-             Closes, which means the section IS visible at Broker Selection FOR BOTH RECORD
-             TYPES. Dropping this lookup in unguarded would expose an empty, editable Broker
-             field on ON MARKET dispositions, where the broker comes from the BOV chain and this
-             field must stay null. An on-market analyst filling it in would create a record whose
-             lookup and BOV stamped text disagree with nothing reconciling them.
-
-             Is_On_Market__c is the same formula checkbox the four Dynamic Actions on this page
-             already test, and read on it is granted in both DPEG_Disposition_View and
-             DPEG_Disposition_Edit. ⚠ A visibility rule reading a field the running user cannot
-             see evaluates FALSE and hides the element with no error anywhere. That direction is
-             safe here (the off market only field disappears), but it is why the two permission
-             sets must land WITH OR BEFORE this file, never after.
-
-             XML SHAPE VERIFIED AGAINST DEPLOYED IN REPO PRECEDENT, NOT GUESSED: this is the
-             first fieldInstance level visibilityRule in THIS file, but not in this repo.
-             Lead_Record_Page.flexipage-meta.xml carries one on Record.Disqualification_Reason__c
-             with the same child order (fieldInstanceProperties, fieldItem, identifier,
-             visibilityRule) and a single criteria block with no booleanFilter. The lowercase
-             boolean rightValue matches the Is_On_Market__c criteria already in this file. -->
         <itemInstances>
             <fieldInstance>
                 <fieldInstanceProperties>
@@ -978,73 +951,50 @@
                 </visibilityRule>
             </fieldInstance>
         </itemInstances>
-        <!-- FieldSelectedBroker IS READ ONLY AS OF 2026-08-20, AND uiBehavior IS THE ONLY
-             CORRECT PLACE TO DO IT. Off-market, Selected_Broker__c is DERIVED: it is stamped
-             from Record.Broker__c by DispositionBrokerStampService in before-context, and that
-             stamp is keyed on Broker__c CHANGING. A hand edit of this field therefore leaves
-             Broker__c untouched, the stamp skips the record, and the save SUCCEEDS with the
-             lookup naming one broker and the text naming another - visible side by side on the
-             Broker_Selection_Approval page. Nothing reconciles the two until Broker__c next
-             changes. Disposition_Path_Off_Market refuses to put this field on the Broker
-             Selection step for exactly this reason; leaving it editable here reopened the hole
-             the path step closed.
-             🔴 DO NOT "FIX" THIS BY DEMOTING THE FLS INSTEAD. BovSubmissionService
-             .replaceSelectedBroker writes this field with a plain `update` in USER context, so
-             removing editable=true from DPEG_Disposition_Edit would start failing the on-market
-             broker replacement for every user. uiBehavior scopes the block to THIS PAGE, which
-             is where the hand edit happens, and leaves Apex untouched.
-             ⚠ readonly, lowercase. Copied from Lead_Record_Page (Extraction_Score_Pct__c,
-             OwnerId); the same spelling is used in Opportunity_Record_Page, NDA_Record_Page and
-             Underwriting_Record_Page. -->
         <itemInstances>
             <fieldInstance>
                 <fieldInstanceProperties>
                     <name>uiBehavior</name>
-                    <value>readonly</value>
+                    <value>none</value>
                 </fieldInstanceProperties>
                 <fieldItem>Record.Selected_Broker__c</fieldItem>
-                <identifier>FieldSelectedBroker</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <itemInstances>
-            <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.PSA_Executed__c</fieldItem>
-                <identifier>FieldPsaExecuted</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <itemInstances>
-            <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.Title_Company__c</fieldItem>
-                <identifier>FieldTitleCompany</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <itemInstances>
-            <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.Closing_Statement_Uploaded__c</fieldItem>
-                <identifier>FieldClosingStatementUploaded</identifier>
+                <identifier>RecordSelected_Broker_cField</identifier>
+                <visibilityRule>
+                    <criteria>
+                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
+                        <operator>EQUAL</operator>
+                        <rightValue>Broker Selection</rightValue>
+                    </criteria>
+                </visibilityRule>
             </fieldInstance>
         </itemInstances>
         <name>Facet-0a494558-fee1-4b32-a27e-d8a2546e161e</name>
         <type>Facet</type>
     </flexiPageRegions>
-    <!-- NDA-STAGE DETAILS field bodies (2026-08-24). Two columns, matching the pre-existing
-         Details section's TwoColumnsTopToBottom-equivalent shape (flexipage:fieldSection with
-         a 2-item columns facet). Column 1: broker + status + date sent. Column 2: date signed
-         + expiry. Both read-only formula fields (Disposition__c.NDA_*__c) - see
-         NDA_Broker__c.field-meta.xml for why these mirror the primary NDA via formula rather
-         than a spanning FlexiPage reference. -->
+    <flexiPageRegions>
+        <itemInstances>
+            <componentInstance>
+                <componentInstanceProperties>
+                    <name>body</name>
+                    <value>Facet-45162e4e-45bb-485f-9f9e-900e8998bd8e</value>
+                </componentInstanceProperties>
+                <componentName>flexipage:column</componentName>
+                <identifier>flexipage_column</identifier>
+            </componentInstance>
+        </itemInstances>
+        <itemInstances>
+            <componentInstance>
+                <componentInstanceProperties>
+                    <name>body</name>
+                    <value>Facet-0a494558-fee1-4b32-a27e-d8a2546e161e</value>
+                </componentInstanceProperties>
+                <componentName>flexipage:column</componentName>
+                <identifier>flexipage_column2</identifier>
+            </componentInstance>
+        </itemInstances>
+        <name>Facet-26c606f3-be64-4cb0-99c4-27fdd04be0b1</name>
+        <type>Facet</type>
+    </flexiPageRegions>
     <flexiPageRegions>
         <itemInstances>
             <fieldInstance>
@@ -1127,27 +1077,6 @@
         <name>Facet_NdaDetailsColumns</name>
         <type>Facet</type>
     </flexiPageRegions>
-    <!-- LOI-STAGE DETAILS field bodies (2026-08-25). Byte-for-byte the shape of the
-         Facet_NdaDetails* trio immediately above: two columns, flexipage:fieldSection with a
-         2-item columns facet, every fieldInstance uiBehavior=readonly. Column 1: stage + SIGNED
-         DATE + agreed price. Column 2: the counter pair (amount then date, kept together on
-         purpose - one without the other is the shape that says the counter-offer card was half
-         filled in).
-         ⚠ COLUMN 1 SLOT 2 READ Record.LOI_Status__c FOR PART OF 2026-08-25 AND NOW READS
-         Record.LOI_Signed_Date__c. Retracted in place because the original was defensible on
-         paper and wrong in this org: LOI_Status__c.field-meta.xml argued the approval half is
-         "the one a reader of the disposition usually wants", but NO AUTOMATION EVER SETS
-         LOI__c.LOI_Status__c on a sale (DispositionDealSummaryService's DTO header, decision
-         C-10), so it holds its 'Draft' default forever and this section was printing "Draft"
-         beside a real, advancing LOI Stage. The signed date is genuinely stamped on a sale as
-         of 2026-08-21, when 'Signed' became the disposition terminal and the criterion-less
-         before-save flow LOI_Signed_Status_Sync started firing on sell-side LOIs.
-         🔴 Disposition__c.LOI_Status__c STILL EXISTS - it is unplaced, not deleted (dropping a
-         field needs a destructive deploy plus a manual Erase for a field nothing reads). Its
-         own description now says so. Do not re-add it here without re-reading C-10.
-         All five are read-only Disposition__c.LOI_*__c FORMULA fields spanning Primary_LOI__c -
-         see Primary_LOI__c.field-meta.xml for why a formula is the only route a FlexiPage has to
-         a related record's fields. -->
     <flexiPageRegions>
         <itemInstances>
             <fieldInstance>
@@ -1230,12 +1159,6 @@
         <name>Facet_LoiDetailsColumns</name>
         <type>Facet</type>
     </flexiPageRegions>
-    <!-- PSA-STAGE DETAILS field bodies (2026-08-25). Same shape again. Column 1: the PSA's real
-         state pair. Column 2: who owes the next move, and the execution date.
-         🔴 PSA_Negotiation_Status__c IS FIRST ON PURPOSE. Contract_Review__c.Stage__c is
-         RECOMPUTED by the active before-save flow Contract_Review_Stage_Sync from
-         Negotiation_Status__c, so the status is the field that is actually driven and the stage is
-         derived from it. Reading them in the other order teaches the wrong causality. -->
     <flexiPageRegions>
         <itemInstances>
             <fieldInstance>
@@ -1312,50 +1235,10 @@
         <itemInstances>
             <componentInstance>
                 <componentInstanceProperties>
-                    <name>body</name>
-                    <value>Facet-45162e4e-45bb-485f-9f9e-900e8998bd8e</value>
-                </componentInstanceProperties>
-                <componentName>flexipage:column</componentName>
-                <identifier>flexipage_column</identifier>
-            </componentInstance>
-        </itemInstances>
-        <itemInstances>
-            <componentInstance>
-                <componentInstanceProperties>
-                    <name>body</name>
-                    <value>Facet-0a494558-fee1-4b32-a27e-d8a2546e161e</value>
-                </componentInstanceProperties>
-                <componentName>flexipage:column</componentName>
-                <identifier>flexipage_column2</identifier>
-            </componentInstance>
-        </itemInstances>
-        <name>Facet-26c606f3-be64-4cb0-99c4-27fdd04be0b1</name>
-        <type>Facet</type>
-    </flexiPageRegions>
-    <flexiPageRegions>
-        <itemInstances>
-            <componentInstance>
-                <componentInstanceProperties>
                     <name>recordId</name>
                 </componentInstanceProperties>
                 <componentName>dispositionMain</componentName>
                 <identifier>c_dispositionMain</identifier>
-                <!-- 2026-08-24 (Release Materials visibility fix): a 5th EQUAL criterion was
-                     ADDED to this pre-existing OR rule (booleanFilter extended from
-                     "1 OR 2 OR 3 OR 4" to "1 OR 2 OR 3 OR 4 OR 5") so the Release Materials
-                     response logger (c-release-materials-response-log, wired inside
-                     dispositionMain under if:true={isReleaseMaterials}) actually renders at
-                     that stage. It previously fell through to the Details fieldSection below
-                     because Release Materials appeared in NEITHER component's rule.
-                     🔴 COMPLEMENT INVARIANT: this rule and the Details fieldSection's NE rule
-                     immediately below MUST stay exact complements over the full
-                     Disposition_Stage__c value set used by either record type (On_Market carries
-                     BOV Outreach/Active Listing; both share the rest) - every stage renders
-                     EXACTLY ONE of dispositionMain, this Details section, or the
-                     flexipage_fieldSection_ndaDetails EQUAL-NDA section further below, never
-                     zero and never more than one. Editing one side of this pair without the
-                     other reproduces this exact defect. The four pre-existing criteria are
-                     UNTOUCHED. -->
                 <visibilityRule>
                     <booleanFilter>1 OR 2 OR 3 OR 4 OR 5</booleanFilter>
                     <criteria>
@@ -1398,50 +1281,10 @@
                 </componentInstanceProperties>
                 <componentInstanceProperties>
                     <name>label</name>
-                    <value>Details</value>
+                    <value>Disposition Details</value>
                 </componentInstanceProperties>
                 <componentName>flexipage:fieldSection</componentName>
                 <identifier>flexipage_fieldSection</identifier>
-                <!-- 2026-08-24 (NDA-stage Details redesign): a 5th NE criterion was ADDED to
-                     this pre-existing rule (booleanFilter extended from "1 AND 2 AND 3 AND 4"
-                     to "1 AND 2 AND 3 AND 4 AND 5") so this disposition-fields Details section
-                     also hides at the NDA stage. Its replacement -
-                     flexipage_fieldSection_ndaDetails, a few flexiPageRegions below - carries
-                     the mirror-image EQUAL rule and renders in exactly this slot only at that
-                     one stage. The four pre-existing criteria are UNTOUCHED.
-                     2026-08-24 (Release Materials visibility fix): a 6th NE criterion was ADDED
-                     (booleanFilter extended again, "1 AND 2 AND 3 AND 4 AND 5" to
-                     "1 AND 2 AND 3 AND 4 AND 5 AND 6") so this section also hides at Release
-                     Materials, now that c_dispositionMain's OR rule above claims that stage.
-                     2026-08-25 (LOI/PSA-stage Details): a 7th and an 8th NE criterion were ADDED
-                     (booleanFilter extended again, "1 AND 2 AND 3 AND 4 AND 5 AND 6" to
-                     "1 AND 2 AND 3 AND 4 AND 5 AND 6 AND 7 AND 8") so this section ALSO hides at
-                     the LOI and PSA stages, where flexipage_fieldSection_loiDetails and
-                     flexipage_fieldSection_psaDetails - a few itemInstances below - each carry
-                     the mirror-image single-EQUAL rule and render in exactly this slot.
-                     ⚠ THOSE TWO IDENTIFIERS WERE dispositionLoiDetails / dispositionPsaDetails,
-                     instances of a c:dispositionChildDetails LWC, for part of 2026-08-25. The
-                     bundle was retired and they are native fieldSections now. THE EIGHT NE
-                     CRITERIA ARE UNAFFECTED - the same two stages are still claimed by the same
-                     two surfaces, so nothing about this chain changes.
-                     The six pre-existing criteria are UNTOUCHED and every pre-existing index keeps
-                     its meaning; the diff is purely additive.
-                     🔴 COMPLEMENT INVARIANT - see the comment on c_dispositionMain's
-                     visibilityRule immediately above. Stated precisely, because it is now a
-                     FIVE-WAY partition and "these two are exact complements" is no longer the
-                     whole truth: this NE chain must exclude EVERY stage claimed by any of the
-                     other four surfaces in this region, and nothing else. Those are
-                     c_dispositionMain's OR allowlist (BOV Outreach, Active Listing, Closing,
-                     Sale Closes, Release Materials), flexipage_fieldSection_ndaDetails (NDA),
-                     flexipage_fieldSection_loiDetails (LOI) and flexipage_fieldSection_psaDetails
-                     (PSA) - eight stages,
-                     eight NE criteria, one per surface-claimed stage. The three stages left over
-                     (Disposition Readiness, Broker Selection, Offer Selection) are this section's,
-                     and 5 + 3 + 1 + 1 + 1 = the 11 values in Disposition_Stage__c. If a value is
-                     ever added to, removed from or renamed in that picklist, or claimed by a new
-                     component here, this chain must be edited in the SAME change - a stage in
-                     neither an allowlist nor this exclusion list falls through to THIS section by
-                     default, silently, which is exactly the 2026-08-24 Release Materials bug. -->
                 <visibilityRule>
                     <booleanFilter>1 AND 2 AND 3 AND 4 AND 5 AND 6 AND 7 AND 8</booleanFilter>
                     <criteria>
@@ -1487,10 +1330,6 @@
                 </visibilityRule>
             </componentInstance>
         </itemInstances>
-        <!-- NDA-STAGE DETAILS (2026-08-24). Shows the primary NDA's OWN fields in place of the
-             disposition fields above, scoped to the NDA stage only via the mirror-image EQUAL
-             rule below. Columns facet is Facet_NdaDetailsColumns; the two column bodies are
-             Facet_NdaDetailsColumn1/2, a few flexiPageRegions below. -->
         <itemInstances>
             <componentInstance>
                 <componentInstanceProperties>
@@ -1503,7 +1342,7 @@
                 </componentInstanceProperties>
                 <componentInstanceProperties>
                     <name>label</name>
-                    <value>Details</value>
+                    <value>NDA Details</value>
                 </componentInstanceProperties>
                 <componentName>flexipage:fieldSection</componentName>
                 <identifier>flexipage_fieldSection_ndaDetails</identifier>
@@ -1516,52 +1355,6 @@
                 </visibilityRule>
             </componentInstance>
         </itemInstances>
-        <!-- =====================================================================
-             LOI-STAGE AND PSA-STAGE DETAILS (2026-08-25, REBUILT NATIVE THE SAME DAY).
-             =====================================================================
-             🔴 THESE TWO WERE `c:dispositionChildDetails` COMPONENT INSTANCES FOR PART OF
-             2026-08-25 AND ARE NOW NATIVE `flexipage:fieldSection`s. The bundle, its
-             `DispositionChildDetailsController`, that controller's test and its
-             `DPEG_Apex_Access` classAccesses entry were all DELETED in the same change that
-             rewrote this block - the page had to lose these references in the SAME deploy as the
-             bundle delete, or the deploy fails on a dangling component reference.
-
-             ⚠ THE COMMENT THAT STOOD HERE ARGUED THE OPPOSITE AND IS RETRACTED VERBATIM, because
-             its reasoning was sound and only its PREMISE died: "🔴 WHY THESE ARE
-             c:dispositionChildDetails AND NOT TWO MORE fieldSections. The NDA section above works
-             WITHOUT Apex only because Disposition__c carries Primary_NDA__c and a set of NDA_*__c
-             FORMULA fields traverse it, so the FlexiPage can name them as ordinary Record. fields.
-             THERE IS NO Primary_LOI__c AND NO Primary_PSA__c on Disposition__c - verified against
-             objects/Disposition__c/fields/ on 2026-08-25, not assumed - so a fieldSection here has
-             nothing to reference. Reproducing the NDA route would mean two new lookups, a stamping
-             queueable, a backfill over every existing sale and nine more formula fields, to display
-             nine values nobody edits from this page."
-             EVERY WORD OF THAT COST ESTIMATE WAS ACCURATE. The user's decision was to pay it: two
-             lookups (Primary_LOI__c, Primary_PSA__c), a stamping queueable
-             (DispositionPrimaryChildStampQueueable), nine formula fields and a one-off backfill all
-             landed with this change, so that the page uses the SAME native mechanism as the NDA
-             section rather than a second, Apex-backed one. Read the lookups' own field files for
-             the full argument.
-
-             SHAPE IS COPIED FROM flexipage_fieldSection_ndaDetails IMMEDIATELY ABOVE, not
-             re-derived: columns facet + horizontalAlignment=false + label "Details", and a
-             SINGLE-CRITERION EQUAL visibilityRule with NO booleanFilter (one criterion needs no
-             filter string - the multi-criteria action rules at the top of this file are a
-             different case). The two are mutually exclusive with each other and with the NDA
-             section by construction, since Disposition_Stage__c holds exactly one value.
-
-             ⚠ BOTH LABELS ARE "Details", MATCHING THE NDA SECTION AND THE DISPOSITION-FIELDS
-             SECTION. That is deliberate: a user at any stage sees one section called Details whose
-             CONTENTS change, not three differently-named cards.
-
-             🔴 FLS IS LOAD-BEARING AND IS *NOT* GRANTED BY THIS FILE. A fieldInstance renders
-             NOTHING for a field the running user cannot read, so a missing grant looks exactly
-             like an empty field rather than an error. All nine formula fields are granted
-             read-only in BOTH DPEG_Disposition_Edit and DPEG_Disposition_View in this same change;
-             those permission sets and objects/Disposition__c/fields/ must land WITH this file.
-
-             Column bodies are Facet_LoiDetailsColumn1/2 and Facet_PsaDetailsColumn1/2, in the
-             flexiPageRegions block above. -->
         <itemInstances>
             <componentInstance>
                 <componentInstanceProperties>
@@ -1574,7 +1367,7 @@
                 </componentInstanceProperties>
                 <componentInstanceProperties>
                     <name>label</name>
-                    <value>Details</value>
+                    <value>LOI Details</value>
                 </componentInstanceProperties>
                 <componentName>flexipage:fieldSection</componentName>
                 <identifier>flexipage_fieldSection_loiDetails</identifier>
@@ -1599,7 +1392,7 @@
                 </componentInstanceProperties>
                 <componentInstanceProperties>
                     <name>label</name>
-                    <value>Details</value>
+                    <value>PSA Details</value>
                 </componentInstanceProperties>
                 <componentName>flexipage:fieldSection</componentName>
                 <identifier>flexipage_fieldSection_psaDetails</identifier>
@@ -1694,71 +1487,6 @@
         <type>Facet</type>
     </flexiPageRegions>
     <flexiPageRegions>
-        <!-- DEAL SUMMARY CARD (Tranche 2, A6/C). FIRST item in sidebar, ahead of
-             dispositionSidebar, and DELIBERATELY CARRIES NO visibilityRule - the user's explicit
-             requirement is that it renders on all eleven stages. dispositionMain is stage-gated
-             to four of the eleven stages and dispositionSidebar itself renders nothing on seven
-             of them, so the sidebar's top slot is the only genuinely ungated glance surface on
-             this page. Do not add a stage or record-type condition here. -->
-        <!-- RECONCILED 2026-08-20 (code review, CRITICAL). The recordId property below had no
-             <value>, so the FlexiPage bound the component to an empty string instead of letting
-             the platform inject recordId implicitly - the card silently showed "No NDA / No LOI
-             / No PSA" on every sale.
-
-             🔴 FIRST ATTEMPT, RETRACTED, MEASURED WRONG: "<value>{!recordId}</value>" was tried
-             first. It deploys FALSE on this org: check-only against the byte-identical (live)
-             copy of this file reports "state": "Unchanged" and SKIPS VALIDATION ENTIRELY, so the
-             original empty-value shape was never actually validated. The moment the file differs
-             from the live copy - as this edit makes it - check-only genuinely validates it, and
-             <value>{!recordId}</value> fails with "Field recordId does not exist. Check
-             spelling." (measured, not assumed; re-run against usman-dpeg before trusting either
-             direction again). That syntax is invalid here regardless of the property being
-             declared in dispositionDealSummary's own js-meta.xml.
-
-             FIX APPLIED INSTEAD: the entire <componentInstanceProperties> block for recordId is
-             DELETED, leaving no recordId property on this itemInstance at all. This is the exact
-             shape already proven to deploy clean on THIS SAME PAGE for dispositionSidebar (whose
-             js-meta.xml also declares recordId as a String property but whose itemInstance below
-             carries no componentInstanceProperties block for it) and for bovBrokerChangeHistory /
-             dispositionBuyerTimeline (see their own comments a few lines up in this file):
-             recordId is a lightning__RecordPage implicit input, and the JS's `@api recordId`
-             receives the real record Id from the platform automatically, with NO FlexiPage-side
-             declaration required.
-
-             ⚠ CORRECTED 2026-08-20 (re-review, same day). This block asserted a causal claim that
-             its own next paragraph disproves, and named the wrong Apex controller. Both retracted
-             in place rather than deleted, formally, per the reviewer:
-
-                 RETRACTED (causal claim): "An explicit but EMPTY-valued property block is what
-                 broke this card - it registered a binding and left it blank, overriding the
-                 implicit injection the omitted shape relies on."
-
-             That is NOT established, and the very next paragraph in this comment (below)
-             disproves it: dispositionMain carries the IDENTICAL empty-valued recordId property
-             block and is WORKING IN PRODUCTION TODAY. If an empty-valued block were sufficient to
-             break implicit injection, dispositionMain would be broken too, and it is not. The
-             correct framing is that this fix aligns the shape with the three proven siblings on
-             this page (dispositionSidebar, bovBrokerChangeHistory, dispositionBuyerTimeline) -
-             not that the empty block was proven to be the cause of THIS card's specific symptom.
-
-                 RETRACTED (wrong controller): "...so BovController's Apex method received an
-                 empty Id and returned an empty summary..."
-
-             This card is served by DispositionDealSummaryController, not BovController.
-
-             ⚠ lwc/dispositionDealSummary/dispositionDealSummary.js-meta.xml is UNCHANGED by this
-             fix and still declares <property name="recordId" type="String" /> in its targetConfig
-             - a developer agent is concurrently active in lwc/**, so that file was deliberately
-             left untouched. The declared-but-unreferenced property is harmless and does not block
-             deploy (dispositionSidebar is the live proof), so removing it from js-meta.xml is
-             OPTIONAL tidiness, not required for correctness, and is left for the developer agent
-             or a follow-up pass rather than done here.
-             ⚠ dispositionMain (a few lines up in this file) carries the IDENTICAL empty-valued
-             recordId property block. RETRACTED, follow-up sweep queued in a prior pass: "flagged
-             here as a likely sibling defect worth a follow-up sweep, not fixed in this change."
-             dispositionMain is WORKING IN PRODUCTION TODAY (see above) - there is no open
-             investigation against it, and none should be queued; do not re-open this as a
-             sibling-defect sweep. -->
         <itemInstances>
             <componentInstance>
                 <componentName>dispositionDealSummary</componentName>
@@ -1771,40 +1499,6 @@
                 <identifier>dispositionSidebar</identifier>
             </componentInstance>
         </itemInstances>
-        <!-- 2026-08-25 (LATER SAME DAY): bovPreferredBrokerCard AND bovResponsesCard WERE REMOVED
-             FROM THIS REGION, and their bundles were deleted from the org in the same deploy
-             (manifest/timeline&#45;three&#45;sections). Both are now SECTIONS of the
-             dispositionBuyerTimeline card a few entries below: section 1 is the preferred broker
-             hero panel, section 3 is the BOV responses table. Do not re&#45;add either
-             componentInstance here without first deleting the matching section from that bundle,
-             or the same content renders twice in one sidebar.
-             bovBrokerChangeHistory, immediately below, is UNCHANGED and was never part of the
-             merge; it stays a standalone card by the user's explicit instruction. -->
-        <!-- BOV BROKER CHANGE HISTORY (Tranche 2, A6/B). MOVED main -> sidebar 2026-08-21 (see the
-             root comment's 2026-08-21 entry above for why). Placed directly after
-             dispositionSidebar, not after contractReviewsList as the original comment below still
-             says - dispositionSidebar is the component confirmed (by reading its .js/.html, not
-             guessed) to render the BOV Outreach card (c-bov-outreach) at the BOV Outreach stage,
-             which is the named slot for this pairing. Still ungated - the component's own
-             description confirms an empty card (no broker replacement) is the normal state and
-             renders as plain text, so no visibilityRule is needed to avoid an awkward empty state.
-             NO recordId componentInstanceProperties HERE - MEASURED, NOT STYLE. This bundle's
-             js-meta.xml declares no targetConfigs/property at all, so a `recordId`
-             componentInstanceProperties entry deploys as "Invalid property [recordId] in
-             component [c:bovBrokerChangeHistory]" (confirmed via dry-run 2026-08-20). recordId
-             still reaches the component - it is a lightning__RecordPage implicit input and the
-             JS exposes `@api recordId` - the platform injects it automatically without a
-             FlexiPage-side declaration. -->
-        <!-- 2026-08-25: EXTENDED the visibilityRule to also hide at Offer Selection, so this
-             card now renders at every stage except Disposition Readiness and Offer Selection.
-             booleanFilter "1 AND 2" added to pair the two NE criteria; shape copied from
-             dispositionBuyerTimeline's own "1 AND 2 AND 3 AND 4" chain immediately below.
-             2026-08-24: added a visibilityRule hiding this card at Disposition_Stage__c =
-             'Disposition Readiness'. Shape copied from FieldBroker's fieldInstance-level rule
-             (single <criteria>, no <booleanFilter>, further up this file) rather than the
-             multi-criteria action-level rules on the Submit_* Dynamic Actions - this is a plain
-             stage exclusion, same one-criteria case as FieldBroker's. NE, not a positive
-             allow-list of the other stages, matching that same precedent. -->
         <itemInstances>
             <componentInstance>
                 <componentName>bovBrokerChangeHistory</componentName>
@@ -1839,23 +1533,6 @@
                 </visibilityRule>
             </componentInstance>
         </itemInstances>
-        <!-- BUYER ACTIVITY TIMELINE (Tranche 2, A6/B). MOVED main -> sidebar 2026-08-21, same
-             reason and same 2026-08-21 root comment entry as bovBrokerChangeHistory immediately
-             above. Placed directly after it, ungated, same rationale as its sibling.
-             NO recordId componentInstanceProperties HERE, SAME MEASURED REASON: this bundle's
-             targetConfig declares only <objects><object>Disposition__c</object></objects>, no
-             `recordId` property, so declaring it here fails the same way bovBrokerChangeHistory
-             did. recordId is still supplied implicitly (JS has `@api recordId`).
-             2026-08-24: added the same Disposition Readiness visibilityRule as its sibling
-             bovBrokerChangeHistory immediately above - same shape, same reasoning.
-             2026-08-24 (later same day): EXTENDED to also hide at BOV Outreach, Broker Selection
-             and NDA, so this card now renders only from Release Materials onward. This edit is
-             SCOPED TO THIS COMPONENT ONLY - bovBrokerChangeHistory immediately above keeps its
-             original single-criteria 'NE Disposition Readiness' rule unchanged; the two cards no
-             longer share identical visibility. booleanFilter/multi-criteria shape copied from the
-             Submit_* Dynamic Actions above (e.g. Submit_Broker_Selection's "1 AND 2 AND 3 AND 4"),
-             the proven multi-criteria form on this page; each new criterion is a plain NE add
-             following the existing single criterion's operator/shape. -->
         <itemInstances>
             <componentInstance>
                 <componentName>dispositionBuyerTimeline</componentName>
@@ -1885,11 +1562,6 @@
                 </visibilityRule>
             </componentInstance>
         </itemInstances>
-        <!-- flexipage_tabset's `label`="Tabs" property: present in this retrieve (2026-08-21,
-             second App Builder session) though the FIRST 2026-08-21 entry in the root comment
-             above discarded this same property as unreviewed App Builder noise. It reappeared in
-             the org and is KEPT here this time - see that root-comment entry's retraction and the
-             final 2026-08-21 entry at the bottom of the root comment for the full account. -->
         <itemInstances>
             <componentInstance>
                 <componentInstanceProperties>
