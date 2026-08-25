@@ -1,5 +1,16 @@
-:host { display: block; }
-.sidebar-gap { height: 16px; }
+/*
+  🔴 THE STACK GAP LIVES ON :host, ONCE (2026-08-25). The `if:true` branches in the template
+  are not elements, so every card this router renders is a DIRECT child of :host — at
+  `Closing` that is `<c-disposition-offer>` AND `<c-disposition-closing>`, and with
+  `display: block` they rendered edge to edge (the compiler drops whitespace-only text
+  nodes). Same construction as dispositionMain.css; do not add per-card margins on top.
+  The old `.sidebar-gap { height: 16px }` spacer rule was unused in the template and is gone.
+*/
+:host {
+    display: flex;
+    flex-direction: column;
+    gap: var(--slds-g-spacing-4, 16px);
+}
 .wire-error {
     display: flex;
     align-items: center;
