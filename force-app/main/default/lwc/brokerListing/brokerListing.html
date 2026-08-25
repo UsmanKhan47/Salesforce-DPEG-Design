@@ -104,26 +104,43 @@
                                 `_cfoState` for why `0` and `null` cannot be collapsed.
                             -->
                             <span class="cfo-tile-value" title={cfoCountdownLabel}>{cfoCountdownLabel}</span>
-                            <span class="cfo-tile-label">Days to Call for Offers</span>
+                            <!--
+                                ⚠ "DAYS REMAINING", NOT "Days to Call for Offers" (renamed at UAT
+                                2026-08-25). The section heading two rows up already says "Call for
+                                Offers", so the old label repeated it and pushed the tile to two
+                                lines at the narrow widths this grid is built to reflow into. The
+                                VALUE logic is unchanged — `14 days` / `Today` / `5 days ago` / `—`.
+                            -->
+                            <span class="cfo-tile-label">Days Remaining</span>
                         </div>
                     </div>
 
                     <div class="cfo-tile">
+                        <!--
+                            🔴 THIS TILE WAS A PILL UNTIL 2026-08-25 AND IS DELIBERATELY NOT ONE NOW.
+                            A small outlined badge sitting where its two siblings put a bold value
+                            read as a floating fragment above an orphaned "STATUS" label, beside an
+                            icon slot that carried no state. The tile now has the SAME ANATOMY as the
+                            two beside it — state icon, bold value, label — and the state is carried
+                            by the icon GLYPH and the WORD, with colour as reinforcement only.
+
+                            ⚠ THE ICON IS STATEFUL, so `icon-name` is bound, not literal. It was a
+                            fixed `utility:flag`, which said nothing the label did not.
+                            ⚠ `alternative-text=""` ON PURPOSE: the icon duplicates the word
+                            immediately to its right, so naming it makes a screen reader say the
+                            state twice. Both sibling tiles are decorative for the same reason.
+
+                            ⚠ THE HEADER PILL AT THE TOP OF THIS CARD ("Day 0 of 42 — On Track") IS
+                            A DIFFERENT ELEMENT and stays a pill. Do not "unify" the two.
+                        -->
                         <lightning-icon
-                            class="cfo-tile-icon cfo-tile-icon_status"
-                            icon-name="utility:flag"
+                            class={cfoStatusIconClass}
+                            icon-name={cfoStatusIconName}
                             size="small"
                             alternative-text="">
                         </lightning-icon>
                         <div class="cfo-tile-text">
-                            <!--
-                                The pill's treatment is `c/callForOffersPanel`'s `.cfo-badge` — the
-                                acquisition module's own call-for-offers urgency pill — right down to
-                                the muted/green/amber/red theme names. See the stylesheet for the ONE
-                                deliberate departure (the background token) and why it is not
-                                optional.
-                            -->
-                            <span class={cfoStatusClass}>{cfoStatusLabel}</span>
+                            <span class={cfoStatusValueClass} title={cfoStatusLabel}>{cfoStatusLabel}</span>
                             <span class="cfo-tile-label">Status</span>
                         </div>
                     </div>

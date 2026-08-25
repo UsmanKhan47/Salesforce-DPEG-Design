@@ -91,7 +91,8 @@
  * Below a token-driven rule the card now carries three tiles derived from ONE field,
  * `Broker_Listing__c`/`Disposition__c`'s `callForOffersDate` as shipped by
  * `BrokerListingController`: the date itself (MOVED down from the top grid, not re-added), a
- * countdown, and a status pill. The ladder is in `_cfoState` and is stated in full there.
+ * countdown ("Days Remaining"), and a status. The ladder is in `_cfoState` and is stated in full
+ * there.
  *
  * ⚠ THIS IS THE EXCEPTION TO THIS FILE'S OWN "NO THRESHOLD AND NO BAND IS DERIVED IN THIS FILE"
  * RULE AT THE TOP, AND THE RULE IS NOT WEAKENED BY IT. That rule is about the TRACTION band, which
@@ -105,10 +106,12 @@
  * Scheduled"; it must never render `0` (which reads as "due today") or `Overdue` (which accuses
  * someone of missing a deadline nobody set). Pinned in `brokerListing.test.js`.
  *
- * ⚠ THE PILL'S TREATMENT IS `c/callForOffersPanel`'s, NOT A NEW ONE — same geometry, same four
- * theme names, and `DUE_SOON_DAYS` is that module's own `APPROACHING_DAYS`. The stylesheet records
- * the ONE deliberate departure (the background token, which is a measured bug fix) and why it must
- * not be "restored".
+ * 🔴 THE STATUS WAS A PILL UNTIL 2026-08-25 AND IS NOW A PLAIN TILE (icon + coloured bold word +
+ * label), matching its two siblings. Only the TREATMENT changed: the four theme names, the ladder
+ * and `DUE_SOON_DAYS` (= `CallForOffersService.APPROACHING_DAYS`) are untouched, so this card and
+ * the acquisition module still agree about when a deadline turns urgent. `c/callForOffersPanel`
+ * keeps its own `.cfo-badge` pill — it is a different card in a different module and was NOT
+ * touched. Do not "restore consistency" by putting the pill back here.
  *
  * @see force-app/main/default/classes/BrokerListingController.cls
  * @see force-app/main/default/classes/DispositionTractionService.cls (the band ladder)
@@ -138,6 +141,26 @@ const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov
  * `APPROACHING_DAYS` this constant follows THAT, not the week ladder.
  */
 const DUE_SOON_DAYS = 7;
+
+/**
+ * The status tile's icon, keyed by the band theme `_cfoState` already derived.
+ *
+ * 🔴 KEYED ON THE THEME, NOT RE-DERIVED FROM `days`. A second ladder here could paint a
+ * `utility:success` tick beside the word "Overdue" — the same self-contradiction the one-getter rule
+ * on `_cfoState` exists to prevent, just wearing a glyph instead of a colour. There is exactly one
+ * band decision in this file and this map is downstream of it.
+ *
+ * ⚠ `utility:clock` FOR "Not Scheduled", NOT `utility:error` or a warning triangle: no date set is
+ * not a failure and this card must not accuse anyone of missing a deadline that was never set —
+ * the same reason `_cfoState` refuses to collapse `null` into `0`. It matches the countdown tile's
+ * own icon, which is correct: both are saying "there is no clock running yet".
+ */
+const CFO_STATUS_ICON = {
+    muted: 'utility:clock',
+    green: 'utility:success',
+    amber: 'utility:warning',
+    red: 'utility:error'
+};
 
 /**
  * Whole days from local today to an ISO `yyyy-mm-dd`. Negative when the date has passed, `0` today,
@@ -233,9 +256,11 @@ export default class BrokerListing extends LightningElement {
      * ── THE CALL-FOR-OFFERS SECTION: ONE STATE OBJECT, THREE RENDERED FACTS ──
      *
      * 🔴 ONE GETTER DERIVES THE BAND; the three below only read from it. Splitting the ladder across
-     * `cfoCountdownLabel` / `cfoStatusLabel` / `cfoStatusClass` would let a future edit change the
-     * threshold in one of them, producing a GREEN pill beside the words "Due Soon" — a card that
-     * contradicts itself and that no single assertion catches.
+     * `cfoCountdownLabel` / `cfoStatusLabel` / `cfoStatusValueClass` / `cfoStatusIconName` would let
+     * a future edit change the threshold in one of them, producing a GREEN tick beside the words
+     * "Due Soon" — a card that contradicts itself and that no single assertion catches. Since
+     * 2026-08-25 there are FOUR readers of this state, not three, which makes the rule stricter,
+     * not looser.
      *
      * ── THE LADDER, STATED IN FULL ──────────────────────────────────────────
      *   no date        countdown `—`          status `Not Scheduled`  neutral grey
@@ -313,7 +338,8 @@ export default class BrokerListing extends LightningElement {
     }
 
     /**
-     * The pill's text.
+     * The status tile's VALUE — the bold word in the same slot the two tiles beside it fill with a
+     * date and a countdown. It was a pill's text until 2026-08-25; see the template.
      *
      * 🔴 THE STATE IS IN THE WORDS, NOT ONLY IN THE COLOUR. `.risk-badge` on this same card is
      * built that way for the same reason, and it is what keeps the card readable to a screen reader
@@ -328,9 +354,30 @@ export default class BrokerListing extends LightningElement {
         return this._cfoState.status;
     }
 
-    /** The pill's class. Colour is reinforcement only; the label above carries the meaning. */
-    get cfoStatusClass() {
-        return `cfo-pill cfo-pill--${this._cfoState.theme}`;
+    /**
+     * The status value's class. Colour is reinforcement only — the WORD carries the meaning, which
+     * is why `cfoStatusLabel` is never abbreviated to a glyph or a dot.
+     *
+     * 🔴 IT EXTENDS `.cfo-tile-value`, IT DOES NOT REPLACE IT. The whole point of the 2026-08-25
+     * change is that this tile has the same anatomy as its two siblings; dropping the shared class
+     * to style the word independently is how it drifts back into looking like a foreign element.
+     */
+    get cfoStatusValueClass() {
+        return `cfo-tile-value cfo-status-value--${this._cfoState.theme}`;
+    }
+
+    /** The status icon's glyph. See `CFO_STATUS_ICON` for why it is keyed on the theme. */
+    get cfoStatusIconName() {
+        return CFO_STATUS_ICON[this._cfoState.theme];
+    }
+
+    /**
+     * The status icon's class — shared tile-icon geometry plus the per-state tint, so the icon and
+     * the word are always the same colour. Tinted from the STYLESHEET via
+     * `--slds-c-icon-color-foreground-default`, not an inline `style=`; see `.cfo-tile-icon_date`.
+     */
+    get cfoStatusIconClass() {
+        return `cfo-tile-icon cfo-tile-icon_status--${this._cfoState.theme}`;
     }
 
     /**

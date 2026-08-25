@@ -62,16 +62,25 @@
 /* ═══════════════════════════════════════════════════════════════════════════
  * THE CALL-FOR-OFFERS SECTION
  *
- * ── WHERE THE PILL COMES FROM ───────────────────────────────────────────────
- * `.cfo-pill` is `c/callForOffersPanel`'s `.cfo-badge` — the ACQUISITION module's own
- * call-for-offers urgency pill, on the Opportunity record page sidebar — copied deliberately:
- * geometry (inline-flex, small radius, 0.625rem/700, nowrap, never compressed) and the four theme
- * names (muted / green / amber / red). Two modules showing the same concept must not invent two
- * treatments for it.
+ * ── 🔴 THE STATUS TILE IS NOT A PILL (changed 2026-08-25) ───────────────────
+ * It was `.cfo-pill`, a copy of `c/callForOffersPanel`'s `.cfo-badge`. A small outlined badge in the
+ * slot where the two tiles beside it put a bold value read as a fragment floating above an orphaned
+ * "STATUS" label, next to an icon that carried no state at all. The status is now rendered with the
+ * SHARED `.cfo-tile-value` — same size, same weight, same baseline as the date and the countdown —
+ * tinted per state by `.cfo-status-value--<theme>`, with a matching state icon
+ * (`utility:success` / `warning` / `error` / `clock`) tinted from the same hook.
  *
- * ── 🔴 THE ONE DELIBERATE DEPARTURE, AND IT IS A BUG FIX, NOT A PREFERENCE ──
- * That file pairs `background: var(--slds-g-color-<semantic>-container-1, <pale literal>)` with
- * `color: var(--slds-g-color-<semantic>-base-30, <dark literal>)`. MEASURED against
+ * ⚠ WHAT DID *NOT* CHANGE: the four theme names (muted / green / amber / red), the ladder in
+ * `_cfoState`, and `DUE_SOON_DAYS`. Only the treatment moved, so this card and the acquisition
+ * module still agree about when a deadline turns urgent.
+ * ⚠ `c/callForOffersPanel` STILL HAS ITS PILL and was not touched — different module, different
+ * card, and its badge is not sitting in a row of tiles. Do not "unify" them.
+ * ⚠ THE HEADER PILL ON THIS CARD ("Day 0 of 42 — On Track", `.risk-badge`) IS ALSO STILL A PILL.
+ * It is a different element about a different ladder; this section's change says nothing about it.
+ *
+ * ── 🔴 WHY THESE ARE `*-base-30` TEXT HOOKS AND NOT `*-container-1` FILLS ────
+ * `c/callForOffersPanel` pairs `background: var(--slds-g-color-<semantic>-container-1, <pale
+ * literal>)` with `color: var(--slds-g-color-<semantic>-base-30, <dark literal>)`. MEASURED against
  * `node_modules/@salesforce-ux/sds-metadata/current/globalStylingHooks.metadata.json`, which is the
  * file the repo's own linter reads:
  *
@@ -86,13 +95,19 @@
  * browser"). ⚠ NOTHING IN THIS PIPELINE CATCHES IT: the SLDS linter only checks that a hook was
  * used, Jest asserts class names, and axe's colour-contrast rule is inert in jsdom.
  *
- * So this file uses the `*-base-95` tint for the background instead, which is a real pale tint in
- * BOTH themes and inverts correctly:
+ * So this file carries NO semantic fill at all. The status word and its icon are TEXT COLOUR on the
+ * tile's existing neutral surface, using only the `*-base-30` hooks — a dark tint in light mode that
+ * inverts to a BRIGHT one in dark, which is exactly the property a fill token does not have here:
  *
- *     success  #ebf7e6 light / #010502 dark   with base-30  #194e31 / #01c3b3
- *     warning  #fff1ea       / #090200                      #5f3e02 / #e4a201
- *     error    #fef1ee       / #0f0003                      #8e030f / #fe8aa7
- *     neutral  #f3f3f3       / #020202        with on-surface-1  #757575 / #aeaeae
+ *     success  base-30  #194e31 light / #01c3b3 dark
+ *     warning  base-30  #5f3e02       / #e4a201
+ *     error    base-30  #8e030f       / #fe8aa7
+ *     neutral  base-30  #444444       / #aeaeae
+ *
+ * ⚠ NEUTRAL IS `--slds-g-color-neutral-base-30`, NOT `on-surface-1`. This tile's background is
+ * `--slds-g-color-neutral-base-95` (#f3f3f3), and on-surface-1 (#757575) measures ~4.3:1 against
+ * that tint — under AA for a 14px value. neutral-base-30 is ~8.7:1 and inverts. (`.cfo-tile-label`
+ * below still uses on-surface-1; that is pre-existing and out of this change's scope.)
  *
  * 🔴 `c/callForOffersPanel` STILL HAS THE ORIGINAL PAIRING. It was left alone because it is another
  * module's live component and outside this change's scope — it is REPORTED, not silently patched.
@@ -131,7 +146,9 @@
  *
  * 🔴 THE `gap` IS LOAD-BEARING MARKUP. The LWC template compiler discards inter-element whitespace,
  * so with `gap` removed these tiles butt against each other with nothing between them. The same is
- * true of `.cfo-tile`'s gap and of `.cfo-tile-value` / `.cfo-pill`'s bottom margin.
+ * true of `.cfo-tile`'s gap and of `.cfo-tile-value`'s bottom margin — which since 2026-08-25 is the
+ * ONLY thing separating the status word from its label too, the pill that used to carry its own
+ * margin having been removed.
  */
 .cfo-grid {
     display: grid;
@@ -182,8 +199,25 @@
     --slds-c-icon-color-foreground-default: var(--slds-g-color-brand-base-40, #0b5cab);
 }
 
-.cfo-tile-icon_status {
-    --slds-c-icon-color-foreground-default: var(--slds-g-color-on-surface-1, #757575);
+/*
+ * 🔴 THE STATUS ICON IS STATEFUL, unlike the two above it. It carries the SAME hook value as the
+ * word beside it (`.cfo-status-value--<theme>`) so the glyph and the text can never disagree about
+ * the band — keep the two blocks' colours identical if you touch either.
+ */
+.cfo-tile-icon_status--muted {
+    --slds-c-icon-color-foreground-default: var(--slds-g-color-neutral-base-30, #444);
+}
+
+.cfo-tile-icon_status--green {
+    --slds-c-icon-color-foreground-default: var(--slds-g-color-success-base-30, #194e31);
+}
+
+.cfo-tile-icon_status--amber {
+    --slds-c-icon-color-foreground-default: var(--slds-g-color-warning-base-30, #5f3e02);
+}
+
+.cfo-tile-icon_status--red {
+    --slds-c-icon-color-foreground-default: var(--slds-g-color-error-base-30, #8e030f);
 }
 
 .cfo-tile-text {
@@ -212,49 +246,44 @@
     overflow-wrap: break-word;
 }
 
-/* ── THE STATUS PILL ────────────────────────────────────────────────────── */
 
-.cfo-pill {
-    display: inline-flex;
-    align-items: center;
-    padding: var(--slds-g-sizing-1, 0.125rem) var(--slds-g-spacing-2, 0.5rem);
-    /*
-     * 🔴 A SMALL RADIUS — A ROUNDED RECTANGLE, NOT A CAPSULE. DO NOT reach for
-     * `--slds-g-radius-border-circle`: it resolves to a full round (50%), which on an element far
-     * wider than it is tall renders an ELLIPSE. That shipped once in `c/callForOffersPanel` and was
-     * rejected on sight; `--slds-g-radius-border-1` is what that card settled on.
-     */
-    border-radius: var(--slds-g-radius-border-1, 0.125rem);
-    font-size: var(--slds-g-font-scale-neg-2, 0.625rem);
-    font-weight: var(--slds-g-font-weight-7, 700);
-    line-height: var(--slds-g-font-lineheight-2, 1.45);
-    margin-bottom: var(--slds-g-sizing-1, 0.125rem);
-    white-space: nowrap;
-    /* It must never be compressed to fit; the grid reflows instead. */
-    flex: 0 0 auto;
+/* ── THE STATUS TILE'S STATE COLOUR ──────────────────────────────────────────
+ *
+ * 🔴 TEXT COLOUR ONLY — NO BACKGROUND, NO RING, NO RADIUS. These modify `.cfo-tile-value`, they do
+ * not replace it: the status word must stay the same size, weight and baseline as the date and the
+ * countdown beside it, which is the entire point of the 2026-08-25 change. Adding a fill or a
+ * border here rebuilds the pill that was removed.
+ *
+ * 🔴 `*-base-30` AND NOTHING ELSE. Every one of these is a dark tint in light mode and inverts to a
+ * BRIGHT one under the dark theme; the measured light/dark pairs are tabulated at the top of this
+ * section. The `*-container-1` family, which reads like the natural choice, is a SOLID DARK FILL in
+ * the `slds` base theme — also measured there. Nothing in this pipeline catches that mistake, so it
+ * is written down twice on purpose.
+ *
+ * ⚠ NO RAW HEX IN THIS COMMENT, DELIBERATELY. `brokerListing.test.js` scans the stylesheet from
+ * `.cfo-rule` onward for any `#rrggbb` outside a `var()` fallback and does NOT strip comments, so a
+ * hex-quoting comment down here fails a pin about the RULES. The table lives above that slice
+ * point; keep it there.
+ *
+ * ⚠ COLOUR IS REINFORCEMENT, NEVER THE CARRIER. The word ("On Track" / "Due Soon" / "Overdue" /
+ * "Not Scheduled") and the icon glyph both say the state independently, so the tile still reads
+ * correctly to anyone who cannot separate the amber from the red.
+ *
+ * ⚠ KEEP IN LOCKSTEP WITH `.cfo-tile-icon_status--<theme>` above — same hook, same fallback. The
+ * icon and the word are one statement rendered twice.
+ */
+.cfo-status-value--muted {
+    color: var(--slds-g-color-neutral-base-30, #444);
 }
 
-/* No date set. Grey — and the word inside says so, so grey is never the only carrier. */
-.cfo-pill--muted {
-    background: var(--slds-g-color-neutral-base-95, #f3f3f3);
-    color: var(--slds-g-color-on-surface-1, #757575);
-    box-shadow: inset 0 0 0 var(--slds-g-sizing-border-1, 1px) var(--slds-g-color-neutral-base-80, #c9c9c9);
-}
-
-.cfo-pill--green {
-    background: var(--slds-g-color-success-base-95, #ebf7e6);
+.cfo-status-value--green {
     color: var(--slds-g-color-success-base-30, #194e31);
-    box-shadow: inset 0 0 0 var(--slds-g-sizing-border-1, 1px) var(--slds-g-color-success-base-80, #91db8b);
 }
 
-.cfo-pill--amber {
-    background: var(--slds-g-color-warning-base-95, #fff1ea);
+.cfo-status-value--amber {
     color: var(--slds-g-color-warning-base-30, #5f3e02);
-    box-shadow: inset 0 0 0 var(--slds-g-sizing-border-1, 1px) var(--slds-g-color-warning-base-80, #ffba90);
 }
 
-.cfo-pill--red {
-    background: var(--slds-g-color-error-base-95, #fef1ee);
+.cfo-status-value--red {
     color: var(--slds-g-color-error-base-30, #8e030f);
-    box-shadow: inset 0 0 0 var(--slds-g-sizing-border-1, 1px) var(--slds-g-color-error-base-80, #feb8ab);
 }
