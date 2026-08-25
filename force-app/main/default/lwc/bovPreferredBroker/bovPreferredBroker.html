@@ -1,7 +1,7 @@
 <!--
   ══════════════════════════════════════════════════════════════════════════════
   c-bov-preferred-broker — the highlighted preferred-broker panel (2026-08-24,
-  amended 2026-08-25).
+  amended 2026-08-25, made COMPACT 2026-08-25).
   ══════════════════════════════════════════════════════════════════════════════
   🔴 THIS REPLACED A SECOND COPY OF `c/bovComparisonMatrix`. Until 2026-08-24 the
   "Preferred Broker" card was the SAME bundle as the BOV Comparison Matrix,
@@ -12,17 +12,49 @@
   of `c/bovComparisonMatrix` in the same change.
 
   ══════════════════════════════════════════════════════════════════════════════
-  🔴 2026-08-25 — THE PANEL NAMES A PERSON, AND THE "YES" PILL IS GONE.
+  🔴 2026-08-25 (2) — THE HERO PANEL IS NOW A DENSE ROW. THREE LINES BECAME TWO.
+  ══════════════════════════════════════════════════════════════════════════════
+  User instruction: the panel is too large for where it sits. Its primary home is
+  section 1 of `c/dispositionBuyerTimeline`, a ~276px record-page SIDEBAR card,
+  where a ~120px hero built from a `size="large"` shield, 1rem padding and three
+  stacked lines stood taller than the first two timeline entries beneath it.
+  Target was roughly half that height. Four changes, here and in the `.css`:
+
+    1. THE SHIELD IS `size="small"` (1rem), NOT `size="large"` (2rem). It is a
+       decorative marker beside two lines of text, not the subject of the panel.
+       This is the largest single saving: as the tallest thing in a centred flex
+       row, the large shield SET the panel's height once the text collapsed.
+    2. THE EYEBROW AND THE FIRM SHARE ONE MUTED LINE — "Preferred Broker · JLL" —
+       instead of bracketing the name above and below it. They were already the
+       SAME grey at the SAME size (see the `.css` contrast table); rendering them
+       as two lines spent a whole line box saying so.
+    3. THE NAME LEADS. It is the first line now, not the middle one — the eyebrow
+       is context for the name, and context reads better after its subject when
+       there is only one panel on the card that could need naming.
+    4. PADDING IS `--slds-g-spacing-3`, matching `.dbt-item`'s column rhythm in
+       the timeline directly beneath it, rather than `-4`.
+
+  🔴 NOTHING ABOUT THE CONTRACT MOVED. `@api contactName` / `@api firmName` and
+  every getter are untouched — this was a `.html` + `.css` change only, so the
+  OTHER parent (`c/bovBrokerPanel`, the wider "Brokers" card at BOV Outreach)
+  needed no edit. Checked at the time rather than assumed: that mount passes only
+  the two props, and `.panel-stack` is a `flex-direction: column` with a `gap` and
+  NO fixed or minimum height anywhere, so a shorter child just makes the stack
+  shorter. A dense row is not a sidebar-only shape — it is the same row in a wider
+  region, with more room for a long firm name before it wraps.
+
+  ══════════════════════════════════════════════════════════════════════════════
+  🔴 2026-08-25 (1) — THE PANEL NAMES A PERSON, AND THE "YES" PILL IS GONE.
   ══════════════════════════════════════════════════════════════════════════════
   Two user instructions, both applied here and both visible in the markup below:
 
   1. THE PRIMARY LINE IS THE BROKER **CONTACT**, NOT THE FIRM. "Show broker
      contacts, not accounts" — a firm cannot answer a phone. The firm survives as
-     a MUTED SECONDARY LINE, because the same person can be reached at two firms
+     MUTED SECONDARY TEXT, because the same person can be reached at two firms
      over the life of a sale and the firm is what the commission agreement names.
-     ⚠ THE FIRM LINE IS CONDITIONAL, AND `hasFirm` IS NOT MERELY "IS IT NON-EMPTY".
+     ⚠ THE FIRM IS CONDITIONAL, AND `hasFirm` IS NOT MERELY "IS IT NON-EMPTY".
      When no contact name exists the firm is PROMOTED to the primary line by
-     `displayName`, and repeating it underneath itself in grey would read as two
+     `displayName`, and repeating it beside itself in grey would read as two
      different brokers. See the getter.
 
   2. THE "YES" PILL IS DELETED. It answered a question nobody asked: the panel
@@ -59,22 +91,22 @@
         <!-- ⚠ DECORATIVE, SO `aria-hidden` AND NO `alternative-text`. The shield
              says nothing the "Preferred Broker" label and the name do not
              already say; announced, it is noise on every visit. Passing an
-             `alternative-text` would make `lightning-icon` announce it. -->
+             `alternative-text` would make `lightning-icon` announce it.
+             🔴 `size="small"` IS PART OF THE COMPACTION, NOT A STYLE PREFERENCE —
+             see item 1 in the header. -->
         <lightning-icon
             class="pref-icon"
             icon-name="utility:shield"
-            size="large"
+            size="small"
             aria-hidden="true"
         ></lightning-icon>
 
-        <!-- ⚠ THE LINES ARE SPACED BY `.pref-detail`'s `gap`, WHICH IS MARKUP,
-             NOT POLISH. The LWC template compiler discards whitespace-only text
-             nodes between sibling elements, and the paragraphs carry `margin: 0`
-             to stop the default paragraph margins fighting it — so with the gap
-             gone the lines butt together. -->
+        <!-- ⚠ THE TWO LINES ARE SPACED BY `.pref-detail`'s `gap`, WHICH IS
+             MARKUP, NOT POLISH. The LWC template compiler discards
+             whitespace-only text nodes between sibling elements, and the
+             paragraphs carry `margin: 0` to stop the default paragraph margins
+             fighting it — so with the gap gone the lines butt together. -->
         <div class="pref-detail">
-            <p class="pref-eyebrow">Preferred Broker</p>
-
             <!--
                 🔴 THE HIDDEN SUBJECT IS ON ONE LINE WITH THE NAME, ON PURPOSE.
                 Split across source lines the compiler keeps the indentation
@@ -96,12 +128,42 @@
             -->
             <p class="pref-name"><span class="pref-sr-only">Preferred broker: </span>{displayName}</p>
 
-            <!-- ⚠ CONDITIONAL — see the header. When the contact name is missing
-                 the firm becomes the PRIMARY line, and this line would then
-                 repeat it in grey directly underneath itself. -->
-            <template lwc:if={hasFirm}>
-                <p class="pref-firm">{displayFirm}</p>
-            </template>
+            <!--
+                ── THE MUTED LINE: THE EYEBROW AND THE FIRM TOGETHER (2026-08-25)
+                🔴 IT IS A FLEX ROW AND THE SPACES AROUND THE `·` ARE ITS `gap`,
+                NOT TEXT. This is the same compiler behaviour the `.pref-detail`
+                comment above describes, in its most dangerous form: written as
+                plain source whitespace between these three spans it would be
+                DISCARDED and the line would render "Preferred Broker·JLL". No
+                assertion on rendered text catches that either — every character
+                is still present, in the right order.
+
+                ⚠ THE `·` IS ITS OWN `aria-hidden` SPAN, NOT PART OF EITHER
+                LABEL. Announced, a middot is read aloud ("middle dot") or skipped
+                depending on the reader and its verbosity setting; hidden, the
+                line announces as "Preferred Broker JLL", which is what the two
+                spans mean. That is also why it cannot simply be prefixed to the
+                firm's text node.
+
+                ⚠ `.pref-eyebrow` AND `.pref-firm` KEPT THEIR NAMES THROUGH THE
+                COMPACTION even though both are now inline spans rather than block
+                paragraphs. They still name exactly what they hold, and the names
+                are what the CSS and the Jest anchors reach for.
+            -->
+            <p class="pref-meta">
+                <span class="pref-eyebrow">Preferred Broker</span>
+
+                <!-- ⚠ CONDITIONAL — see the header. When the contact name is
+                     missing the firm becomes the PRIMARY line, and this would
+                     then repeat it in grey immediately beneath itself.
+                     🔴 THE SEPARATOR IS INSIDE THE SAME CONDITION. With no firm
+                     there is nothing to separate the label from, and a trailing
+                     "Preferred Broker ·" would read as truncated text. -->
+                <template lwc:if={hasFirm}>
+                    <span class="pref-sep" aria-hidden="true">·</span>
+                    <span class="pref-firm">{displayFirm}</span>
+                </template>
+            </p>
         </div>
     </div>
 </template>
