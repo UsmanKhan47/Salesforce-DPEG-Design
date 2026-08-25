@@ -149,7 +149,8 @@
  *
  * @see force-app/main/default/classes/DispositionController.cls (thin caller)
  * @see force-app/main/default/classes/DispositionSelector.cls (Disposition SOQL)
- * @see force-app/main/default/classes/PropertyAssetSelector.cls (peak-date SOQL)
+ * @see force-app/main/default/classes/PropertyAssetSelector.cls (the asset read — peak sell date
+ *      for the gate, target sale price for the Expected Value stamp)
  * @see force-app/main/default/classes/SellMeterService.cls (the shared band function)
  */
 public with sharing class DispositionService {
@@ -286,6 +287,11 @@ public with sharing class DispositionService {
      * On the CREATE branch only, the asset's sell-meter band is checked and a RED asset is
      * refused (see the class header). YELLOW and GREEN both create.
      *
+     * The created record carries the asset lookup, the On_Market record type and — since
+     * 2026-08-25 — `Asking_Price__c` ("Expected Value") copied from the asset's
+     * `Target_Sale_Price__c`. `initiateAndSubmit` does the identical copy, so the two create
+     * paths still differ only in where the record type comes from.
+     *
      * @param assetId the Property_Asset__c to read/create the Disposition under
      * @return the existing or newly created Disposition__c Id
      * @throws DispositionService.SellMeterGateException when no Disposition exists yet and
@@ -307,7 +313,15 @@ public with sharing class DispositionService {
             throw new SellMeterGateException(RED_BAND_REFUSAL);
         }
 
-        Disposition__c d = new Disposition__c(Property_Asset__c = assetId);
+        // EXPECTED VALUE, SEEDED FROM THE ASSET (2026-08-25). Asking_Price__c (label "Expected
+        // Value") is copied from the asset's Target_Sale_Price__c, which the query above already
+        // returns. A null target stamps a null price: the Disposition Readiness submission guard
+        // in DispositionApprovalService already refuses a blank Expected Value with an authored
+        // message, so there is deliberately NO second guard here.
+        Disposition__c d = new Disposition__c(
+            Property_Asset__c = assetId,
+            Asking_Price__c = asset.Target_Sale_Price__c
+        );
         Id onMarketId = recordTypeIdFor(ON_MARKET_RECORD_TYPE);
         if (onMarketId != null) {
             d.RecordTypeId = onMarketId;
@@ -366,7 +380,9 @@ public with sharing class DispositionService {
      * 3. THE RED-BAND GATE, UNCHANGED, AND STILL ON THE CREATE BRANCH ONLY. See the class header:
      *    the meter governs STARTING a disposition, never reopening one. `findOrCreate` and this
      *    method must agree about that, and they do because both put the find ahead of the gate.
-     * 4. CREATE at `Disposition Readiness` with the chosen type. One DML.
+     * 4. CREATE at `Disposition Readiness` with the chosen type, and with `Asking_Price__c`
+     *    ("Expected Value") seeded from the asset's `Target_Sale_Price__c` — the same asset row
+     *    step 3 already read, so the seed costs no extra query. One DML.
      * 5. SUBMIT. See `submitSaleDecision` for why a failure here returns rather than throws.
      *
      * ⚠ THERE IS NO `assertDispositionActionAccess()` AT THE TOP OF THIS METHOD AND THAT IS A
@@ -420,10 +436,16 @@ public with sharing class DispositionService {
             throw new SellMeterGateException(RED_BAND_REFUSAL);
         }
 
-        // STEP 4 — create at Readiness with the CHOSEN type.
+        // STEP 4 — create at Readiness with the CHOSEN type, seeding the Expected Value from the
+        // asset. Asking_Price__c (label "Expected Value") comes from Target_Sale_Price__c on the
+        // asset read in step 3; a null target stamps a null price, and the Readiness submission
+        // guard in DispositionApprovalService is what refuses a blank one — no second guard here.
+        // ⚠ Asking_Price__c is scale 0 and Target_Sale_Price__c is scale 2, so a target carrying
+        // cents is rounded by the platform on save. Whole dollars are the unit on this object.
         Disposition__c d = new Disposition__c(
             Property_Asset__c = assetId,
-            Disposition_Stage__c = READINESS_STAGE
+            Disposition_Stage__c = READINESS_STAGE,
+            Asking_Price__c = asset.Target_Sale_Price__c
         );
         Id recordTypeId = recordTypeIdFor(recordTypeDeveloperName);
         if (recordTypeId != null) {

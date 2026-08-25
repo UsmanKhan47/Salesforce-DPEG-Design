@@ -7,6 +7,8 @@
  *   - SellMeterController.getMeterSummary  -> selectAllForMeterSummary
  *   - SellMeterController.getPortfolio     -> selectAllForPortfolio
  *   - DispositionService.findOrCreate      -> selectPeakSellDateById
+ *   - DispositionService.initiateAndSubmit -> selectPeakSellDateById (same read; since
+ *     2026-08-25 it also carries Target_Sale_Price__c for the Expected Value stamp)
  *   - PropertyAssetService.ensureOnClosedWon -> selectByPropertyIds   (Tranche 5A,
  *     2026-08-10 — the ONE `WITH SYSTEM_MODE` + `without sharing` method here)
  *
@@ -96,8 +98,15 @@ public with sharing class PropertyAssetSelector {
     }
 
     /**
-     * The peak sell date for ONE Property Asset — backs the server-side sell-meter gate
-     * in DispositionService.findOrCreate (the create branch only).
+     * The peak sell date AND the target sale price for ONE Property Asset — backs the
+     * server-side sell-meter gate plus the Expected Value stamp on BOTH disposition create
+     * paths (DispositionService.findOrCreate and .initiateAndSubmit, create branch only).
+     *
+     * ⚠ THE NAME SAYS PEAK SELL DATE AND THE QUERY NOW RETURNS TWO FIELDS. KEPT DELIBERATELY
+     * (2026-08-25) — this is the single "read the asset before creating its Disposition" query,
+     * both callers already had it in hand, and renaming it would churn every caller and every
+     * test to describe a field list that will keep growing with the create path. Read this doc,
+     * not the name, for what it returns.
      *
      * FETCH-FOR-USE: the caller feeds Peak_Sell_Date__c straight into
      * SellMeterService.bandForPeak, so an Id that resolves to no row is an error, not a
@@ -106,10 +115,18 @@ public with sharing class PropertyAssetSelector {
      * message — deliberately NOT the sell-meter refusal wording, because a missing asset
      * is a platform failure and a red band is a designed refusal.
      *
-     * ⚠ The field list is deliberately MINIMAL (Id + Peak_Sell_Date__c). This query runs
-     * on every disposition CREATE, so every field added here becomes a new way for a
-     * legitimate creation to be refused by an FLS gap under WITH USER_MODE. The gate needs
-     * one field; it selects one field.
+     * ⚠ THE FIELD LIST IS STILL MINIMAL, AND THE REASON IT MUST STAY THAT WAY IS UNCHANGED.
+     * This query runs on every disposition CREATE, so every field added here becomes a new way
+     * for a legitimate creation to be refused by an FLS gap under WITH USER_MODE. Two fields,
+     * each with a named consumer: Peak_Sell_Date__c is the gate's only input, and
+     * Target_Sale_Price__c is copied onto the new Disposition's Asking_Price__c ("Expected
+     * Value"), which the Disposition Readiness submission guard requires and BOV_Score__c's
+     * value dimension divides by. Nothing else may be added without a consumer of the same kind.
+     *
+     * ⚠ Target_Sale_Price__c MAY BE NULL AND THAT IS A NORMAL STATE, exactly like the peak date
+     * below. The caller stamps the null through; the Readiness submission guard in
+     * DispositionApprovalService is what refuses a blank Expected Value later, with an authored
+     * message. This selector does not filter on it and must not start.
      *
      * ⚠ Note this method has NO sell-candidate filter, unlike its two siblings. Those
      * filter to Property__c != null AND Peak_Sell_Date__c != null because they paint the
@@ -118,16 +135,17 @@ public with sharing class PropertyAssetSelector {
      * a refusal into a QueryException and the wrong error message.
      *
      * @param assetId Property_Asset__c Id to read; must reference an existing row.
-     * @return The Property_Asset__c with Id and Peak_Sell_Date__c populated
-     *         (Peak_Sell_Date__c may itself be null).
+     * @return The Property_Asset__c with Id, Peak_Sell_Date__c and Target_Sale_Price__c
+     *         populated (either value may itself be null).
      * @throws System.QueryException when no Property_Asset__c matches the Id.
      * @example
      * Property_Asset__c a = PropertyAssetSelector.selectPeakSellDateById(assetId);
      * String band = SellMeterService.bandForPeak(a.Peak_Sell_Date__c);
+     * d.Asking_Price__c = a.Target_Sale_Price__c;
      */
     public static Property_Asset__c selectPeakSellDateById(Id assetId) {
         return [
-            SELECT Id, Peak_Sell_Date__c
+            SELECT Id, Peak_Sell_Date__c, Target_Sale_Price__c
             FROM Property_Asset__c
             WHERE Id = :assetId
             WITH USER_MODE
