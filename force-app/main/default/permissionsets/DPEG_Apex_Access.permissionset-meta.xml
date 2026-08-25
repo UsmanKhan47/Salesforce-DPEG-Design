@@ -117,6 +117,19 @@
         <apexClass>DispositionBuyerTimelineController</apexClass>
         <enabled>true</enabled>
     </classAccesses>
+    <!--
+      2026-08-25. DispositionChildDetailsController is the entry point for c/dispositionChildDetails,
+      the LOI-stage and PSA-stage Details panels on Disposition_Record_Page. Granted here for the
+      same reason as the three controllers named in this file's header comment: an @AuraEnabled
+      class with no classAccesses entry fails at runtime with "You do not have access to the Apex
+      class named ...", which is the third live break this repo has taken from that omission.
+      The two selectors it calls (LoiSelector, ContractReviewSelector) are reached ONLY through it
+      and correctly need no grant of their own, matching the pattern above.
+    -->
+    <classAccesses>
+        <apexClass>DispositionChildDetailsController</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
     <classAccesses>
         <apexClass>DispositionController</apexClass>
         <enabled>true</enabled>

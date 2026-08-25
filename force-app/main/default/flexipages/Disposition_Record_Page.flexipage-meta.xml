@@ -459,6 +459,58 @@
          to, removed from, or renamed within Disposition_Stage__c.field-meta.xml's valueSetDefinition
          requires editing BOTH rules in the SAME change - one more EQUAL criterion added to the OR
          chain, one more NE criterion added to the AND chain - never just one side.
+         ⚠ AMENDED 2026-08-25: "exact complements" is now a TWO-WAY shorthand for what has
+         become a FIVE-WAY partition, and reading it literally will reintroduce the very bug this
+         entry documents. The `main` region now holds FIVE mutually exclusive stage surfaces,
+         not three:
+             c_dispositionMain                  BOV Outreach, Active Listing, Closing,
+                                                Sale Closes, Release Materials
+                                                                    (5, OR-of-EQUAL allowlist)
+             flexipage_fieldSection             Disposition Readiness, Broker Selection,
+                                                Offer Selection      (3, AND-of-NE inverse)
+             flexipage_fieldSection_ndaDetails  NDA                  (1, single EQUAL)
+             dispositionLoiDetails              LOI                  (1, single EQUAL)   NEW
+             dispositionPsaDetails              PSA                  (1, single EQUAL)   NEW
+         5 + 3 + 1 + 1 + 1 = 11, the full Disposition_Stage__c value set, every stage rendering
+         EXACTLY ONE surface. The operational rule is unchanged in spirit and now reads: the NE
+         chain on flexipage_fieldSection must exclude every stage claimed by any OTHER surface in
+         this region and nothing else. A stage claimed by nobody falls through to that NE chain
+         and renders the disposition-fields Details section by default - silently, which is
+         precisely how Release Materials broke.
+
+         =====================================================================
+         2026-08-25 - LOI-STAGE AND PSA-STAGE DETAILS ADDED (dispositionLoiDetails,
+         dispositionPsaDetails - two instances of the new c:dispositionChildDetails bundle).
+         =====================================================================
+         Requirement: at the LOI stage the Details area shows the LOI's fields only, at the PSA
+         stage the Contract Review's fields only, ALL READ-ONLY - those records are edited on
+         their own pages, reachable from loisList / contractReviewsList further down this region.
+
+         🔴 THIS IS NOT THE NDA PATTERN AND COULD NOT BE. flexipage_fieldSection_ndaDetails
+         needs no Apex because Disposition__c carries Primary_NDA__c and a family of NDA_*__c
+         FORMULA fields traverse it, so that section can name ordinary Record. fields. THERE IS NO
+         Primary_LOI__c AND NO Primary_PSA__c on Disposition__c - checked against
+         objects/Disposition__c/fields/ on 2026-08-25, not assumed. Building the equivalent means
+         two lookups, a stamping queueable, a backfill over every existing sale and nine formula
+         fields, to display values nobody edits from this page. A component that resolves the
+         latest child by Apex (one Id, one query) and renders it through
+         lightning-record-view-form was chosen instead; read-only is STRUCTURAL there, not a
+         setting, because that base component has no save path at all.
+
+         THE TWO ITEMINSTANCES SHARE ONE BUNDLE and differ only in three design-time properties
+         (cardTitle, childObject, fields), which is why the bundle is generic rather than two
+         near-identical cards. Full rationale sits on the itemInstances themselves, below.
+
+         ⚠ TWO SEPARATE FILES MUST LAND WITH OR BEFORE THIS ONE:
+           1. classes/DispositionChildDetailsController - this page will not deploy without it.
+           2. permissionsets/DPEG_Apex_Access - it gains a classAccesses entry for that controller
+              in the same change. Without it the two cards render "You do not have access to the
+              Apex class named DispositionChildDetailsController" for every non-admin. That would
+              be the THIRD live break in this repo from that exact omission.
+         ⚠ AND ONE THING THAT IS NOT FIXED HERE: FLS on the nine child fields listed on the two
+         itemInstances. lightning-output-field renders NOTHING for an unreadable field - it looks
+         like an empty value, not an error - so read on all nine must be confirmed in
+         DPEG_Disposition_View and DPEG_Disposition_Edit.
 
          =====================================================================
          2026-08-25 - BOV PREFERRED BROKER / RESPONSES CARDS ADDED TO THE SIDEBAR AS A THREE-CARD
@@ -1168,12 +1220,31 @@
                      (booleanFilter extended again, "1 AND 2 AND 3 AND 4 AND 5" to
                      "1 AND 2 AND 3 AND 4 AND 5 AND 6") so this section also hides at Release
                      Materials, now that c_dispositionMain's OR rule above claims that stage.
+                     2026-08-25 (LOI/PSA-stage Details): a 7th and an 8th NE criterion were ADDED
+                     (booleanFilter extended again, "1 AND 2 AND 3 AND 4 AND 5 AND 6" to
+                     "1 AND 2 AND 3 AND 4 AND 5 AND 6 AND 7 AND 8") so this section ALSO hides at
+                     the LOI and PSA stages, where dispositionLoiDetails and dispositionPsaDetails
+                     - two instances of c:dispositionChildDetails, a few itemInstances below -
+                     each carry the mirror-image single-EQUAL rule and render in exactly this slot.
+                     The six pre-existing criteria are UNTOUCHED and every pre-existing index keeps
+                     its meaning; the diff is purely additive.
                      🔴 COMPLEMENT INVARIANT - see the comment on c_dispositionMain's
-                     visibilityRule immediately above: this NE chain and that OR chain must stay
-                     exact complements. If a value is ever added to or removed from one, it must
-                     be added to or removed from the other in the SAME edit. -->
+                     visibilityRule immediately above. Stated precisely, because it is now a
+                     FIVE-WAY partition and "these two are exact complements" is no longer the
+                     whole truth: this NE chain must exclude EVERY stage claimed by any of the
+                     other four surfaces in this region, and nothing else. Those are
+                     c_dispositionMain's OR allowlist (BOV Outreach, Active Listing, Closing,
+                     Sale Closes, Release Materials), flexipage_fieldSection_ndaDetails (NDA),
+                     dispositionLoiDetails (LOI) and dispositionPsaDetails (PSA) - eight stages,
+                     eight NE criteria, one per surface-claimed stage. The three stages left over
+                     (Disposition Readiness, Broker Selection, Offer Selection) are this section's,
+                     and 5 + 3 + 1 + 1 + 1 = the 11 values in Disposition_Stage__c. If a value is
+                     ever added to, removed from or renamed in that picklist, or claimed by a new
+                     component here, this chain must be edited in the SAME change - a stage in
+                     neither an allowlist nor this exclusion list falls through to THIS section by
+                     default, silently, which is exactly the 2026-08-24 Release Materials bug. -->
                 <visibilityRule>
-                    <booleanFilter>1 AND 2 AND 3 AND 4 AND 5 AND 6</booleanFilter>
+                    <booleanFilter>1 AND 2 AND 3 AND 4 AND 5 AND 6 AND 7 AND 8</booleanFilter>
                     <criteria>
                         <leftValue>{!Record.Disposition_Stage__c}</leftValue>
                         <operator>NE</operator>
@@ -1204,6 +1275,16 @@
                         <operator>NE</operator>
                         <rightValue>Release Materials</rightValue>
                     </criteria>
+                    <criteria>
+                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
+                        <operator>NE</operator>
+                        <rightValue>LOI</rightValue>
+                    </criteria>
+                    <criteria>
+                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
+                        <operator>NE</operator>
+                        <rightValue>PSA</rightValue>
+                    </criteria>
                 </visibilityRule>
             </componentInstance>
         </itemInstances>
@@ -1232,6 +1313,103 @@
                         <leftValue>{!Record.Disposition_Stage__c}</leftValue>
                         <operator>EQUAL</operator>
                         <rightValue>NDA</rightValue>
+                    </criteria>
+                </visibilityRule>
+            </componentInstance>
+        </itemInstances>
+        <!-- =====================================================================
+             LOI-STAGE AND PSA-STAGE DETAILS (2026-08-25). Two instances of ONE component.
+             =====================================================================
+             Same slot, same job and same shape as flexipage_fieldSection_ndaDetails immediately
+             above: at the LOI stage the Details area shows the LOI's OWN fields, at the PSA stage
+             the Contract Review's, and the disposition-fields Details section hides at both (two
+             more NE criteria were added to its chain above, in this same change).
+
+             🔴 WHY THESE ARE c:dispositionChildDetails AND NOT TWO MORE fieldSections. The NDA
+             section above works WITHOUT Apex only because Disposition__c carries Primary_NDA__c
+             and a set of NDA_*__c FORMULA fields traverse it, so the FlexiPage can name them as
+             ordinary Record. fields. THERE IS NO Primary_LOI__c AND NO Primary_PSA__c on
+             Disposition__c - verified against objects/Disposition__c/fields/ on 2026-08-25, not
+             assumed - so a fieldSection here has nothing to reference. Reproducing the NDA route
+             would mean two new lookups, a stamping queueable, a backfill over every existing sale
+             and nine more formula fields, to display nine values nobody edits from this page. The
+             component resolves the latest child by Apex (one Id, one query) and renders the fields
+             through lightning-record-view-form, which is READ-ONLY BY CONSTRUCTION - there is no
+             save path to disable. Editing stays on the LOI / Contract Review records themselves,
+             reachable from loisList and contractReviewsList further down this same region.
+
+             ⚠ NO recordId componentInstanceProperties BLOCK ON EITHER, and that is measured, not
+             style: recordId is a lightning__RecordPage IMPLICIT input and the bundle's JS exposes
+             `@api recordId`. The bundle's targetConfig deliberately does NOT declare a recordId
+             property, matching bovBrokerChangeHistory and dispositionBuyerTimeline in the sidebar
+             of this same page. The three properties that ARE declared (cardTitle, childObject,
+             fields) are set below; a property named here but not declared in the js-meta.xml
+             deploys as "Invalid property [x] in component [c:...]".
+
+             ⚠ THE TWO RULES ARE SINGLE-CRITERION EQUALs, copied from
+             flexipage_fieldSection_ndaDetails above rather than from the multi-criteria action
+             rules at the top of this file - this is the same one-stage-exclusive case. They are
+             mutually exclusive with each other and with the NDA section by construction, since
+             Disposition_Stage__c holds exactly one value.
+
+             ⚠ FIELD LISTS ARE USER-CHOSEN AND ORDER IS SIGNIFICANT (rendered two per row, in the
+             order given). All nine API names were verified to exist under objects/LOI__c/fields/
+             and objects/Contract_Review__c/fields/ before this was written. A typo here does not
+             fail the deploy - the FlexiPage never validates them - it renders a blank slot, so
+             re-verify against the object folders rather than from memory when editing.
+             🔴 FLS IS LOAD-BEARING AND IS *NOT* GRANTED BY THIS FILE. lightning-output-field
+             renders NOTHING for a field the running user cannot read, so a missing grant looks
+             exactly like an empty field rather than an error. Confirm read on all nine in
+             DPEG_Disposition_View and DPEG_Disposition_Edit; the four the two selectors already
+             depend on (LOI__c.Stage__c, Disposition__c on both children,
+             Contract_Review__c.Negotiation_Status__c, Execution_Date__c) are recorded as granted
+             in those selectors' headers, the remainder are not covered by any such note. -->
+        <itemInstances>
+            <componentInstance>
+                <componentInstanceProperties>
+                    <name>cardTitle</name>
+                    <value>LOI Details</value>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>childObject</name>
+                    <value>LOI__c</value>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>fields</name>
+                    <value>Stage__c,LOI_Status__c,Final_Agreed_Price__c,Counter_Price__c,Counter_Received_Date__c</value>
+                </componentInstanceProperties>
+                <componentName>dispositionChildDetails</componentName>
+                <identifier>dispositionLoiDetails</identifier>
+                <visibilityRule>
+                    <criteria>
+                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
+                        <operator>EQUAL</operator>
+                        <rightValue>LOI</rightValue>
+                    </criteria>
+                </visibilityRule>
+            </componentInstance>
+        </itemInstances>
+        <itemInstances>
+            <componentInstance>
+                <componentInstanceProperties>
+                    <name>cardTitle</name>
+                    <value>PSA Details</value>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>childObject</name>
+                    <value>Contract_Review__c</value>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>fields</name>
+                    <value>Negotiation_Status__c,Stage__c,Ball_In_Court__c,Execution_Date__c</value>
+                </componentInstanceProperties>
+                <componentName>dispositionChildDetails</componentName>
+                <identifier>dispositionPsaDetails</identifier>
+                <visibilityRule>
+                    <criteria>
+                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
+                        <operator>EQUAL</operator>
+                        <rightValue>PSA</rightValue>
                     </criteria>
                 </visibilityRule>
             </componentInstance>

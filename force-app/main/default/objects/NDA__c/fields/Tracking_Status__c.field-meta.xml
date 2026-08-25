@@ -44,6 +44,37 @@
         formula being updated to name it explicitly - that is a defect to fix (add the value to
         the CASE), not a state this field is meant to represent long-term.
 
+        =====================================================================
+        AMENDED 2026-08-25 - 'Not Sent' IS NO LONGER A REACHABLE Status__c VALUE. THE FORMULA
+        BELOW IS UNCHANGED AND MUST STAY UNCHANGED, INCLUDING ITS "Not Sent" LINE AND ITS
+        "Not Sent" FALLBACK.
+        =====================================================================
+
+        The user removed 'Not Sent' from the Disposition_NDA record type in Setup (repo caught up
+        the same day; the measured value list is in that record type file's own 2026-08-25
+        amendment). Acquisition_NDA had already restricted it out, so 'Not Sent' is now on NO
+        record type and cannot be WRITTEN on either - it stays ACTIVE on the master value set only
+        so rows that already carry it keep working.
+
+        WHAT DID NOT CHANGE, AND WHY THAT IS THE POINT: this field's SOURCE value 'Not Sent' is now
+        legacy-only, but this field's DISPLAY value "Not Sent" is not - Prepare, Review and Approved
+        all still collapse into it, and they are now the ONLY way a new disposition NDA reaches that
+        bucket. The mapping line "Not Sent" -> "Not Sent" is kept for the rows that predate the
+        removal, and the fallback is kept for the reason stated above. Deleting either would blank
+        the display for real rows in usman-dpeg.
+
+        ⚠ THE MAPPING TABLE ABOVE STILL READS "Prepare, Review, Approved, Not Sent, Pending". That
+        list is accurate as a description of the FORMULA. It is no longer a description of what a
+        NEW record can be in - only Prepare, Review and Approved are reachable on a disposition
+        NDA, and only Pending on an acquisition one.
+
+        ⚠ ONE THING THIS FIELD CANNOT REPRESENT AS OF THIS CHANGE: Disposition_NDA now has NO
+        record-type default, so a UI-created NDA arrives with Status__c BLANK. TEXT() of a blank
+        picklist is "", which matches no CASE branch and therefore takes the "Not Sent" fallback -
+        the fail-CLOSED result this field was designed for, and correct here (an unsent document).
+        It does mean a blank Status__c and a Prepare Status__c are INDISTINGUISHABLE on this field;
+        anything that needs to tell them apart must read Status__c itself.
+
         READ-ONLY BY CONSTRUCTION - a formula field cannot be edited directly, so FLS grants for
         this field must never set <editable>true</editable> anywhere; only <readable>. Granted on
         DPEG_Disposition_Edit and DPEG_Disposition_View (see those permission sets' own NDA__c

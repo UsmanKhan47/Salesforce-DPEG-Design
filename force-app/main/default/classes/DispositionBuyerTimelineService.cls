@@ -169,12 +169,19 @@
  * ══════════════════════════════════════════════════════════════════════════════════════════
  * 🔴 NEVER RENDER A NEGATIVE DURATION
  * ══════════════════════════════════════════════════════════════════════════════════════════
- * `daysToRelease` is null whenever either end of the span is null, AND whenever the arithmetic comes
- * out negative. A negative duration is not a small display defect: "-14 days to release" reads as a
- * data-entry instruction to nobody and as a bug to everyone. Out-of-order dates are REACHABLE
- * without anything being broken — an analyst can back-date `Materials_Released_Date__c` to before
- * the signature. So the row is not silently blanked either: `hasDateAnomaly` is set, and the
- * component flags it, so the analyst learns their dates disagree instead of just seeing an em-dash.
+ * `daysToRelease` AND `daysToRespond` (added 2026-08-25) are each null whenever either end of their
+ * span is null, AND whenever the arithmetic comes out negative. A negative duration is not a small
+ * display defect: "-14 days to release" reads as a data-entry instruction to nobody and as a bug to
+ * everyone. Out-of-order dates are REACHABLE without anything being broken — an analyst can back-date
+ * `Materials_Released_Date__c` to before the signature, and a broker's `Entry_DateTime__c` can be
+ * back-dated to before the release. So the row is not silently blanked either: `hasDateAnomaly` is
+ * set, and the component flags it, so the analyst learns their dates disagree instead of just seeing
+ * an em-dash. Both durations go through the ONE `span` helper; see its note on the shared flag.
+ *
+ * 🔴 AND NULL IS NEVER SOFTENED TO `0` ON EITHER. `0` is a REAL answer for both — an NDA signed and
+ * released the same day, a broker responding the day materials landed — so a `0` standing in for
+ * "no data" would erase the best-case row into the not-yet-started ones. Every null renders as an
+ * em-dash; nothing renders as a zero it did not earn.
  *
  * ══════════════════════════════════════════════════════════════════════════════════════════
  * ⚠ A NULL BROKER IS A REACHABLE, NORMAL STATE — AND THERE IS NO BACKFILL
@@ -233,8 +240,11 @@ public with sharing class DispositionBuyerTimelineService {
      * 🔴 IT IS A GATE, NOT A LABEL. See the class header: `Date_Signed__c` survives a
      * `Signed -> Declined` transition, so this string is the only thing standing between the card
      * and a signature date for a party who refused. Must match
-     * `objects/NDA__c/fields/Status__c.field-meta.xml`, whose value set is
-     * `Pending / Not Sent / Sent / Received / Signed / Declined`.
+     * `objects/NDA__c/fields/Status__c.field-meta.xml`, whose MASTER value set is
+     * `Pending / Prepare / Review / Approved / Not Sent / Sent / Received / Signed / Declined`
+     * (⚠ this listed six values until 2026-08-24/25; the three pre-send values are Disposition_NDA
+     * only, and 'Not Sent' is now legacy-read-only — on no record type. Neither fact touches this
+     * gate: 'Signed' is unchanged on both types).
      * ⚠ It matches `NdaSelector.STATUS_SIGNED` and is deliberately NOT shared with it — that one
      * scopes the ACQUISITION expiry-reminder batch and is pinned to a deployed report's filter. Two
      * unrelated decisions that happen to agree; coupling them would let a change to either move the
@@ -247,8 +257,11 @@ public with sharing class DispositionBuyerTimelineService {
     /**
      * The terminal `NDA__c.Status__c` value that makes a party a TERMINATED row.
      *
-     * ⚠ It is tested EXPLICITLY rather than inferred as "not Signed". `Not Sent`, `Sent`,
-     * `Received` and `Pending` are all IN-FLIGHT states — the counterparty has not signed YET — and
+     * ⚠ It is tested EXPLICITLY rather than inferred as "not Signed". `Prepare`, `Review`,
+     * `Approved`, `Not Sent`, `Sent`, `Received` and `Pending` are all IN-FLIGHT states — the
+     * counterparty has not signed YET (2026-08-25: the first three are where a new disposition NDA
+     * now LIVES, since the seed moved to 'Prepare'; a blank Status__c on a hand-created NDA is
+     * in-flight too, because the record type no longer supplies a default) — and
      * must render as an ordinary active row with an empty signature date, not as a terminated one.
      * Only `Declined` is an ending.
      */
@@ -281,10 +294,24 @@ public with sharing class DispositionBuyerTimelineService {
      * so no template change and no future consumer can leak it. That is why the suppression lives in
      * the service rather than in the component's getters.
      *
-     * 🔴 AND THERE IS NO `buyerName`, NO `firstOfferDate` AND NO `daysToRespond`. All three were
-     * removed on 2026-08-21 — the first because buyer identity is not tracked, the other two because
-     * nothing links an offer to a specific NDA. Re-adding any of them is re-adding a claim the data
-     * cannot support; read the class header first.
+     * 🔴 THERE IS STILL NO `buyerName` AND NO `firstOfferDate`. Both were removed on 2026-08-21 —
+     * the first because buyer identity is not tracked, the second because nothing links an OFFER to
+     * a specific NDA. Re-adding either is re-adding a claim the data cannot support.
+     *
+     * ⚠ `daysToRespond` WAS ALSO REMOVED THAT DAY AND CAME BACK ON 2026-08-25 — READ WHY BEFORE
+     * ASSUMING THE REMOVAL WAS SIMPLY REVERSED. The deleted one measured to the first OFFER, and
+     * died with `firstOfferDate` for the reason above. This one measures to the first RELEASE
+     * MATERIALS RESPONSE, an object that did not exist on this card until the 2026-08-24 merge and
+     * that IS linked to the sale. The old objection therefore does not reach it.
+     * 🔴 BUT IT IS A SALE-LEVEL NUMBER RENDERED ON A PER-NDA TILE, AND THAT IS THE HONEST LIMIT OF
+     * IT. `Release_Materials_Response__c` carries `Disposition__c` and `Broker__c` — there is NO NDA
+     * lookup — so the earliest response cannot be attributed to one NDA, and the value is
+     * deliberately the SAME on every tile whose released date matches (which is normally all of
+     * them, because `DispositionStageEntryService` stamps them in one pass). It is a fact about the
+     * SALE shown in the NDA's context, not a fact about that NDA. Do not "improve" it by picking the
+     * response whose `Broker__c` matches the NDA's `Broker__c`: most NDAs carry a NULL broker (a
+     * 2026-08-21 field with no backfill), so that version would silently render blank on the
+     * majority of rows — worse than a repeated-but-true number.
      */
     public class TimelineRow {
 
@@ -353,6 +380,23 @@ public with sharing class DispositionBuyerTimelineService {
         /** `materialsReleasedDate - ndaSignedDate`. Null if either end is null OR if negative. */
         @AuraEnabled
         public Integer daysToRelease;
+
+        /**
+         * Whole days from `materialsReleasedDate` to the EARLIEST
+         * `Release_Materials_Response__c.Entry_DateTime__c` on the same Disposition — i.e. how long
+         * the market took to come back once the materials went out. Null if either end is null OR if
+         * negative, exactly like `daysToRelease`.
+         *
+         * 🔴 NULL IS THE ONLY CORRECT VALUE FOR "NOT RELEASED YET" AND FOR "NOBODY HAS RESPONDED
+         * YET", AND IT IS NEVER `0`. Zero is a REAL and reachable answer here — a broker responding
+         * the same day the materials landed is the best possible outcome, and it is exactly the row
+         * an analyst most wants to see. A `0` standing in for "no data" would make that row
+         * indistinguishable from silence.
+         *
+         * ⚠ THE SAME NUMBER ON EVERY TILE IS THE EXPECTED RENDERING, NOT A BUG — see the DTO header.
+         */
+        @AuraEnabled
+        public Integer daysToRespond;
 
         /**
          * True when the duration was suppressed because the arithmetic went NEGATIVE — i.e. the
@@ -438,16 +482,28 @@ public with sharing class DispositionBuyerTimelineService {
             return rows;
         }
 
-        // ── SOURCE 1. Buyer-role NDAs only; `Party_Role__c` is filtered in the selector, and the
+        // ── SOURCE 1. Release Materials responses, through the SERVICE that owns that object's
+        // query and its mapping — never through its selector directly. See the class header.
+        // ⚠ THIS READ MOVED AHEAD OF THE NDA READ ON 2026-08-25 AND THE REASON IS `daysToRespond`,
+        // NOT PREFERENCE. That column measures to the earliest response on the sale, so the NDA rows
+        // cannot be built until this list is in hand. The QUERY COUNT IS UNCHANGED (still exactly
+        // two, still constant in the number of entries) and the merged ORDER is unaffected — the
+        // comparator below imposes a TOTAL order, so the sequence rows are appended in is not
+        // load-bearing. 🔴 BOTH READS STILL ALWAYS RUN AND NEITHER SHORT-CIRCUITS THE OTHER; the
+        // class header's rule survives the swap, and there is no `return` between them.
+        List<ReleaseMaterialsResponseService.ResponseRow> responses =
+            ReleaseMaterialsResponseService.getResponses(dispositionId);
+
+        // Null when nobody has responded yet — a normal early state, NOT an error and NOT a zero.
+        Date firstResponseDate = earliestResponseDate(responses);
+
+        // ── SOURCE 2. Buyer-role NDAs only; `Party_Role__c` is filtered in the selector, and the
         // broker's name is TRAVERSED in that query rather than resolved by a second read.
         for (NDA__c nda : NdaSelector.selectBuyerTimelineByDispositionId(dispositionId)) {
-            rows.add(buildNdaRow(nda));
+            rows.add(buildNdaRow(nda, firstResponseDate));
         }
 
-        // ── SOURCE 2. Release Materials responses, through the SERVICE that owns that object's
-        // query and its mapping — never through its selector directly. See the class header.
-        for (ReleaseMaterialsResponseService.ResponseRow response
-                : ReleaseMaterialsResponseService.getResponses(dispositionId)) {
+        for (ReleaseMaterialsResponseService.ResponseRow response : responses) {
             rows.add(buildResponseRow(response));
         }
 
@@ -503,6 +559,50 @@ public with sharing class DispositionBuyerTimelineService {
     }
 
     /**
+     * The EARLIEST `Entry_DateTime__c` across every response on the sale, as a Date. Pure: no SOQL.
+     *
+     * 🔴 IT SCANS FOR A MINIMUM AND DOES **NOT** READ `responses[size - 1]`. The selector returns
+     * these `Entry_DateTime__c DESC`, so the last element is the earliest TODAY and the index would
+     * work — which is exactly what makes it dangerous. That ordering is a decision owned by
+     * `ReleaseMaterialsResponseSelector`, made for the CARD's benefit (newest first), and nothing
+     * anywhere tells that selector its ORDER BY is load-bearing for an arithmetic column in a
+     * different class. A re-sort there would silently turn this into "days to the LATEST response" —
+     * a wrong number, not an error. The scan costs one pass over a handful of rows and cannot be
+     * broken from another file.
+     *
+     * ⚠ A NULL `Entry_DateTime__c` IS SKIPPED, NOT TREATED AS EARLIEST. The field defaults to
+     * `NOW()` but is not `required`, so a data-loader row can carry none (the class header and
+     * `NewestFirst` both already handle this). A row claiming no time at all must not become the
+     * start of the clock — that would report a span to an instant nobody recorded.
+     *
+     * ⚠ `Datetime.date()` CONVERTS IN THE RUNNING USER'S TIMEZONE, which is deliberate: the value is
+     * compared against `Materials_Released_Date__c`, a plain `Date` that every user sees the same,
+     * and the response's own timestamp is already rendered on its tile in the viewer's timezone. So
+     * the subtraction agrees with what is on screen. It does mean two users in different timezones
+     * can see a duration differing by one day on a response logged near midnight — the same
+     * documented trade-off `formatDate` in the component already carries.
+     *
+     * @param responses Every response on the sale, in any order; null-safe and empty-safe.
+     * @return The earliest response's date, or null when there are none (or none carries a time).
+     */
+    private static Date earliestResponseDate(
+            List<ReleaseMaterialsResponseService.ResponseRow> responses) {
+        if (responses == null || responses.isEmpty()) {
+            return null;
+        }
+        Datetime earliest = null;
+        for (ReleaseMaterialsResponseService.ResponseRow response : responses) {
+            if (response.entryDateTime == null) {
+                continue;
+            }
+            if (earliest == null || response.entryDateTime < earliest) {
+                earliest = response.entryDateTime;
+            }
+        }
+        return earliest == null ? null : earliest.date();
+    }
+
+    /**
      * One Release Materials response -> one row. Pure: no SOQL, no DML, no state.
      *
      * ⚠ IT MAPS AN ALREADY-BUILT DTO RATHER THAN A QUERIED SOBJECT, which is what keeps the broker
@@ -536,10 +636,13 @@ public with sharing class DispositionBuyerTimelineService {
      * ⚠ RENAMED FROM `buildRow` ON 2026-08-24. There are two builders now, and a bare `buildRow`
      * sitting beside `buildResponseRow` would read as the generic one.
      *
-     * @param nda A buyer-role NDA with the timeline fields populated.
+     * @param nda               A buyer-role NDA with the timeline fields populated.
+     * @param firstResponseDate The earliest response date on the SALE (see `earliestResponseDate`),
+     *                          or null when nobody has responded yet. Passed IN rather than queried
+     *                          here — this method stays pure, and the read stays in `getTimeline`.
      * @return The row. Never null; every response-half field is left null.
      */
-    private static TimelineRow buildNdaRow(NDA__c nda) {
+    private static TimelineRow buildNdaRow(NDA__c nda, Date firstResponseDate) {
         TimelineRow row = new TimelineRow();
         row.kind = KIND_NDA;
         // 🔴 THE SORT KEY IS `CreatedDate`, NOT EITHER OF THE NDA'S OWN DATES. The three reasons are
@@ -567,6 +670,12 @@ public with sharing class DispositionBuyerTimelineService {
         row.materialsReleasedDate = nda.Materials_Released_Date__c;
 
         row.daysToRelease = span(row.ndaSignedDate, row.materialsReleasedDate, row);
+
+        // ── HOW LONG THE MARKET TOOK TO COME BACK. Both ends can be null independently — materials
+        // not released yet, or released with nobody responding yet — and `span` returns null for
+        // either, which the component renders as an em-dash. A same-day response yields 0, a real
+        // answer that must survive: see the DTO field's note on why 0 is never a stand-in for null.
+        row.daysToRespond = span(row.materialsReleasedDate, firstResponseDate, row);
         return row;
     }
 
@@ -585,9 +694,19 @@ public with sharing class DispositionBuyerTimelineService {
      * dependency into a pure-Date calculation. `daysBetween` is signed, which is precisely why the
      * negative test below is needed and is not defensive decoration.
      *
-     * ⚠ IT STAYS A HELPER EVEN THOUGH IT NOW HAS ONE CALLER (it had two until 2026-08-21). Inlining
-     * it would put the negative-suppression rule and the anomaly flag inside `buildRow`'s happy
-     * path, where the next date column added would be written without them.
+     * ⚠ IT IS BACK TO TWO CALLERS (it had two until 2026-08-21, then one, then two again from
+     * 2026-08-25's `daysToRespond`). The reason it was KEPT as a helper at one caller was that
+     * inlining it would put the negative-suppression rule and the anomaly flag inside the builder's
+     * happy path, "where the next date column added would be written without them" — and the next
+     * date column duly arrived. It is reused verbatim rather than copied.
+     *
+     * 🔴 SO `hasDateAnomaly` IS NOW SET BY EITHER SPAN, AND ITS MEANING WIDENED ACCORDINGLY: it says
+     * "some pair of dates on this row is out of order", not specifically "signed after released".
+     * That is correct for its only consumer — the component renders ONE anomaly badge per tile, and
+     * a second, differently-worded badge for the second pair would be noise. A response logged
+     * BEFORE the materials release is exactly as reachable as a back-dated release date (the
+     * response's `Entry_DateTime__c` is user-editable) and deserves the same visible flag rather
+     * than a silent em-dash.
      *
      * @param fromDate The earlier end; null-safe.
      * @param toDate   The later end; null-safe.

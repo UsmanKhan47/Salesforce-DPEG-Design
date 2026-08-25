@@ -686,18 +686,29 @@ private class RecordStageAdvanceServiceTest {
     }
 
     @isTest
-    static void dispositionNdaWalksNotSentToSigned() {
-        // The disposition sequence is SHORTER and starts on a value the acquisition record type
-        // does not carry at all ('Not Sent'). If the service fell back to the acquisition map, the
-        // very first hop would be refused with "no next step available from the Not Sent stage" —
-        // so this walk fails LOUDLY rather than subtly if record-type resolution breaks.
+    static void dispositionNdaWalksPrepareToSigned() {
+        // The disposition sequence starts on a value the acquisition record type does not carry at
+        // all ('Prepare'). If the service fell back to the acquisition map, the very first hop
+        // would be refused with "no next step available from the Prepare stage" — so this walk
+        // fails LOUDLY rather than subtly if record-type resolution breaks.
+        //
+        // ⚠ RENAMED AND RE-SEEDED 2026-08-25. This was dispositionNdaWalksNotSentToSigned and it
+        // seeded 'Not Sent', which the user has removed from the Disposition_NDA record type in
+        // Setup. Because NDA__c.Status__c is restricted and DML enforces the record-type subset,
+        // the old seed did not fail an ASSERTION — it failed the INSERT on line one, which is a
+        // fixture failure wearing a service failure's clothes. The sequence itself grew in the same
+        // change (NDA_DISPOSITION_NEXT_STAGE gained Prepare -> Review -> Approved -> Sent) because
+        // every NDA now ENTERS at 'Prepare'; without those hops the Advance button would be dead on
+        // arrival for every new disposition NDA. The retained legacy hop 'Not Sent' => 'Sent' is
+        // deliberately NOT walked here — it is unreachable for any row created from now on, and a
+        // test that seeded it would be re-testing the DML refusal above.
         //
         // 🔴 THIS TEST IS DELIBERATELY UNCHANGED BY THE 2026-08-16 ACQUISITION REORDER, AND THAT IS
         // ITS SECOND JOB. It is the REGRESSION GUARD for the shared-'Sent' divergence: the sell-side
         // sequence keeps 'Sent' MID-sequence and 'Signed' TERMINAL, which is now the exact mirror of
         // the acquisition map. Anyone who "reconciles" the two maps — in either direction — reds
         // this walk or the acquisition one, never neither.
-        Id ndaId = insertNdaOnRecordType(RT_DISPOSITION_NDA, 'Not Sent').Id;
+        Id ndaId = insertNdaOnRecordType(RT_DISPOSITION_NDA, 'Prepare').Id;
 
         Test.startTest();
         List<String> messages = advanceUntilBlocked(ndaId);
@@ -705,12 +716,15 @@ private class RecordStageAdvanceServiceTest {
 
         Assert.areEqual(
             new List<String>{
+                'NDA moved to Review.',
+                'NDA moved to Approved.',
                 'NDA moved to Sent.',
                 'NDA moved to Signed.',
                 'BLOCKED: There is no next step available from the Signed stage.'
             },
             messages,
-            'The Disposition_NDA map must be exactly Not Sent -> Sent -> Signed. There is no '
+            'The Disposition_NDA map must be exactly Prepare -> Review -> Approved -> Sent -> '
+            + 'Signed (⚠ it was Not Sent -> Sent -> Signed until 2026-08-25). There is no '
             + '"Received" step on a sale — DPEG issues the NDA, so it never comes back TO us as a '
             + 'separate milestone');
         Assert.areEqual('Signed', [SELECT Status__c FROM NDA__c WHERE Id = :ndaId].Status__c,

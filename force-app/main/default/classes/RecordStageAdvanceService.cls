@@ -54,8 +54,13 @@
  *                     placement of 'Sent' is REVERSED — see NDA_ACQUISITION_NEXT_STAGE for the
  *                     retracted argument, the unmigrated-row residual, and why this needed NO
  *                     change to NDA_Signed_Status_Sync (the deal gate's checkbox LATCHES true).
- *   Disposition_NDA   Not Sent -> Sent -> Signed                    explicit targets: {Declined}
+ *   Disposition_NDA   Prepare -> Review -> Approved -> Sent -> Signed
+ *                                                                   explicit targets: {Declined}
  *                     gate: DISPOSITION_DRIVER
+ *                     ⚠ EXTENDED 2026-08-25. Read "Not Sent -> Sent -> Signed" until that day,
+ *                     when the user removed 'Not Sent' from the record type in Setup and the NDA
+ *                     seed moved to 'Prepare'. The 'Not Sent' => 'Sent' hop is KEPT for pre-existing
+ *                     rows but is unreachable for new ones — see NDA_DISPOSITION_NEXT_STAGE.
  *
  *   LOI__c            (Tranche 3B, 2026-08-09 — this was the config addition the note at
  *                      CONFIG_BY_TYPE predicted, and it changed nothing below the config)
@@ -775,8 +780,30 @@ public with sharing class RecordStageAdvanceService {
      * their own side of the business; do NOT harmonise either one toward the other. This map is
      * verbatim what it has always been — Not Sent -> Sent -> Signed — and the acquisition change
      * deliberately left it untouched.
+     *
+     * ⚠ EXTENDED 2026-08-25 — THE LAST SENTENCE ABOVE IS NO LONGER TRUE, AND THE RULE IT SERVES IS
+     * UNCHANGED. The map is now Prepare -> Review -> Approved -> Sent -> Signed. Nothing was
+     * REMOVED and no hop was repointed: 'Sent' => 'Signed' is untouched, and the acquisition map is
+     * still not harmonised toward this one.
+     *
+     * 🔴 WHY IT HAD TO GROW, AND WHY THIS IS NOT SCOPE CREEP. The user removed 'Not Sent' from the
+     * Disposition_NDA record type in Setup and cleared that type's default, and
+     * DispositionStageEntryService's seed moved to 'Prepare' in the same change. Every NDA created
+     * from that day forward therefore ENTERS at 'Prepare' — a value this map did not carry. Without
+     * these three hops the Advance Stage button would refuse the FIRST click on every new
+     * disposition NDA with "There is no next step available from the Prepare stage", i.e. the
+     * feature would be dead on arrival rather than subtly wrong.
+     *
+     * ⚠ 'Not Sent' => 'Sent' IS DELIBERATELY RETAINED AND IS NOW A LEGACY-ONLY HOP. The value stays
+     * ACTIVE on the master value set (see the field file), so rows created before 2026-08-25 still
+     * sit at 'Not Sent' in usman-dpeg and must remain advanceable. It can never be REACHED again —
+     * nothing maps TO it and no record type exposes it — so it is unreachable, not dead. Do not
+     * prune it; doing so strands those rows with no forward hop at all.
      */
     private static final Map<String, String> NDA_DISPOSITION_NEXT_STAGE = new Map<String, String>{
+        'Prepare' => 'Review',
+        'Review' => 'Approved',
+        'Approved' => 'Sent',
         'Not Sent' => 'Sent',
         'Sent' => 'Signed'
     };

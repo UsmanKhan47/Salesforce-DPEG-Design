@@ -161,10 +161,14 @@
  * 🔴 DESIGNED FOR A ~340px SIDEBAR COLUMN. DO NOT REINTRODUCE COLUMNS.
  * ══════════════════════════════════════════════════════════════════════════
  * The rendered unit is a self-labelling TILE, not a row in a shared grid — see
- * the long note in the template. The three values below are produced in reading
+ * the long note in the template. The four values below are produced in reading
  * order and flattened to em-dashes in exactly the same cases as before; the two
  * "step class" getters drive a decorative milestone rail and carry NO
  * information that is not already in the value cell beside them.
+ * ⚠ FOUR, NOT THREE, SINCE 2026-08-25 — "Days to respond" joined the tile. It is
+ * a fourth dt/dd pair on the EXISTING <dl>, NOT a fourth column: the tile still
+ * stacks in a ~340px sidebar because that is what a <dl> laid out this way does.
+ * The rule above therefore still holds, and adding the pair did not test it.
  *
  * ══════════════════════════════════════════════════════════════════════════
  * 🔴 2026-08-25 — ONE CARD, THREE SECTIONS. THE TIMELINE IS SECTION 2.
@@ -403,6 +407,15 @@ export default class DispositionBuyerTimeline extends LightningElement {
                 ndaSigned,
                 materialsReleased,
                 daysToRelease: declined ? EM_DASH : this.formatDays(row.daysToRelease),
+                // ⚠ SAME SHAPE AS THE LINE ABOVE, DELIBERATELY — `formatDays` already
+                // turns null/undefined into the em-dash, and the `declined` guard is
+                // belt-and-braces on both (the service returns early on a declined row,
+                // so both arrive null anyway). Two durations formatted two different
+                // ways is how they start disagreeing on the day one of them changes.
+                // 🔴 DO NOT ADD `|| EM_DASH` HERE. `formatDays(0)` returns "0 days" —
+                // a real, valuable answer (materials released and answered the same
+                // day) — and `0 || EM_DASH` would silently em-dash exactly that row.
+                daysToRespond: declined ? EM_DASH : this.formatDays(row.daysToRespond),
                 // ── Milestone rail (DECORATION ONLY — see the class header) ──
                 // Derived from the RENDERED value, not from the raw payload, so
                 // the marker and the text beside it cannot disagree: a declined

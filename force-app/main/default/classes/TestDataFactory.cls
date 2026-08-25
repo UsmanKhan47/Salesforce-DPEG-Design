@@ -84,7 +84,8 @@
  *   the predicted symptom changes. 🔴 One consequence is NOT cosmetic: because this factory is
  *   shared, a seed that names a value a record type has not been DEPLOYED with takes the whole
  *   suite down at once. Deploy order (record type before factory) is a hard requirement here.
- *   NDA__c: 'Pending' vs 'Not Sent'. LOI__c: 'Draft' vs 'Received' (no shared
+ *   NDA__c: 'Pending' vs 'Prepare' (⚠ the disposition seed was 'Not Sent' until 2026-08-25, when
+ *   the user removed that value from the Disposition_NDA record type in Setup). LOI__c: 'Draft' vs 'Received' (no shared
  *   STARTING value to fall back on — ⚠ this said "fully disjoint sets" until 2026-08-14, which
  *   observation 5 ended by renaming 'Prepare/Review' to 'Under Review', a value the disposition
  *   sequence already carried; the sets now OVERLAP there, and only the seeds are still
@@ -1536,8 +1537,13 @@ public with sharing class TestDataFactory {
      * rather than inherited from the test-running user's profile default.
      *
      * 🔴 THE SEED STATUS IS CHOSEN BY RECORD TYPE, AND IT HAS TO BE. The two value sets OVERLAP
-     * but are not equal: 'Pending' exists only on Acquisition_NDA and 'Not Sent' only on
+     * but are not equal: 'Pending' exists only on Acquisition_NDA and 'Prepare' only on
      * Disposition_NDA, so no shared seed value exists.
+     * ⚠ AMENDED 2026-08-25 — the disposition seed moved 'Not Sent' -> 'Prepare'. The user removed
+     * 'Not Sent' from the Disposition_NDA record type in Setup and cleared that type's default, so
+     * 'Not Sent' is now on NO record type and this restricted field REFUSES it at insert. The old
+     * seed did not fail a test's assertions — it failed every disposition NDA fixture in the repo
+     * at the DML, which is why this one line is load-bearing far outside this method.
      * ⚠ RETRACTED 2026-08-21 — MECHANISM ONLY. This used to continue: "Record-type picklist
      * restriction is UI-only — Apex DML does NOT enforce it — so a shared seed value would insert
      * happily and produce a fixture whose status is off its own record type's value set, which
@@ -1573,7 +1579,7 @@ public with sharing class TestDataFactory {
         for (Integer i = 0; i < count; i++) {
             NDA__c nda = new NDA__c(
                 Opportunity__c = opportunityId,
-                Status__c = isDisposition ? 'Not Sent' : 'Pending',
+                Status__c = isDisposition ? 'Prepare' : 'Pending',
                 Counterparty_Name__c = 'Test Counterparty ' + i,
                 Method__c = 'DocuSign',
                 Date_Sent__c = Date.today(),
@@ -1604,7 +1610,7 @@ public with sharing class TestDataFactory {
      * @param count         Number of NDAs.
      * @param dispositionId Parent Disposition__c (nullable).
      * @param doInsert      Insert when true.
-     * @return NDAs at Status 'Not Sent', Party_Role__c 'Buyer', record type Disposition_NDA.
+     * @return NDAs at Status 'Prepare', Party_Role__c 'Buyer', record type Disposition_NDA.
      */
     public static List<NDA__c> createDispositionNdas(
         Integer count,
@@ -1639,7 +1645,7 @@ public with sharing class TestDataFactory {
      * on-market included; an INSERT straight at a gated stage remains exempt because the rule is
      * `ISCHANGED`-only.
      *
-     * Inserted directly at 'Signed' rather than walked through 'Not Sent' -> 'Sent' -> 'Signed' —
+     * Inserted directly at 'Signed' rather than walked through 'Prepare' -> ... -> 'Signed' —
      * `NDA_Signed_Rollup` is `RecordAfterSave` / `CreateAndUpdate`, so it fires on the insert
      * either way and there is nothing to prove about the NDA's own walk here.
      *

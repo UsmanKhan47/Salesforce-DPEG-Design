@@ -35,11 +35,14 @@
         ENUMERATED" comments).
 
         DEFAULT VALUE NOT CHANGED. Master default stays Pending (Acquisition_NDA's entry state).
-        Disposition_NDA's own default stays Not Sent, NOT Prepare - this was a deliberate choice
-        to avoid silently changing new-record behavior for the disposition path; the task adding
-        Prepare/Review was about picklist ORDER and CONTENT, not about moving the record-type
-        default earlier. If Prepare should become the default entry state for a new Disposition
-        NDA, that is a follow-up decision for the user, not inferred here.
+        ⚠ THE REST OF THIS PARAGRAPH IS SUPERSEDED - see the 2026-08-25 amendment at the foot of
+        this comment. Kept verbatim because it names the follow-up decision the user has since
+        made, and because "master default stays Pending" (the sentence above) is still true.
+        RETRACTED, verbatim: "Disposition_NDA's own default stays Not Sent, NOT Prepare - this was
+        a deliberate choice to avoid silently changing new-record behavior for the disposition
+        path; the task adding Prepare/Review was about picklist ORDER and CONTENT, not about moving
+        the record-type default earlier. If Prepare should become the default entry state for a new
+        Disposition NDA, that is a follow-up decision for the user, not inferred here."
 
         RESTRICTED PICKLIST, DML-ENFORCED (measured, not assumed - see
         recordTypes/Acquisition_NDA.recordType-meta.xml's 2026-08-20 correction). Deploy order is
@@ -59,10 +62,39 @@
         rollup's default branch already treats "anything that isn't Signed or Declined" as
         outstanding, and that default already covers the three new values without being told
         their names.
+
+        =====================================================================
+        AMENDED 2026-08-25 - 'Not Sent' IS NOW ON NO RECORD TYPE, AND Disposition_NDA HAS NO
+        DEFAULT. THIS FIELD FILE ITSELF IS UNCHANGED BELOW THE COMMENT - THE VALUE STAYS ACTIVE ON
+        THE MASTER SET.
+        =====================================================================
+
+        The user removed 'Not Sent' from Disposition_NDA in Setup and cleared that record type's
+        default; the repo caught up in
+        objects/NDA__c/recordTypes/Disposition_NDA.recordType-meta.xml, whose own 2026-08-25
+        amendment carries the measured evidence. Disposition_NDA now exposes SIX values:
+        Prepare -> Review -> Approved -> Sent -> Signed, plus Declined.
+
+        🔴 'Not Sent' IS DELIBERATELY LEFT ACTIVE IN THE <valueSet> BELOW even though Acquisition_
+        NDA already restricted it out, which makes it reachable from NO record type. Deactivating
+        it would break the rows that already carry it - and there are such rows in usman-dpeg. It
+        is now a LEGACY-READ-ONLY value: readable, renderable, formula-mappable, but refused on any
+        new write because this value set is `restricted` and DML enforces the record-type subset
+        (measured; see recordTypes/Acquisition_NDA.recordType-meta.xml's 2026-08-20 correction).
+        Anyone tempted to prune it, or to prune the consumers that still name it
+        (Tracking_Status__c's CASE, RecordStageAdvanceService's 'Not Sent' => 'Sent' hop,
+        dispositionDealSummary's NDA_TONE), is pruning the ONLY thing keeping those rows working.
+
+        ⚠ WHERE A NEW DISPOSITION NDA NOW STARTS. With no record-type default, a UI-created NDA
+        leaves Status__c BLANK. Automation does not: DispositionStageEntryService's
+        DISPOSITION_NDA_INITIAL_STATUS moved 'Not Sent' -> 'Prepare' in this same change, as did
+        TestDataFactory's disposition seed. THAT CONSTANT IS NOW THE ONLY DECLARATION OF THE ENTRY
+        STATE ANYWHERE - there is no <default>true</default> left on the record type to keep it in
+        step with, so a future reorder of the lifecycle must edit the constant explicitly.
     -->
     <fullName>Status__c</fullName>
-    <description>Lifecycle state of the NDA. THE MASTER SET IS THE UNION OF TWO RECORD-TYPE SETS AND NO SINGLE RECORD TYPE SEES ALL VALUES. Acquisition_NDA exposes Pending, Received, Signed, Sent (D14.1, reordered 2026-08-16). Disposition_NDA exposes Prepare, Review, Approved, Not Sent, Sent, Signed, Declined (2026-08-24 addition - see XML comment). Sent and Signed are SHARED, so this field alone does NOT identify the record type - use Disposition__c or RecordTypeId for that. Read by NDA_Signed_Status_Sync (before-save, derives NDA_Signed__c) and NDA_Signed_Rollup (after-save, counts Signed rows onto the parent Disposition).</description>
-    <inlineHelpText>Pick the state this NDA is in. The choices differ by record type: an acquisition NDA runs Pending, Received, Signed, Sent; a disposition NDA runs Prepare, Review, Approved, Not Sent, Sent, Signed, and Declined if the counterparty refuses.</inlineHelpText>
+    <description>Lifecycle state of the NDA. THE MASTER SET IS THE UNION OF TWO RECORD-TYPE SETS AND NO SINGLE RECORD TYPE SEES ALL VALUES. Acquisition_NDA exposes Pending, Received, Signed, Sent (D14.1, reordered 2026-08-16). Disposition_NDA exposes Prepare, Review, Approved, Sent, Signed, Declined (2026-08-25 - &apos;Not Sent&apos; removed from that type; it stays ACTIVE here for legacy rows and is now on NO record type - see XML comment). Sent and Signed are SHARED, so this field alone does NOT identify the record type - use Disposition__c or RecordTypeId for that. Read by NDA_Signed_Status_Sync (before-save, derives NDA_Signed__c) and NDA_Signed_Rollup (after-save, counts Signed rows onto the parent Disposition).</description>
+    <inlineHelpText>Pick the state this NDA is in. The choices differ by record type: an acquisition NDA runs Pending, Received, Signed, Sent; a disposition NDA runs Prepare, Review, Approved, Sent, Signed, and Declined if the counterparty refuses.</inlineHelpText>
     <label>Status</label>
     <required>false</required>
     <trackHistory>false</trackHistory>

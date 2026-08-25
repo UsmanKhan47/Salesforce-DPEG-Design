@@ -1,0 +1,53 @@
+<template>
+    <lightning-card title={cardTitle} icon-name="standard:document">
+        <div class="slds-var-p-horizontal_medium slds-var-p-bottom_medium slds-is-relative">
+            <!-- FOUR MUTUALLY EXCLUSIVE STATES, IN PRIORITY ORDER: loading, error, record, empty.
+                 The `empty` branch is lwc:else and NOT a second condition on purpose - every path
+                 out of the wire lands somewhere, so this card can never render as a blank box.
+                 A blank card on a stage-gated slot is indistinguishable from a broken visibility
+                 rule, which is the failure mode this component exists to avoid. -->
+            <template lwc:if={isLoading}>
+                <div class="slds-var-p-vertical_large">
+                    <lightning-spinner
+                        alternative-text="Loading details"
+                        size="small"
+                    ></lightning-spinner>
+                </div>
+            </template>
+
+            <template lwc:elseif={errorMessage}>
+                <p class="slds-text-color_error">{errorMessage}</p>
+            </template>
+
+            <!-- READ-ONLY BY CONSTRUCTION. lightning-record-view-form has no save path at all, so
+                 there is nothing to disable and no chance of a stray edit: the LOI and the PSA are
+                 edited on their OWN record pages, which is the whole requirement. It also applies
+                 FLS per field and supplies the real field labels, so nothing here duplicates the
+                 schema. -->
+            <template lwc:elseif={childId}>
+                <lightning-record-view-form
+                    record-id={childId}
+                    object-api-name={childObject}
+                    density="comfy"
+                >
+                    <div class="slds-grid slds-wrap slds-gutters_small">
+                        <template for:each={fieldList} for:item="fieldName">
+                            <div
+                                key={fieldName}
+                                class="slds-col slds-size_1-of-1 slds-medium-size_1-of-2 slds-var-p-vertical_xx-small"
+                            >
+                                <lightning-output-field
+                                    field-name={fieldName}
+                                ></lightning-output-field>
+                            </div>
+                        </template>
+                    </div>
+                </lightning-record-view-form>
+            </template>
+
+            <template lwc:else>
+                <p class="slds-text-color_weak">{emptyMessage}</p>
+            </template>
+        </div>
+    </lightning-card>
+</template>

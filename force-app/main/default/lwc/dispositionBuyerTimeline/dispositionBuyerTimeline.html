@@ -339,16 +339,26 @@
                                      CSS. The first two pairs are the NDA JOURNEY (rendered
                                      as a compact vertical timeline: a filled marker for a
                                      milestone that has a date, a hollow one for a milestone
-                                     still to come); the last is the DURATION between them,
-                                     separated by a rule.
+                                     still to come); the last TWO are DURATIONS, split off
+                                     by a rule.
                                      ⚠ THE MARKER IS REINFORCEMENT ONLY. The date cell
                                      already states the milestone's status in words (a
                                      date, or an em-dash), so a user who cannot see the
                                      marker loses nothing.
-                                     🔴 THERE IS NO "First offer" PAIR AND NO "Days to
-                                     respond" PAIR. Both were deleted on 2026-08-21 because
-                                     nothing links an offer to a specific NDA any more —
-                                     see the JS header before adding either back. -->
+                                     🔴 THERE IS STILL NO "First offer" PAIR. It was deleted
+                                     on 2026-08-21 because nothing links an offer to a
+                                     specific NDA — read the JS header before adding it back.
+                                     ⚠ "Days to respond" RETURNED ON 2026-08-25 AND IS NOT
+                                     THE ONE THAT WAS DELETED. The old one measured to the
+                                     first OFFER and died with it; this one measures to the
+                                     first RELEASE MATERIALS RESPONSE, which IS linked to
+                                     the sale. It is a SALE-level number shown on every
+                                     tile, so the same value repeating down the list is the
+                                     data being true — see the service's DTO header.
+                                     🔴 `dbt-sep` STAYS ON "Days to release" ONLY. The rule
+                                     separates the JOURNEY from the DURATIONS; putting it on
+                                     this pair too would draw a second line between two
+                                     things that belong together. -->
                                 <dl class="dbt-facts">
                                     <dt class={row.ndaSignedStepClass}>NDA signed</dt>
                                     <dd class="dbt-c dbt-mono">{row.ndaSigned}</dd>
@@ -363,6 +373,11 @@
                                     <dt class="dbt-label dbt-sep">Days to release</dt>
                                     <dd class="dbt-c dbt-mono dbt-sep">
                                         {row.daysToRelease}
+                                    </dd>
+
+                                    <dt class="dbt-label">Days to respond</dt>
+                                    <dd class="dbt-c dbt-mono">
+                                        {row.daysToRespond}
                                     </dd>
                                 </dl>
                             </template>

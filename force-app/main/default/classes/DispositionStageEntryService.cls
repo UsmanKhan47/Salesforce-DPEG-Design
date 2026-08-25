@@ -291,12 +291,29 @@ public with sharing class DispositionStageEntryService {
      * produces a failed NDA creation surfaced as an opaque INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST
      * from a stage entry the user did not know triggered an NDA. Still worth getting right, and now
      * the deploy ORDER matters too: the record type must carry this value before this class is
-     * deployed naming it. Keep this in step
-     * with the `<default>true</default>` entry under Status__c in
-     * objects/NDA__c/recordTypes/Disposition_NDA.recordType-meta.xml.
+     * deployed naming it.
+     * ⚠ SUPERSEDED 2026-08-25 as to the last sentence, which read: "Keep this in step with the
+     * `<default>true</default>` entry under Status__c in
+     * objects/NDA__c/recordTypes/Disposition_NDA.recordType-meta.xml." THERE IS NO SUCH ENTRY ANY
+     * MORE — the user cleared that record type's default in Setup, so it has none, and there is
+     * nothing left to keep this in step WITH.
+     *
+     * 🔴 CHANGED 2026-08-25: 'Not Sent' -> 'Prepare'. 'Not Sent' was removed from the
+     * Disposition_NDA record type in the same change (measured live; see that record type file's
+     * 2026-08-25 amendment). Leaving this constant at 'Not Sent' would have made EVERY future
+     * disposition NDA insert fail — not silently, but with exactly the opaque
+     * INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST the paragraph above predicts, raised from a stage
+     * change into `NDA` that the user has no reason to connect to an NDA at all.
+     *
+     * 🔴 THIS CONSTANT IS NOW THE ONLY DECLARATION OF THE DISPOSITION NDA ENTRY STATE ANYWHERE IN
+     * THE ORG. With no record-type default, a UI-created NDA arrives BLANK and the user picks;
+     * only this line decides where an AUTO-created one starts. 'Prepare' is the first step of the
+     * record type's sequence (Prepare -> Review -> Approved -> Sent -> Signed, plus Declined).
+     * Seeding blank was rejected: a blank status on a record the user did not create reads as a
+     * failed creation, and `NDA_Signed_Rollup` would count it as outstanding either way.
      */
     @TestVisible
-    private static final String DISPOSITION_NDA_INITIAL_STATUS = 'Not Sent';
+    private static final String DISPOSITION_NDA_INITIAL_STATUS = 'Prepare';
 
     /**
      * Disposition_LOI's default Stage__c. Same "constants, not describes" reasoning as

@@ -1,6 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <PathAssistant xmlns="http://soap.sforce.com/2006/04/metadata">
     <!--
+        ⚠ RETRACTED 2026-08-25 - THE "Four steps: Not Sent -> Sent -> Signed" SEQUENCE NAMED IN
+        THE NEXT PARAGRAPH IS NO LONGER THE PATH. The user removed 'Not Sent' from the
+        Disposition_NDA record type in Setup, and Status__c on this record type now runs
+        Prepare -> Review -> Approved -> Sent -> Signed, with Declined still the terminal
+        off-ramp. The paragraph below is kept verbatim as history, not as the current sequence -
+        see the amendment at the foot of this comment for what the path steps are now and why.
+
         The SELL-SIDE NDA path, for the Disposition_NDA record type.
         Four steps: Not Sent -> Sent -> Signed, plus Declined as a terminal off-ramp
         (Part 2 lines 28-41).
@@ -114,6 +121,38 @@
         Acquisition_NDA RESTRICTS NOT SENT OUT ENTIRELY - a value a record type does not expose
         cannot occupy a position in that record type's rendering. Anyone re-ordering this
         picklist again must re-check that claim against BOTH record type files.
+
+        =====================================================================
+        AMENDED 2026-08-25 - RE-SEQUENCED TO Prepare -> Review -> Approved -> Sent -> Signed;
+        'Not Sent' STEP REMOVED; Declined UNCHANGED.
+        =====================================================================
+
+        The user removed 'Not Sent' from the Disposition_NDA record type in Setup; Status__c on
+        this record type now exposes exactly Prepare, Review, Approved, Sent, Signed, Declined
+        (see objects/NDA__c/recordTypes/Disposition_NDA.recordType-meta.xml's own 2026-08-25
+        amendment for the measured evidence). A new disposition NDA now enters at Prepare, not at
+        the retired 'Not Sent', so the path is re-sequenced to match: Prepare -> Review ->
+        Approved -> Sent -> Signed, five steps instead of four.
+
+        THE FORMER 'Not Sent' STEP IS REMOVED, NOT RENAMED. Its three fieldNames
+        (Counterparty_Name__c, Party_Role__c, Method__c) move to the new Prepare step, since
+        identifying the counterparty and how the NDA will be signed is still the first thing this
+        path asks for - it is now done at Prepare instead of at the retired Not Sent.
+
+        REVIEW AND APPROVED HAVE NO fieldNames, ON THE SAME REASONING AS Declined BELOW: NDA__c
+        carries no field naming a reviewer, an approver, or a review/approval date, so there is
+        nothing on the object for these two steps to surface. They are process gates, not data-
+        entry steps - the same shape Declined already used for a different reason (see Declined's
+        own paragraph above, unchanged).
+
+        DECLINED ITSELF IS COMPLETELY UNCHANGED BY THIS AMENDMENT - same fieldNames (none), same
+        info text, same terminal/off-ramp treatment, same position last in the file. Nothing
+        above about Declined - the rollup exclusion, the Signed -> Declined recovery, the
+        no-delete policy - was touched.
+
+        STEP ORDER IS STILL NOT WHAT DRIVES BUBBLE ORDER (see the paragraph above this one) - the
+        Status__c picklist's record-type-scoped value order does that. This file's step order is
+        kept in step with it for readability, per that same paragraph's standing instruction.
     -->
     <active>true</active>
     <entityName>NDA__c</entityName>
@@ -123,8 +162,16 @@
         <fieldNames>Counterparty_Name__c</fieldNames>
         <fieldNames>Party_Role__c</fieldNames>
         <fieldNames>Method__c</fieldNames>
-        <info>An interested party has been identified but the NDA has not gone out yet. Record who they are and whether this is the prospective Buyer or the Introducing Broker who brought them - DPEG collects one NDA per party.</info>
-        <picklistValueName>Not Sent</picklistValueName>
+        <info>An interested party has been identified and the NDA is being drafted. Record who they are and whether this is the prospective Buyer or the Introducing Broker who brought them - DPEG collects one NDA per party.</info>
+        <picklistValueName>Prepare</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <info>The drafted NDA is under internal review before it goes anywhere near the counterparty. Nothing has been sent yet - this is DPEG's own check of the document, not the counterparty's turn to act.</info>
+        <picklistValueName>Review</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <info>The NDA has cleared internal review and is approved to send. The counterparty still has not seen it - Sent is the next step, once it actually goes out to them.</info>
+        <picklistValueName>Approved</picklistValueName>
     </pathAssistantSteps>
     <pathAssistantSteps>
         <fieldNames>Date_Sent__c</fieldNames>

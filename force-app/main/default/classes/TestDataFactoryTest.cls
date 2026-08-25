@@ -195,14 +195,19 @@ private class TestDataFactoryTest {
             + 'for the test-running user — post-deploy gate T-A1. Report it; do not soften.');
         Assert.areEqual('Pending', created.Status__c,
             'The acquisition seed status must be Pending — the Acquisition_NDA default. '
-            + '"Not Sent" is a DISPOSITION-only value and Apex DML would accept it silently, '
-            + 'because record-type picklist restriction is enforced by the UI only.');
+            + '"Prepare" is a DISPOSITION-only value and this restricted field REFUSES it here. '
+            + '⚠ This message named "Not Sent" and claimed DML would accept it silently "because '
+            + 'record-type picklist restriction is enforced by the UI only" — BOTH halves are '
+            + 'wrong: restriction IS DML-enforced on a restricted value set (measured), and as of '
+            + '2026-08-25 "Not Sent" is on no record type at all.');
     }
 
     /**
      * 🔴 UNCONDITIONAL BY DESIGN. The disposition twin, and it additionally pins the two things
      * DispositionStageEntryService's idempotency depends on: the seed status must be the
-     * Disposition_NDA default ('Not Sent', NOT the acquisition's 'Pending'), and Party_Role__c
+     * Disposition_NDA ENTRY step ('Prepare', NOT the acquisition's 'Pending' — and ⚠ NOT the
+     * record type's DEFAULT any more either: the user cleared that on 2026-08-25 when 'Not Sent',
+     * which this used to name, was removed from the type), and Party_Role__c
      * must be 'Buyer' — which is the service's idempotency KEY, so a fixture that stopped
      * carrying it would silently stop suppressing auto-create.
      */
@@ -220,8 +225,12 @@ private class TestDataFactoryTest {
             created.RecordTypeId,
             'TestDataFactory.createDispositionNda must stamp Disposition_NDA. A null value here '
             + 'while the describe resolves a real Id is post-deploy gate T-A1, not a factory bug.');
-        Assert.areEqual('Not Sent', created.Status__c,
-            'The disposition seed status must be Not Sent — Disposition_NDA\'s default. Pending '
+        Assert.areEqual('Prepare', created.Status__c,
+            'The disposition seed status must be Prepare — the FIRST step of Disposition_NDA\'s '
+            + 'sequence. ⚠ 2026-08-25: this expected "Not Sent" and called it "Disposition_NDA\'s '
+            + 'default"; the user removed that value from the record type and cleared the type\'s '
+            + 'default entirely, so this record type now has NO default and every fixture in the '
+            + 'repo inherits this seed. Pending '
             + 'is restricted OFF this record type. ⚠ 2026-08-21: this message used to add "and '
             + 'Apex DML does not enforce that, so a shared seed value would produce a fixture '
             + 'RecordStageAdvanceService cannot advance." DML DOES enforce it on this restricted '

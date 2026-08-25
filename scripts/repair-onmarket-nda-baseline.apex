@@ -93,7 +93,7 @@
  * (decision D20/C2). So a disposition whose only NDA is Declined records `NDA_Count__c = 0` and
  * the first clause of the rule STILL BLOCKS IT — that clause is not an oversight, it is what
  * catches exactly this case. Only a row whose `Status__c = 'Signed'` moves both counters, which is
- * why this script creates the NDA already Signed rather than creating it `Not Sent` and leaving a
+ * why this script creates the NDA already Signed rather than creating it unsigned (⚠ this said `Not Sent`; that value was removed from the Disposition_NDA record type 2026-08-25 — the entry step is now `Prepare`) and leaving a
  * human to work it. Creating a Declined placeholder would look like a repair and change nothing.
  *
  * =====================================================================================

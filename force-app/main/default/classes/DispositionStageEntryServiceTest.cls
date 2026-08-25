@@ -124,7 +124,7 @@ private class DispositionStageEntryServiceTest {
      * to test for an unrelated reason. Off-market fixtures already needed this; on-market ones
      * did not until this redesign.
      *
-     * Inserted directly at 'Signed' rather than walked through 'Not Sent' -> 'Sent' -> 'Signed' —
+     * Inserted directly at 'Signed' rather than walked through 'Prepare' -> ... -> 'Signed' —
      * NDA_Signed_Rollup is `RecordAfterSave` / `CreateAndUpdate`, so it fires on the insert either
      * way and there is nothing for this class to prove about the NDA's own walk.
      */
@@ -189,8 +189,13 @@ private class DispositionStageEntryServiceTest {
         Assert.areEqual('Buyer', created[0].Party_Role__c,
             'Party_Role__c must be Buyer — it is both the business rule (D19.1) and this '
             + 'service\'s idempotency key');
-        Assert.areEqual('Not Sent', created[0].Status__c,
-            'The NDA must start at Disposition_NDA\'s own default. "Pending" is the ACQUISITION '
+        Assert.areEqual('Prepare', created[0].Status__c,
+            'The NDA must start at the FIRST step of the Disposition_NDA sequence. ⚠ 2026-08-25: '
+            + 'this expected "Not Sent" until the user removed that value from the record type in '
+            + 'Setup AND cleared the type\'s default, so there is no record-type default left to '
+            + 'assert against — DispositionStageEntryService.DISPOSITION_NDA_INITIAL_STATUS is now '
+            + 'the ONLY declaration of the entry state, and this assertion is its only pin. '
+            + '"Pending" is the ACQUISITION '
             + 'starting value and is restricted off this record type. ⚠ 2026-08-21: this message '
             + 'used to end "but record-type picklist restriction is UI-only, so Apex DML would '
             + 'accept it silently and produce an NDA that RecordStageAdvanceService cannot '
@@ -279,7 +284,7 @@ private class DispositionStageEntryServiceTest {
      * record type assigned to no profile resolves a real Id and is available to nobody,
      * administrators included (Modify All Data is an OBJECT permission and confers no record-type
      * access). And the failure it names is not cosmetic here: a Master-type DISPOSITION NDA seeds
-     * at 'Not Sent', falls back to the ACQUISITION sequence, and that map has no 'Not Sent' entry
+     * at 'Prepare' (⚠ 'Not Sent' until 2026-08-25), falls back to the ACQUISITION sequence, and that map has no such entry
      * — so the record cannot be advanced or declined at all.
      */
     @isTest
@@ -304,7 +309,8 @@ private class DispositionStageEntryServiceTest {
             + 'means the record type resolved a real Id but is not AVAILABLE to the running user, '
             + 'so the deliberate isAvailable() guard in DispositionStageEntryService silently '
             + 'no-opped — that is post-deploy gate T-A1 not having run, and the resulting NDA is '
-            + 'FUNCTIONALLY DEAD (Not Sent has no hop on the fallback acquisition sequence). Do '
+            + 'FUNCTIONALLY DEAD (Prepare has no hop on the fallback acquisition sequence — nor '
+            + 'did "Not Sent", the seed this said until 2026-08-25). Do '
             + 'not soften this assertion; run T-A1.');
     }
 

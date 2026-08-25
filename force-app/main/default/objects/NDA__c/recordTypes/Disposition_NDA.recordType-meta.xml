@@ -116,10 +116,16 @@
         the runtime Status__c dropdown order for this record type, independently of the master
         field's own value order, was not verified as part of this change - the same open question
         Acquisition_NDA's 2026-08-16 amendment flags for itself; see that file's comment.
+        ⚠ SUPERSEDED 2026-08-25 as to 'Not Sent' ONLY - see the amendment at the foot of this
+        comment. The order of the six SURVIVING values is unchanged.
 
-        DEFAULT IS UNCHANGED - still Not Sent, not Prepare. Adding earlier lifecycle steps did not
-        move where a newly-created Disposition NDA record starts; that is a separate decision left
-        to the user, not inferred here.
+        ⚠ SUPERSEDED 2026-08-25 - THE PARAGRAPH BELOW IS NO LONGER TRUE. It is kept because it
+        records WHY the default was left alone on 2026-08-24 (the task that day was about picklist
+        order and content), and because the follow-up decision it anticipated is exactly the one
+        the user has now made. Read it as history, not as the current state:
+        RETRACTED, verbatim: "DEFAULT IS UNCHANGED - still Not Sent, not Prepare. Adding earlier
+        lifecycle steps did not move where a newly-created Disposition NDA record starts; that is a
+        separate decision left to the user, not inferred here."
 
         ROLLUP AND RELEASE-GATE IMPACT CHECKED, NO CHANGE NEEDED: flows/NDA_Signed_Rollup counts
         any Status__c value that is not literally 'Signed' or 'Declined' toward NDA_Count__c only
@@ -127,10 +133,57 @@
         not signed, and All_NDAs_Signed_Before_Progression keeps blocking every forward stage on
         this disposition until they reach Signed. See the field file's own 2026-08-24 comment for
         the full trace.
+
+        =====================================================================
+        AMENDED 2026-08-25 - 'Not Sent' REMOVED FROM THIS RECORD TYPE, AND THIS TYPE NOW HAS NO
+        DEFAULT AT ALL. THIS FILE IS A CATCH-UP TO THE ORG, NOT A NEW DECISION.
+        =====================================================================
+
+        The user made the change in Setup first. Measured live via the UI API picklist-values
+        endpoint for record type 012iw0000009yeaAAA (the ONLY channel that reports record-type-
+        scoped values correctly - a RecordType retrieve returns fullName/active/description/label
+        and STRIPS picklistValues, so a "clean sync from org" would silently delete every value
+        block in this file): Status__c on this record type is exactly
+
+            Prepare | Review | Approved | Sent | Signed | Declined      defaultValue: (empty)
+
+        So the six-step sequence is now Prepare -> Review -> Approved -> Sent -> Signed, with
+        Declined the terminal off-ramp. 'Not Sent' is gone from the MIDDLE of the sequence, which
+        is the harder case to notice - see the 2026-08-14 amendment above, which makes exactly this
+        point about LOI__c.
+
+        🔴 'Not Sent' STAYS ACTIVE ON THE GLOBAL VALUE SET and stays on NOTHING ELSE. It was
+        already restricted off Acquisition_NDA (see that file), so as of this change it is on NO
+        record type in the org. It is therefore UNREACHABLE from any UI picker and, because
+        NDA__c.Status__c is a RESTRICTED value set whose record-type subset DML DOES enforce
+        (measured - see the 2026-08-20 correction in Acquisition_NDA), UNWRITABLE by Apex, Flow or
+        the API on either type. Rows already sitting at 'Not Sent' in the org keep the value and
+        still read fine; only new writes are refused. Everything downstream that merely READS the
+        value - Tracking_Status__c's CASE, RecordStageAdvanceService's 'Not Sent' => 'Sent' hop,
+        dispositionDealSummary's NDA_TONE map - was left in place ON PURPOSE, so those legacy rows
+        keep rendering and advancing. Do not prune them as dead code.
+
+        NO DEFAULT IS DELIBERATE AND IS THE ORG'S OWN STATE, not an omission in this file. A record
+        type with no default leaves Status__c BLANK on a UI-created NDA and the user must pick.
+        ⚠ CONSEQUENCE FOR APEX: DispositionStageEntryService cannot read a record-type default from
+        a describe at any price (Apex exposes only the FIELD-level default), so it carries a
+        constant, DISPOSITION_NDA_INITIAL_STATUS, which is now 'Prepare' - the first step of the
+        sequence, chosen because a blank Status__c on an auto-created NDA would be indistinguishable
+        from a failed creation. Keep that constant in step with the FIRST value listed below; there
+        is no longer a <default>true</default> entry here to keep it in step with.
+
+        WHAT ELSE MOVED IN THE SAME CHANGE (all repointed 'Not Sent' -> 'Prepare' as the disposition
+        seed): DispositionStageEntryService.DISPOSITION_NDA_INITIAL_STATUS, TestDataFactory
+        .createNdas' disposition branch (which every disposition NDA fixture in the repo inherits),
+        and RecordStageAdvanceService's disposition hop map, which gained
+        Prepare -> Review -> Approved -> Sent so the Advance Stage button is not dead on every newly
+        created NDA. The Tracking_Status__c formula did NOT change: Prepare/Review/Approved already
+        collapse to the "Not Sent" DISPLAY bucket, which remains correct and is now the ONLY place
+        the words "Not Sent" legitimately appear for a new disposition NDA.
     -->
     <fullName>Disposition_NDA</fullName>
     <active>true</active>
-    <description>The sell-side NDA, parented by Disposition. States (process order): Prepare, Review, Approved, Not Sent, Sent, Signed, plus Declined as a terminal off-ramp. Pending and Received are restricted out. See the XML comment in this file.</description>
+    <description>The sell-side NDA, parented by Disposition. States (process order): Prepare, Review, Approved, Sent, Signed, plus Declined as a terminal off-ramp. NO DEFAULT - Status starts blank. Pending, Received and Not Sent are restricted out. See the XML comment.</description>
     <label>Disposition NDA</label>
     <picklistValues>
         <picklist>Method__c</picklist>
@@ -167,10 +220,6 @@
         <values>
             <fullName>Approved</fullName>
             <default>false</default>
-        </values>
-        <values>
-            <fullName>Not Sent</fullName>
-            <default>true</default>
         </values>
         <values>
             <fullName>Sent</fullName>

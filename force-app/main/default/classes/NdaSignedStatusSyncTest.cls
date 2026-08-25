@@ -76,7 +76,7 @@ private class NdaSignedStatusSyncTest {
     static void dispositionNdaSignedThenDeclined_clearsNdaSigned() {
         Disposition__c disp = TestDataFactory.createDisposition(
             TestDataFactory.defaultPropertyAsset().Id, true);
-        NDA__c nda = TestDataFactory.createDispositionNda(disp.Id, false); // seeds 'Not Sent'
+        NDA__c nda = TestDataFactory.createDispositionNda(disp.Id, false); // seeds 'Prepare' (was 'Not Sent' until 2026-08-25)
         nda.Status__c = 'Signed';
         insert nda;
 

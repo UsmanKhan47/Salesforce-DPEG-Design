@@ -124,6 +124,22 @@ private class DispositionBuyerTimelineTest {
     private static final String STATUS_SIGNED = 'Signed';
     private static final String STATUS_SENT = 'Sent';
     private static final String STATUS_DECLINED = 'Declined';
+
+    /**
+     * The entry state of a Disposition NDA as of 2026-08-25.
+     *
+     * ⚠ IT IS 'Prepare' AND IT USED TO BE THE FACTORY'S IMPLICIT SEED OF 'Not Sent'. The user
+     * removed 'Not Sent' from the Disposition_NDA record type in Setup; `NDA__c.Status__c` is a
+     * restricted value set whose record-type subset DML DOES enforce, so the two tests below —
+     * the only two in this class that never set a status of their own — stopped at the INSERT with
+     * INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST, before reaching a single assertion.
+     * 🔴 THEY NOW NAME THE STATUS EXPLICITLY rather than inheriting `TestDataFactory`'s seed (which
+     * also moved to 'Prepare'). Neither test is ABOUT the status — one is about Party_Role__c, the
+     * other about the parent — so an implicit seed silently made them hostage to a picklist change
+     * they have nothing to do with. Stating it is what turns the next such change into a compile-
+     * visible edit instead of a red insert.
+     */
+    private static final String STATUS_PREPARE = 'Prepare';
     private static final String ROLE_BROKER = 'Introducing Broker';
 
     /**
@@ -422,7 +438,9 @@ private class DispositionBuyerTimelineTest {
         Disposition__c d = freshDisposition();
         Contact appointed = broker();
         NDA__c buyerRoleRow = timelineNda(d.Id, appointed.Id);
+        buyerRoleRow.Status__c = STATUS_PREPARE;
         NDA__c brokerRoleRow = timelineNda(d.Id, appointed.Id);
+        brokerRoleRow.Status__c = STATUS_PREPARE;
         brokerRoleRow.Party_Role__c = ROLE_BROKER;
         insert new List<NDA__c>{ buyerRoleRow, brokerRoleRow };
 
@@ -445,7 +463,9 @@ private class DispositionBuyerTimelineTest {
         Contact appointed = broker();
 
         NDA__c mine = timelineNda(thisSale.Id, appointed.Id);
+        mine.Status__c = STATUS_PREPARE;
         NDA__c theirs = timelineNda(otherSale.Id, appointed.Id);
+        theirs.Status__c = STATUS_PREPARE;
         insert new List<NDA__c>{ mine, theirs };
 
         Test.startTest();

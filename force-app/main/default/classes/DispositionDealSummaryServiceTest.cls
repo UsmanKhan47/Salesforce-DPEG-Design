@@ -190,7 +190,7 @@ private class DispositionDealSummaryServiceTest {
     static void summarise_ndaTieBreak_identicalCreatedDate_higherIdWins() {
         Disposition__c d = newDisposition();
         List<NDA__c> ndas = TestDataFactory.createDispositionNdas(2, d.Id, false);
-        ndas[0].Status__c = 'Not Sent';
+        ndas[0].Status__c = 'Prepare'; // 2026-08-25: was 'Not Sent', removed from the Disposition_NDA record type
         ndas[1].Status__c = 'Signed';
         ndas[1].Date_Signed__c = Date.today();
         insert ndas;
@@ -552,7 +552,7 @@ private class DispositionDealSummaryServiceTest {
     static void summarise_loiReadDenied_butNoLoiExists_isStillUnavailableNotEmpty() {
         Disposition__c d = newDisposition();
         NDA__c nda = TestDataFactory.createDispositionNda(d.Id, false);
-        nda.Status__c = 'Not Sent';
+        nda.Status__c = 'Prepare'; // 2026-08-25: was 'Not Sent', removed from the Disposition_NDA record type
         insert nda;
 
         User restricted = userDeniedAccessTo('LOI__c');
@@ -730,7 +730,7 @@ private class DispositionDealSummaryServiceTest {
         Disposition__c d = newDisposition();
 
         List<NDA__c> ndas = TestDataFactory.createDispositionNdas(2, d.Id, false);
-        ndas[0].Status__c = 'Not Sent';
+        ndas[0].Status__c = 'Prepare'; // 2026-08-25: was 'Not Sent', removed from the Disposition_NDA record type
         ndas[1].Status__c = 'Signed';
         insert ndas;
         List<LOI__c> lois = TestDataFactory.createDispositionLois(2, d.Id, false);
@@ -882,7 +882,7 @@ private class DispositionDealSummaryServiceTest {
         Disposition__c d = newDisposition();
         List<NDA__c> ndas = TestDataFactory.createDispositionNdas(20, d.Id, false);
         for (Integer i = 0; i < ndas.size(); i++) {
-            ndas[i].Status__c = 'Not Sent';
+            ndas[i].Status__c = 'Prepare'; // 2026-08-25: was 'Not Sent', removed from the Disposition_NDA record type
         }
         insert ndas;
         TestDataFactory.createDispositionLois(5, d.Id, true);
