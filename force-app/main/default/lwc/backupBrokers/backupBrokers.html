@@ -6,7 +6,16 @@
                 <div key={r.id} class="broker-row">
                     <lightning-icon icon-name="utility:user" size="x-small" class="broker-icon"></lightning-icon>
                     <div class="broker-info">
-                        <div class="broker-name">{r.brokerFirm} · {r.contactName}</div>
+                        <!-- Contact first and emphasised; firm muted beneath.
+                             `primaryName` already falls back to the firm (and
+                             then to a literal) when the contact is null, so
+                             this line never renders an em dash on its own. -->
+                        <div class="broker-name"><strong>{r.primaryName}</strong></div>
+                        <!-- Emitted only when the firm is not already the
+                             primary line — no empty node, no dangling separator. -->
+                        <template lwc:if={r.firmLabel}>
+                            <div class="broker-meta broker-firm">{r.firmLabel}</div>
+                        </template>
                         <div class="broker-meta">Score {r.bovScore} · {r.bovAmountLabel}</div>
                     </div>
                 </div>
