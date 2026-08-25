@@ -15,7 +15,6 @@
      .rmr-actions     -> slds-m-top_small + slds-m-right_x-small on the brand button
      .rmr-actions_open-> gone; the opener moved into the card's `slot="actions"`
      .rmr-badge       -> slds-badge
-     .rmr-empty*      -> slds-text-color_weak slds-p-vertical_x-small (no centred icon column)
      .rmr-tile        -> slds-box slds-box_x-small (border/radius/padding/background all deleted)
      .rmr-readonly-*  -> slds-form-element__label / __static / __help carry the type scale
 
@@ -32,10 +31,15 @@
    **`main`** region of `flexipages/Disposition_Record_Page`; the `sidebar` region holds
    `dispositionSidebar`. There was never a narrow-container constraint to design around here.
 
+   ── 🔴 PASS 3 (2026-08-25): THE EMPTY STATE IS GONE, AND WITH IT ITS LAST TWO RULES ──
+   The hardcoded "No responses yet" / "Rows appear here as brokers respond to the released
+   materials." lines were removed on user instruction; an empty log now renders the datatable with
+   its column headers and no rows. DELETED, and they must STAY deleted:
+     .rmr-empty-text  .rmr-empty-sub
+
    ⚠ WHAT SURVIVES IS ONLY WHAT SLDS HAS NO CLASS FOR: three type/colour overrides on the
-   read-only broker block, two margins on the empty state, and the shared error banner. Do NOT
-   re-add a hook for something a `slds-*` utility already does — that is precisely the drift these
-   two passes reversed.
+   read-only broker block and the shared error banner. Do NOT re-add a hook for something a
+   `slds-*` utility already does — that is precisely the drift these passes reversed.
 
    ⚠ --slds-g-color-on-surface-1 IS THE GREY ONE (#757575); -2 (#2e2e2e) and -3 (#181818) are
    progressively DARKER. The numbering reads like an ascending emphasis scale and is the reverse,
@@ -92,23 +96,6 @@
 
 .rmr-readonly-help {
     margin: 0;
-}
-
-/* ===== Empty state =====
-   The centred icon column is GONE (see the template): loiCounterOffer states an empty log in one
-   muted line of body text, and `slds-text-color_weak` in the markup now carries the colour. Only
-   the margins and the measure are left. */
-.rmr-empty-text {
-    min-width: 0;
-    margin: 0;
-}
-
-.rmr-empty-sub {
-    min-width: 0;
-    /* A measure, not a width: keeps the explanatory line from running edge-to-edge in a wide
-       region while still shrinking freely. `ch` (not px) so it tracks the font. */
-    max-width: var(--slds-g-sizing-content-2, 45ch);
-    margin: var(--slds-g-spacing-1, 0.25rem) 0 0;
 }
 
 /* ===== Error banner (cross-bundle class — keep the name) ===== */

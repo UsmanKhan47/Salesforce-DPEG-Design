@@ -14,8 +14,10 @@
              separated by `slds-m-top_x-small`;
            · the form's buttons are `slds-m-top_small`, brand Save FIRST, neutral Cancel SECOND,
              left-aligned;
-           · the empty state is muted body text (`slds-text-color_weak`), not a centred icon
-             column;
+           · 🔴 THERE IS NO EMPTY-STATE BLOCK AT ALL SINCE 2026-08-25 — the hardcoded
+             "No responses yet" / "Rows appear here as brokers respond…" lines were removed on
+             user instruction (2026-08-25). An empty log now renders the datatable's column
+             headers with zero rows, which is how every other card on this page reads as empty;
            · 🔴 AND SINCE 2026-08-25, THE LOG ITSELF IS `<c-list-datatable>` — loiCounterOffer's
              own history component, with its `pill` custom cell type carrying the method where a
              `slds-badge` used to. This replaced a `<ul>` of hand-rolled tiles. The retracted
@@ -268,8 +270,18 @@
                      now unavailable. The tests assert the `data` and `columns` PROPERTIES of this
                      rendered element instead, which is the same technique the file already used
                      for `lightning-combobox.options`. `@sa11y/jest` likewise sees an empty stub
-                     here; the table's own a11y comes from the base component, not from us. -->
-                <template lwc:if={hasEntries}>
+                     here; the table's own a11y comes from the base component, not from us.
+
+                     🔴 `showTable`, NOT `hasEntries` — THE TABLE RENDERS AT ZERO ROWS TOO
+                     (user instruction, 2026-08-25). The hardcoded "No responses yet" pair that
+                     used to sit below this block is gone; an empty log is now stated by the
+                     datatable's own column headers over an empty `data` array, the same empty
+                     look the other cards on this page have. The getter is still gated on the
+                     wire having ANSWERED (`hasEntries || isEmpty`, both of which require
+                     `hasContext`), so nothing renders here pre-wire and nothing renders on the
+                     error branch — an empty grid before the server has spoken would be the same
+                     confident wrong answer the deleted text was. -->
+                <template lwc:if={showTable}>
                     <c-list-datatable
                         data-log
                         key-field="id"
@@ -278,26 +290,6 @@
                         hide-checkbox-column
                         show-row-number-column
                     ></c-list-datatable>
-                </template>
-
-                <!-- EMPTY. loiCounterOffer's idiom is ONE muted line of body text
-                     (`slds-text-color_weak slds-p-vertical_x-small`), not a centred icon column —
-                     the icon/headline/subtext stack was the second loudest "different family"
-                     tell, and it is gone.
-                     ⚠ THE EXPLANATORY SECOND LINE IS KEPT (loiCounterOffer has only the one).
-                     Deleting user-facing text that says WHERE the rows come from is a content
-                     change, not a theming one, and it was not in scope. Both lines are muted body
-                     text, so the block still reads as one quiet sentence-pair rather than as a
-                     designed empty state.
-                     A STATUS, not an alert: nothing having come back yet is the ordinary state of
-                     a sale the day materials go out. -->
-                <template lwc:elseif={isEmpty}>
-                    <div class="rmr-empty slds-p-vertical_x-small" role="status">
-                        <p class="rmr-empty-text slds-text-color_weak">No responses yet</p>
-                        <p class="rmr-empty-sub slds-text-color_weak">
-                            Rows appear here as brokers respond to the released materials.
-                        </p>
-                    </div>
                 </template>
             </template>
         </div>

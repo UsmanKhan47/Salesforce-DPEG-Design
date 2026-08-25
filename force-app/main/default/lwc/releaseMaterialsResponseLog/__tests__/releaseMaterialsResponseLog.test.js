@@ -52,10 +52,11 @@
  * ⚠ TWO REAL COVERAGE LOSSES, STATED PLAINLY RATHER THAN PAPERED OVER:
  *   1. `@sa11y/jest` sees an empty stub where the table is, so the three
  *      accessibility tests below no longer cover the ROW markup at all. What
- *      they still cover — the card, the form, the empty state — is what this
- *      component actually authors; the table's semantics belong to the base
- *      component. The `is accessible with rows` test is KEPT anyway because it
- *      still proves the surrounding chrome survives a populated wire.
+ *      they still cover — the card, the form, and the empty-log branch's
+ *      chrome — is what this component actually authors; the table's
+ *      semantics belong to the base component. The `is accessible with rows`
+ *      test is KEPT anyway because it still proves the surrounding chrome
+ *      survives a populated wire.
  *   2. The per-row accessible name (`rowLabel`) is gone with the tiles. A
  *      datatable names its rows from its column headers, which is the platform's
  *      job, not ours — so the getter that built it was deleted rather than left
@@ -229,8 +230,12 @@ describe('c-release-materials-response-log', () => {
         // 🔴 A PREMATURE "(0)" WOULD STATE, IN THE SAME WORDS IT USES FOR A
         // GENUINELY EMPTY SALE, THAT NOBODY HAS RESPONDED. Nothing is known yet.
         expect(title(element)).toBe('Release materials responses');
-        expect(q(element, '.rmr-empty')).toBeNull();
         expect(q(element, '[data-open]')).toBeNull();
+        // 🔴 AND SINCE 2026-08-25 THE GRID CARRIES THAT CLAIM TOO. The hardcoded
+        // "No responses yet" block is gone, so an empty datatable is now HOW this
+        // card says nothing has come back — which makes rendering one before the
+        // wire answers the same premature claim as a "(0)" in the title.
+        // `showTable` is `hasEntries || isEmpty`, both gated on `hasContext`.
         expect(logTable(element)).toBeNull();
     });
 
@@ -245,18 +250,35 @@ describe('c-release-materials-response-log', () => {
         expect(logRows(element)).toHaveLength(2);
     });
 
-    it('EMPTY BRANCH: an empty log renders an empty STATUS, not an error', async () => {
+    /**
+     * 🔴 REWRITTEN 2026-08-25 — THE HARDCODED EMPTY STATE WAS REMOVED ON USER
+     * INSTRUCTION. This test used to pin the words "No responses yet" and their
+     * explanatory second line. The contract it pins now is the replacement one:
+     * an empty log renders THE DATATABLE ITSELF, with its columns and an empty
+     * `data` array, so the card reads as empty the same way every other card on
+     * this page does — column headers over no rows.
+     *
+     * ⚠ THE COLUMNS HALF IS LOAD-BEARING, not decoration. `data: []` alone is
+     * also what a datatable handed nothing at all looks like; without the column
+     * assertion this test would pass on a card that renders a blank grid with no
+     * headers, which is the very "confident blank" the deleted text guarded
+     * against.
+     */
+    it('EMPTY BRANCH: an empty log renders the TABLE — headers, no rows — and no error', async () => {
         const element = createComponent();
 
         getLogContext.emit(EMPTY_CONTEXT);
         await Promise.resolve();
 
-        const empty = q(element, '.rmr-empty');
-        expect(empty).not.toBeNull();
-        // `status`, not `alert`: nothing having come back yet is the ordinary
-        // state of a sale the day materials go out, not a problem.
-        expect(empty.getAttribute('role')).toBe('status');
-        expect(q(element, '.rmr-empty-text').textContent.trim()).toBe('No responses yet');
+        const table = logTable(element);
+        expect(table).not.toBeNull();
+        expect(logRows(element)).toEqual([]);
+        // The headers are what state the emptiness, so they must be there.
+        expect(table.columns.length).toBeGreaterThan(0);
+        // The deleted block, pinned as an absence so it cannot quietly return.
+        expect(q(element, '.rmr-empty')).toBeNull();
+        expect(q(element, '.rmr-empty-text')).toBeNull();
+        expect(q(element, '.rmr-empty-sub')).toBeNull();
         expect(q(element, '.lv-error')).toBeNull();
         // The opener is still there — an empty log is exactly when you log one.
         expect(q(element, '[data-open]')).not.toBeNull();
@@ -275,10 +297,10 @@ describe('c-release-materials-response-log', () => {
         // renewalList / competingBrokerSubmissions / dispositionBuyerTimeline.
         expect(alert.classList.contains('lv-error')).toBe(true);
         // 🔴 AN EMPTY LOG ON A SALE WITH THREE LOGGED RESPONSES IS A CONFIDENT
-        // WRONG ANSWER. Neither the table, the empty state, nor the form may
-        // appear on the error branch.
+        // WRONG ANSWER — and since 2026-08-25 an EMPTY TABLE is exactly how this
+        // card states an empty log, so the table is the thing that must not
+        // appear here. Nor may the form.
         expect(logTable(element)).toBeNull();
-        expect(q(element, '.rmr-empty')).toBeNull();
         expect(q(element, '[data-open]')).toBeNull();
         expect(q(element, '[data-broker]')).toBeNull();
     });
@@ -652,7 +674,7 @@ describe('c-release-materials-response-log', () => {
      * green whatever renders.
      * ⚠ AND THE PRESENCE HALF IS LOAD-BEARING. Without it this test passes on a
      * component that renders nothing at all — which is exactly what a broken
-     * `hasEntries` would produce.
+     * `showTable` would produce.
      */
     it('🔴 LIST: the hand-rolled tile markup is gone, not duplicated beside the table', async () => {
         const element = createComponent();
@@ -1011,27 +1033,56 @@ describe('c-release-materials-response-log', () => {
         expect(logRows(element)[0].methodDot).toContain('border-radius');
     });
 
-    it('🔴 IDIOM: the empty state is muted body text, with no centred icon column', async () => {
+    /**
+     * 🔴 THE HARDCODED EMPTY STATE IS GONE — A SOURCE-TEXT PIN, AND WHY IT HAS
+     * TO BE ONE.
+     *
+     * Removed on user instruction 2026-08-25 (it had previously been kept, and
+     * this test previously pinned its two muted lines). The absence cannot be
+     * pinned on `textContent` alone the way the DOM assertions below it are: the
+     * only remaining child in this branch is the stubbed datatable, whose shadow
+     * text never reaches this root, so `not.toContain('No responses yet')` would
+     * be green whatever the template said.
+     *
+     * ⚠ COMMENTS ARE STRIPPED FIRST, exactly as the T-CSS test strips the
+     * stylesheet's. This template's own header NAMES the deleted strings in prose
+     * to record what was removed and why — without the strip these assertions
+     * would match that prose and fail for the wrong reason.
+     * ⚠ AND THE DOM HALF IS THE GUARD-THE-GUARD: three absence assertions pass
+     * perfectly on a component that renders NOTHING, so the table that replaced
+     * the block is asserted present in the same test.
+     */
+    it('🔴 IDIOM: an empty log is the datatable itself — the hardcoded empty state is gone', async () => {
         const element = createComponent();
 
         getLogContext.emit(EMPTY_CONTEXT);
         await Promise.resolve();
 
-        const empty = q(element, '.rmr-empty');
-        // ⚠ A TAG SCAN, NOT A textContent CHECK. A child component's shadow
-        // text never reaches this shadowRoot's textContent (measured: it
-        // returns ''), so the only way to pin the absence of the old
-        // <lightning-icon> is to look for the tag.
-        expect(empty.querySelector('lightning-icon')).toBeNull();
+        // PRESENCE first — this is what replaced the deleted block.
+        expect(logTable(element)).not.toBeNull();
+        expect(logRows(element)).toEqual([]);
+        // ⚠ A TAG SCAN, NOT A textContent CHECK, for the old centred icon column.
         expect(all(element, 'lightning-icon')).toHaveLength(0);
-        // Both lines are muted body text — loiCounterOffer's "No counter offers
-        // yet." treatment, rather than a designed empty-state block.
-        expect(q(element, '.rmr-empty-text').classList.contains('slds-text-color_weak')).toBe(
-            true
-        );
-        expect(q(element, '.rmr-empty-sub').classList.contains('slds-text-color_weak')).toBe(
-            true
-        );
+        ['.rmr-empty', '.rmr-empty-text', '.rmr-empty-sub'].forEach((selector) => {
+            expect({ selector, found: all(element, selector).length }).toEqual({
+                selector,
+                found: 0
+            });
+        });
+
+        const HTML = require('fs')
+            .readFileSync(
+                require('path').join(__dirname, '..', 'releaseMaterialsResponseLog.html'),
+                'utf8'
+            )
+            .replace(/<!--[\s\S]*?-->/g, '');
+
+        expect(HTML).not.toContain('No responses yet');
+        expect(HTML).not.toContain('Rows appear here as brokers respond');
+        expect(HTML).not.toMatch(/rmr-empty/);
+        // ⚠ THE STRIP ITSELF, PROVEN. If the regex above ever ate the whole file
+        // the three assertions before it would be vacuously green.
+        expect(HTML).toContain('c-list-datatable');
     });
 
     /**
@@ -1102,13 +1153,21 @@ describe('c-release-materials-response-log', () => {
         expect(CSS).not.toMatch(/\.rmr-badge\s*\{/);
         expect(CSS).not.toMatch(/\.rmr-body\s*\{/);
 
+        // 🔴 AND THE EMPTY-STATE RULES, DELETED 2026-08-25 WITH THE MARKUP THEY
+        // STYLED (the hardcoded "No responses yet" pair, removed on user
+        // instruction). `.rmr-empty-sub`'s `max-width` measure used to be pinned
+        // as a SURVIVING rule two blocks below; it is inverted here rather than
+        // dropped, because a pin that disappears with its markup takes a real
+        // claim with it and nothing says so.
+        expect(CSS).not.toMatch(/\.rmr-empty/);
+
         // ⚠ THE GUARD-THE-GUARD. Twenty absence assertions in a row pass perfectly
         // on an EMPTY FILE, so the rules that must SURVIVE are named too — this is
         // what stops a future "the stylesheet is nearly empty, delete it" from
         // sailing through.
         expect(rule('.rmr-readonly-value')).toMatch(/font-weight:/);
         expect(rule('.rmr-readonly-value_empty')).toMatch(/font-style:\s*italic/);
-        expect(rule('.rmr-empty-sub')).toMatch(/max-width:/);
+        expect(rule('.rmr-readonly-help')).toMatch(/margin:/);
         expect(rule('.lv-error')).toMatch(/font-size:/);
 
         // No media query and no scroll container: a media query measures the
@@ -1177,7 +1236,7 @@ describe('c-release-materials-response-log', () => {
         await expect(element).toBeAccessible();
     });
 
-    it('is accessible on the empty state', async () => {
+    it('is accessible with an empty log', async () => {
         const element = createComponent();
 
         getLogContext.emit(EMPTY_CONTEXT);

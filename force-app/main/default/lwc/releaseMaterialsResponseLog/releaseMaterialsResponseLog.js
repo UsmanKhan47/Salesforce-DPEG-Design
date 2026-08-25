@@ -343,13 +343,36 @@ export default class ReleaseMaterialsResponseLog extends LightningElement {
     }
 
     /**
+     * Whether to render `<c-list-datatable>` at all.
+     *
+     * 🔴 ADDED 2026-08-25, WITH THE REMOVAL OF THE HARDCODED EMPTY STATE (user
+     * instruction). The card used to branch `hasEntries` → table /
+     * `isEmpty` → "No responses yet" + "Rows appear here as brokers respond…".
+     * That text is gone, and an empty log now reads the way every other card on
+     * this page reads when it is empty: the datatable's column HEADERS over an
+     * empty `data` array.
+     *
+     * ⚠ IT IS `hasEntries || isEmpty`, NOT A BARE `true` OR `!hasError`, AND THE
+     * DIFFERENCE IS THE PRE-WIRE RENDER. Both getters require `hasContext`, so
+     * this stays false until the server has actually answered — an empty grid
+     * shown before then states "nothing has come back on this sale" in the same
+     * shape it uses once that is known, which is the same confident wrong answer
+     * the deleted text would have been. It is the reasoning that keeps a
+     * premature "(0)" out of `cardTitle` above.
+     */
+    get showTable() {
+        return this.hasEntries || this.isEmpty;
+    }
+
+    /**
      * The card's visible title, with the count appended ONLY once the wire has answered.
      *
      * 🔴 A PREMATURE "(0)" IS A CLAIM THIS CARD IS NOT ENTITLED TO MAKE. Before
      * the wire settles nothing is known about the sale, and
      * "Release materials responses (0)" would state — in the same words it uses
      * for a genuinely empty sale — that nobody has responded. The same reasoning
-     * keeps the EMPTY STATE out of the pre-wire render.
+     * keeps the TABLE out of the pre-wire render — see `showTable` below (the
+     * hardcoded empty state it used to keep out was removed 2026-08-25).
      */
     get cardTitle() {
         return this.hasContext

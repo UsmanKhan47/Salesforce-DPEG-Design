@@ -38,6 +38,15 @@
  * assert to the next reader that an approval-lock hazard exists on that path, which is the exact
  * inherited-justification mistake review W1 caught in DispositionNdaStampQueueable.
  *
+ * ── 🔴 ONE TEST DOES NOT RUN AS THE ADMIN, AND THAT IS WHY IT EXISTS ────────
+ * `loiStampsTheDispositionTypeForARecordTypeBlindPrincipal` (added 2026-08-25, DISP-0025) runs as
+ * a Minimum-Access persona for whom `Disposition_LOI` is `isAvailable() == false`. Every other
+ * test here runs as the admin test-running user, for whom every record type is available — which
+ * is precisely why the production stamp defect was unreachable by this suite until that fixture
+ * existed. Read its Javadoc before changing anything about the record-type stamp: it is also the
+ * experiment that settles whether `AccessLevel.SYSTEM_MODE` DML enforces record-type visibility,
+ * a question `OpportunityReviewService`'s header has carried as UNDETERMINED since 2026-08-09.
+ *
  * ── 🔴 WHAT THIS SUITE CANNOT PROVE, SAID OUT LOUD ──────────────────────────
  * THE APPROVAL LOCK IS NOT REPRODUCED. No test in this repo runs a live approval process, and
  * `Disposition__c` is the entry object of three of them. The whole reason the parent stamp is
@@ -275,11 +284,18 @@ private class DispositionStageEntryServiceTest {
     /**
      * 🔴 UNCONDITIONAL BY DESIGN — DO NOT WRAP IN `if (isAvailable()) { ... }`.
      *
-     * The production stamp is deliberately GUARDED on isAvailable() (see the service header: an
-     * unguarded stamp throws INVALID_CROSS_REFERENCE_KEY and would roll the user's own stage
-     * change back for every user until post-deploy gate T-A1 runs). This test is where the
-     * softness ends, and it re-reads RecordTypeId from the DATABASE because a creation that
-     * SUCCEEDED is not evidence the type landed.
+     * The production stamp is deliberately GUARDED (see the service header: an unguarded stamp
+     * throws INVALID_CROSS_REFERENCE_KEY and would roll the user's own stage change back for every
+     * user until post-deploy gate T-A1 runs). This test is where the softness ends, and it
+     * re-reads RecordTypeId from the DATABASE because a creation that SUCCEEDED is not evidence
+     * the type landed.
+     *
+     * ⚠ CHANGED 2026-08-25 (DISP-0025): that guard is `isActive()`, not `isAvailable()` — it no
+     * longer asks whether the RUNNING USER can see the type. This test is unaffected because it
+     * runs as the admin, for whom both answers are the same; the paragraph below still describes
+     * the OLD diagnosis of a null and is corrected in the assertion message itself. The persona
+     * that CAN tell the two guards apart is
+     * `loiStampsTheDispositionTypeForARecordTypeBlindPrincipal`.
      *
      * ⚠ EXPECT THIS RED UNTIL T-A1. Deploying objects/NDA__c/recordTypes/ is NOT enough — a
      * record type assigned to no profile resolves a real Id and is available to nobody,
@@ -306,10 +322,12 @@ private class DispositionStageEntryServiceTest {
             + Schema.SObjectType.NDA__c.getRecordTypeInfosByDeveloperName().keySet());
 
         Assert.areEqual(dispositionInfo.getRecordTypeId(), ndasOn(disposition.Id)[0].RecordTypeId,
-            'The auto-created NDA must carry the Disposition_NDA record type. A NULL value here '
-            + 'means the record type resolved a real Id but is not AVAILABLE to the running user, '
+            'The auto-created NDA must carry the Disposition_NDA record type. ⚠ 2026-08-25: a NULL '
+            + 'value here now means the type is ABSENT or INACTIVE — the guard is isActive(), so '
+            + 'record-type VISIBILITY no longer suppresses the stamp (that was DISP-0025). Until '
+            + 'that date it meant "resolved a real Id but is not AVAILABLE to the running user, '
             + 'so the deliberate isAvailable() guard in DispositionStageEntryService silently '
-            + 'no-opped — that is post-deploy gate T-A1 not having run, and the resulting NDA is '
+            + 'no-opped — that is post-deploy gate T-A1 not having run". Either way the NDA is '
             + 'FUNCTIONALLY DEAD (Prepare has no hop on the fallback acquisition sequence — nor '
             + 'did "Not Sent", the seed this said until 2026-08-25). Do '
             + 'not soften this assertion; run T-A1.');
@@ -1179,6 +1197,11 @@ private class DispositionStageEntryServiceTest {
      * one throws INVALID_CROSS_REFERENCE_KEY and rolls the user's stage change back for every user
      * until gate T-A1 runs), so this is where the softness ends. It re-reads RecordTypeId from the
      * DATABASE because a creation that SUCCEEDED is not evidence the type landed.
+     *
+     * ⚠ CHANGED 2026-08-25 (DISP-0025): the guard is `isActive()`, not `isAvailable()`. This test
+     * runs as the ADMIN, for whom the two guards agree, so it is unchanged and CANNOT distinguish
+     * them — `loiStampsTheDispositionTypeForARecordTypeBlindPrincipal` below is the one that can.
+     * Keep both: this one pins the happy path, that one pins the persona the defect lived on.
      */
     @isTest
     static void autoCreatedLoiCarriesTheDispositionRecordType() {
@@ -1199,14 +1222,157 @@ private class DispositionStageEntryServiceTest {
             + Schema.SObjectType.LOI__c.getRecordTypeInfosByDeveloperName().keySet());
 
         Assert.areEqual(info.getRecordTypeId(), loisOn(disposition.Id)[0].RecordTypeId,
-            'PRECONDITION FAILED (post-deploy gate T-A1): the auto-created LOI must carry the '
-            + 'Disposition_LOI record type. A NULL value here means the type resolved a real Id '
-            + 'but is not AVAILABLE to the running user, so the deliberate isAvailable() guard in '
-            + 'DispositionStageEntryService silently no-opped — that is gate T-A1 (profile '
-            + 'record-type assignment) not having run. The resulting LOI is FUNCTIONALLY DEAD: it '
+            'PRECONDITION FAILED: the auto-created LOI must carry the Disposition_LOI record '
+            + 'type. ⚠ 2026-08-25: a NULL value here now means the type is ABSENT or INACTIVE — '
+            + 'the guard is isActive(), so record-type VISIBILITY no longer suppresses the stamp. '
+            + 'Until that date it meant "resolved a real Id but is not AVAILABLE to the running '
+            + 'user, so the deliberate isAvailable() guard in DispositionStageEntryService '
+            + 'silently no-opped — that is gate T-A1 (profile record-type assignment) not having '
+            + 'run", and that silent no-op is what rolled back an approver\'s save in production '
+            + '(DISP-0025). An unstamped LOI is FUNCTIONALLY DEAD: it '
             + 'seeds at "Received", falls back to the ACQUISITION stage sequence, and that map has '
             + 'no "Received" entry, so neither Advance Stage nor either loop action can move it. '
             + 'Do not soften this assertion; run T-A1.');
+    }
+
+    /**
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * 🔴 THE DISP-0025 REGRESSION. THE ONLY TEST IN THIS FILE THAT DOES NOT RUN AS AN ADMIN.
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * MEASURED IN PRODUCTION 2026-08-25 — DISP-0025 / OFFER-0012, approver Nikhil Dhanani, FINEST
+     * log 07Liw000000I1vJEAS. The Principal persona approves an offer,
+     * `DispositionOfferTriggerHandler` moves the parent to `LOI` AS THE APPROVER, and the
+     * record-type stamp — then guarded on `isAvailable()` — silently no-opped because that persona
+     * had no `recordTypeVisibilities` at all. The LOI was built with no RecordTypeId, landed on the
+     * ACQUISITION default type, and `Database.insert` threw
+     * `INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST … Received: [Stage__c]`, rolling back the approval.
+     *
+     * 🔴 EVERY OTHER TEST IN THIS FILE RUNS AS THE ADMIN TEST-RUNNING USER, FOR WHOM EVERY RECORD
+     * TYPE IS AVAILABLE — so the defect was structurally unreachable by this suite, exactly as
+     * `TestDataFactory.createNonOwnerDispositionApprover`'s header says of the DISP-0011 sharing
+     * defect. A test that cannot fail on a defect is not a test of it.
+     *
+     * ── ⚠ WHY IT CALLS THE SERVICE DIRECTLY INSTEAD OF SAVING A RECORD ──────
+     * The cascade this reproduces is `update Disposition_Offer__c` -> handler -> parent to `LOI` ->
+     * `DispositionTrigger` -> this service. Driving it by DML would require the persona to hold
+     * `Disposition_Offer__c` edit, and `DPEG_Disposition_Edit` is the ONLY set in this org that
+     * grants it — and it carries a `LOI__c.Disposition_LOI` recordTypeVisibilities entry, which
+     * would make `isAvailable()` true and this test vacuous. So the persona is handed the exact
+     * two arguments `DispositionTriggerHandler` passes (Trigger.new at `LOI`, Trigger.oldMap at
+     * Readiness) and the DML that produces them is left to the tests above, which already pin it.
+     *
+     * ── 🔴 THE PRECONDITION ASSERTION IS THE POINT, NOT CEREMONY ─────────────
+     * `DPEG_Disposition_View` GAINED five recordTypeVisibilities entries on 2026-08-25 as the other
+     * half of this fix. Any fixture built on a set that can gain such an entry goes vacuously green
+     * the day it does. `isAvailable() == false` is asserted INSIDE `System.runAs` so that a widened
+     * permission set reds this test with a fixture message instead of silently retiring it.
+     *
+     * ── ⚠ IF THIS TEST FAILS, READ THE ERROR BEFORE TOUCHING IT ─────────────
+     *   INVALID_CROSS_REFERENCE_KEY ("this ID value isn't valid for the user") — then record-type
+     *     visibility IS enforced under `AccessLevel.SYSTEM_MODE`, the 2026-08-09/08-10
+     *     measurements generalise beyond a bare `insert`, the `isActive()` change is WRONG, and the
+     *     permission-set grant is the only fix. This test is the experiment that settles that
+     *     question, which `OpportunityReviewService`'s header has carried as UNDETERMINED since
+     *     2026-08-09. Report it; do not soften the assertion.
+     *   TypeException "DML operation UPDATE not allowed on Disposition__c" from
+     *     `DispositionPrimaryChildStampQueueable` at `Test.stopTest()` — that is the FIXTURE, not
+     *     the code: no permission set in this org grants `Disposition__c` without also granting
+     *     `LOI__c.Disposition_LOI`, so this persona holds none, and the queueable is relying on
+     *     `SYSTEM_MODE` lifting object CRUD. Move the assertions ahead of `Test.stopTest()` rather
+     *     than widening the persona.
+     *   INSUFFICIENT_ACCESS_ON_CROSS_REFERENCE_ENTITY on the Disposition__c Id — the manual share
+     *     below is missing or was not committed before the act. That is what this test hit on its
+     *     first run (2026-08-25); read the comment on the share insert before changing anything.
+     *   The SHARE INSERT ITSELF failing — then this org refuses a share to a grantee with no
+     *     object-level read on Disposition__c, and the fixture needs READ from a set carrying no
+     *     disposition record types. ⚠ NO SUCH SET EXISTS TODAY (checked 2026-08-25:
+     *     DPEG_App_Disposition has zero objectPermissions, DPEG_Transaction_View grants only
+     *     Transaction__c and Critical_Date__c, and the only two sets granting Disposition__c both
+     *     grant LOI__c.Disposition_LOI). Creating one is a permission-set change, not a test change.
+     */
+    @isTest
+    static void loiStampsTheDispositionTypeForARecordTypeBlindPrincipal() {
+        Disposition__c disposition = onMarketAtReadiness();
+        User principal = TestDataFactory.createRecordTypeBlindDispositionPrincipal('rtb');
+
+        // 🔴 THE PERSONA MUST SEE THE PARENT, AND THAT IS A SHARING QUESTION, NOT A PERMISSION ONE.
+        // MEASURED 2026-08-25 on this test's FIRST run: the LOI insert failed with
+        // INSUFFICIENT_ACCESS_ON_CROSS_REFERENCE_ENTITY on the Disposition__c Id. SYSTEM_MODE lifts
+        // CRUD and FLS but NEVER sharing; `Disposition__c` is Private OWD; this persona owns nothing
+        // and is in no group — so the child's parent lookup pointed at a record it could not see. In
+        // production the approver sees it through the *_Principals_R criteria sharing rules, and a
+        // manual share is the narrowest fixture equivalent of that.
+        // ⚠ A SHARE AND NOT A WIDER PERMISSION SET, DELIBERATELY: every set in this org that grants
+        // `Disposition__c` at all (`DPEG_Disposition_View`, `DPEG_Disposition_Edit`) also grants
+        // `LOI__c.Disposition_LOI`, which would make isAvailable() TRUE and this test vacuous.
+        // Ownership transfer is not an alternative — the persona has no Disposition__c object read,
+        // so the reassignment is refused.
+        insert new Disposition__Share(
+            ParentId = disposition.Id,
+            UserOrGroupId = principal.Id,
+            AccessLevel = 'Read',
+            RowCause = Schema.Disposition__Share.RowCause.Manual
+        );
+
+        // The exact pair DispositionTriggerHandler hands the service on the approver's save.
+        List<Disposition__c> newDispositions = new List<Disposition__c>{
+            new Disposition__c(Id = disposition.Id, Disposition_Stage__c = LOI_STAGE)
+        };
+        Map<Id, Disposition__c> oldMap = new Map<Id, Disposition__c>{
+            disposition.Id => new Disposition__c(
+                Id = disposition.Id,
+                Disposition_Stage__c = READINESS_STAGE
+            )
+        };
+
+        Test.startTest();
+        System.runAs(principal) {
+            Schema.RecordTypeInfo info = Schema.SObjectType.LOI__c
+                .getRecordTypeInfosByDeveloperName()
+                .get('Disposition_LOI');
+            Assert.isNotNull(info,
+                'PRECONDITION FAILED: the LOI__c "Disposition_LOI" record type does not exist in '
+                + 'this org. objects/LOI__c/recordTypes/ must deploy BEFORE this class (metadata '
+                + 'before Apex). Available: '
+                + Schema.SObjectType.LOI__c.getRecordTypeInfosByDeveloperName().keySet());
+            Assert.isTrue(info.isActive(),
+                'PRECONDITION FAILED: Disposition_LOI is INACTIVE in this org. The service resolves '
+                + 'the stamp on isActive(), so an inactive type legitimately yields null and this '
+                + 'test would fail for a reason that is not the defect. Activate it.');
+            Assert.isFalse(info.isAvailable(),
+                'FIXTURE PRECONDITION FAILED — THIS TEST IS NO LONGER SENSITIVE TO DISP-0025. The '
+                + 'record-type-blind persona can now SEE Disposition_LOI, so the retired '
+                + 'isAvailable() guard would have stamped correctly too and a green run proves '
+                + 'nothing. Something granted LOI__c.Disposition_LOI to DPEG_Base_Access or '
+                + 'DPEG_Acquisition_View. Rebuild the fixture on a set that cannot carry a '
+                + 'disposition record type — see '
+                + 'TestDataFactory.createRecordTypeBlindDispositionPrincipal.');
+
+            DispositionStageEntryService.createStageEntryRecords(newDispositions, oldMap);
+        }
+        Test.stopTest();
+
+        List<LOI__c> created = [
+            SELECT Id, Stage__c, RecordType.DeveloperName
+            FROM LOI__c
+            WHERE Disposition__c = :disposition.Id
+        ];
+        Assert.areEqual(1, created.size(),
+            'Entering the LOI stage must open exactly ONE LOI even when the principal driving the '
+            + 'cascade cannot see the record type. ZERO here means the insert threw and the '
+            + 'approver\'s stage change rolled back — the DISP-0025 production failure itself.');
+        Assert.areEqual('Disposition_LOI', created[0].RecordType.DeveloperName,
+            'The auto-created LOI must carry Disposition_LOI even though isAvailable() is FALSE '
+            + 'for the running principal. An automation insert made on a principal\'s behalf must '
+            + 'not depend on that principal\'s UI record-type visibility; the stamp resolves on '
+            + 'isActive(). A null/Master/Acquisition type here means the isAvailable() guard is '
+            + 'back in DispositionStageEntryService.recordTypeIdFor.');
+        Assert.areEqual('Received', created[0].Stage__c,
+            'Stage__c must be Disposition_LOI\'s own seed value. This is the assertion that would '
+            + 'have caught DISP-0025 in a test rather than in production: unstamped, the row lands '
+            + 'on the acquisition default type, whose restricted value set has no "Received" — so '
+            + 'the insert throws INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST and takes the approval '
+            + 'down with it.');
     }
 
     @isTest

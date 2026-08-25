@@ -1622,4 +1622,37 @@
         <object>Release_Materials_Response__c</object>
         <viewAllRecords>true</viewAllRecords>
     </objectPermissions>
+    <!--
+        ADDED 2026-08-25. FIVE recordTypeVisibilities entries, mirroring DPEG_Disposition_Edit
+        exactly. This set is READ-ONLY, but record-type visibility governs whether a record page
+        can even RESOLVE its record type for the running user - it is not a create/edit grant.
+        Without it, RecordTypeInfo.isAvailable() returns FALSE for the Principal persona
+        (DPEG_Principal_PSG = DPEG_Contact_View + DPEG_Disposition_View), so a trigger-side
+        record-type stamp guarded by isAvailable() silently no-ops for principals even though the
+        row itself is otherwise visible via the sharing rules above.
+        Measured incident: DISP-0025 / OFFER-0012 - a principal's approval action rolled back
+        because the guarded stamp did not fire for their session. Same five record types as the
+        Edit set: Disposition__c.Off_Market/On_Market, NDA__c.Disposition_NDA,
+        LOI__c.Disposition_LOI, Contract_Review__c.Disposition_PSA.
+    -->
+    <recordTypeVisibilities>
+        <recordType>Disposition__c.Off_Market</recordType>
+        <visible>true</visible>
+    </recordTypeVisibilities>
+    <recordTypeVisibilities>
+        <recordType>Disposition__c.On_Market</recordType>
+        <visible>true</visible>
+    </recordTypeVisibilities>
+    <recordTypeVisibilities>
+        <recordType>NDA__c.Disposition_NDA</recordType>
+        <visible>true</visible>
+    </recordTypeVisibilities>
+    <recordTypeVisibilities>
+        <recordType>LOI__c.Disposition_LOI</recordType>
+        <visible>true</visible>
+    </recordTypeVisibilities>
+    <recordTypeVisibilities>
+        <recordType>Contract_Review__c.Disposition_PSA</recordType>
+        <visible>true</visible>
+    </recordTypeVisibilities>
 </PermissionSet>

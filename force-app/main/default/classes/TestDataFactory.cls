@@ -2615,6 +2615,116 @@ public with sharing class TestDataFactory {
     }
 
     /**
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * 🔴 THE RECORD-TYPE-BLIND PRINCIPAL. ADDED 2026-08-25 FOR THE `DISP-0025` STAMP DEFECT.
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * A user for whom `LOI__c.Disposition_LOI`, `NDA__c.Disposition_NDA` and
+     * `Contract_Review__c.Disposition_PSA` are all `isAvailable() == false`, while the objects
+     * themselves are readable. That is the exact principal whose approval was rolled back in
+     * production on 2026-08-25 (DISP-0025 / OFFER-0012, approver Nikhil Dhanani, FINEST log
+     * 07Liw000000I1vJEAS): the record-type stamp in `DispositionStageEntryService` silently
+     * no-opped, the LOI landed on the acquisition default type, and the insert threw
+     * INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST on 'Received'.
+     *
+     * ── 🔴 WHY NOT `createNonOwnerDispositionApprover`, THE PERSONA THAT ALREADY EXISTS ──────
+     * Because it holds `DPEG_Disposition_Edit`, and that set carries a
+     * `LOI__c.Disposition_LOI` recordTypeVisibilities entry. A test built on it would find
+     * `isAvailable() == true`, take the OLD code path, and pass whether or not the defect is
+     * fixed. It is the right fixture for the SHARING question and the wrong one for this one.
+     *
+     * ── 🔴 WHY `DPEG_Acquisition_View`, WHICH LOOKS LIKE THE WRONG MODULE ────────────────────
+     * DELIBERATE, AND IT IS THE WHOLE POINT OF THIS FIXTURE. Two constraints have to hold at once:
+     *   1. `LOI__c` must be READABLE. This repo has measured (see `createNonOwnerDispositionApprover`
+     *      and `TaskFanoutService`) that Apex throws `System.TypeException: DML operation … not
+     *      allowed on X` for an object the running user has no access to at all, and the
+     *      production principal DID hold `LOI__c` read — a persona with zero access would fail for
+     *      a reason that is not the defect.
+     *   2. `LOI__c.Disposition_LOI` must NOT be visible — and must STAY invisible as the org's
+     *      permission sets evolve.
+     * `DPEG_Disposition_View` satisfies (1) but stopped satisfying (2) on 2026-08-25, when the
+     * five disposition recordTypeVisibilities entries were added to it as the other half of this
+     * same fix. `DPEG_Acquisition_View` satisfies both, and satisfies (2) STRUCTURALLY rather than
+     * by accident: it is an acquisition-side set, and a disposition record type appearing on it
+     * would itself be the defect. Its two entries are `Lead.Acquisition_Broker` and
+     * `LOI__c.Acquisition_LOI`, neither of which affects `Disposition_LOI`'s availability.
+     *
+     * ⚠ CALLERS MUST ASSERT THE PRECONDITION THEMSELVES, INSIDE `System.runAs`, and must assert it
+     * as a HARD failure: `…getRecordTypeInfosByDeveloperName().get('Disposition_LOI').isAvailable()`
+     * must be FALSE. Without that assertion this fixture degrades silently into an ordinary user
+     * the day someone widens a permission set, and the test it feeds goes vacuously green — which
+     * is precisely how the production defect survived every test in this repo.
+     *
+     * ⚠ THIS PERSONA SEES NO RECORDS AT ALL, AND CALLERS MUST FIX THAT THEMSELVES. It owns nothing
+     * and is in no group, so on a Private-OWD object every fixture row is invisible to it — and
+     * `AccessLevel.SYSTEM_MODE` does NOT rescue a lookup to an invisible parent (measured
+     * 2026-08-25: `INSUFFICIENT_ACCESS_ON_CROSS_REFERENCE_ENTITY` from the LOI insert in
+     * `DispositionStageEntryService.openDispositionLois`). Insert a manual `<Object>__Share` row as
+     * the running admin before the act — never widen the permission sets, which is what would
+     * destroy the record-type blindness this fixture exists to provide.
+     *
+     * ⚠ MIXED_DML: `User` and `PermissionSetAssignment` are setup objects, so both inserts run
+     * inside `System.runAs(currentUser)` — the same workaround `createNonOwnerDispositionApprover`
+     * uses, for the same reason.
+     *
+     * ⚠ NO ROLE, deliberately — same reasoning as `createNonOwnerDispositionApprover`: a role would
+     * expose the fixture to hierarchy grants that have nothing to do with record types.
+     *
+     * @param aliasSeed 1-4 lowercase characters identifying the calling test, so a failure names
+     *                  which fixture produced the user. Required.
+     * @return The inserted User.
+     * @example
+     * User principal = TestDataFactory.createRecordTypeBlindDispositionPrincipal('rtb');
+     * System.runAs(principal) { DispositionStageEntryService.createStageEntryRecords(newList, oldMap); }
+     */
+    public static User createRecordTypeBlindDispositionPrincipal(String aliasSeed) {
+        if (String.isBlank(aliasSeed)) {
+            throw new TestDataFactoryException('aliasSeed is required and cannot be blank.');
+        }
+        Profile minimumAccess = [
+            SELECT Id FROM Profile WHERE Name = 'Minimum Access - Salesforce' LIMIT 1
+        ];
+        List<PermissionSet> sets = [
+            SELECT Id, Name
+            FROM PermissionSet
+            WHERE Name IN ('DPEG_Base_Access', 'DPEG_Acquisition_View')
+        ];
+        if (sets.size() != 2) {
+            throw new TestDataFactoryException(
+                'FIXTURE PRECONDITION FAILED: expected DPEG_Base_Access and DPEG_Acquisition_View '
+                + 'to exist in this org; found ' + sets.size() + '. DPEG_Acquisition_View is what '
+                + 'grants LOI__c read WITHOUT granting LOI__c.Disposition_LOI visibility — see '
+                + 'this method\'s header for why that combination is the fixture. Deploy the '
+                + 'permission sets first.');
+        }
+        String unique = aliasSeed + String.valueOf(DateTime.now().getTime())
+            + String.valueOf(Math.abs(Crypto.getRandomInteger()));
+        User principal = new User(
+            FirstName = 'RecordTypeBlind',
+            LastName = 'Principal',
+            Alias = aliasSeed,
+            Email = 'dpeg.principal@example.invalid',
+            Username = unique + '@example.invalid.dpeg',
+            ProfileId = minimumAccess.Id,
+            TimeZoneSidKey = 'America/Chicago',
+            LocaleSidKey = 'en_US',
+            EmailEncodingKey = 'UTF-8',
+            LanguageLocaleKey = 'en_US'
+        );
+        System.runAs(new User(Id = UserInfo.getUserId())) {
+            insert principal;
+            List<PermissionSetAssignment> assignments = new List<PermissionSetAssignment>();
+            for (PermissionSet ps : sets) {
+                assignments.add(new PermissionSetAssignment(
+                    AssigneeId = principal.Id,
+                    PermissionSetId = ps.Id
+                ));
+            }
+            insert assignments;
+        }
+        return principal;
+    }
+
+    /**
      * @param count           Number of Dispositions.
      * @param propertyAssetId Parent Property_Asset__c (nullable).
      * @param doInsert        Insert when true.

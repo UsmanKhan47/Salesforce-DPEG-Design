@@ -650,12 +650,32 @@ public with sharing class DispositionStageEntryService {
      * byte-for-byte the same `<lookupFilter>`), so the value is filter-valid by construction.
      * The one vector that breaks that is a Contact being moved OFF the Broker record type AFTER the
      * source lookup was set — the source rows keep the now-invalid reference, and this insert would
-     * then fail and roll back the stage change. It is not defended here: defending it means either
+     * then fail and roll back the stage change. ⚠ THIS IS NOT THE ONLY WAY THIS INSERT CAN ROLL A
+     * STAGE CHANGE BACK — see the record-type note immediately below, which is the one that
+     * actually happened. It is not defended here: defending it means either
      * a Contact query per chunk (re-implementing a declarative filter in Apex, which then drifts
      * from it) or a two-phase insert whose second phase no test can reach. It is also not measured
      * — the state is unreachable through any UI or API path this application offers, because both
      * source fields refuse a non-broker Contact on their own save. Recorded so the next reader of a
      * `FIELD_FILTER_VALIDATION_EXCEPTION` from a stage change knows where to look.
+     *
+     * ── 🔴 THE RECORD-TYPE STAMP IS GUARDED ON isActive(), NOT ON isAvailable() ──
+     * ⚠ ADDED 2026-08-25, and it is the first time this block states its stamp's guard at all —
+     * the LOI and PSA blocks carried the argument and this one silently inherited it, which is the
+     * W1 mistake the class header warns about. The guard was `isAvailable()` (the RUNNING USER's
+     * record-type visibility) until DISP-0025; the measurement that forced the change and the
+     * residual it leaves are argued ONCE, at the LOI block. They apply here unchanged, because the
+     * helper is shared and because THIS block sits in the same approver cascade — an approval that
+     * advances a disposition to `NDA` executes this insert as a read-only principal, and
+     * `isAvailable()` is false for that principal.
+     *
+     * ⚠ WHAT DIFFERS HERE, AND IT IS THE ONLY REASON THIS BLOCK HAS NOT BLOWN UP TOO:
+     * `Status__c = 'Prepare'`. An unstamped row lands on whatever default record type the running
+     * user has, and if that type's value set excludes the seed value this insert throws
+     * INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST exactly as the LOI's did — `NDA__c.Status__c` is
+     * `restricted`, and this repo has now measured four times that DML enforces record-type
+     * restriction rather than leaving it to the UI. Whether it throws is therefore a property of
+     * TODAY'S value sets, not of this block. Do not read the absence of an incident as safety.
      */
     private static void openBuyerNdas(Map<Id, Disposition__c> entrants) {
         if (entrants.isEmpty()) {
@@ -905,20 +925,62 @@ public with sharing class DispositionStageEntryService {
      * auto-created LOI. That is correct for auto-create (re-entering the stage must not duplicate)
      * and it means a genuine second-round LOI is a hand-created record, exactly as a broker NDA is.
      *
-     * ── ⚠ THE RECORD-TYPE STAMP IS GUARDED (isAvailable()), NOT UNCONDITIONAL ──
-     * Same choice and the same read-back-test mitigation as the NDA block and
-     * OpportunityReviewService. MEASURED 2026-08-09 on usman-dpeg: an UNGUARDED RecordTypeId stamp
-     * throws INVALID_CROSS_REFERENCE_KEY where a guarded one silently no-ops, and a record type
-     * assigned to no profile resolves a real Id while being available to nobody — administrators
-     * included, because Modify All Data is an OBJECT permission and confers no record-type access.
-     * Unguarded, this insert would roll the user's own stage change back with a raw platform error
-     * for every user until gate T-A1 runs.
+     * ── 🔴 THE RECORD-TYPE STAMP IS GUARDED ON isActive(), NOT ON isAvailable() ──
+     * ⚠ CHANGED 2026-08-25: the guard asked about the RUNNING USER's record-type VISIBILITY
+     * (`isAvailable()`) until it took production down on this exact block. This is the canonical
+     * argument for all three stamps in this file — the NDA block, the PSA block and
+     * `recordTypeIdFor` point HERE rather than re-deriving it, because the change is one line in
+     * the shared helper and re-arguing it three times would invite three different answers.
      *
-     * 🔴 WHAT THE GUARD COSTS HERE IS THE NDA'S COST, NOT THE PSA'S. A Master-type disposition LOI
-     * seeds at 'Received', RecordStageAdvanceService falls back to the ACQUISITION sequence, and
-     * that map has no 'Received' entry — so Advance Stage and both loop actions refuse and the
-     * record cannot move at all. Visible on the record, like the NDA; the real remedy is gate T-A1,
-     * not a code change.
+     * MEASURED 2026-08-25 on usman-dpeg — DISP-0025 / OFFER-0012, approver Nikhil Dhanani, FINEST
+     * log 07Liw000000I1vJEAS. The Principal persona (`DPEG_Principal_PSG` -> `DPEG_Disposition_View`,
+     * which carried NO `recordTypeVisibilities` at all) approves an offer;
+     * `DispositionOfferTriggerHandler` moves the parent to `LOI` AS THE APPROVER; `isAvailable()`
+     * is FALSE for them, so the stamp silently no-ops; the LOI is built as {Disposition__c,
+     * Stage__c = 'Received', Selected_Offer__c} with NO RecordTypeId, lands on the ACQUISITION
+     * default type, and the `Database.insert` below throws
+     * `INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST … Received: [Stage__c]` — rolling back the
+     * approver's whole parent update.
+     *
+     * 🔴 SO THE GUARD DID NOT DEGRADE, IT DETONATED, AND IT DID SO IN EXACTLY THE FAILURE MODE IT
+     * WAS CHOSEN TO PREVENT: "the user's own stage change rolled back with a raw platform error".
+     * The retracted text below promised that outcome for the UNGUARDED stamp; the availability
+     * guard produced it instead, one error code over. Admins (all types visible) and every test in
+     * this repo (admin test-running user) never reach it — which is why it shipped.
+     *
+     * ⚠ isActive(), NOT UNCONDITIONAL. A record type that does not exist, or that is INACTIVE, is
+     * still null, still an unstamped row, still not a throw — the whole null-is-a-legitimate-answer
+     * contract below is unchanged. What changed is only this: an automation insert made ON A
+     * PRINCIPAL'S BEHALF no longer asks a question about that principal's UI record-type
+     * visibility, because that is not a question the DML it feeds is asking either.
+     *
+     * ── ⚠ THE RESIDUAL IS THE OLD MEASUREMENT, KEPT RATHER THAN DELETED ──────
+     * RETAINED VERBATIM, MEASURED 2026-08-09 on usman-dpeg and reproduced 2026-08-10 (stack in
+     * `TestDataFactory.recordTypeId`'s header): "an UNGUARDED RecordTypeId stamp throws
+     * INVALID_CROSS_REFERENCE_KEY where a guarded one silently no-ops, and a record type assigned
+     * to no profile resolves a real Id while being available to nobody — administrators included,
+     * because Modify All Data is an OBJECT permission and confers no record-type access."
+     * THAT FACT IS NOT RETRACTED, and it is now this block's residual risk: a record type DEPLOYED
+     * BUT ASSIGNED TO NOBODY becomes a throw here where it used to be a silent no-op. Two things
+     * bound it, and neither is a reason to put the availability guard back:
+     *   (a) 🔴 STILL UNDETERMINED — both reproductions were on a BARE `insert`; this insert is an
+     *       explicit `AccessLevel.SYSTEM_MODE` one, and whether SYSTEM_MODE accepts an unavailable
+     *       record type has never been measured (OpportunityReviewService's header records the
+     *       same open question against its own LOI insert). The new test
+     *       `loiStampsTheDispositionTypeForARecordTypeBlindPrincipal` is the experiment that
+     *       settles it: if it REDS with INVALID_CROSS_REFERENCE_KEY instead of passing, then
+     *       record-type visibility IS enforced under SYSTEM_MODE, this change is wrong, and the
+     *       permission-set grant is the only fix. Read the failure, do not soften the test.
+     *   (b) `DPEG_Disposition_View` gained the five `recordTypeVisibilities` entries on 2026-08-25,
+     *       so "assigned to nobody" is not this org's state for these three types today. That grant
+     *       and this change are belt and braces on purpose: either alone fixes DISP-0025, and the
+     *       code half is the one that also covers a principal nobody has provisioned yet.
+     *
+     * 🔴 WHAT AN UNSTAMPED LOI COSTS WHEN THE TYPE IS GENUINELY ABSENT — the NDA's cost, not the
+     * PSA's. A Master-type disposition LOI seeds at 'Received', RecordStageAdvanceService falls
+     * back to the ACQUISITION sequence, and that map has no 'Received' entry — so Advance Stage and
+     * both loop actions refuse and the record cannot move at all. Visible on the record, like the
+     * NDA; the remedy is deploying the record type, not a code change.
      */
     private static void openDispositionLois(Set<Id> entrants) {
         if (entrants.isEmpty()) {
@@ -1066,9 +1128,20 @@ public with sharing class DispositionStageEntryService {
      * loud symptom pointing at gate T-B, and a working duplicate beside it reads as "the old row is
      * odd" rather than "this row was never migrated", masking the one signal the migration has.
      *
-     * ── ⚠ THE RECORD-TYPE STAMP IS GUARDED (isAvailable()) ───────────────────
-     * Same guard, same measured reason as the other two blocks. 🔴 BUT BE HONEST THAT THE GUARD'S
-     * COST IS QUIETER HERE, exactly as review J1 says of the sibling fallback in
+     * ── ⚠ THE RECORD-TYPE STAMP IS GUARDED ON isActive() ─────────────────────
+     * ⚠ CHANGED 2026-08-25 with the other two blocks — the guard was `isAvailable()`. The full
+     * argument, the DISP-0025 measurement that forced it and the residual it leaves are at the LOI
+     * block above; do not re-derive them here. What is specific to THIS block: the same approver
+     * cascade reaches it (`PSA` is entered from `LOI`), and this insert seeds
+     * `Negotiation_Status__c = 'Initial Draft'`, which observation 7 split OFF the acquisition
+     * value set — so an unstamped disposition PSA landing on the ACQUISITION default type would be
+     * the same restricted-picklist rollback the LOI block measured, not merely a quiet mis-typing.
+     * ⚠ INFERRED FROM THE LOI MEASUREMENT, NOT SEPARATELY MEASURED: the DISP-0025 transaction never
+     * reached `PSA`. It lands on MASTER — which exposes every value and therefore inserts fine —
+     * whenever MASTER is the running user's default, which is what the paragraph below assumes and
+     * what makes the two costs differ.
+     *
+     * 🔴 BE HONEST THAT THE COST OF AN UNSTAMPED ROW IS QUIETER HERE, exactly as review J1 says of the sibling fallback in
      * RecordStageAdvanceService: a Master-type disposition PSA is not dead — it advances fine and
      * every toast is right — it is simply un-advanceable by the DISPOSITION persona and perfectly
      * advanceable by an acquisitions one, because the gate is picked off the record type. Nothing
@@ -1358,10 +1431,11 @@ public with sharing class DispositionStageEntryService {
      *
      * ── NO RECORD TYPE ─────────────────────────────────────────────────────
      * `Broker_Listing__c` has no `recordTypes/` directory — the object has none — so unlike the
-     * other three blocks there is no stamp, no describe and no `isAvailable()` guard here. The
+     * other three blocks there is no stamp, no describe and no guard here at all. The
      * guarded-versus-unconditional question is not answerable in the abstract and is deliberately
      * left to whoever adds record types to this object, exactly as design §2.6 argued for
-     * `Property_Asset__c`.
+     * `Property_Asset__c` — ⚠ but if they do, the answer the other three blocks reached on
+     * 2026-08-25 is `isActive()`, not `isAvailable()`; start from `openDispositionLois`.
      *
      * @param entrants Dispositions that just entered `Active Listing`, as whole records.
      */
@@ -1398,11 +1472,31 @@ public with sharing class DispositionStageEntryService {
 
     /**
      * The record type Id for a developer name on an object, or null when it does not exist in this
-     * org or is not available to the running user.
+     * org or is INACTIVE.
      *
-     * Null is a legitimate answer, not an error — the caller then leaves RecordTypeId unset and the
-     * platform applies its own default. See each block's Javadoc for what that costs on that object
-     * and why a loud failure was still rejected.
+     * ── 🔴 ACTIVENESS, NOT AVAILABILITY. CHANGED 2026-08-25 — READ THE LOI BLOCK FIRST ──
+     * RETRACTED, verbatim, so nobody restores it by reflex: "…or is not available to the running
+     * user", implemented as `(info != null && info.isAvailable())`. Every caller of this helper is
+     * an automation insert made ON A PRINCIPAL'S BEHALF — a trigger cascade that can run as an
+     * APPROVER — and `isAvailable()` answers a question about that principal's UI record-type
+     * visibility, which is not a question the `AccessLevel.SYSTEM_MODE` DML it feeds is asking.
+     * On 2026-08-25 that mismatch stopped being theoretical: DISP-0025 / OFFER-0012, approver
+     * Nikhil Dhanani, FINEST log 07Liw000000I1vJEAS — the stamp silently no-opped, the LOI landed
+     * on the acquisition default type, and the insert threw
+     * INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST, rolling back the approval. The full argument, and
+     * the retained 2026-08-09 residual (a type deployed but assigned to NOBODY may now throw
+     * INVALID_CROSS_REFERENCE_KEY here where it used to no-op), are at `openDispositionLois`.
+     *
+     * ⚠ THE FOURTH CALLER IS A READ, NOT A STAMP, AND IT WAS FIXED BY THE SAME LINE.
+     * `resolveBrokers` compares this value against `Disposition__c.RecordTypeId` to decide WHICH
+     * FIELD holds the appointed broker. Under `isAvailable()` that comparison silently answered
+     * "not On_Market" for any principal who could not see the type, so an on-market NDA was
+     * created with `Broker__c = null` — a wrong answer, not a missing stamp. Activeness is the
+     * only correct basis for a comparison against stored data.
+     *
+     * Null is still a legitimate answer, not an error — the caller then leaves RecordTypeId unset
+     * and the platform applies its own default. See each block's Javadoc for what that costs on
+     * that object and why a loud failure was still rejected.
      *
      * A describe, not a query — it costs no SOQL. Callers resolve it ONCE per chunk.
      *
@@ -1416,6 +1510,7 @@ public with sharing class DispositionStageEntryService {
         Schema.RecordTypeInfo info = objectType.getDescribe()
             .getRecordTypeInfosByDeveloperName()
             .get(developerName);
-        return (info != null && info.isAvailable()) ? info.getRecordTypeId() : null;
+        // isActive(), NOT isAvailable() — see this method's Javadoc and openDispositionLois.
+        return (info != null && info.isActive()) ? info.getRecordTypeId() : null;
     }
 }

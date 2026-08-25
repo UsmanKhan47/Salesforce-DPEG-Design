@@ -188,7 +188,9 @@ describe('c-disposition-main', () => {
         // ⚠ THE CHILD HAS NO OTHER ROUTE TO THE DISPOSITION. Without record-id
         // it wires `undefined`, its Apex returns a fully-populated EMPTY context
         // rather than throwing, and the card renders a permanent, confident
-        // "No responses yet" that nothing on the page contradicts.
+        // empty log — headers with no rows — that nothing on the page
+        // contradicts. (It said "No responses yet" until that hardcoded empty
+        // state was removed on 2026-08-25; the wrong answer is the same one.)
         expect(logger.recordId).toBe(RECORD_ID);
 
         // No other stage's children leak into this branch.
