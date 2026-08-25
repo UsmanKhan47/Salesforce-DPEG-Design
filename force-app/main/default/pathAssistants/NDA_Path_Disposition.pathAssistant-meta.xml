@@ -153,6 +153,33 @@
         STEP ORDER IS STILL NOT WHAT DRIVES BUBBLE ORDER (see the paragraph above this one) - the
         Status__c picklist's record-type-scoped value order does that. This file's step order is
         kept in step with it for readability, per that same paragraph's standing instruction.
+
+        =====================================================================
+        AMENDED 2026-08-25, LATER THE SAME DAY - THE 'Review' STEP IS REMOVED. THE PATH IS NOW
+        Prepare -> Approved -> Sent -> Signed, PLUS Declined. FOUR STEPS AGAIN, NOT FIVE.
+        =====================================================================
+
+        The user removed 'Review' from the Disposition_NDA record type in Setup a few hours after
+        adding it; the measured value list is in that record type file's second 2026-08-25
+        amendment. A Path step whose picklistValueName is not on the record type does not render,
+        so leaving it here would be silent dead metadata rather than a visible error - which is
+        exactly why it is removed rather than left "harmlessly".
+
+        THE 'Review' STEP IS REMOVED, NOT MERGED. It carried no fieldNames (see the paragraph
+        above, which explains why Review and Approved were both fieldName-less), so nothing had to
+        move anywhere the way the retired 'Not Sent' step's three fieldNames moved to Prepare.
+
+        THE 'Approved' STEP'S INFO TEXT IS REWORDED IN THE SAME CHANGE, AND THAT IS THE ONLY OTHER
+        EDIT. It read "The NDA has cleared internal review and is approved to send", which named a
+        step the user has just deleted and would have told the reader to look for a Review bubble
+        that is not there. It now describes approval as the check itself. The Prepare, Sent,
+        Signed and Declined steps are untouched.
+
+        ⚠ WHAT THIS MEANS FOR THE PROCESS, STATED SO IT IS NOT REDISCOVERED AS A BUG: internal
+        review has not disappeared from the business, it has stopped being a TRACKED STATE. There
+        is still no field on NDA__c naming a reviewer, an approver or an approval date, so nothing
+        records who approved a disposition NDA or when - only that its Status__c reached
+        'Approved'. If that ever needs auditing, it needs FIELDS, not a restored picklist value.
     -->
     <active>true</active>
     <entityName>NDA__c</entityName>
@@ -166,11 +193,7 @@
         <picklistValueName>Prepare</picklistValueName>
     </pathAssistantSteps>
     <pathAssistantSteps>
-        <info>The drafted NDA is under internal review before it goes anywhere near the counterparty. Nothing has been sent yet - this is DPEG's own check of the document, not the counterparty's turn to act.</info>
-        <picklistValueName>Review</picklistValueName>
-    </pathAssistantSteps>
-    <pathAssistantSteps>
-        <info>The NDA has cleared internal review and is approved to send. The counterparty still has not seen it - Sent is the next step, once it actually goes out to them.</info>
+        <info>The drafted NDA has been checked internally and is approved to send. The counterparty still has not seen it - Sent is the next step, once it actually goes out to them.</info>
         <picklistValueName>Approved</picklistValueName>
     </pathAssistantSteps>
     <pathAssistantSteps>

@@ -341,7 +341,11 @@ public with sharing class DispositionStageEntryService {
      * 🔴 THIS CONSTANT IS NOW THE ONLY DECLARATION OF THE DISPOSITION NDA ENTRY STATE ANYWHERE IN
      * THE ORG. With no record-type default, a UI-created NDA arrives BLANK and the user picks;
      * only this line decides where an AUTO-created one starts. 'Prepare' is the first step of the
-     * record type's sequence (Prepare -> Review -> Approved -> Sent -> Signed, plus Declined).
+     * record type's sequence (Prepare -> Approved -> Sent -> Signed, plus Declined).
+     * ⚠ THAT SEQUENCE READ "Prepare -> Review -> Approved -> Sent -> Signed" FOR A FEW HOURS ON
+     * 2026-08-25 before the user removed 'Review' from the record type in Setup as well. THIS
+     * CONSTANT DID NOT MOVE and needed no change — 'Prepare' is still the first step. The value
+     * that WAS affected was the next hop in RecordStageAdvanceService's map; see that class.
      * Seeding blank was rejected: a blank status on a record the user did not create reads as a
      * failed creation, and `NDA_Signed_Rollup` would count it as outstanding either way.
      */

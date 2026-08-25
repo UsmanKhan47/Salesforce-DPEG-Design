@@ -18,7 +18,9 @@
 
         EVERY Status__c VALUE MUST MAP - a CASE with no fallback would render BLANK for any value
         it does not name, which reads as a bug, not as "unmapped". The mapping:
-          - Prepare, Review, Approved, Not Sent, Pending  -> "Not Sent"  (document not yet sent)
+          - Prepare, Approved, Not Sent, Pending          -> "Not Sent"  (document not yet sent)
+            (⚠ this line read "Prepare, Review, Approved, Not Sent, Pending" until 2026-08-25 -
+             see the amendment at the foot of this comment)
           - Sent                                          -> "Sent"
           - Received                                      -> "Sent"     (see note below - DECISION,
                                                                           not an accident)
@@ -59,14 +61,44 @@
         WHAT DID NOT CHANGE, AND WHY THAT IS THE POINT: this field's SOURCE value 'Not Sent' is now
         legacy-only, but this field's DISPLAY value "Not Sent" is not - Prepare, Review and Approved
         all still collapse into it, and they are now the ONLY way a new disposition NDA reaches that
-        bucket. The mapping line "Not Sent" -> "Not Sent" is kept for the rows that predate the
+        bucket. (⚠ 'Review' left that list later the same day - see the foot of this comment.) The mapping line "Not Sent" -> "Not Sent" is kept for the rows that predate the
         removal, and the fallback is kept for the reason stated above. Deleting either would blank
         the display for real rows in usman-dpeg.
 
-        ⚠ THE MAPPING TABLE ABOVE STILL READS "Prepare, Review, Approved, Not Sent, Pending". That
+        ⚠ THE MAPPING TABLE ABOVE STILL READS "Prepare, Approved, Not Sent, Pending". That
         list is accurate as a description of the FORMULA. It is no longer a description of what a
-        NEW record can be in - only Prepare, Review and Approved are reachable on a disposition
+        NEW record can be in - only Prepare and Approved are reachable on a disposition
         NDA, and only Pending on an acquisition one.
+
+        =====================================================================
+        AMENDED 2026-08-25, LATER THE SAME DAY - THE "Review" BRANCH IS DELETED FROM THE CASE.
+        THIS IS THE OPPOSITE TREATMENT TO THE "Not Sent" BRANCH IMMEDIATELY ABOVE, AND THE REASON
+        IS EVIDENCE, NOT A CHANGE OF PRINCIPLE.
+        =====================================================================
+
+        The user removed 'Review' from the Disposition_NDA record type in Setup hours after adding
+        it (measured value list: recordTypes/Disposition_NDA.recordType-meta.xml's second
+        2026-08-25 amendment). Like 'Not Sent', it stays ACTIVE on the master value set and is now
+        on NO record type, so it is UNWRITABLE on either type.
+
+        WHY 'Not Sent' KEPT ITS BRANCH AND 'Review' DID NOT. The 'Not Sent' branch is kept for the
+        rows that already carry the value. A live aggregate on 2026-08-25 measured the org and
+        found ZERO rows at 'Review' on EITHER record type - the value was reachable for about one
+        day - so the branch protects nothing. (The same aggregate found zero rows at 'Not Sent'
+        too, contradicting the paragraph above; that branch was left in place rather than
+        re-litigated, and the correction is recorded in RecordStageAdvanceService's
+        NDA_DISPOSITION_NEXT_STAGE comment.)
+
+        🔴 DELETING THIS BRANCH IS A BEHAVIOURAL NO-OP AND THAT IS THE POINT. "Review" mapped to
+        the "Not Sent" DISPLAY bucket, and the CASE's explicit fallback is also "Not Sent" - so a
+        row that somehow carried 'Review' renders identically before and after. Nothing about the
+        display changes; what changes is that this file stops naming a value the process no longer
+        has. Do not "restore it for completeness": under the EVERY VALUE MUST MAP rule above,
+        naming it would assert it is reachable.
+
+        ⚠ THE MAPPING TABLE AND <description> ARE UPDATED IN THE SAME EDIT, so the two do not drift
+        from the formula. The remaining "Not Sent" bucket sources are Prepare, Approved, Not Sent
+        (legacy) and Pending.
 
         ⚠ ONE THING THIS FIELD CANNOT REPRESENT AS OF THIS CHANGE: Disposition_NDA now has NO
         record-type default, so a UI-created NDA arrives with Status__c BLANK. TEXT() of a blank
@@ -83,12 +115,11 @@
         field renders blank and any SOQL selecting it reports "No such column".
     -->
     <fullName>Tracking_Status__c</fullName>
-    <description>Four-step display collapse of Status__c: Prepare/Review/Approved/Not Sent/Pending -&gt; Not Sent; Sent/Received -&gt; Sent (Received maps to Sent deliberately - see XML comment); Signed -&gt; Signed; Declined -&gt; Declined. Explicit fallback of &apos;Not Sent&apos; for any future Status__c value not yet named here. Read-only; derived from Status__c.</description>
+    <description>Four-step display collapse of Status__c: Prepare/Approved/Not Sent/Pending -&gt; Not Sent; Sent/Received -&gt; Sent (Received maps to Sent deliberately - see XML comment); Signed -&gt; Signed; Declined -&gt; Declined. Explicit fallback of &apos;Not Sent&apos; for any future Status__c value not yet named here. Read-only; derived from Status__c.</description>
     <externalId>false</externalId>
     <formula>CASE(
   TEXT(Status__c),
   &quot;Prepare&quot;, &quot;Not Sent&quot;,
-  &quot;Review&quot;, &quot;Not Sent&quot;,
   &quot;Approved&quot;, &quot;Not Sent&quot;,
   &quot;Not Sent&quot;, &quot;Not Sent&quot;,
   &quot;Pending&quot;, &quot;Not Sent&quot;,

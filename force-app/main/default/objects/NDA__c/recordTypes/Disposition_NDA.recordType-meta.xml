@@ -180,10 +180,50 @@
         created NDA. The Tracking_Status__c formula did NOT change: Prepare/Review/Approved already
         collapse to the "Not Sent" DISPLAY bucket, which remains correct and is now the ONLY place
         the words "Not Sent" legitimately appear for a new disposition NDA.
+
+        =====================================================================
+        AMENDED 2026-08-25, LATER THE SAME DAY - 'Review' REMOVED FROM THIS RECORD TYPE TOO. AGAIN
+        A CATCH-UP TO THE ORG, AND AGAIN MADE IN SETUP FIRST.
+        =====================================================================
+
+        Measured live via the UI API picklist-values endpoint for this record type
+        (012iw0000009yeaAAA), the same channel and the same caveat as the amendment above - a
+        RecordType retrieve STRIPS picklistValues, so this file is edited BY HAND and must never be
+        "synced from org". Status__c on this record type is now exactly
+
+            Prepare | Approved | Sent | Signed | Declined              defaultValue: (empty)
+
+        So the sequence is Prepare -> Approved -> Sent -> Signed, with Declined the terminal
+        off-ramp. 'Review' is gone from the MIDDLE of the sequence - the same harder-to-notice
+        shape as 'Not Sent' twelve hours earlier, and the second value to leave this type in one
+        day.
+
+        🔴 THIS ONE HAD ALREADY BROKEN SOMETHING BEFORE THE REPO CAUGHT UP, WHICH 'Not Sent' HAD
+        NOT. Because this value set is RESTRICTED and DML enforces the record-type subset (see the
+        amendment above and Acquisition_NDA's 2026-08-20 correction), the disposition hop map in
+        RecordStageAdvanceService - which had gained 'Prepare' => 'Review' hours earlier - made
+        the FIRST Advance Stage click on EVERY new disposition NDA fail with "bad value for
+        restricted picklist field: Review". The Apex was fixed in the same change as this file.
+        ⚠ THE APEX TESTS DID NOT CATCH IT AND COULD NOT HAVE: a record type's value list is ORG
+        state, and this file is the repo's only copy of it. Any Setup-side value removal on a
+        restricted picklist breaks Apex that names the value, silently and only in the org, until
+        someone edits this file. DEPLOY THIS FILE BEFORE THE APEX, never after.
+
+        🔴 'Review' STAYS ACTIVE ON THE GLOBAL VALUE SET and is now on NO record type - the same
+        state 'Not Sent' reached above, reached the same way. It is therefore UNREACHABLE from any
+        UI picker and UNWRITABLE by Apex, Flow or the API on either type.
+        ⚠ BUT IT IS NOT TREATED THE SAME DOWNSTREAM, AND THE DIFFERENCE IS EVIDENCE, NOT PRINCIPLE.
+        'Not Sent' kept its consumers (a legacy hop, a CASE branch, a tone-map key) because rows
+        were believed to carry it. A live aggregate on 2026-08-25 measured the org: ONE
+        Disposition_NDA row exists, at 'Prepare'; ZERO rows carry 'Review' and - contrary to what
+        the amendment above asserts - ZERO carry 'Not Sent' either. So 'Review' was pruned from
+        RecordStageAdvanceService's map and from Tracking_Status__c's CASE, while 'Not Sent' was
+        left alone rather than re-litigated. If either value is ever to be DEACTIVATED on the
+        global set, re-measure first; that is a separate decision and was not taken here.
     -->
     <fullName>Disposition_NDA</fullName>
     <active>true</active>
-    <description>The sell-side NDA, parented by Disposition. States (process order): Prepare, Review, Approved, Sent, Signed, plus Declined as a terminal off-ramp. NO DEFAULT - Status starts blank. Pending, Received and Not Sent are restricted out. See the XML comment.</description>
+    <description>The sell-side NDA, parented by Disposition. States (process order): Prepare, Approved, Sent, Signed, plus Declined as a terminal off-ramp. NO DEFAULT - Status starts blank. Pending, Received, Not Sent and Review are restricted out. See the XML comment.</description>
     <label>Disposition NDA</label>
     <picklistValues>
         <picklist>Method__c</picklist>
@@ -211,10 +251,6 @@
         <picklist>Status__c</picklist>
         <values>
             <fullName>Prepare</fullName>
-            <default>false</default>
-        </values>
-        <values>
-            <fullName>Review</fullName>
             <default>false</default>
         </values>
         <values>

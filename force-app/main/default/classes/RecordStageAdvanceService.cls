@@ -54,13 +54,19 @@
  *                     placement of 'Sent' is REVERSED — see NDA_ACQUISITION_NEXT_STAGE for the
  *                     retracted argument, the unmigrated-row residual, and why this needed NO
  *                     change to NDA_Signed_Status_Sync (the deal gate's checkbox LATCHES true).
- *   Disposition_NDA   Prepare -> Review -> Approved -> Sent -> Signed
+ *   Disposition_NDA   Prepare -> Approved -> Sent -> Signed
  *                                                                   explicit targets: {Declined}
  *                     gate: DISPOSITION_DRIVER
  *                     ⚠ EXTENDED 2026-08-25. Read "Not Sent -> Sent -> Signed" until that day,
  *                     when the user removed 'Not Sent' from the record type in Setup and the NDA
  *                     seed moved to 'Prepare'. The 'Not Sent' => 'Sent' hop is KEPT for pre-existing
  *                     rows but is unreachable for new ones — see NDA_DISPOSITION_NEXT_STAGE.
+ *                     ⚠ NARROWED 2026-08-25, LATER THE SAME DAY. This line read
+ *                     "Prepare -> Review -> Approved -> Sent -> Signed" for a few hours. The user
+ *                     then removed 'Review' from the record type in Setup as well, so 'Prepare'
+ *                     now hops STRAIGHT to 'Approved' and nothing targets 'Review' anywhere. Two
+ *                     values left this sequence on one day; do not restore either from the
+ *                     paragraphs above.
  *
  *   LOI__c            (Tranche 3B, 2026-08-09 — this was the config addition the note at
  *                      CONFIG_BY_TYPE predicted, and it changed nothing below the config)
@@ -765,7 +771,8 @@ public with sharing class RecordStageAdvanceService {
     };
 
     /**
-     * NDA__c.Status__c / Disposition_NDA — Not Sent -> Sent -> Signed. 'Signed' is terminal.
+     * NDA__c.Status__c / Disposition_NDA — Prepare -> Approved -> Sent -> Signed. 'Signed' is
+     * terminal.
      *
      * 🔴 'Sent' MAPS SOMEWHERE ELSE HERE THAN IT DOES ON THE ACQUISITION MAP ABOVE. That is not an
      * inconsistency to reconcile; it is the requirement. A disposition NDA goes straight from Sent
@@ -782,15 +789,17 @@ public with sharing class RecordStageAdvanceService {
      * deliberately left it untouched.
      *
      * ⚠ EXTENDED 2026-08-25 — THE LAST SENTENCE ABOVE IS NO LONGER TRUE, AND THE RULE IT SERVES IS
-     * UNCHANGED. The map is now Prepare -> Review -> Approved -> Sent -> Signed. Nothing was
-     * REMOVED and no hop was repointed: 'Sent' => 'Signed' is untouched, and the acquisition map is
-     * still not harmonised toward this one.
+     * UNCHANGED. The map is now Prepare -> Approved -> Sent -> Signed (it read
+     * "Prepare -> Review -> Approved -> Sent -> Signed" for a few hours the same day — see the
+     * NARROWED block at the foot of this comment). Nothing was REMOVED from the sequence as it
+     * stood that morning and no hop was repointed: 'Sent' => 'Signed' is untouched, and the
+     * acquisition map is still not harmonised toward this one.
      *
      * 🔴 WHY IT HAD TO GROW, AND WHY THIS IS NOT SCOPE CREEP. The user removed 'Not Sent' from the
      * Disposition_NDA record type in Setup and cleared that type's default, and
      * DispositionStageEntryService's seed moved to 'Prepare' in the same change. Every NDA created
      * from that day forward therefore ENTERS at 'Prepare' — a value this map did not carry. Without
-     * these three hops the Advance Stage button would refuse the FIRST click on every new
+     * these hops the Advance Stage button would refuse the FIRST click on every new
      * disposition NDA with "There is no next step available from the Prepare stage", i.e. the
      * feature would be dead on arrival rather than subtly wrong.
      *
@@ -799,10 +808,41 @@ public with sharing class RecordStageAdvanceService {
      * sit at 'Not Sent' in usman-dpeg and must remain advanceable. It can never be REACHED again —
      * nothing maps TO it and no record type exposes it — so it is unreachable, not dead. Do not
      * prune it; doing so strands those rows with no forward hop at all.
+     * 🔴 CORRECTED 2026-08-25 — "rows created before 2026-08-25 still sit at 'Not Sent' in
+     * usman-dpeg" IS NOT TRUE AS MEASURED. A live aggregate that day
+     * (SELECT RecordType.DeveloperName, Status__c, COUNT(Id) FROM NDA__c GROUP BY both) returned
+     * exactly ONE Disposition_NDA row, at 'Prepare', and ZERO at 'Not Sent'. The hop is KEPT
+     * anyway — it costs one map entry and it protects any row a future data load lands on the
+     * legacy value. What is retracted is the EVIDENCE, not the decision: do not cite "there are
+     * such rows" as fact again without re-measuring.
+     *
+     * =====================================================================
+     * ⚠ NARROWED 2026-08-25, LATER THE SAME DAY — 'Review' IS OUT OF THIS MAP ENTIRELY.
+     * =====================================================================
+     *
+     * The user removed 'Review' from the Disposition_NDA record type in Setup. Measured live via
+     * the UI API picklist-values endpoint for record type 012iw0000009yeaAAA: Status__c on that
+     * type is exactly Prepare | Approved | Sent | Signed | Declined, with no default.
+     *
+     * 🔴 THIS WAS A LIVE DEFECT, NOT A TIDY-UP. NDA__c.Status__c is a RESTRICTED value set whose
+     * record-type subset DML DOES enforce (measured — see recordTypes/Acquisition_NDA
+     * .recordType-meta.xml's 2026-08-20 correction). The two hops this map carried for a few
+     * hours — 'Prepare' => 'Review' and 'Review' => 'Approved' — meant the FIRST Advance click on
+     * every new disposition NDA failed with
+     * "bad value for restricted picklist field: Review". Every new NDA enters at 'Prepare', so
+     * the button was dead on 100% of them.
+     *
+     * 🔴 'Review' IS TREATED DIFFERENTLY FROM 'Not Sent' AND THE ASYMMETRY IS DELIBERATE. Both
+     * values are still ACTIVE on the master set and on NO record type; 'Not Sent' keeps a legacy
+     * hop and 'Review' gets none. The reason is evidence, not principle: 'Review' existed on the
+     * record type only between 2026-08-24 and 2026-08-25, and the same live aggregate found ZERO
+     * rows carrying it on EITHER record type — there is nothing to strand. Do NOT add
+     * 'Review' => 'Approved' "for symmetry". Nothing can write the value, so the entry would be
+     * unreachable AND unjustified, and its presence would read as evidence that 'Review' is still
+     * part of the sequence.
      */
     private static final Map<String, String> NDA_DISPOSITION_NEXT_STAGE = new Map<String, String>{
-        'Prepare' => 'Review',
-        'Review' => 'Approved',
+        'Prepare' => 'Approved',
         'Approved' => 'Sent',
         'Not Sent' => 'Sent',
         'Sent' => 'Signed'

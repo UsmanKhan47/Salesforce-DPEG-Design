@@ -12,7 +12,7 @@
         to be an instruction sitting in a comment while an actual targetConfig objects restriction
         existed one directory over, in dispositionBuyerTimeline. A misplaced instance would not have
         errored: the read is WHERE Disposition__c = :id, which matches no rows rather than throwing,
-        so the card would have rendered its "No broker changes recorded" empty state forever - and
+        so the card would have rendered its "No broker selected yet" empty state forever - and
         that empty state is the NORMAL case for most sales, so nobody would ever have suspected it.
     -->
     <apiVersion>67.0</apiVersion>
@@ -26,9 +26,12 @@
         ⚠ "Broker Selection" is also a Disposition_Stage__c value and an approval process label.
         This card is NOT scoped to that stage; it lists every appointment and replacement ever
         recorded, including after the sale has left it.
+        ⚠ THE DESCRIPTION WAS REWRITTEN 2026-08-25 (229 chars, re-counted) when the card gained its
+        CURRENT SELECTION section: the old text promised replacements only, which is the same
+        half-truth that made the card render "(0)" on a sale with an appointed broker.
     -->
     <masterLabel>Broker Selection</masterLabel>
-    <description>Every broker replacement recorded against this disposition, newest first, with the reason and any notes. Most sales never replace a broker, so an empty card is the normal state and is shown as plain text.</description>
+    <description>The broker or brokers currently selected on this disposition, then every replacement recorded against it, newest first with reason and notes. A sale with no selection and no replacements shows a plain empty message, not an error.</description>
     <targets>
         <target>lightning__RecordPage</target>
     </targets>

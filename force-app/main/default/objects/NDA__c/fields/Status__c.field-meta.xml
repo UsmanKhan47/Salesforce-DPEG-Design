@@ -74,6 +74,9 @@
         objects/NDA__c/recordTypes/Disposition_NDA.recordType-meta.xml, whose own 2026-08-25
         amendment carries the measured evidence. Disposition_NDA now exposes SIX values:
         Prepare -> Review -> Approved -> Sent -> Signed, plus Declined.
+        ⚠ SUPERSEDED HOURS LATER THE SAME DAY - IT IS FIVE VALUES, NOT SIX. See the second
+        2026-08-25 amendment below; 'Review' left the record type too. Kept verbatim because it
+        records what was true when 'Not Sent' was removed.
 
         🔴 'Not Sent' IS DELIBERATELY LEFT ACTIVE IN THE <valueSet> BELOW even though Acquisition_
         NDA already restricted it out, which makes it reachable from NO record type. Deactivating
@@ -85,6 +88,36 @@
         (Tracking_Status__c's CASE, RecordStageAdvanceService's 'Not Sent' => 'Sent' hop,
         dispositionDealSummary's NDA_TONE), is pruning the ONLY thing keeping those rows working.
 
+        =====================================================================
+        AMENDED 2026-08-25, LATER THE SAME DAY - 'Review' IS ALSO NOW ON NO RECORD TYPE. THIS FIELD
+        FILE'S <valueSet> IS AGAIN UNCHANGED - THE VALUE STAYS ACTIVE ON THE MASTER SET.
+        =====================================================================
+
+        The user removed 'Review' from Disposition_NDA in Setup, hours after this file added it.
+        The repo caught up in recordTypes/Disposition_NDA.recordType-meta.xml, whose second
+        2026-08-25 amendment carries the measured evidence. Disposition_NDA now exposes FIVE
+        values: Prepare -> Approved -> Sent -> Signed, plus Declined.
+
+        SO OF THE THREE VALUES THIS FILE ADDED ON 2026-08-24, ONE (Review) SURVIVED ON A RECORD
+        TYPE FOR ABOUT A DAY. It is left ACTIVE below for the same mechanical reason 'Not Sent' is
+        - deactivating a value is the change that breaks rows - but the justification is NOT the
+        same and should not be quoted as such: a live aggregate on 2026-08-25 found ZERO NDA rows
+        at 'Review' on either record type (and, contrary to the paragraph above, zero at
+        'Not Sent' either).
+
+        🔴 'Review' IS THEREFORE AN ORPHAN ON THIS VALUE SET: on no record type, on no row, and
+        UNWRITABLE because this set is RESTRICTED and DML enforces the record-type subset. It is
+        REPORTED AS SUCH RATHER THAN DEACTIVATED HERE - deactivating it is a separate decision for
+        the user, and 'Not Sent' is in exactly the same state and would deserve the same treatment
+        at the same time.
+
+        ⚠ ITS CONSUMERS WERE PRUNED, WHICH IS WHERE THIS DIFFERS FROM 'Not Sent'. The
+        'Prepare' => 'Review' and 'Review' => 'Approved' hops are gone from
+        RecordStageAdvanceService (they were a LIVE DEFECT - the Advance quick action threw
+        "bad value for restricted picklist field: Review" on the first click of every new
+        disposition NDA), the 'Review' branch is gone from Tracking_Status__c's CASE, and the
+        Review step is gone from NDA_Path_Disposition. Do not restore any of them.
+
         ⚠ WHERE A NEW DISPOSITION NDA NOW STARTS. With no record-type default, a UI-created NDA
         leaves Status__c BLANK. Automation does not: DispositionStageEntryService's
         DISPOSITION_NDA_INITIAL_STATUS moved 'Not Sent' -> 'Prepare' in this same change, as did
@@ -93,8 +126,8 @@
         step with, so a future reorder of the lifecycle must edit the constant explicitly.
     -->
     <fullName>Status__c</fullName>
-    <description>Lifecycle state of the NDA. THE MASTER SET IS THE UNION OF TWO RECORD-TYPE SETS AND NO SINGLE RECORD TYPE SEES ALL VALUES. Acquisition_NDA exposes Pending, Received, Signed, Sent (D14.1, reordered 2026-08-16). Disposition_NDA exposes Prepare, Review, Approved, Sent, Signed, Declined (2026-08-25 - &apos;Not Sent&apos; removed from that type; it stays ACTIVE here for legacy rows and is now on NO record type - see XML comment). Sent and Signed are SHARED, so this field alone does NOT identify the record type - use Disposition__c or RecordTypeId for that. Read by NDA_Signed_Status_Sync (before-save, derives NDA_Signed__c) and NDA_Signed_Rollup (after-save, counts Signed rows onto the parent Disposition).</description>
-    <inlineHelpText>Pick the state this NDA is in. The choices differ by record type: an acquisition NDA runs Pending, Received, Signed, Sent; a disposition NDA runs Prepare, Review, Approved, Sent, Signed, and Declined if the counterparty refuses.</inlineHelpText>
+    <description>Lifecycle state of the NDA. THE MASTER SET IS THE UNION OF TWO RECORD-TYPE SETS AND NO SINGLE RECORD TYPE SEES ALL VALUES. Acquisition_NDA exposes Pending, Received, Signed, Sent (D14.1, reordered 2026-08-16). Disposition_NDA exposes Prepare, Approved, Sent, Signed, Declined (2026-08-25 - &apos;Not Sent&apos; and &apos;Review&apos; both removed from that type; both stay ACTIVE here and are now on NO record type - see XML comment). Sent and Signed are SHARED, so this field alone does NOT identify the record type - use Disposition__c or RecordTypeId for that. Read by NDA_Signed_Status_Sync (before-save, derives NDA_Signed__c) and NDA_Signed_Rollup (after-save, counts Signed rows onto the parent Disposition).</description>
+    <inlineHelpText>Pick the state this NDA is in. The choices differ by record type: an acquisition NDA runs Pending, Received, Signed, Sent; a disposition NDA runs Prepare, Approved, Sent, Signed, and Declined if the counterparty refuses.</inlineHelpText>
     <label>Status</label>
     <required>false</required>
     <trackHistory>false</trackHistory>

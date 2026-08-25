@@ -4,16 +4,35 @@
  * Read-only: a single `@wire(getHistory, { dispositionId: '$recordId' })`, three mutually exclusive
  * rendered states, a 60-character note preview with a View popup.
  *
+ * ═════════════════════════════════════════════════════════════════════════════
+ * 🔴 THE WIRE CARRIES TWO LISTS SINCE 2026-08-25 — `{ selected, changes }`.
+ * ═════════════════════════════════════════════════════════════════════════════
+ * THE DEFECT THAT FORCED IT, because every test below is shaped by it: the card is titled "Broker
+ * Selection" and listed only `BOV_Broker_Change__c` rows — REPLACEMENTS. On a sale whose broker had
+ * been selected but never replaced it rendered "(0) — No broker changes recorded", i.e. it denied
+ * the existence of the thing its own title names. It now renders the CURRENT SELECTION first (up to
+ * two rows, one per slot) and then the change log, in ONE `<ul>`, and three consequences follow that
+ * the tests pin individually:
+ *   • the "(n)" title is a SUM over both halves — a count of one half disagrees with what is on
+ *     screen (T-COUNT-SUM);
+ *   • the EMPTY state appears only when BOTH halves are empty — the whole defect in one condition
+ *     (T-SELECTED-ONLY is the falsifier, and it is the single most important test in this file);
+ *   • the selection entries use the CHANGE entries' markup class-for-class, so a change to the
+ *     shared timeline chrome cannot style one section and not the other (T-SELECTED-STYLE).
+ * ⚠ Every emit goes through the `emitHistory(changes, selected)` helper below rather than naming
+ * the wrapper's members at nineteen call sites.
+ *
  * ─────────────────────────────────────────────────────────────────────────────
  * 🔴 THE LOAD-BEARING FACTS
  * ─────────────────────────────────────────────────────────────────────────────
- * 1. EMPTY IS THE MAJORITY STATE OF THIS CARD and must render "No broker changes recorded" —
- *    never an error banner, never a spinner. Most dispositions never replace a broker, so a
- *    regression here would be visible on most disposition record pages in the org. The empty test
+ * 1. EMPTY IS THE MAJORITY STATE OF THIS CARD and must render `EMPTY_SENTENCE` —
+ *    never an error banner, never a spinner. Most dispositions have no selected broker for most of
+ *    their life and never replace one, so a regression here would be visible on most disposition
+ *    record pages in the org. The empty test
  *    below therefore also asserts the ABSENCE of an alert and of a spinner, because a passing
  *    "the sentence is present" assertion would survive both of those being added next to it.
- * 2. EMPTY AND UNAVAILABLE ARE DIFFERENT STATES AND MUST NEVER SHARE WORDING. "No broker changes
- *    recorded" is a claim about the SALE; a failed read is a fact about the READER. The tests pin
+ * 2. EMPTY AND UNAVAILABLE ARE DIFFERENT STATES AND MUST NEVER SHARE WORDING. The empty sentence
+ *    is a claim about the SALE; a failed read is a fact about the READER. The tests pin
  *    that the failure path does NOT emit the empty sentence — that is the assertion that fails if
  *    somebody "simplifies" the error branch into the empty one.
  * 3. THE COMPONENT DOES NOT RE-SORT. The Apex is already ordered newest-first; these tests feed
@@ -105,6 +124,20 @@ jest.mock(
 
 /** A Disposition__c Id — the anchor is the SALE, not an assignment or a submission. */
 const DISPOSITION_ID = 'a0D5g000000DispEAG';
+
+/**
+ * 🔴 THE EMPTY STATE'S SENTENCE, NAMED ONCE BECAUSE IT IS ASSERTED IN THREE PLACES — twice as a
+ * PRESENCE (the empty state itself, and the T-NO-PROSE pin that keeps the headline while the
+ * sub-line stays deleted) and once as an ABSENCE (the UNAVAILABLE state, which must never borrow
+ * the empty wording). Those three must move together or the absence pin silently stops falsifying
+ * anything.
+ *
+ * ⚠ CHANGED 2026-08-25 from 'No broker changes recorded'. Not a copy tweak — the STATE changed
+ * meaning: the card renders the current selection as well as the log, so it is empty only when
+ * neither exists. The old sentence reported on the change log alone, which is precisely how a sale
+ * with a selected-but-never-replaced broker was told that nothing had happened.
+ */
+const EMPTY_SENTENCE = 'No broker selected yet';
 
 const LONG_NOTE =
     'The outgoing broker missed two consecutive marketing deadlines and the seller asked for a change before the listing went live.';
@@ -208,6 +241,81 @@ const BARE_ENTRY = [
     }
 ];
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════════════════
+ * 🔴 THE CURRENT SELECTION — `HistoryView.selected` (added 2026-08-25).
+ * ═══════════════════════════════════════════════════════════════════════════════════════════
+ * A disposition has TWO SELECTION SLOTS and can therefore carry TWO Selected rows at once: the
+ * PREFERRED broker and the SCORE-selected one. The server returns them preferred-first and the card
+ * must not re-sort. These are the exact member names of
+ * `BovBrokerChangeController.SelectedRow` — pinned here for the same reason `ChangeRow`'s are (a
+ * rename fails no deploy and throws nothing; the card just renders blanks).
+ *
+ * ⚠ `basis` IS A SERVER-COMPOSED PHRASE AND THE FIXTURES USE THE REAL STRINGS. The client renders
+ * it verbatim — the precedence rule that CHOOSES between "Manually appointed" / "Preferred broker" /
+ * "System selected by score" / "Selected broker" lives once, in `BovBrokerChangeController.basisOf`,
+ * and is tested in Apex. A fixture inventing its own phrase here would pass while proving nothing.
+ */
+const SELECTED_BOTH_SLOTS = [
+    {
+        id: 'a0X0000000000001AAA',
+        brokerName: 'Dana Whitfield',
+        brokerFirm: 'CBRE',
+        basis: 'Preferred broker',
+        selectedDateTime: '2026-08-22T14:30:00.000Z'
+    },
+    {
+        id: 'a0X0000000000002AAA',
+        brokerName: 'Sam Okoye',
+        brokerFirm: 'Newmark',
+        basis: 'System selected by score',
+        selectedDateTime: '2026-08-20T11:00:00.000Z'
+    }
+];
+
+/**
+ * 🔴 A SELECTED ROW WITH NO CONTACT NAME. `Contact_Name__c` and `Broker_Firm__c` are BOTH stamped
+ * from `Broker__c` and BOTH nullable, so this shape is constructible and a currently-appointed
+ * broker must never render as a blank line or the literal "undefined". The firm is the fallback
+ * headline — and when it IS the headline it must not ALSO print on line 2.
+ */
+const SELECTED_NAMELESS = [
+    {
+        id: 'a0X0000000000003AAA',
+        brokerName: null,
+        brokerFirm: 'Colliers Houston',
+        basis: 'Manually appointed',
+        selectedDateTime: '2026-08-18T09:00:00.000Z'
+    }
+];
+
+/** Neither column. The last fallback: a word, never a blank span. */
+const SELECTED_ANONYMOUS = [
+    {
+        id: 'a0X0000000000004AAA',
+        brokerName: null,
+        brokerFirm: null,
+        basis: 'Selected broker',
+        selectedDateTime: '2026-08-17T09:00:00.000Z'
+    }
+];
+
+/**
+ * 🔴 THE WIRE CARRIES ONE OBJECT WITH TWO LISTS, NOT AN ARRAY (changed 2026-08-25).
+ * `getHistory` returns `BovBrokerChangeController.HistoryView` — `{ selected, changes }` — so that
+ * ONE wire drives a card whose title is a SUM over both halves and whose empty state must appear
+ * only when BOTH are empty. Two cacheable wires would settle at different times and render a
+ * transiently wrong count and a flash of the empty state on every load.
+ *
+ * ⚠ THIS HELPER EXISTS SO THE MEMBER NAMES APPEAR ONCE. Every test below emits through it; if the
+ * Apex wrapper's members are ever renamed, ONE line here changes and the whole suite follows —
+ * which is the opposite of what happened when nineteen call sites each spelled out the payload.
+ * The argument order puts `changes` first because that is the half every pre-existing test feeds.
+ */
+function emitHistory(changes = [], selected = []) {
+    getHistory.emit({ selected, changes });
+}
+
 describe('c-bov-broker-change-history', () => {
     afterEach(() => {
         while (document.body.firstChild) {
@@ -272,7 +380,7 @@ describe('c-bov-broker-change-history', () => {
     it('HEADER: the card reads "Broker Selection (n)" and carries an icon', async () => {
         const element = createComponent();
 
-        getHistory.emit(HISTORY);
+        emitHistory(HISTORY);
         await Promise.resolve();
 
         expect(
@@ -286,7 +394,7 @@ describe('c-bov-broker-change-history', () => {
     it('DATA: one timeline entry per change, headlined by the broker who was replaced', async () => {
         const element = createComponent();
 
-        getHistory.emit(HISTORY);
+        emitHistory(HISTORY);
         await Promise.resolve();
 
         expect(rows(element).length).toBe(2);
@@ -350,7 +458,7 @@ describe('c-bov-broker-change-history', () => {
     it('ORDER: preserves the server order and does not re-sort', async () => {
         const element = createComponent();
 
-        getHistory.emit(HISTORY);
+        emitHistory(HISTORY);
         await Promise.resolve();
 
         const names = [...rows(element)].map(
@@ -384,7 +492,7 @@ describe('c-bov-broker-change-history', () => {
     it('🔴 T-APPOINTMENT: an appointment shows the APPOINTED firm and is not called a replacement', async () => {
         const element = createComponent();
 
-        getHistory.emit(APPOINTMENT_ONLY);
+        emitHistory(APPOINTMENT_ONLY);
         await Promise.resolve();
 
         expect(rows(element).length).toBe(1);
@@ -420,7 +528,7 @@ describe('c-bov-broker-change-history', () => {
     it('🔴 T-NO-DANGLING-PIPE: with no reason, the separator goes too', async () => {
         const element = createComponent();
 
-        getHistory.emit(BARE_ENTRY);
+        emitHistory(BARE_ENTRY);
         await Promise.resolve();
 
         const entry = rows(element)[0];
@@ -449,7 +557,7 @@ describe('c-bov-broker-change-history', () => {
     it('🔴 T-NULL-INCOMING: a replacement with no incoming firm still names the broker replaced', async () => {
         const element = createComponent();
 
-        getHistory.emit(NULL_INCOMING);
+        emitHistory(NULL_INCOMING);
         await Promise.resolve();
 
         const entry = rows(element)[0];
@@ -475,7 +583,7 @@ describe('c-bov-broker-change-history', () => {
     it('🔴 T-NO-NAME: a row with neither firm says so in words — never a blank span or a dash', async () => {
         const element = createComponent();
 
-        getHistory.emit(NO_FIRMS);
+        emitHistory(NO_FIRMS);
         await Promise.resolve();
 
         expect(rows(element).length).toBe(1);
@@ -496,7 +604,7 @@ describe('c-bov-broker-change-history', () => {
     it('🔴 T-NO-ARROW: the two-firm pairing is gone — no arrow, no "replaced by", no second firm', async () => {
         const element = createComponent();
 
-        getHistory.emit(HISTORY);
+        emitHistory(HISTORY);
         await Promise.resolve();
 
         // 🔴 THE PRESENCE CONTROL FIRST. Every absence below is satisfied perfectly by a card
@@ -530,17 +638,179 @@ describe('c-bov-broker-change-history', () => {
         expect(text(element)).not.toContain('Cushman & Wakefield');
     });
 
-    it('🔴 EMPTY: says "No broker changes recorded" — with no alert and no spinner anywhere near it', async () => {
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+    // 🔴 THE CURRENT SELECTION (2026-08-25). See the file header for the defect these pin.
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+
+    /**
+     * 🔴 THE MOST IMPORTANT TEST IN THIS FILE. It is the reported defect, reduced: a sale with a
+     * SELECTED broker and NO replacements. Before 2026-08-25 this rendered the empty state under a
+     * card titled "Broker Selection" — the card denying the existence of the thing it is named
+     * after. Every other assertion here is a detail by comparison.
+     */
+    it('🔴 T-SELECTED-ONLY: a selected broker with no replacements is an ENTRY, never the empty state', async () => {
         const element = createComponent();
 
-        getHistory.emit([]);
+        emitHistory([], SELECTED_NAMELESS);
+        await Promise.resolve();
+
+        // 1. IT IS NOT EMPTY. This single assertion is the whole defect.
+        expect(empty(element)).toBeNull();
+        expect(unavailable(element)).toBeNull();
+
+        // 2. ...and the count is not (0). The title said "(0)" beside a real broker, which is the
+        //    same claim as the empty sentence in fewer words.
+        expect(title(element)).toBe('Broker Selection (1)');
+
+        // 3. The entry is really there and really names the broker.
+        expect(rows(element).length).toBe(1);
+        expect(headline(rows(element)[0]).name).toBe('Colliers Houston');
+    });
+
+    it('🔴 T-COUNT-SUM: the title counts BOTH sections, and the selection renders ABOVE the log', async () => {
+        const element = createComponent();
+
+        emitHistory(HISTORY, SELECTED_BOTH_SLOTS);
+        await Promise.resolve();
+
+        // 🔴 A SUM, NOT A HALF. Two selected + two changes = four entries on screen, and the title
+        // has to agree with what the user can count. A title still reading `this._rows.length`
+        // would say "(2)" here and pass any `toContain('Broker Selection')` assertion.
+        expect(title(element)).toBe('Broker Selection (4)');
+        expect(rows(element).length).toBe(4);
+
+        // 🔴 ORDER: SELECTION FIRST, PREFERRED SLOT AT THE TOP, THEN THE LOG NEWEST-FIRST. The
+        // server orders both halves and the component does not re-sort either (see the JS). Reading
+        // all four names in one assertion is what makes an accidental concat-in-the-wrong-order
+        // fail — asserting only `[0]` would pass if the two sections were swapped wholesale.
+        expect(
+            [...rows(element)].map((r) => r.querySelector('.bbc-name').textContent)
+        ).toEqual(['Dana Whitfield', 'Sam Okoye', 'JLL', 'CBRE']);
+
+        // The two sections live in ONE list — two <ul>s would break the rail (see the template).
+        expect(element.shadowRoot.querySelectorAll('ul.bbc-timeline').length).toBe(1);
+    });
+
+    it('🔴 T-SELECTED-FACTS: firm, basis phrase and timestamp — each on the line the design puts it', async () => {
+        const element = createComponent();
+
+        emitHistory([], SELECTED_BOTH_SLOTS);
+        await Promise.resolve();
+
+        const preferred = rows(element)[0];
+        expect(headline(preferred).name).toBe('Dana Whitfield');
+        // 🔴 THE ASSISTIVE LABEL IS WHAT TELLS A SCREEN-READER USER THIS IS A CURRENT BROKER AND
+        // NOT A HISTORICAL ONE. The two entry kinds are deliberately identical to look at, so
+        // without this a non-sighted user hears two identically shaped entries and cannot tell a
+        // broker who holds the slot today from one replaced two years ago.
+        // ⚠ The trailing colon is load-bearing: the compiler eats the whitespace between the label
+        // and the name, so the accessible name is the concatenation.
+        expect(headline(preferred).label).toBe('Currently selected broker:');
+
+        expect(preferred.querySelector('.bbc-firm').textContent).toBe('CBRE');
+        // 🔴 THE PHRASE IS THE SERVER'S, VERBATIM. `BovBrokerChangeController.basisOf` composes it
+        // (and owns the manual > preferred > system precedence); a client-side re-map would be a
+        // second place for that rule to drift.
+        expect(preferred.querySelector('.bbc-reason').textContent).toBe(
+            'Preferred broker'
+        );
+        // The timestamp is a base component, so the assertion is on the PROPERTY — its stub renders
+        // an empty template and textContent would be vacuously ''.
+        expect(
+            preferred.querySelector('lightning-formatted-date-time').value
+        ).toBe('2026-08-22T14:30:00.000Z');
+        // Its icon carries the line's only accessible name, and it says SELECTED, not CHANGED —
+        // the value is a Selected row's LastModifiedDate.
+        const icon = preferred.querySelector('lightning-icon');
+        expect(icon.iconName).toBe('utility:event');
+        expect(icon.alternativeText).toBe('Selected on');
+
+        expect(rows(element)[1].querySelector('.bbc-reason').textContent).toBe(
+            'System selected by score'
+        );
+
+        // 🔴 NOT A CHANGE ENTRY. A selected row has no reason picklist, no logger and no notes, so
+        // borrowing the change entry's lines here would render empty furniture.
+        expect(preferred.querySelector('.bbc-logged')).toBeNull();
+        expect(preferred.querySelector('.bbc-notes')).toBeNull();
+    });
+
+    it('🔴 T-SELECTED-NAME-FALLBACK: firm, then a WORD — and the firm is never printed twice', async () => {
+        const element = createComponent();
+
+        // Both server columns are nullable (both are stamped from Broker__c), so a Selected row can
+        // name nobody. A currently-appointed broker must never render as a blank line.
+        emitHistory([], SELECTED_NAMELESS);
+        await Promise.resolve();
+
+        const entry = rows(element)[0];
+        expect(headline(entry).name).toBe('Colliers Houston');
+        // 🔴 AND NOT ON LINE 2 AS WELL. When the firm IS the headline, repeating it below prints
+        // one string twice and implies two facts where there is one — with a pipe separating a
+        // value from itself.
+        expect(entry.querySelector('.bbc-firm')).toBeNull();
+        expect(entry.querySelector('.bbc-reason').textContent).toBe(
+            'Manually appointed'
+        );
+
+        // Neither column: a word, never a blank span and never the literal "undefined".
+        emitHistory([], SELECTED_ANONYMOUS);
+        await Promise.resolve();
+
+        expect(headline(rows(element)[0]).name).toBe('Unnamed broker');
+        expect(text(element)).not.toContain('undefined');
+        expect(text(element)).not.toContain('null');
+    });
+
+    it('🔴 T-SELECTED-STYLE: a selection entry is the SAME timeline entry, chrome for chrome', async () => {
+        const element = createComponent();
+
+        emitHistory(HISTORY, SELECTED_BOTH_SLOTS);
+        await Promise.resolve();
+
+        // The brief was "the SAME visual style", which in this card means the same classes — the
+        // stylesheet has no rules keyed to a section. Asserting the chrome on EVERY entry is what
+        // stops the selection section quietly acquiring its own markup and drifting: a rule added
+        // to `.bbc-entry` later must reach both sections or this fails.
+        [...rows(element)].forEach((li) => {
+            const rail = li.querySelector('.bbc-rail');
+            expect(rail).not.toBeNull();
+            expect(rail.getAttribute('aria-hidden')).toBe('true');
+            expect(rail.querySelector('.bbc-dot')).not.toBeNull();
+            expect(rail.querySelector('.bbc-track')).not.toBeNull();
+            expect(li.querySelector('.bbc-tile-head')).not.toBeNull();
+            expect(li.querySelector('h3.bbc-broker .bbc-name')).not.toBeNull();
+            expect(li.querySelector('.bbc-facts')).not.toBeNull();
+        });
+
+        // 🔴 NO SECTION-SPECIFIC FURNITURE. The card's standing decision is that a row's KIND is
+        // carried by visible text plus an assistive label — never by a badge, a heading or an
+        // accent. `.bbc-badge` legitimately exists on the notes View BUTTON, so the pin is that no
+        // badge appears on a SELECTION entry, and that no sub-heading splits the list.
+        expect(rows(element)[0].querySelector('.bbc-badge')).toBeNull();
+        expect(element.shadowRoot.querySelector('h2')).toBeNull();
+    });
+
+    it('is accessible with a current selection above the log', async () => {
+        const element = createComponent();
+
+        emitHistory(HISTORY, SELECTED_BOTH_SLOTS);
+        await Promise.resolve();
+
+        await expect(element).toBeAccessible();
+    });
+
+    it('🔴 EMPTY: says "No broker selected yet" — with no alert and no spinner anywhere near it', async () => {
+        const element = createComponent();
+
+        emitHistory([]);
         await Promise.resolve();
 
         expect(rows(element).length).toBe(0);
         expect(empty(element)).not.toBeNull();
         // 🔴 EXACTLY this sentence and nothing else in this element — the wording is what
         // separates "empty" from "unavailable".
-        expect(empty(element).textContent).toBe('No broker changes recorded');
+        expect(empty(element).textContent).toBe(EMPTY_SENTENCE);
         // 🔴 The design's actual requirement is as much about what must NOT be here. Most
         // dispositions land in this state, so an alert or a spinner here would be visible across
         // most of the org's disposition pages.
@@ -579,7 +849,7 @@ describe('c-bov-broker-change-history', () => {
         // 🔴 THE CENTRAL ASSERTION. "No broker changes recorded" is a claim about the SALE; a
         // failed read knows nothing about the sale. Collapsing the two would have this card state,
         // in plain English, that nothing ever happened on a disposition where it may well have.
-        expect(text(element)).not.toContain('No broker changes recorded');
+        expect(text(element)).not.toContain(EMPTY_SENTENCE);
         expect(empty(element)).toBeNull();
         expect(rows(element).length).toBe(0);
         // Muted, not alarming: a secondary informational card cannot read the situation well
@@ -620,7 +890,7 @@ describe('c-bov-broker-change-history', () => {
     it('🔴 T-NO-PROSE: no intro sentence above the entries, and none in the empty state', async () => {
         const element = createComponent();
 
-        getHistory.emit(HISTORY);
+        emitHistory(HISTORY);
         await Promise.resolve();
 
         // Guard the guard: real entries rendered, so the absences below are real.
@@ -641,20 +911,22 @@ describe('c-bov-broker-change-history', () => {
         expect(list).not.toBeNull();
         expect(list.getAttribute('aria-describedby')).toBeNull();
         // The list's own accessible NAME is unaffected and must stay.
-        expect(list.getAttribute('aria-label')).toBe('Broker changes');
+        expect(list.getAttribute('aria-label')).toBe(
+            'Broker selection and change history'
+        );
     });
 
     it('🔴 T-NO-PROSE: the EMPTY state keeps its headline and loses only the sub-line', async () => {
         const element = createComponent();
 
-        getHistory.emit([]);
+        emitHistory([]);
         await Promise.resolve();
 
         // 🔴 THE HALF THAT MUST SURVIVE. The user kept empty states explicitly: without this
         // sentence an empty audit log is indistinguishable from a broken one. A future "tidy-up"
         // that deletes the whole state to satisfy the absence half of this pin fails HERE.
         expect(empty(element)).not.toBeNull();
-        expect(empty(element).textContent).toBe('No broker changes recorded');
+        expect(empty(element).textContent).toBe(EMPTY_SENTENCE);
         expect(
             element.shadowRoot.querySelector('.bbc-state').getAttribute('role')
         ).toBe('status');
@@ -677,7 +949,7 @@ describe('c-bov-broker-change-history', () => {
     it('🔴 T-NOTES-KEPT: the notes line survives the restyle, icon-labelled, on the entry that has one', async () => {
         const element = createComponent();
 
-        getHistory.emit(HISTORY);
+        emitHistory(HISTORY);
         await Promise.resolve();
 
         const noted = rows(element)[0].querySelector('.bbc-notes');
@@ -690,7 +962,7 @@ describe('c-bov-broker-change-history', () => {
         expect(icon.alternativeText).toBe('Notes');
 
         // And it is genuinely absent where there is no note, rather than rendered blank.
-        getHistory.emit(APPOINTMENT_ONLY);
+        emitHistory(APPOINTMENT_ONLY);
         await Promise.resolve();
         expect(rows(element)[0].querySelector('.bbc-notes')).toBeNull();
     });
@@ -698,7 +970,7 @@ describe('c-bov-broker-change-history', () => {
     it('NOTES: clips a long note to a 60-character preview and offers View; a short note gets neither', async () => {
         const element = createComponent();
 
-        getHistory.emit(HISTORY);
+        emitHistory(HISTORY);
         await Promise.resolve();
 
         const longRow = rows(element)[0];
@@ -728,7 +1000,7 @@ describe('c-bov-broker-change-history', () => {
     it('VIEW: a real click on the View button opens the full note, and Close dismisses it', async () => {
         const element = createComponent();
 
-        getHistory.emit(HISTORY);
+        emitHistory(HISTORY);
         await Promise.resolve();
 
         expect(element.shadowRoot.querySelector('.slds-modal')).toBeNull();
@@ -768,7 +1040,7 @@ describe('c-bov-broker-change-history', () => {
         // to make the SAME choice between two columns, one of which is null. They used to compose
         // that choice separately in `historyRows` and `openNote`; they now share `brokerNameOf`,
         // and this test is what keeps a future "just inline it" from re-splitting them.
-        getHistory.emit([
+        emitHistory([
             { ...APPOINTMENT_ONLY[0], notes: LONG_NOTE }
         ]);
         await Promise.resolve();
@@ -791,7 +1063,7 @@ describe('c-bov-broker-change-history', () => {
     it('🔴 T-TIMELINE: a semantic list of entries, each with a decorative dot-and-line rail', async () => {
         const element = createComponent();
 
-        getHistory.emit(HISTORY);
+        emitHistory(HISTORY);
         await Promise.resolve();
 
         const list = element.shadowRoot.querySelector('ul.bbc-timeline');
@@ -800,7 +1072,9 @@ describe('c-bov-broker-change-history', () => {
         // role, and aria-label is only exposed on an element whose role supports naming. axe has
         // no rule for it, so `is accessible with rows` passing is not evidence against it.
         expect(list.getAttribute('role')).toBe('list');
-        expect(list.getAttribute('aria-label')).toBe('Broker changes');
+        expect(list.getAttribute('aria-label')).toBe(
+            'Broker selection and change history'
+        );
 
         // The entries are real <li>s — a stack of divs would leave a screen-reader user with no
         // count and no "item 1 of 2".
@@ -946,7 +1220,7 @@ describe('c-bov-broker-change-history', () => {
     it('is accessible with rows', async () => {
         const element = createComponent();
 
-        getHistory.emit(HISTORY);
+        emitHistory(HISTORY);
         await Promise.resolve();
 
         await expect(element).toBeAccessible();
@@ -955,7 +1229,7 @@ describe('c-bov-broker-change-history', () => {
     it('is accessible when empty — the state most disposition pages will actually render', async () => {
         const element = createComponent();
 
-        getHistory.emit([]);
+        emitHistory([]);
         await Promise.resolve();
 
         await expect(element).toBeAccessible();

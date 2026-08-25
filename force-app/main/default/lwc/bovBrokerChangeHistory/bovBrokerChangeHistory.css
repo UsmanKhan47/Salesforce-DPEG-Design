@@ -267,7 +267,14 @@
    inherit the muted colour; the timestamp and the reason are the FACTS and step up to
    on-surface-2, exactly as `.dbt-c` does against `.dbt-label` in c/dispositionBuyerTimeline.
    ⚠ on-surface-1 (#757575) is the GREY one and -2 (#2e2e2e) the darker — see the header. */
+/* ⚠ `.bbc-firm` JOINED THIS GROUP ON 2026-08-25 RATHER THAN GETTING A RULE OF ITS OWN. It is the
+   firm name on a CURRENT-SELECTION entry's line 2, sitting where a change entry's timestamp sits,
+   and it is a FACT — so it takes the fact colour, and it takes it from the same declaration, which
+   is what stops the two sections of the timeline drifting to two greys. The selection section
+   needed no other CSS at all: it reuses `.bbc-meta`, `.bbc-sep`, `.bbc-when`, `.bbc-reason`,
+   `.bbc-mono` and the whole rail unchanged. */
 .bbc-when,
+.bbc-firm,
 .bbc-reason {
     min-width: 0;
     color: var(--slds-g-color-on-surface-2, #2e2e2e);

@@ -51,7 +51,133 @@
              DANGLING `aria-describedby` IS WORSE THAN NONE — it names an element that does not
              exist, so do not leave the attribute behind if the paragraph ever goes again. -->
         <template lwc:if={hasRows}>
-            <ul class="bbc-timeline" role="list" aria-label="Broker changes">
+            <!-- 🔴 ONE <ul> HOLDING BOTH SECTIONS — the current selection, then the change log.
+                 DO NOT SPLIT IT INTO TWO LISTS. The rail's connecting line is ended by the single
+                 rule `.bbc-entry:last-child .bbc-track { display: none }`; two sibling lists would
+                 each have a last child, so the line would break and restart mid-card and read as
+                 two unrelated cards stacked inside one. One list is also one `role="list"` and one
+                 honest "item 3 of 5" for a screen reader.
+                 ⚠ THE aria-label SAYS BOTH THINGS (changed 2026-08-25 from "Broker changes"). The
+                 list stopped being only changes; a name that describes half its contents is worse
+                 than a generic one, because it tells a screen-reader user the selection entries
+                 they are about to hear are change entries. -->
+            <ul
+                class="bbc-timeline"
+                role="list"
+                aria-label="Broker selection and change history"
+            >
+                <!-- ═══════════════════════════════════════════════════════════════════════════
+                     SECTION 1 — THE CURRENT SELECTION. UP TO TWO ENTRIES, PREFERRED SLOT FIRST.
+                     ═══════════════════════════════════════════════════════════════════════════
+                     🔴 ADDED 2026-08-25 AND IT IS THE REASON THIS CARD EXISTS UNDER ITS OWN TITLE.
+                     Until now the card listed replacements only, so a sale whose broker had been
+                     selected and never replaced rendered "(0) — No broker changes recorded" under
+                     the heading "Broker Selection". The selection was simply not in the payload.
+
+                     🔴 THE MARKUP IS THE CHANGE ENTRY'S MARKUP, CLASS FOR CLASS — same `li.bbc-entry`,
+                     same decorative rail, same `.bbc-tile-head` headline, same `.bbc-facts` stack,
+                     same `.bbc-meta` line register. That is a requirement, not a coincidence: these
+                     are entries in ONE timeline, and a second visual vocabulary inside one card is
+                     what made the earlier two-column/tile revisions unreadable at 340px. It also
+                     means this section needed NO new CSS beyond `.bbc-firm` joining an existing
+                     colour group.
+
+                     ⚠ NO BADGE, NO ACCENT DOT, NO "CURRENT" PILL — deliberately, and consistently
+                     with the decision recorded below for appointment-vs-replacement rows: this
+                     card's standing rule is that a row's KIND is carried by visible TEXT (here the
+                     basis phrase on line 2) plus an assistive label, not by new furniture. The
+                     brief that produced the timeline was to REMOVE chrome from this card.
+
+                     Three lines, matching the design's rhythm exactly:
+                       1. the broker CONTACT's name (falling back to the firm, then to a word);
+                       2. muted: firm · why this row holds its slot;
+                       3. when it last became/changed selection state. -->
+                <template for:each={selectedRows} for:item="sel">
+                    <li key={sel.id} class="bbc-entry">
+                        <div class="bbc-rail" aria-hidden="true">
+                            <span class="bbc-dot"></span>
+                            <span class="bbc-track"></span>
+                        </div>
+
+                        <div class="bbc-body">
+                            <div class="bbc-tile-head">
+                                <h3 class="bbc-broker slds-hyphenate">
+                                    <!-- ⚠ THE TRAILING COLON IS LOAD-BEARING, exactly as on the
+                                         change entries: the compiler discards the whitespace-only
+                                         node between these two spans, so the heading's accessible
+                                         name is the CONCATENATION. Without it a screen reader is
+                                         handed "Currently selected brokerCBRE".
+                                         🔴 AND THE LABEL IS WHAT DISTINGUISHES THIS ENTRY FROM A
+                                         HISTORY ENTRY NON-VISUALLY. A sighted reader gets the
+                                         distinction from the basis phrase on the next line; a
+                                         screen-reader user would otherwise hear two identically
+                                         shaped entries and have no way to tell a current broker
+                                         from one who was replaced two years ago. -->
+                                    <span class="bbc-sr-only"
+                                        >Currently selected broker:</span
+                                    >
+                                    <span class="bbc-name">{sel.brokerName}</span>
+                                </h3>
+                            </div>
+
+                            <div class="bbc-facts">
+                                <!-- Line 2: firm · why. Same `.bbc-meta` line and same decorative
+                                     pipe the change entries use between their date and reason.
+                                     ⚠ THE FIRM IS OMITTED WHEN IT IS ALREADY THE HEADLINE (the
+                                     name fell back to it) — see `hasFirm` in the JS. Printing it
+                                     twice would imply two facts where there is one, and would leave
+                                     the pipe separating a string from itself.
+                                     🔴 `basis` RENDERS UNCONDITIONALLY AND IS NEVER BLANK. Apex
+                                     resolves it to one of four phrases and never returns null (see
+                                     `BovBrokerChangeController.basisOf`), which is what lets this
+                                     line exist at all — a blank here would be a bare pipe. -->
+                                <p class="bbc-meta">
+                                    <template lwc:if={sel.hasFirm}>
+                                        <span class="bbc-firm">{sel.firm}</span>
+                                        <span class="bbc-sep" aria-hidden="true"
+                                            >|</span
+                                        >
+                                    </template>
+                                    <span class="bbc-sr-only">Selected because</span>
+                                    <span class="bbc-reason">{sel.basis}</span>
+                                </p>
+
+                                <!-- Line 3: when. Same icon, same formatting and the same
+                                     `.bbc-mono` treatment as the change entries' timestamp, so the
+                                     two sections' dates align down the card.
+                                     ⚠ THE ICON'S alternative-text IS THIS LINE'S ONLY ACCESSIBLE
+                                     NAME — there is no visible label — and it says "Selected on"
+                                     rather than the change entries' "Changed on" because the value
+                                     is `LastModifiedDate` on a Selected row, i.e. when this broker
+                                     came to hold the slot. See the DTO's own note on why that field
+                                     is an approximation and what would replace it. -->
+                                <p class="bbc-meta">
+                                    <lightning-icon
+                                        icon-name="utility:event"
+                                        size="xx-small"
+                                        class="bbc-meta-icon"
+                                        alternative-text="Selected on"
+                                    ></lightning-icon>
+                                    <span class="bbc-when bbc-mono">
+                                        <lightning-formatted-date-time
+                                            value={sel.selectedDateTime}
+                                            year="numeric"
+                                            month="short"
+                                            day="2-digit"
+                                            hour="2-digit"
+                                            minute="2-digit"
+                                        ></lightning-formatted-date-time>
+                                    </span>
+                                </p>
+                            </div>
+                        </div>
+                    </li>
+                </template>
+
+                <!-- ═══════════════════════════════════════════════════════════════════════════
+                     SECTION 2 — THE CHANGE LOG. UNCHANGED (2026-08-25): same data, same markup,
+                     same behaviour. It now renders BELOW the current selection.
+                     ═══════════════════════════════════════════════════════════════════════════ -->
                 <template for:each={historyRows} for:item="row">
                     <li key={row.id} class="bbc-entry">
                         <!-- Decorative only — see the note above. The dot marks the entry and
@@ -227,12 +353,19 @@
              Most dispositions never replace a broker, so this is what most disposition record
              pages in the org will render. It is a STATUS, never an alert and never a spinner.
 
-             🔴 THE SENTENCE ITSELF IS THE EMPTY STATE, AND IT STAYS. "No broker changes recorded"
-             is what separates EMPTY from LOADING from UNAVAILABLE, and the icon + role="status"
-             are what stop it reading as an error. The 2026-08-21 prose removal took the
-             explanatory SUB-LINE ("Every broker ever appointed to this sale — nothing is
-             deleted.") and nothing else — the user named that string specifically. Do not delete
-             the heading with it. -->
+             🔴 THE SENTENCE ITSELF IS THE EMPTY STATE, AND IT STAYS. It is what separates EMPTY
+             from LOADING from UNAVAILABLE, and the icon + role="status" are what stop it reading
+             as an error. The 2026-08-21 prose removal took the explanatory SUB-LINE ("Every broker
+             ever appointed to this sale — nothing is deleted.") and nothing else — the user named
+             that string specifically. Do not delete the heading with it.
+
+             ⚠ THE WORDING CHANGED ON 2026-08-25, from "No broker changes recorded" to "No broker
+             selected yet", and the state's MEANING changed with it — this is not a copy tweak.
+             The card renders two sections now, so it is empty only when there is NEITHER a current
+             selection NOR a recorded change; the old sentence reported on the change log alone,
+             which is exactly how a sale with a selected-but-never-replaced broker ended up being
+             told nothing had happened. The string lives in the JS (`EMPTY_TEXT`) rather than
+             inline here so the component and its tests name it once. -->
         <template lwc:if={isEmpty}>
             <div class="bbc-state" role="status">
                 <lightning-icon
@@ -240,7 +373,7 @@
                     size="small"
                     class="bbc-state-icon"
                 ></lightning-icon>
-                <p class="bbc-empty">No broker changes recorded</p>
+                <p class="bbc-empty">{emptyText}</p>
             </div>
         </template>
 

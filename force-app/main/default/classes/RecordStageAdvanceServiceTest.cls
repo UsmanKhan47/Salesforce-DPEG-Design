@@ -703,6 +703,19 @@ private class RecordStageAdvanceServiceTest {
         // deliberately NOT walked here — it is unreachable for any row created from now on, and a
         // test that seeded it would be re-testing the DML refusal above.
         //
+        // 🔴 AMENDED 2026-08-25, LATER THE SAME DAY — 'Review' IS GONE FROM THE WALK, AND THIS TEST
+        // IS THE ONE THAT SHOULD HAVE CAUGHT IT. The user removed 'Review' from the
+        // Disposition_NDA record type in Setup a few hours after adding it, and the Advance quick
+        // action started failing in the org with
+        // "bad value for restricted picklist field: Review" on the FIRST click of every new
+        // disposition NDA. This walk went green throughout, because a test can only be as right as
+        // the record type it runs against — and the record-type value list is org state, not repo
+        // state, so no repo-side check could see the divergence either. The expectation below is
+        // now Prepare -> Approved -> Sent -> Signed. ⚠ THE SAME BLIND SPOT IS STILL OPEN for any
+        // future Setup-side value removal: this test will keep passing until the deployed record
+        // type file catches up, so treat the record type file as the thing to check first when an
+        // Advance action fails in the org but green here.
+        //
         // 🔴 THIS TEST IS DELIBERATELY UNCHANGED BY THE 2026-08-16 ACQUISITION REORDER, AND THAT IS
         // ITS SECOND JOB. It is the REGRESSION GUARD for the shared-'Sent' divergence: the sell-side
         // sequence keeps 'Sent' MID-sequence and 'Signed' TERMINAL, which is now the exact mirror of
@@ -716,17 +729,20 @@ private class RecordStageAdvanceServiceTest {
 
         Assert.areEqual(
             new List<String>{
-                'NDA moved to Review.',
                 'NDA moved to Approved.',
                 'NDA moved to Sent.',
                 'NDA moved to Signed.',
                 'BLOCKED: There is no next step available from the Signed stage.'
             },
             messages,
-            'The Disposition_NDA map must be exactly Prepare -> Review -> Approved -> Sent -> '
-            + 'Signed (⚠ it was Not Sent -> Sent -> Signed until 2026-08-25). There is no '
-            + '"Received" step on a sale — DPEG issues the NDA, so it never comes back TO us as a '
-            + 'separate milestone');
+            'The Disposition_NDA map must be exactly Prepare -> Approved -> Sent -> Signed '
+            + '(⚠ it was Not Sent -> Sent -> Signed until 2026-08-25, then briefly '
+            + 'Prepare -> Review -> Approved -> Sent -> Signed on that same day). '
+            + 'There is no "Review" step — the user removed that value from the record type in '
+            + 'Setup, and because Status__c is restricted, a map that still names it makes the '
+            + 'FIRST Advance click on every new NDA throw INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST. '
+            + 'There is no "Received" step either — DPEG issues the NDA on a sale, so it never '
+            + 'comes back TO us as a separate milestone');
         Assert.areEqual('Signed', [SELECT Status__c FROM NDA__c WHERE Id = :ndaId].Status__c,
             'The walk must leave the NDA at its terminal status');
     }

@@ -242,9 +242,10 @@ public with sharing class DispositionBuyerTimelineService {
      * and a signature date for a party who refused. Must match
      * `objects/NDA__c/fields/Status__c.field-meta.xml`, whose MASTER value set is
      * `Pending / Prepare / Review / Approved / Not Sent / Sent / Received / Signed / Declined`
-     * (⚠ this listed six values until 2026-08-24/25; the three pre-send values are Disposition_NDA
-     * only, and 'Not Sent' is now legacy-read-only — on no record type. Neither fact touches this
-     * gate: 'Signed' is unchanged on both types).
+     * (⚠ this listed six values until 2026-08-24/25; the three pre-send values were Disposition_NDA
+     * only, and BOTH 'Not Sent' and 'Review' are now legacy-read-only — on no record type, so
+     * Disposition_NDA exposes Prepare | Approved | Sent | Signed | Declined. None of that touches
+     * this gate: 'Signed' is unchanged on both types).
      * ⚠ It matches `NdaSelector.STATUS_SIGNED` and is deliberately NOT shared with it — that one
      * scopes the ACQUISITION expiry-reminder batch and is pinned to a deployed report's filter. Two
      * unrelated decisions that happen to agree; coupling them would let a change to either move the
@@ -259,9 +260,11 @@ public with sharing class DispositionBuyerTimelineService {
      *
      * ⚠ It is tested EXPLICITLY rather than inferred as "not Signed". `Prepare`, `Review`,
      * `Approved`, `Not Sent`, `Sent`, `Received` and `Pending` are all IN-FLIGHT states — the
-     * counterparty has not signed YET (2026-08-25: the first three are where a new disposition NDA
-     * now LIVES, since the seed moved to 'Prepare'; a blank Status__c on a hand-created NDA is
-     * in-flight too, because the record type no longer supplies a default) — and
+     * counterparty has not signed YET (2026-08-25: 'Prepare' and 'Approved' are where a new
+     * disposition NDA now LIVES, since the seed moved to 'Prepare'; 'Review' joined 'Not Sent' as
+     * legacy-read-only later the same day and is on no record type, but stays named here because
+     * this service must still classify a row that carries it; a blank Status__c on a hand-created
+     * NDA is in-flight too, because the record type no longer supplies a default) — and
      * must render as an ordinary active row with an empty signature date, not as a terminated one.
      * Only `Declined` is an ending.
      */

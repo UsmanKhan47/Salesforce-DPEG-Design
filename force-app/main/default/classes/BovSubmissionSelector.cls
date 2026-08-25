@@ -21,6 +21,10 @@
  *                                                     -> selectSelectedBrokerByDispositionIds
  *   - BovAutoSelectionService.reselect, the automatic highest-score appointment
  *     (2026-08-24)                                    -> selectSelectionContextByDispositionIds
+ *   - BovPreferredBrokerService.retireReplacedPreferred, the outgoing-preferred swap
+ *     (2026-08-24)                                    -> selectPreferredByDispositionIds
+ *   - BovBrokerChangeController.getHistory, the CURRENT SELECTION half of the
+ *     "Broker Selection" card (2026-08-25)            -> selectSelectedSlotsByDispositionId
  *
  * ⚠ MIXED MODES SINCE 2026-08-19 — READ THE METHOD, NEVER THIS HEADER. ⚠ CORRECTED 2026-08-20: this
  * paragraph used to say "Two methods are `WITH USER_MODE`; `selectStatusesByDispositionId` is
@@ -33,10 +37,16 @@
  * guard's read), `selectSelectedBrokerByDispositionIds` (the NDA stamp's read) and
  * `selectSelectionContextByDispositionIds` (auto-selection's read) are
  * `WITH SYSTEM_MODE` under the ARCHITECTURE.md §2 automation-path exception, each justified at
- * its OWN declaration, which is where §2 says the authoritative inventory lives. 🔴 DO NOT TRUST A
+ * its OWN declaration, which is where §2 says the authoritative inventory lives. ⚠ RE-COUNTED
+ * AGAIN 2026-08-25 and IT HAD DECAYED TWICE UNNOTICED IN ONE DAY: `selectPreferredByDispositionIds`
+ * (SYSTEM_MODE, the preferred-retirement read) landed on 2026-08-24 without this line being
+ * touched, and `selectSelectedSlotsByDispositionId` (USER_MODE, the Broker Selection card) landed
+ * on 2026-08-25. The count is now **FIVE SYSTEM_MODE of NINE**. 🔴 DO NOT TRUST A
  * NUMBER IN THIS HEADER — `NdaSelector`'s header records that this repo has already miscounted its
- * own SYSTEM_MODE inventory once, and this line has now decayed THREE times. Re-count; do not
- * assert. ⚠ AND NOTE THE NEAR-IDENTICAL NAMES: `…ByDispositionId` (singular, USER_MODE, modal) and
+ * own SYSTEM_MODE inventory once, and this line has now decayed FIVE times, twice silently. This
+ * is the fifth correction of the same sentence: the count is written down here only so a reader
+ * knows to re-derive it, and the authoritative inventory is the METHOD DECLARATIONS. Re-count; do
+ * not assert. ⚠ AND NOTE THE NEAR-IDENTICAL NAMES: `…ByDispositionId` (singular, USER_MODE, modal) and
  * `…ByDispositionIds` (plural, SYSTEM_MODE, trigger) differ by ONE CHARACTER and by their entire
  * justification. Read the parameter type before quoting either one's reasoning.
  * ⚠ AN EARLIER SENTENCE HERE WAS REASONING FROM THE WRONG TEST and is retracted verbatim so nobody
@@ -44,8 +54,9 @@
  * here." The exception is about reads the running user never asked for, and about fields the running
  * user may not hold — not about anonymous ones.
  *
- * MODE (the THREE USER_MODE reads — `selectByDispositionId`, `selectSelectedByDispositionId` and,
- * since 2026-08-21, `selectSelectedBrokerByDispositionId`; the plural
+ * MODE (the FOUR USER_MODE reads — `selectByDispositionId`, `selectSelectedByDispositionId`,
+ * since 2026-08-21 `selectSelectedBrokerByDispositionId`, and since 2026-08-25
+ * `selectSelectedSlotsByDispositionId`; the plural
  * `selectSelectedBrokerByDispositionIds` added later the same day is NOT one of them) —
  * BOV_Submission__c is a custom object;
  * P3 proved the custom-field FLS gap is 0, so USER_MODE is safe and enforces the running user's
@@ -836,6 +847,99 @@ public with sharing class BovSubmissionSelector {
             WHERE Disposition__c IN :dispositionIds AND Is_Preferred_Broker__c = TRUE
             WITH SYSTEM_MODE
             ORDER BY CreatedDate DESC, Id DESC
+        ];
+    }
+
+    /**
+     * THE CURRENT SELECTION, WITH ENOUGH CONTEXT TO SAY *WHY* EACH ROW HOLDS ITS SLOT — the read
+     * behind the "Broker Selection" card on the Disposition record page
+     * (`BovBrokerChangeController.getHistory` -> `c/bovBrokerChangeHistory`). Added 2026-08-25.
+     *
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * 🔴 A NINTH METHOD RATHER THAN A WIDENING OF `selectSelectedByDispositionId`, AND THAT IS THE
+     *    HOUSE PRECEDENT IN THIS CLASS RATHER THAN A NEW OPINION
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * `selectSelectedByDispositionId` has the exact WHERE, the exact ORDER BY and three of the six
+     * columns, so it looks like a three-column widening. It is not, for the same reason
+     * `selectSelectedBrokerByDispositionId` is a separate method rather than that one plus
+     * `Broker__c`: THAT read backs **Submit for Approval**, the module's most business-critical
+     * path, and under `WITH USER_MODE` every added column is another way for it to throw
+     * `System.QueryException: No such column` — for every user at once — the moment an org is
+     * missing one `FieldPermissions` row. Trading a new-throw surface onto Submit for Approval to
+     * save a query on a read-only sidebar card is the wrong side of that trade. Two reads with
+     * different column lists are two reads.
+     *
+     * ⚠ AND NOTE THE NAME. This class already carries four `selectSelected…` methods that differ by
+     * one character or by one word (see the class header's warning). This one is named for its SLOT
+     * vocabulary — `BovAutoSelectionService`'s "TWO SLOTS, NOT ONE" — precisely because it is NOT
+     * interchangeable with them: it is the only one that returns the three flags that TELL THE TWO
+     * SLOTS APART.
+     *
+     * ── WHY THE THREE FLAGS, AND WHY ALL THREE ─────────────────────────────────────────────────
+     * The card prints one phrase per row saying why that broker is selected, and no single flag can
+     * produce it. `Is_Preferred_Broker__c` names the preferred slot; `Is_System_Selected__c` names
+     * the row `BovAutoSelectionService` picked on score; `Is_Manually_Appointed__c` names the row a
+     * human promoted through Replace Broker, which sets NEITHER of the other two (that is the exact
+     * hole `BovSubmissionSelectionGuardService`'s header records, from the other direction). A row
+     * carrying none of the three is reachable — anything Selected before these fields existed, and
+     * anything a data load promoted — and the controller answers it with a neutral phrase rather
+     * than a blank.
+     *
+     * ── 🔴 `WITH USER_MODE`, AND IT IS THE ARCHITECTURE.md §2 DEFAULT CASE, NOT THE EXCEPTION ───
+     * A human is looking at a Disposition record page and this card is on it: the read is one the
+     * running user ASKED FOR, so an FLS throw here reports a real provisioning gap and the fix is a
+     * permission set — exactly what §2 says `USER_MODE` is for. It is NOT the automation path: no
+     * trigger, no batch and no queueable calls this, so a throw cannot roll back somebody's save.
+     * The client renders the throw as its own muted "unavailable" state, distinct from empty.
+     *
+     * ⚠ THE FLS PREREQUISITE WAS MEASURED, NOT ASSUMED (2026-08-25, both disposition permission
+     * sets): `Contact_Name__c`, `Broker_Firm__c`, `Is_Preferred_Broker__c`, `Is_System_Selected__c`
+     * and `Is_Manually_Appointed__c` are all `readable = true` in `DPEG_Disposition_View` AND
+     * `DPEG_Disposition_Edit` — the last two READ-ONLY by design, which is a grant, not a gap.
+     * `LastModifiedDate` is a system field and carries no `FieldPermissions` at all. 🔴 DO NOT ADD
+     * `Approval_Status__c` OR `Approval_Pending__c` HERE: neither is granted anywhere, deliberately,
+     * and either one would take this read down for every user (see
+     * `selectStatusesByDispositionId`).
+     *
+     * ── ORDER BY: THE PREFERRED SLOT FIRST, AND IT IS COPIED FROM `selectSelectedByDispositionId` ─
+     * `Is_Preferred_Broker__c DESC, BOV_Score__c DESC NULLS LAST, CreatedDate ASC, Id ASC` — the
+     * same clause, deliberately identical so the card and Submit for Approval agree on which of two
+     * Selected rows is "first". The card renders in this order and does NOT re-sort in JavaScript.
+     * ⚠ `BOV_Score__c` is sorted on but NOT selected. That is legal SOQL and it is granted in both
+     * permission sets (`selectByDispositionId` reads it under `USER_MODE` today), so it costs this
+     * read no new throw surface.
+     *
+     * ── NOT-FOUND CONTRACT ─────────────────────────────────────────────────────────────────────
+     * 🔴 AN EMPTY LIST IS THE NORMAL, MAJORITY ANSWER AND MUST NEVER BECOME A THROW. Most
+     * dispositions have no Selected broker for most of their life; the card renders that as "No
+     * broker selected yet". Same contract as every other method in this class.
+     *
+     * @param dispositionId Disposition__c Id whose Selected submissions to read; null-safe and
+     *                      issues NO query when null.
+     * @return Every Selected BOV_Submission__c on that Disposition with Id, Contact_Name__c,
+     *         Broker_Firm__c, Is_Preferred_Broker__c, Is_System_Selected__c,
+     *         Is_Manually_Appointed__c and LastModifiedDate populated — PREFERRED FIRST, then
+     *         highest-scoring, then oldest. Up to TWO rows is a NORMAL result (one per slot); an
+     *         EMPTY LIST when there are none (never null).
+     * @throws System.QueryException when the running user lacks read on BOV_Submission__c or on any
+     *         of the five custom columns above. The controller converts it to a fixed generic
+     *         AuraHandledException; it never reaches the user as a schema error.
+     * @example
+     * List&lt;BOV_Submission__c&gt; slots =
+     *     BovSubmissionSelector.selectSelectedSlotsByDispositionId(dispId);
+     */
+    public static List<BOV_Submission__c> selectSelectedSlotsByDispositionId(Id dispositionId) {
+        if (dispositionId == null) {
+            return new List<BOV_Submission__c>();
+        }
+        return [
+            SELECT Id, Contact_Name__c, Broker_Firm__c, Is_Preferred_Broker__c,
+                   Is_System_Selected__c, Is_Manually_Appointed__c, LastModifiedDate
+            FROM BOV_Submission__c
+            WHERE Disposition__c = :dispositionId AND Submission_Status__c = :STATUS_SELECTED
+            WITH USER_MODE
+            ORDER BY Is_Preferred_Broker__c DESC, BOV_Score__c DESC NULLS LAST,
+                     CreatedDate ASC, Id ASC
         ];
     }
 }
