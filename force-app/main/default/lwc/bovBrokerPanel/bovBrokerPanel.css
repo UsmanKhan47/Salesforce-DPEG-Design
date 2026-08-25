@@ -38,6 +38,12 @@
        the page-level card stack, so the two sections inside this panel read as
        part of the same rhythm rather than a second, similar value. */
     gap: var(--slds-g-spacing-4, 1rem);
+    /* 2026-08-25 — lightning-card's default slot carries NO inset, so the preferred
+       row and the matrix sat flush against the card's left/right edges (user: "give
+       some margin"). Horizontal inset only: vertical rhythm is the gap above and the
+       card's own header/footer spacing. Padding on the CONTAINER, not margins on the
+       children — see the no-margin invariant in this file's header. */
+    padding: 0 var(--slds-g-spacing-4, 1rem) var(--slds-g-spacing-2, 0.5rem);
 }
 
 /*
