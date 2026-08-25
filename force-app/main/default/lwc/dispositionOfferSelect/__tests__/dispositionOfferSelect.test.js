@@ -353,7 +353,7 @@ describe('c-disposition-offer-select', () => {
         ).not.toBeNull();
     });
 
-    it('TABLE: the accessible name is the caption the radio group used to carry as its label', async () => {
+    it('TABLE: the accessible name is the business title of the action, and the screen has no other heading', async () => {
         const element = createComponent();
 
         getRelatedListRecords.emit(OFFERS);
@@ -361,7 +361,7 @@ describe('c-disposition-offer-select', () => {
 
         const caption = element.shadowRoot.querySelector('table.qa-offer-table > caption');
         expect(caption).not.toBeNull();
-        expect(caption.textContent).toBe('Offer to put forward');
+        expect(caption.textContent).toBe('Select Offer for Principal Approval');
     });
 
     // ─────────────────────────────────────────────────────────────────────────

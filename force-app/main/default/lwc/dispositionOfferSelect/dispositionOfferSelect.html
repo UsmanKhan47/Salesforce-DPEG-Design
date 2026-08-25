@@ -69,9 +69,14 @@
                 ever reach `selectOffer`. Do not change `name` to anything row-specific.
             -->
             <table class="qa-offers qa-offer-table slds-m-top_small">
-                <!-- The table's accessible name. It is the string the retired
-                     `lightning-radio-group` carried as its `label`, kept verbatim. -->
-                <caption class="qa-table-caption">Offer to put forward</caption>
+                <!-- The table's accessible name, AND the only title this screen has: a screen
+                     quick action renders no header of its own, and this template has no heading
+                     element above the table. Do not add an h1/h2 heading repeating this string.
+                     ⚠ RETRACTED 2026-08-25: this used to read "Offer to put forward", carried
+                     verbatim from the `label` of the retired `lightning-radio-group`. That tie to
+                     the old control is broken deliberately — the caption is now the business
+                     title of the action, so match it to the button below, not to a dead widget. -->
+                <caption class="qa-table-caption">Select Offer for Principal Approval</caption>
                 <thead>
                     <tr>
                         <th class="qa-col-choose" scope="col">
