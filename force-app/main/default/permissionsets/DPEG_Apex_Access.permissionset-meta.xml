@@ -118,18 +118,22 @@
         <enabled>true</enabled>
     </classAccesses>
     <!--
-      2026-08-25. DispositionChildDetailsController is the entry point for c/dispositionChildDetails,
-      the LOI-stage and PSA-stage Details panels on Disposition_Record_Page. Granted here for the
-      same reason as the three controllers named in this file's header comment: an @AuraEnabled
-      class with no classAccesses entry fails at runtime with "You do not have access to the Apex
-      class named ...", which is the third live break this repo has taken from that omission.
-      The two selectors it calls (LoiSelector, ContractReviewSelector) are reached ONLY through it
-      and correctly need no grant of their own, matching the pattern above.
+      2026-08-25, LATER THE SAME DAY. THE DispositionChildDetailsController GRANT THAT STOOD HERE
+      WAS REMOVED, AND THE CLASS ITSELF DELETED. The LOI-stage and PSA-stage Details panels it
+      backed were rebuilt as NATIVE flexipage:fieldSections over formula fields spanning two new
+      Disposition__c lookups (Primary_LOI__c / Primary_PSA__c), matching the NDA-stage section on
+      the same page. With no @AuraEnabled class left, there is nothing to grant.
+
+      🔴 THE ORDER MATTERS AND IT IS HANDLED IN THE MANIFEST, NOT HERE. This entry must disappear
+      in the SAME deploy that deletes the class (manifest/native-loi-psa/), and the FlexiPage must
+      lose its two componentInstance references in that same deploy - a permission set naming a
+      class that no longer exists, or a page naming a bundle that no longer exists, each fail the
+      deploy on their own.
+
+      The removal is recorded rather than silently dropped because this file's header documents
+      THREE live production breaks caused by a MISSING classAccesses entry. A future reader
+      finding no DispositionChildDetails* grant here should not conclude it was a fourth.
     -->
-    <classAccesses>
-        <apexClass>DispositionChildDetailsController</apexClass>
-        <enabled>true</enabled>
-    </classAccesses>
     <classAccesses>
         <apexClass>DispositionController</apexClass>
         <enabled>true</enabled>

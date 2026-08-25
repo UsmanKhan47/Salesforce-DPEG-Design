@@ -149,6 +149,45 @@
         </layoutColumns>
         <style>TwoColumnsTopToBottom</style>
     </layoutSections>
+    <!--
+        ADDED 2026-08-25 (native LOI/PSA Details, scope addition). A section of its own holding
+        ONE field: LOI__c.Selected_Offer__c, the link back to the
+        Disposition_Offer__c row this LOI was raised against.
+
+        WHY ITS OWN SECTION RATHER THAN APPENDED TO THE EXISTING ONE. It is not a negotiation
+        term - it is a pointer to a different record - and dropping it in among the price and
+        date fields invites it to be read as one. A one-field section reads as what it is: a
+        way out of this record and into the offer.
+
+        behavior = Readonly ON PURPOSE. The field is stamped by
+        DispositionStageEntryService inside the same Database.insert that creates this record.
+        Making it editable here would invite a hand-edit that silently disagrees with the
+        disposition's own selected offer, with nothing to reconcile the two.
+        ⚠ Readonly on the LAYOUT is a display choice, not a permission - DPEG_Disposition_Edit
+        deliberately grants editable = true on this field so the one-off backfill (which runs in
+        USER mode) is not refused. The two are not in conflict; they answer different questions.
+
+        🔴 THIS LAYOUT IS SHARED WITH THE ACQUISITION RECORD TYPES, AND THE FIELD WILL RENDER
+        BLANK FOR THEM, PERMANENTLY. An acquisition LOI hangs off Opportunity__c
+        and has no Disposition__c, so it has no offers and there is nothing to link. THAT IS A
+        VISIBILITY COST ONLY - no acquisition path, flow, validation rule or automation reads
+        this field, and none was touched by the change that added it. If the empty section ever
+        becomes a real annoyance the fix is record-type-specific layouts, which is a much larger
+        change than this one and was deliberately not started here.
+    -->
+    <layoutSections>
+        <customLabel>true</customLabel>
+        <detailHeading>true</detailHeading>
+        <editHeading>true</editHeading>
+        <label>Disposition Offer</label>
+        <layoutColumns>
+            <layoutItems>
+                <behavior>Readonly</behavior>
+                <field>Selected_Offer__c</field>
+            </layoutItems>
+        </layoutColumns>
+        <style>OneColumn</style>
+    </layoutSections>
     <layoutSections>
         <customLabel>true</customLabel>
         <detailHeading>false</detailHeading>

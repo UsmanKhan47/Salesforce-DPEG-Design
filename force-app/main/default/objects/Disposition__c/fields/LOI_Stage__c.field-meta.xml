@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY - see Primary_LOI__c
+        .field-meta.xml in this folder for the full reasoning behind this field group (why a
+        lookup + formula pair rather than an Apex-backed LWC, and what it retracts).
+
+        ADDED 2026-08-25. One of NINE formula fields mirroring the primary LOI's / primary
+        PSA's own fields onto Disposition__c, shaped on the FIVE NDA_*__c fields already in
+        this folder - read NDA_Broker__c.field-meta.xml for why a FORMULA is the route that
+        makes this solvable at all (a FlexiPage fieldInstance cannot traverse a relationship;
+        a formula can).
+
+        TEXT(picklist), not a Picklist type - a formula field cannot itself be a picklist whose
+        values are computed; wrapping in TEXT() is the same pattern NDA_Status__c uses.
+        ⚠ LOI__c.Stage__c IS RESTRICTED AND RECORD-TYPE-SCOPED, so the string this returns is
+        the DISPOSITION sequence's value ('Received', 'Under Review', ...) for a correctly
+        typed row and an ACQUISITION value for a Master-type straggler. Both render honestly;
+        this field does not normalise them.
+
+        🔴 FLS: THIS FIELD IS INVISIBLE TO EVERYONE, ADMINS INCLUDED, UNTIL A PERMSET LANDS.
+        Read-only in BOTH DPEG_Disposition_Edit and DPEG_Disposition_View - a formula field
+        cannot carry editable = true (hard deploy error). This file and both permission sets
+        must land together.
+    -->
+    <fullName>LOI_Stage__c</fullName>
+    <description>The primary LOI's Stage__c, read through Primary_LOI__c. Blank before a primary LOI exists.</description>
+    <externalId>false</externalId>
+    <formula>TEXT(Primary_LOI__r.Stage__c)</formula>
+    <inlineHelpText>The stage of the primary LOI for this disposition. Read-only; derived.</inlineHelpText>
+    <label>LOI Stage</label>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>

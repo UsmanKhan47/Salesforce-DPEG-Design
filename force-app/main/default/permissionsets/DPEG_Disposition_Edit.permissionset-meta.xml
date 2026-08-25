@@ -2230,6 +2230,112 @@
         <field>Disposition__c.NDA_Expiry_Date__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!--
+        ADDED 2026-08-25 (native LOI/PSA Details). The LOI/PSA twin of the NDA block immediately
+        above, and it lands for the same reason: a Metadata-API-deployed field arrives with NO
+        field permissions for ANY profile, System Administrator included, so every field below is
+        invisible to everyone until this set deploys. These must land WITH
+        objects/Disposition__c/fields/ and Disposition_Record_Page.flexipage-meta.xml - the
+        FlexiPage renders nothing for a field the running user cannot read, and a missing grant
+        looks exactly like an empty field rather than an error.
+
+        🔴 THE TWO LOOKUPS ARE editable = true AND THE NINE FORMULAS ARE NOT. That is not an
+        inconsistency, it is two different constraints meeting:
+          - A FORMULA field CANNOT carry editable = true (hard deploy error - same reasoning
+            already recorded against BOV_Score__c and the NDA_*__c block above).
+          - The two LOOKUPS need edit because they have a SECOND writer besides the Apex stamp:
+            the one-off `sf data update record` backfill over pre-existing dispositions, which
+            runs in USER mode and is refused outright on a field the running user cannot edit.
+            ⚠ THIS DIVERGES FROM Primary_NDA__c THREE LINES UP, WHICH IS READ-ONLY HERE. That
+            field never needed a backfill (its trigger has always been its only writer). Do not
+            "harmonise" these to match it without first checking whether a backfill is still
+            pending - see Primary_LOI__c.field-meta.xml.
+
+        ⚠ Disposition__c.Primary_LOI__c / Primary_PSA__c are written by
+        DispositionPrimaryChildStampQueueable in SYSTEM_MODE, which needs no FLS at all. The grant
+        here exists for the HUMAN and the backfill, not for the automation.
+    -->
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Disposition__c.Primary_LOI__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Disposition__c.Primary_PSA__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Disposition__c.LOI_Stage__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Disposition__c.LOI_Status__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Disposition__c.LOI_Signed_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Disposition__c.LOI_Final_Agreed_Price__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Disposition__c.LOI_Counter_Price__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Disposition__c.LOI_Counter_Received_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Disposition__c.PSA_Negotiation_Status__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Disposition__c.PSA_Stage__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Disposition__c.PSA_Ball_In_Court__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Disposition__c.PSA_Execution_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!--
+        The two CHILD-side offer links (scope addition, same day). These sit on LOI__c and
+        Contract_Review__c, not on Disposition__c, and they are stamped onto the child inside the
+        same Database.insert that creates it - no queueable, no backfill dependency for NEW rows.
+        editable = true for the same backfill reason as the two lookups above, and because a user
+        working a hand-created second-round LOI may legitimately need to set the link themselves.
+
+        ⚠ BOTH OBJECTS ARE SHARED WITH THE ACQUISITION SIDE. The field is simply blank on every
+        acquisition row (they have no Disposition__c and therefore no offers); granting read here
+        exposes nothing new to an acquisition persona, who does not hold this set at all.
+    -->
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>LOI__c.Selected_Offer__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Contract_Review__c.Selected_Offer__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <hasActivationRequired>false</hasActivationRequired>
     <label>DPEG Disposition Edit</label>
     <objectPermissions>

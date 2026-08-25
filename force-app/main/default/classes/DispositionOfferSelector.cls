@@ -56,10 +56,14 @@
  * join ever returns, and do NOT reconstruct it from memory (its `Offer_Date__c != NULL` filter and
  * its `Id ASC` tie-break are both load-bearing and both non-obvious).
  * 🔴 CONSEQUENCE FOR THIS CLASS'S SHAPE: it was the ONLY `WITH USER_MODE` method here, so all
- * THREE remaining public methods are `SYSTEM_MODE` again. ⚠ THAT IS A COINCIDENCE OF THE CURRENT
- * MEMBERSHIP, NOT A RULE — the three are SYSTEM_MODE because they run inside triggers, where a
+ * remaining public methods are `SYSTEM_MODE` again. ⚠ THAT IS A COINCIDENCE OF THE CURRENT
+ * MEMBERSHIP, NOT A RULE — they are SYSTEM_MODE because they run inside triggers, where a
  * USER_MODE throw rolls back the user's own save. A future read-only method backing a card a human
  * asked for belongs on USER_MODE. READ THE METHOD, never the class shape.
+ * ⚠ THE COUNT IN THIS PARAGRAPH USED TO READ "all THREE remaining public methods". It is FOUR as
+ * of 2026-08-25 (`selectNewestSelectedIdByDispositionIds`, the LOI/PSA `Selected_Offer__c` stamp
+ * source). The number is deliberately no longer written down here — it went stale within a week of
+ * being asserted, and the sentence's point never depended on it.
  *
  * @see force-app/main/default/classes/DispositionTractionService.cls (the count consumer)
  * @see force-app/main/default/classes/DispositionApprovalService.cls (the selection consumer)
@@ -270,6 +274,82 @@ public with sharing class DispositionOfferSelector {
             WHERE Disposition__c IN :dispositionIds AND Is_Selected__c = true
             WITH SYSTEM_MODE
         ];
+    }
+
+
+    /**
+     * The NEWEST selected offer per disposition, as a ready-to-use map. Added 2026-08-25 to stamp
+     * `LOI__c.Selected_Offer__c` / `Contract_Review__c.Selected_Offer__c` onto the child that
+     * `DispositionStageEntryService` auto-creates on entry to the `LOI` / `PSA` stage.
+     *
+     * -- 🔴 WHY THIS IS A SECOND METHOD AND NOT AN `ORDER BY` ON THE ONE ABOVE ----
+     * `selectSelectedByDispositionIds` immediately above returns the same rows, and adding
+     * `CreatedDate` + an `ORDER BY` to it would have saved a method. It was NOT done, because that
+     * method's own documentation makes the absence load-bearing: *"⚠ NO `ORDER BY` AND NO `LIMIT`.
+     * Nothing ranks these rows - they are counted, not displayed."* Its caller is the exclusivity
+     * GUARD, which must see every duplicate; ranking rows it only counts would invite a later
+     * reader to add the `LIMIT` that the comment exists to forbid. Two questions, two methods.
+     *
+     * -- WHY THE MAP IS BUILT HERE RATHER THAN BY THE CALLER ---------------------
+     * "Newest wins" is ONE rule and it lives in ONE place. Returning an ordered `List` and letting
+     * the service do first-wins would split the rule across two classes, where deleting the
+     * `ORDER BY` leaves a service that still compiles, still runs, and silently picks an arbitrary
+     * offer. `selectOfferTractionByDispositionIds` in this same class already returns a derived
+     * `Map`, so the shape has precedent here.
+     *
+     * ⚠ `ORDER BY CreatedDate DESC` WITH `Id DESC` AS A TIE-BREAK. `CreatedDate` has second
+     * granularity and two offers selected in the same second is a real possibility on a data load;
+     * without the second key the winner would be non-deterministic between runs, which is the exact
+     * shape that makes a bug unreproducible. The first row seen per disposition wins, so the map is
+     * populated with `containsKey` rather than a blind `put`.
+     *
+     * ⚠ NORMALLY EXACTLY ONE ROW PER DISPOSITION. `DispositionOfferSelectionGuardService` enforces
+     * single selection, so the ranking is a tie-break for legacy/loaded data rather than the common
+     * case. It must still be deterministic.
+     *
+     * -- WITH SYSTEM_MODE - the same two legs as the method above ----------------
+     * THE FIELD: `Is_Selected__c` is granted READ ONLY on the two disposition permission sets and
+     * is absent for every other principal, so `USER_MODE` would throw
+     * `System.QueryException: No such column 'Is_Selected__c'`.
+     * THE CALLER: this runs inside `DispositionTrigger`'s AFTER UPDATE, on the running user's
+     * BEHALF - they asked to move a stage, not to read the disposition's offers. A `USER_MODE`
+     * throw there escapes as `CANNOT_INSERT_UPDATE_ACTIVATE_ENTITY` and rolls back the user's own
+     * save. ARCHITECTURE.md section 2's automation-path exception.
+     *
+     * -- AND IT STAYS `with sharing`; `TractionReads` DOES NOT REACH IT ----------
+     * A sharing-filtered miss here leaves `Selected_Offer__c` NULL on the new child, which is
+     * already a documented normal state (an off-market deal that ran no offer round) and blocks
+     * nothing - the insert proceeds either way. That is a degradation, not an inversion, so it does
+     * not meet the bar the class header sets for a `without sharing` escape. Bounded in practice by
+     * the measured fact that header records: both `DPEG_Disposition_Edit` and
+     * `DPEG_Disposition_View` carry `viewAllRecords = true` on `Disposition_Offer__c`.
+     *
+     * @param dispositionIds Disposition__c Ids whose selected offer to resolve; null/empty-safe and
+     *                       issues NO query when the set is empty.
+     * @return Disposition__c Id -> the Id of its newest selected offer. Dispositions with no
+     *         selected offer are ABSENT from the map (never present with a null value), so a
+     *         `Map.get` miss and "no offer" are the same answer. Never null.
+     * @example
+     * Map&lt;Id, Id&gt; offerByDisposition =
+     *     DispositionOfferSelector.selectNewestSelectedIdByDispositionIds(dispositionIds);
+     */
+    public static Map<Id, Id> selectNewestSelectedIdByDispositionIds(Set<Id> dispositionIds) {
+        Map<Id, Id> offerByDisposition = new Map<Id, Id>();
+        if (dispositionIds == null || dispositionIds.isEmpty()) {
+            return offerByDisposition;
+        }
+        for (Disposition_Offer__c offer : [
+            SELECT Id, Disposition__c
+            FROM Disposition_Offer__c
+            WHERE Disposition__c IN :dispositionIds AND Is_Selected__c = true
+            WITH SYSTEM_MODE
+            ORDER BY CreatedDate DESC, Id DESC
+        ]) {
+            if (!offerByDisposition.containsKey(offer.Disposition__c)) {
+                offerByDisposition.put(offer.Disposition__c, offer.Id);
+            }
+        }
+        return offerByDisposition;
     }
 
 

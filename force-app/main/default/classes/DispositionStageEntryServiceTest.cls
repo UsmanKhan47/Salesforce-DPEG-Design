@@ -155,7 +155,7 @@ private class DispositionStageEntryServiceTest {
 
     private static List<LOI__c> loisOn(Id dispositionId) {
         return [
-            SELECT Id, Stage__c, RecordTypeId, Disposition__c, Opportunity__c
+            SELECT Id, Stage__c, RecordTypeId, Disposition__c, Opportunity__c, Selected_Offer__c
             FROM LOI__c
             WHERE Disposition__c = :dispositionId
         ];
@@ -163,7 +163,8 @@ private class DispositionStageEntryServiceTest {
 
     private static List<Contract_Review__c> contractReviewsOn(Id dispositionId) {
         return [
-            SELECT Id, Negotiation_Status__c, Stage__c, RecordTypeId, Disposition__c, Opportunity__c
+            SELECT Id, Negotiation_Status__c, Stage__c, RecordTypeId, Disposition__c, Opportunity__c,
+                   Selected_Offer__c
             FROM Contract_Review__c
             WHERE Disposition__c = :dispositionId
         ];
@@ -1404,26 +1405,37 @@ private class DispositionStageEntryServiceTest {
     }
 
     // ═════════════════════════════════════════════════════════════════════════
-    // 🔴 NO PARENT STAMP ON THE TWO NEW BLOCKS — the falsifier for "add a
-    // Queueable for symmetry"
+    // 🔴 THE PARENT STAMPS ON THE TWO NEW BLOCKS
+    //
+    // ⚠ THIS SECTION'S HEADING AND ITS FIRST TEST WERE INVERTED ON 2026-08-25, NOT
+    // DELETED. It used to read "NO PARENT STAMP ON THE TWO NEW BLOCKS — the
+    // falsifier for 'add a Queueable for symmetry'", and the test below used to be
+    // `loiAndPsaAutoCreateEnqueueNothing`, asserting `Assert.areEqual(0, jobsUsed)`.
+    // Both were CORRECT while `Disposition__c` had no `Primary_LOI__c` and no
+    // `Primary_PSA__c`. Those lookups now exist (the record page's LOI/PSA Details
+    // sections are native fieldSections spanning formula fields that traverse them),
+    // so there IS a parent write and it MUST be deferred. Inverting the test keeps a
+    // falsifier pointed at the new claim; deleting it would have left the new
+    // behaviour unpinned, which is how a "for symmetry" Queueable would sneak back in
+    // the other direction.
     // ═════════════════════════════════════════════════════════════════════════
 
     /**
-     * The NDA block enqueues DispositionNdaStampQueueable because it writes back to
-     * `Disposition__c.Primary_NDA__c` and SYSTEM_MODE does not lift an approval lock. The LOI and
-     * PSA blocks have NOTHING to write back — `Primary_NDA__c` is the only Primary_* lookup on the
-     * object — so they must enqueue nothing at all.
+     * Each of the LOI and PSA blocks enqueues EXACTLY ONE `DispositionPrimaryChildStampQueueable`,
+     * and the stamp lands on the right lookup.
      *
-     * 🔴 THIS IS NOT A PERFORMANCE ASSERTION. A Queueable that exists and does nothing would tell
-     * the next reader that an approval-lock hazard has been handled on this path, when in fact the
-     * hazard is absent (no parent write; `LOI` and `PSA` are not any approval's entry stage; none
-     * of the three approvals performs a field update at all). Review W1 caught exactly that shape
-     * of inherited, untrue justification in DispositionNdaStampQueueable's own header.
+     * 🔴 THIS IS NOT A PERFORMANCE ASSERTION IN EITHER DIRECTION. The count pins that the deferral
+     * exists at all — a synchronous write back to `Disposition__c` from its own AFTER UPDATE would
+     * hit `ENTITY_IS_LOCKED` whenever an administrator re-stages a record mid-approval
+     * (`recordEditability = AdminOnly` permits exactly that), and `SYSTEM_MODE` does not lift a
+     * lock. TWO, not one: the two blocks each guard and enqueue their own job, which is what the
+     * service header's "≤ 3 enqueues" budget describes.
      *
-     * The service is invoked DIRECTLY so the count contains this service and nothing else.
+     * The service is invoked DIRECTLY so the count contains this service and nothing else. The
+     * lookups are then read back AFTER `Test.stopTest()`, which is what drains the queue.
      */
     @isTest
-    static void loiAndPsaAutoCreateEnqueueNothing() {
+    static void loiAndPsaAutoCreateEachEnqueueOneParentStamp() {
         Disposition__c loiEntrant = onMarketAtReadiness();
         Disposition__c psaEntrant = onMarketAtReadiness();
 
@@ -1442,14 +1454,132 @@ private class DispositionStageEntryServiceTest {
         Integer jobsUsed = Limits.getQueueableJobs() - jobsBefore;
         Test.stopTest();
 
-        Assert.areEqual(0, jobsUsed,
-            'The LOI and PSA blocks must enqueue NOTHING. A non-zero count means a Queueable was '
-            + 'added "for symmetry" with the NDA block — but Disposition__c has no Primary_LOI__c '
-            + 'and no Primary_Contract__c, so there is no parent write to defer and its presence '
-            + 'would assert a hazard that is not there.');
-        Assert.areEqual(1, loisOn(loiEntrant.Id).size(), 'The LOI was still created');
-        Assert.areEqual(1, contractReviewsOn(psaEntrant.Id).size(),
-            'The Contract Review was still created');
+        Assert.areEqual(2, jobsUsed,
+            'The LOI and PSA blocks must enqueue exactly ONE parent stamp EACH. Zero here is the '
+            + 'pre-2026-08-25 behaviour, correct only while Disposition__c had no Primary_LOI__c / '
+            + 'Primary_PSA__c — it now means the stamp was dropped and both Details sections will '
+            + 'render blank. More than two means a block enqueued per record rather than per chunk.');
+
+        List<LOI__c> lois = loisOn(loiEntrant.Id);
+        List<Contract_Review__c> reviews = contractReviewsOn(psaEntrant.Id);
+        Assert.areEqual(1, lois.size(), 'The LOI was still created');
+        Assert.areEqual(1, reviews.size(), 'The Contract Review was still created');
+
+        Map<Id, Disposition__c> stamped = new Map<Id, Disposition__c>([
+            SELECT Id, Primary_LOI__c, Primary_PSA__c
+            FROM Disposition__c
+            WHERE Id IN (:loiEntrant.Id, :psaEntrant.Id)
+        ]);
+        Assert.areEqual(lois[0].Id, stamped.get(loiEntrant.Id).Primary_LOI__c,
+            'Primary_LOI__c must point at the LOI this service just created. Null means the '
+            + 'Queueable never ran or wrote the wrong column; the LOI-stage Details section reads '
+            + 'ENTIRELY through this lookup, so a null renders as an empty section, not an error.');
+        Assert.areEqual(reviews[0].Id, stamped.get(psaEntrant.Id).Primary_PSA__c,
+            'Primary_PSA__c must point at the Contract Review this service just created.');
+        Assert.isNull(stamped.get(loiEntrant.Id).Primary_PSA__c,
+            'The LOI entrant must NOT have gained a Primary_PSA__c. This is the falsifier for the '
+            + 'PrimaryLookup enum being ignored — a stamp that always wrote one column would still '
+            + 'pass both assertions above if the two dispositions were checked separately.');
+        Assert.isNull(stamped.get(psaEntrant.Id).Primary_LOI__c,
+            'The PSA entrant must NOT have gained a Primary_LOI__c — the mirror of the above.');
+    }
+
+    /**
+     * The empty/null constructor guard on `DispositionPrimaryChildStampQueueable`. Production never
+     * reaches it (both call sites build the map from rows they just inserted), but an async class
+     * whose only symptom of failure is a failed `AsyncApexJob` should not be one NullPointerException
+     * away from silence, and the guard is otherwise uncovered.
+     */
+    @isTest
+    static void primaryChildStampQueueableIsInertOnAnEmptyOrNullMap() {
+        Test.startTest();
+        System.enqueueJob(new DispositionPrimaryChildStampQueueable(
+            new Map<Id, Id>(),
+            DispositionPrimaryChildStampQueueable.PrimaryLookup.PRIMARY_LOI
+        ));
+        System.enqueueJob(new DispositionPrimaryChildStampQueueable(
+            null,
+            DispositionPrimaryChildStampQueueable.PrimaryLookup.PRIMARY_PSA
+        ));
+        Test.stopTest();
+
+        Assert.areEqual(0,
+            [SELECT COUNT() FROM AsyncApexJob WHERE Status = 'Failed'],
+            'Neither an empty map nor a null map may throw. A failure here is the shape that is '
+            + 'invisible in production: the job fails, the lookup stays null, and the only symptom '
+            + 'is a Details section that renders blank.');
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // 🔴 Selected_Offer__c ON THE CHILD — stamped in the insert, never deferred
+    // ═════════════════════════════════════════════════════════════════════════
+
+    /**
+     * The LOI and the Contract Review each carry a link to the disposition's SELECTED offer, so
+     * whoever works the negotiation can open the buyer offer it came from in one click.
+     *
+     * ⚠ THIS IS A DIFFERENT MECHANISM FROM THE TWO STAMPS ABOVE AND THE TEST IS SEPARATE ON
+     * PURPOSE. `Selected_Offer__c` is a field on the CHILD BEING INSERTED, so it is set in the same
+     * `Database.insert` and is visible IMMEDIATELY — no Queueable, nothing to drain. If this ever
+     * starts needing `Test.stopTest()` to pass, the implementation has drifted into deferring a
+     * write that does not need deferring.
+     */
+    @isTest
+    static void autoCreatedLoiAndPsaLinkTheSelectedOffer() {
+        Disposition__c loiEntrant = onMarketAtReadiness();
+        Disposition__c psaEntrant = onMarketAtReadiness();
+        signBuyerNdaOn(loiEntrant.Id);
+        signBuyerNdaOn(psaEntrant.Id);
+
+        Disposition_Offer__c loiOffer = TestDataFactory.createDispositionOffer(loiEntrant.Id, false);
+        loiOffer.Is_Selected__c = true;
+        Disposition_Offer__c psaOffer = TestDataFactory.createDispositionOffer(psaEntrant.Id, false);
+        psaOffer.Is_Selected__c = true;
+        // A THIRD, DELIBERATELY UNSELECTED offer on the LOI disposition. Without it, a stamp that
+        // ignored Is_Selected__c entirely and took "any offer on this disposition" would pass.
+        Disposition_Offer__c alsoRan = TestDataFactory.createDispositionOffer(loiEntrant.Id, false);
+        insert new List<Disposition_Offer__c>{ loiOffer, psaOffer, alsoRan };
+
+        Test.startTest();
+        update new List<Disposition__c>{
+            new Disposition__c(Id = loiEntrant.Id, Disposition_Stage__c = LOI_STAGE),
+            new Disposition__c(Id = psaEntrant.Id, Disposition_Stage__c = PSA_STAGE)
+        };
+        Test.stopTest();
+
+        Assert.areEqual(loiOffer.Id, loisOn(loiEntrant.Id)[0].Selected_Offer__c,
+            'The auto-created LOI must link the SELECTED offer. The unselected sibling on the same '
+            + 'disposition is the falsifier: picking "any offer" would land on either one.');
+        Assert.areEqual(psaOffer.Id, contractReviewsOn(psaEntrant.Id)[0].Selected_Offer__c,
+            'The auto-created Contract Review must link the selected offer.');
+    }
+
+    /**
+     * NO SELECTED OFFER IS A NORMAL STATE AND MUST NOT BLOCK THE INSERT. An off-market disposition
+     * can reach `LOI` without ever running an offer round.
+     *
+     * 🔴 THIS IS THE HIGHER-VALUE HALF OF THE PAIR. The stamp is a convenience; the LOI is the
+     * record the stage exists for. A guard that refused to create the LOI when the lookup could not
+     * be resolved would take down the whole stage entry for the quietest possible reason.
+     */
+    @isTest
+    static void anAutoCreatedLoiWithNoSelectedOfferStillOpensWithABlankLink() {
+        Disposition__c entrant = onMarketAtReadiness();
+        signBuyerNdaOn(entrant.Id);
+        // An offer EXISTS but is not selected — stricter than having no offers at all, because it
+        // proves the filter is `Is_Selected__c = true` rather than "are there any rows".
+        insert TestDataFactory.createDispositionOffer(entrant.Id, false);
+
+        Test.startTest();
+        update new Disposition__c(Id = entrant.Id, Disposition_Stage__c = LOI_STAGE);
+        Test.stopTest();
+
+        List<LOI__c> created = loisOn(entrant.Id);
+        Assert.areEqual(1, created.size(),
+            'The LOI must still be created when no offer is selected. Zero here means an '
+            + 'unresolvable link was allowed to refuse the stage entry.');
+        Assert.isNull(created[0].Selected_Offer__c,
+            'Selected_Offer__c must be blank, not pointed at the unselected offer.');
     }
 
     // ═════════════════════════════════════════════════════════════════════════

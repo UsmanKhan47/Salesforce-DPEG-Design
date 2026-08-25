@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        ADDED 2026-08-25 (native LOI/PSA Details, scope addition). THIS COMMENT SITS INSIDE THE
+        ROOT ELEMENT DELIBERATELY - a comment above &lt;CustomField&gt; breaks `sf` at source
+        conversion with a misleading "unable to find matching parent xml file" error.
+
+        A LINK, NOT A COPY. Someone working the LOI needs to open the Disposition_Offer__c row
+        the deal was actually built on - the buyer, the offer amount, the counter history - and
+        today the only route is up to the Disposition and back down its offers related list.
+        This lookup is that route in one click. Nothing is denormalised onto the LOI: the offer's
+        own fields stay on the offer.
+
+        🔴 IT IS STAMPED ONTO THE CHILD AT INSERT, WHICH IS WHY IT NEEDS NO QUEUEABLE. Contrast
+        Disposition__c.Primary_LOI__c in the same change: that one writes BACK to the parent
+        mid-save and must be deferred. This field is set on the row being created, in the same
+        Database.insert, by DispositionStageEntryService.openDispositionLois.
+
+        ⚠ NULL IS A NORMAL, NON-ERROR STATE AND THE INSERT MUST NEVER BLOCK ON IT. A disposition
+        can legitimately reach the LOI stage with no selected offer (an off-market deal that
+        never ran an offer round), and every acquisition LOI - which has no Disposition__c at
+        all - carries null here forever. Anything reading this field must handle blank.
+
+        deleteConstraint SetNull: deleting an offer clears the pointer, never cascades into the
+        LOI. relationshipName Selected_Offer_LOIs, distinct from the Contract_Review__c twin's
+        Selected_Offer_PSAs so the two child relationships on Disposition_Offer__c do not collide.
+
+        FLS: read + edit on DPEG_Disposition_Edit (a lookup CAN carry editable = true, and the
+        one-off backfill runs in USER mode and is refused on a non-editable field), read-only on
+        DPEG_Disposition_View.
+    -->
+    <fullName>Selected_Offer__c</fullName>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <description>The selected Disposition Offer this LOI was raised against - stamped when the LOI is auto-created. Blank on acquisition LOIs and on dispositions that never ran an offer round.</description>
+    <inlineHelpText>Opens the buyer offer this LOI came from. Set automatically when the LOI is created; blank if the disposition had no selected offer.</inlineHelpText>
+    <label>Selected Offer</label>
+    <referenceTo>Disposition_Offer__c</referenceTo>
+    <relationshipLabel>LOIs (Selected Offer)</relationshipLabel>
+    <relationshipName>Selected_Offer_LOIs</relationshipName>
+    <required>false</required>
+    <trackFeedHistory>false</trackFeedHistory>
+    <trackTrending>false</trackTrending>
+    <type>Lookup</type>
+</CustomField>

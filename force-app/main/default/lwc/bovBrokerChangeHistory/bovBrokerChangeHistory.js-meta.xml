@@ -17,7 +17,17 @@
     -->
     <apiVersion>67.0</apiVersion>
     <isExposed>true</isExposed>
-    <masterLabel>BOV Broker Change History</masterLabel>
+    <!--
+        masterLabel TRACKS THE CARD'S VISIBLE TITLE (`TITLE_BASE` in the JS) so an admin picking the
+        component in App Builder sees the words that will appear on the page. Renamed 2026-08-25:
+        "BOV Broker Change History" -> "Broker Selection", user-instructed. The "BOV" prefix was
+        dropped as part of that match; App Builder lists ~22 other Broker* components, so the
+        description below is what distinguishes this one - keep it specific.
+        ⚠ "Broker Selection" is also a Disposition_Stage__c value and an approval process label.
+        This card is NOT scoped to that stage; it lists every appointment and replacement ever
+        recorded, including after the sale has left it.
+    -->
+    <masterLabel>Broker Selection</masterLabel>
     <description>Every broker replacement recorded against this disposition, newest first, with the reason and any notes. Most sales never replace a broker, so an empty card is the normal state and is shown as plain text.</description>
     <targets>
         <target>lightning__RecordPage</target>

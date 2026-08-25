@@ -9,8 +9,10 @@
  *   | ------------------- | ------------------------------------- | ------ | ----------- | ------------ |
  *   | `NDA`               | OPENS NDA__c, Party_Role__c = 'Buyer',| 3A     | SYSTEM_MODE | DEFERRED     |
  *   |                     |   Broker__c resolved per record type  | +bkr   |             |              |
- *   | `LOI`               | OPENS LOI__c, Disposition_LOI         | 3B fix | SYSTEM_MODE | NONE         |
- *   | `PSA`               | OPENS Contract_Review__c, Disp_PSA    | 3C fix | SYSTEM_MODE | NONE         |
+ *   | `LOI`               | OPENS LOI__c, Disposition_LOI,        | 3B fix | SYSTEM_MODE | DEFERRED     |
+ *   |                     |   Selected_Offer__c stamped on child  | +offer |             |              |
+ *   | `PSA`               | OPENS Contract_Review__c, Disp_PSA,   | 3C fix | SYSTEM_MODE | DEFERRED     |
+ *   |                     |   Selected_Offer__c stamped on child  | +offer |             |              |
  *   | `Release Materials` | UPDATES existing buyer NDAs           | T2-D   | SYSTEM_MODE | NONE         |
  *   | `Active Listing`    | OPENS Broker_Listing__c               | 5B     | SYSTEM_MODE | BEFORE-SAVE  |
  *
@@ -23,12 +25,22 @@
  *
  * 🔴 THE LAST TWO COLUMNS ARE THE PART A READER MUST NOT SKIM. All five blocks use SYSTEM_MODE
  * DML, but they reach that answer by SEVERAL different routes and they handle the parent write three
- * different ways. Only the NDA block defers a parent stamp to a Queueable; the LOI, PSA and Release
- * Materials blocks have nothing to defer; and the Active Listing block writes its parent field IN A
+ * different ways. THREE blocks now defer a parent stamp to a Queueable (NDA, LOI, PSA); the Release
+ * Materials block has nothing to defer; and the Active Listing block writes its parent field IN A
  * BEFORE-SAVE CONTEXT, which is neither of the other two answers. Each block's reasoning is argued at the
  * block, from scratch, because inheriting a justification is precisely the mistake review W1
  * caught in DispositionNdaStampQueueable (which had copied OpportunityReviewService's LOI-block
  * wording verbatim into a case where it did not hold).
+ *
+ * ⚠ THAT SENTENCE SAID "Only the NDA block defers a parent stamp to a Queueable; the LOI, PSA and
+ * Release Materials blocks have nothing to defer" UNTIL 2026-08-25, and this file argued from that
+ * premise in FOUR places. It died when `Disposition__c.Primary_LOI__c` and `Primary_PSA__c` were
+ * added so the record page's LOI/PSA Details sections could be NATIVE fieldSections spanning
+ * formula fields (replacing an Apex-backed LWC). Every place that reasoned from it — the LOI
+ * block's point 3(a), the PSA block's point 3, the two "NO PARENT STAMP AND NO QUEUEABLE" lines at
+ * the end of each insert, and the `loiAndPsaAutoCreateEnqueueNothing` test — was rewritten or
+ * inverted in that same change. `DispositionPrimaryChildStampQueueable` (the new job) argues the
+ * deferral from scratch and does NOT inherit the NDA one's reasoning, per the W1 lesson above.
  *
  * ⚠ AND THE ACTIVE LISTING BLOCK'S SYSTEM_MODE REASON IS NOT THE OTHER THREE'S. They need it
  * because the disposition persona holds `allowCreate = false` on their child object. The
@@ -86,14 +98,33 @@
  * appointed broker for the NDA block's ON-MARKET entrants. It is CONDITIONAL (see the budget
  * below), which is why the count above still says FIVE for the idempotency family.
  *
+ * ⚠ AND A THIRD FAMILY SINCE 2026-08-25, ALSO NOT AN IDEMPOTENCY READ:
+ * `DispositionOfferSelector.selectNewestSelectedIdByDispositionIds` resolves the disposition's
+ * selected offer so the LOI and PSA blocks can stamp it onto the CHILD they are inserting
+ * (`LOI__c.Selected_Offer__c` / `Contract_Review__c.Selected_Offer__c`). One call per block,
+ * ISSUED AFTER THAT BLOCK'S IDEMPOTENCY EARLY RETURN so a fully-suppressed chunk still costs
+ * exactly one query — there is a test on that (`loiSuppressionPathCostsOneQueryAndNoDmlAt251`).
+ * It adds a COLUMN to rows already being inserted, never a DML statement.
+ *
  * Trigger-driven, so the `.claude/rules/bulk-test-rule.md` per-transaction-singleton exemption
  * does NOT apply and literal 251-record bulk tests exist for all five stages. Budget is
  * 1 SOQL / 1 DML PER STAGE ENTERED IN THE CHUNK (≤ 5 / ≤ 5, raised from ≤ 4 on 2026-08-20 by the
- * Release Materials block), plus ≤ 1 enqueue for the NDA block — CONSTANT IN THE NUMBER OF
- * DISPOSITIONS. That constancy is the property the bulk tests assert, not merely that 251 rows
+ * Release Materials block), plus ≤ 3 enqueues (the NDA, LOI and PSA parent stamps) — CONSTANT IN
+ * THE NUMBER OF DISPOSITIONS.
+ * ⚠ THE ENQUEUE CEILING READ "≤ 1 enqueue for the NDA block" UNTIL 2026-08-25. Each of the three
+ * stamping blocks enqueues its OWN guarded job, so a single chunk entering all three stages costs
+ * 3. Each guard is `Limits.getQueueableJobs() < Limits.getLimitQueueableJobs()`, so in an ASYNC
+ * caller (chained-job cap of 1) the FIRST block to run wins and the others silently skip their
+ * stamp — the residual each block documents at its own enqueue. That constancy is the property the bulk tests assert, not merely that 251 rows
  * produced 251 children. A chunk that enters no target stage at all — the overwhelmingly common
  * case, since this trigger fires on EVERY Disposition write in the org — costs zero queries, zero
  * DML and zero enqueues.
+ *
+ * 🔴 THE SOQL CEILING IS **≤ 8** AS OF 2026-08-25. The paragraph immediately below raised it from
+ * ≤ 5 to ≤ 6 on 2026-08-21 and its reasoning is unchanged; the LOI and PSA blocks each added ONE
+ * MORE conditional read on 2026-08-25 (the selected-offer resolution above), taking it to ≤ 8.
+ * Those two are conditional on STAGE and on surviving the idempotency filter — an LOI chunk where
+ * every disposition already has its LOI still costs exactly 1. The DML ceiling stays ≤ 5.
  *
  * ⚠ THE SOQL CEILING IS **≤ 6**, NOT ≤ 5, SINCE 2026-08-21, AND THE SIXTH IS CONDITIONAL ON DATA
  * RATHER THAN ON STAGE. The NDA block issues a SECOND query — the broker resolution above — and
@@ -116,6 +147,8 @@
  *
  * @see force-app/main/default/classes/OpportunityReviewService.cls (the acquisitions twin)
  * @see force-app/main/default/classes/DispositionNdaStampQueueable.cls (the deferred NDA stamp)
+ * @see force-app/main/default/classes/DispositionPrimaryChildStampQueueable.cls (the deferred LOI/PSA stamps)
+ * @see force-app/main/default/classes/DispositionOfferSelector.cls (the selected-offer resolution)
  * @see force-app/main/default/classes/NdaSelector.cls (the NDA idempotency read)
  * @see force-app/main/default/classes/LoiSelector.cls (the LOI idempotency read)
  * @see force-app/main/default/classes/ContractReviewSelector.cls (the PSA idempotency read)
@@ -799,14 +832,28 @@ public with sharing class DispositionStageEntryService {
      *    disposition LOI at all. Measured on the READ side of this very field on 2026-08-09
      *    (`System.QueryException: No such column 'Disposition__c' on entity 'LOI__c'`).
      *
-     * 3. THE APPROVAL LOCK — DOES NOT APPLY, AND THIS IS WHERE COPYING THE NDA BLOCK WOULD HAVE
-     *    BEEN WRONG. Three separate facts, each sufficient on its own:
-     *      (a) THERE IS NO PARENT WRITE AT ALL. `Disposition__c` has no `Primary_LOI__c` — repo
-     *          grep: `Primary_NDA__c` is the only Primary_* field on the object. The NDA block's
-     *          Queueable exists SOLELY because `SYSTEM_MODE` does not lift an approval lock and it
-     *          writes back to the locked parent. With nothing to write back, there is nothing to
-     *          defer: a Queueable here would be a job that does nothing, and a reader would take
-     *          its existence as evidence of a hazard that is not present.
+     * 3. THE APPROVAL LOCK. 🔴 THIS ENTIRE POINT'S CONCLUSION REVERSED ON 2026-08-25 AND THE OLD
+     *    TEXT IS RETRACTED VERBATIM RATHER THAN DELETED, because it was quoted in three other
+     *    places and a reader who finds one of those copies needs to be able to date it.
+     *      (a) 🔴 RETRACTED, verbatim: "THERE IS NO PARENT WRITE AT ALL. `Disposition__c` has no
+     *          `Primary_LOI__c` — repo grep: `Primary_NDA__c` is the only Primary_* field on the
+     *          object. The NDA block's Queueable exists SOLELY because `SYSTEM_MODE` does not lift
+     *          an approval lock and it writes back to the locked parent. With nothing to write
+     *          back, there is nothing to defer: a Queueable here would be a job that does nothing,
+     *          and a reader would take its existence as evidence of a hazard that is not present."
+     *          THE PREMISE DIED: `Primary_LOI__c` and `Primary_PSA__c` were added to
+     *          `Disposition__c` on 2026-08-25 so the LOI/PSA Details sections could be NATIVE
+     *          `fieldSection`s spanning formula fields, replacing an Apex-backed LWC. There is now
+     *          a parent write, so this block enqueues
+     *          `DispositionPrimaryChildStampQueueable` — see that class's header, which re-argues
+     *          the deferral from scratch (approval lock + re-entrancy) rather than inheriting the
+     *          NDA block's reasoning, and which also documents why it escapes SHARING where the
+     *          NDA twin does not.
+     *          ⚠ (b) AND (c) BELOW ARE UNAFFECTED AND STILL TRUE. They establish that `LOI` is not
+     *          any approval's ENTRY stage, which is why the lock is an EDGE case here
+     *          (`recordEditability = AdminOnly` still lets an administrator re-stage a record
+     *          mid-approval) rather than the common one it is on the NDA path. An edge case is
+     *          still a case; it is handled the same way.
      *      (b) `LOI` IS NOT ANY APPROVAL'S ENTRY STAGE. Read from the three Disposition-target
      *          approvalProcess files: `Sale_Decision_Approval` keys on `Disposition Readiness`,
      *          `Broker_Selection_Approval` on `Broker Selection` AND record type Off Market,
@@ -880,12 +927,29 @@ public with sharing class DispositionStageEntryService {
             return;
         }
 
+        // ⚠ READ AFTER THE IDEMPOTENCY EARLY RETURN, NOT BEFORE — deliberately, and there is a
+        // test that fails if it moves. `loiSuppressionPathCostsOneQueryAndNoDmlAt251` asserts
+        // EXACTLY ONE query on the suppression path; a chunk where every disposition already has
+        // its LOI must still cost 1, not 2. See the class header's budget paragraph.
+        // ONE set-based read for the whole chunk, so this is constant in the number of
+        // dispositions, not per-record.
+        Map<Id, Id> offerByDisposition =
+            DispositionOfferSelector.selectNewestSelectedIdByDispositionIds(entrants);
+
         Id recordTypeId = recordTypeIdFor(LOI__c.SObjectType, DISPOSITION_LOI_RECORD_TYPE);
         List<LOI__c> toInsert = new List<LOI__c>();
         for (Id dispositionId : entrants) {
             LOI__c loi = new LOI__c(
                 Disposition__c = dispositionId,
-                Stage__c = DISPOSITION_LOI_INITIAL_STAGE
+                Stage__c = DISPOSITION_LOI_INITIAL_STAGE,
+                // ⚠ ASSIGNED UNCONDITIONALLY, INCLUDING WHEN IT IS NULL, for the same reason the
+                // NDA block's Broker__c is: a `Map.get` miss returns null, and null into a lookup
+                // on a NEW record is identical to leaving the field unset, so an `if` guard would
+                // add a branch with no behavioural difference and one more uncovered line.
+                // 🔴 AND NULL MUST NEVER BLOCK THE INSERT. A disposition can legitimately reach
+                // `LOI` with no selected offer (an off-market deal that ran no offer round). The
+                // link is a convenience; the LOI is the record the stage exists for.
+                Selected_Offer__c = offerByDisposition.get(dispositionId)
             );
             if (recordTypeId != null) {
                 loi.RecordTypeId = recordTypeId;
@@ -897,7 +961,33 @@ public with sharing class DispositionStageEntryService {
             toInsert.add(loi);
         }
         Database.insert(toInsert, true, AccessLevel.SYSTEM_MODE);
-        // NO PARENT STAMP AND NO QUEUEABLE — see point 3 above. Do not add one "for symmetry".
+
+        // 🔴 THE PARENT STAMP — SEE POINT 3 ABOVE, WHICH THIS CHANGE REWROTE RATHER THAN IGNORED.
+        // The line that stood here until 2026-08-25 read, verbatim: "NO PARENT STAMP AND NO
+        // QUEUEABLE — see point 3 above. Do not add one 'for symmetry'." It was correct while
+        // `Disposition__c` had no `Primary_LOI__c`. It does now, so there IS a parent write, and
+        // this is NOT symmetry — it is the same hazard the NDA block faces, reached by the same
+        // route. `DispositionPrimaryChildStampQueueable`'s header argues it from scratch.
+        //
+        // The enqueue is GUARDED exactly as the NDA block's is: this trigger can fire inside an
+        // async context that has already spent its chained-job budget (the async cap is 1), and an
+        // uncaught LimitException here would roll back the stage change it is riding on.
+        //
+        // ⚠ RESIDUAL, STATED RATHER THAN HIDDEN AND IDENTICAL TO THE NDA BLOCK'S: when the budget
+        // IS exhausted the stamp is silently skipped and `Primary_LOI__c` stays null. The LOI
+        // itself still exists and is still reachable from the disposition's LOIs related list, but
+        // the LOI-stage Details section — which renders formula fields spanning this lookup — goes
+        // BLANK. If that residual ever needs closing, close all three stamps together.
+        Map<Id, Id> loiByDisposition = new Map<Id, Id>();
+        for (LOI__c loi : toInsert) {
+            loiByDisposition.put(loi.Disposition__c, loi.Id);
+        }
+        if (Limits.getQueueableJobs() < Limits.getLimitQueueableJobs()) {
+            System.enqueueJob(new DispositionPrimaryChildStampQueueable(
+                loiByDisposition,
+                DispositionPrimaryChildStampQueueable.PrimaryLookup.PRIMARY_LOI
+            ));
+        }
     }
 
     // ═════════════════════════════════════════════════════════════════════════
@@ -914,11 +1004,17 @@ public with sharing class DispositionStageEntryService {
      * 2. FLS: `Contract_Review__c.Disposition__c` is a Tranche 3C field with no field permissions
      *    for any profile, System Administrator included. SYSTEM_MODE required independently, and
      *    this leg survives a later `allowCreate` grant.
-     * 3. APPROVAL LOCK: does not apply. `Disposition__c` has no `Primary_Contract__c` so there is
-     *    NO PARENT WRITE; and `PSA` is not any approval's entry stage (`Sale_Decision` =
-     *    `Disposition Readiness`, `Broker_Selection` = `Broker Selection` + Off Market,
-     *    `Closing_Approval` = `Closing` + wire-verified). No Queueable, and adding one would assert
-     *    a hazard that is not there.
+     * 3. APPROVAL LOCK. 🔴 REVERSED 2026-08-25, exactly as the LOI block's point 3(a) was — read
+     *    that one, it carries the full retraction. RETRACTED, verbatim: "does not apply.
+     *    `Disposition__c` has no `Primary_Contract__c` so there is NO PARENT WRITE; and `PSA` is
+     *    not any approval's entry stage (`Sale_Decision` = `Disposition Readiness`,
+     *    `Broker_Selection` = `Broker Selection` + Off Market, `Closing_Approval` = `Closing` +
+     *    wire-verified). No Queueable, and adding one would assert a hazard that is not there."
+     *    The SECOND clause is still true — `PSA` is still no approval's entry stage — but the
+     *    FIRST is dead: `Disposition__c.Primary_PSA__c` exists as of that date (note the name: it
+     *    is `Primary_PSA__c`, not the `Primary_Contract__c` this retracted text guessed at, which
+     *    is the Opportunity twin's name). This block therefore enqueues
+     *    `DispositionPrimaryChildStampQueueable` with `PrimaryLookup.PRIMARY_PSA`.
      *    ⚠ TWO CLAUSES HERE WERE REWRITTEN ON 2026-08-19. The entry-criteria list moved
      *    (`Broker_Selection` no longer keys on `BOV Outreach`), and the third clause is RETRACTED
      *    verbatim: "none of the three approvals performs a field update, so the stage is only ever
@@ -986,13 +1082,23 @@ public with sharing class DispositionStageEntryService {
             return;
         }
 
+        // ⚠ AFTER the idempotency early return, same reason as the LOI block: a fully-suppressed
+        // chunk must still cost exactly ONE query. One set-based read for the whole chunk.
+        Map<Id, Id> offerByDisposition =
+            DispositionOfferSelector.selectNewestSelectedIdByDispositionIds(entrants);
+
         Id recordTypeId =
             recordTypeIdFor(Contract_Review__c.SObjectType, DISPOSITION_PSA_RECORD_TYPE);
         List<Contract_Review__c> toInsert = new List<Contract_Review__c>();
         for (Id dispositionId : entrants) {
             Contract_Review__c cr = new Contract_Review__c(
                 Disposition__c = dispositionId,
-                Negotiation_Status__c = DISPOSITION_PSA_INITIAL_STATUS
+                Negotiation_Status__c = DISPOSITION_PSA_INITIAL_STATUS,
+                // ⚠ Unconditional, null included — see the LOI block for why an `if` guard here
+                // would be a branch with no behavioural difference. Null must never block the
+                // insert: the Contract Review is the record the stage exists for, the offer link
+                // is a convenience.
+                Selected_Offer__c = offerByDisposition.get(dispositionId)
             );
             if (recordTypeId != null) {
                 cr.RecordTypeId = recordTypeId;
@@ -1000,7 +1106,21 @@ public with sharing class DispositionStageEntryService {
             toInsert.add(cr);
         }
         Database.insert(toInsert, true, AccessLevel.SYSTEM_MODE);
-        // NO PARENT STAMP AND NO QUEUEABLE — see point 3 above.
+
+        // 🔴 THE PARENT STAMP. The line that stood here until 2026-08-25 read, verbatim: "NO
+        // PARENT STAMP AND NO QUEUEABLE — see point 3 above." True while `Disposition__c` had no
+        // `Primary_PSA__c`; it has one now. Same hazard, same guard, same residual as the LOI
+        // block immediately above — read its comment rather than re-deriving this one.
+        Map<Id, Id> psaByDisposition = new Map<Id, Id>();
+        for (Contract_Review__c cr : toInsert) {
+            psaByDisposition.put(cr.Disposition__c, cr.Id);
+        }
+        if (Limits.getQueueableJobs() < Limits.getLimitQueueableJobs()) {
+            System.enqueueJob(new DispositionPrimaryChildStampQueueable(
+                psaByDisposition,
+                DispositionPrimaryChildStampQueueable.PrimaryLookup.PRIMARY_PSA
+            ));
+        }
     }
 
     // ═════════════════════════════════════════════════════════════════════════

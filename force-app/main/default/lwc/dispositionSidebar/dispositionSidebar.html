@@ -10,26 +10,37 @@
     </template>
     <!--
       ═══════════════════════════════════════════════════════════════════════════════
-      🔴 ONE TAG, TWO MODES — THE STAGE DECISION IS MADE HERE (2026-08-24).
+      🔴 ONE TAG, TWO MODES — THE STAGE DECISION IS MADE HERE (2026-08-24; 2026-08-25).
       ═══════════════════════════════════════════════════════════════════════════════
-      At `Offer Selection` the card shows ONLY the offer that was put forward for approval
-      (`Is_Selected__c = true`) and its "+ Log Offer" button is DISABLED. At the other three
-      offer stages it lists every offer with the button enabled, exactly as before.
+      From `Offer Selection` onwards — `Offer Selection`, `LOI`, `PSA` and `Closing` — the card
+      shows ONLY the offer that was put forward (`Is_Selected__c = true`) and its "+ Log Offer"
+      button is HIDDEN. At the two offer-ARRIVAL stages, `Active Listing` (on-market) and
+      `Release Materials` (off-market), it lists every offer with the button available.
+
+      🔴 TWO RETRACTIONS IN THIS BLOCK — DO NOT QUOTE AN OLDER REVISION OF IT.
+        • It used to say selected-only applied "At `Offer Selection`" alone and that the
+          other THREE offer stages listed everything. The user extended the mode to LOI, PSA
+          and Closing on 2026-08-25; PSA and Closing did not render the card at all before.
+        • It used to say "+ Log Offer" was DISABLED in that mode. It is HIDDEN — see
+          `c/dispositionOffer`'s `showLogOffer`. The button was never rendered disabled.
 
       🔴 A BOUND GETTER, NOT A BARE ATTRIBUTE, AND NOT A SECOND `<template>` BRANCH.
-        • `selected-only` bare would pass boolean `true` unconditionally — wrong at three of
-          the four stages.
+        • `selected-only` bare would pass boolean `true` unconditionally — wrong at the two
+          arrival stages.
         • `selected-only=""` passes the EMPTY STRING, which is FALSY. The child reads
           `=== true`, so that one character silently restores the old behaviour with nothing
           on the page to show it. Binding a real boolean getter makes both typos impossible.
-        • A second `<template if:true={isOfferSelection}>` branch would mean two tags to keep
-          in step, and `querySelector` in the tests could not tell which one rendered.
+        • A second `<template if:true={isSelectedOfferOnlyStage}>` branch would mean two tags
+          to keep in step, and `querySelector` in the tests could not tell which one rendered.
 
-      ⚠ THE STAGE LIST STAYS IN ONE PLACE. `isOfferSelection` is a NARROWING of
-      `isOfferStage`, not a parallel list. The 2026-08-25 record-type work left that intact —
-      'Offer Selection' is on BOTH record types and is the one offer stage NOT scoped — and
-      the invariant is held by a sweep test over the whole stage × record-type grid rather
-      than by an `&&` that could never be false. See the JS.
+      ⚠ THE STAGE LIST STAYS IN ONE PLACE, AND THE JS NOW GUARANTEES IT.
+      `isSelectedOfferOnlyStage` is a NARROWING of `isOfferStage`, not a parallel list: the
+      render set is BUILT by spreading the selected-only set, so a stage cannot be in the
+      narrower one without being in the wider one. That is structural, not a convention held
+      by a test. See `SELECTED_OFFER_ONLY_STAGES` in the JS.
+
+      ⚠ AT `Closing` THIS CARD AND `<c-disposition-closing>` BOTH RENDER. The branches below
+      are independent and always have been; two cards there is the requested behaviour.
 
       🔴 AND `isOfferStage` IS NOW RECORD-TYPE AWARE (2026-08-25). `Release Materials` is a
       stage on BOTH record types but only means "offers arrive here" OFF-market, so the card
@@ -41,7 +52,7 @@
     <template if:true={isOfferStage}>
         <c-disposition-offer
             record-id={recordId}
-            selected-only={isOfferSelection}
+            selected-only={isSelectedOfferOnlyStage}
         ></c-disposition-offer>
     </template>
     <template if:true={isClosing}>

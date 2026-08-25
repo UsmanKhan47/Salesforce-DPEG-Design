@@ -320,4 +320,80 @@ private class DispositionOfferSelectorTest {
         Assert.areEqual(0, queriesUsed,
             'Neither may issue a query — the guard\'s zero-query fast path depends on this');
     }
+    // =========================================================================
+    // selectNewestSelectedIdByDispositionIds - the LOI/PSA Selected_Offer__c stamp
+    // source (added 2026-08-25)
+    // =========================================================================
+
+    /**
+     * One set-based read answers for MANY dispositions at once, returns only SELECTED offers, and
+     * hands back a map the caller can index straight into.
+     *
+     * 🔴 WHAT THIS TEST CANNOT PROVE, STATED RATHER THAN FAKED. The method's
+     * `ORDER BY CreatedDate DESC, Id DESC` tie-break exists for a disposition carrying TWO selected
+     * offers, and THAT STATE CANNOT BE BUILT HERE: `DispositionOfferSelectionGuardService` runs in
+     * `before insert` AND `before update` and REFUSES the second one, by design (Tranche 2
+     * Workstream A2). There is no @TestVisible bypass on that guard, and inventing one to reach an
+     * unreachable state would be a worse trade than leaving the tie-break unpinned. The ordering is
+     * therefore DEFENSIVE - it exists so that legacy or directly-loaded data predating the guard
+     * resolves DETERMINISTICALLY rather than arbitrarily, and the honest status of that clause is
+     * "unfalsifiable here". Do not delete it on the grounds that no test fails.
+     */
+    @isTest
+    static void selectNewestSelectedIdByDispositionIds_mapsEachDispositionToItsSelectedOffer() {
+        Disposition__c a = newDisposition();
+        Disposition__c b = newDisposition();
+        Disposition__c noOffers = newDisposition();
+        Disposition_Offer__c aSelected = TestDataFactory.createDispositionOffer(a.Id, false);
+        aSelected.Is_Selected__c = true;
+        Disposition_Offer__c aOther = TestDataFactory.createDispositionOffer(a.Id, false);
+        Disposition_Offer__c bSelected = TestDataFactory.createDispositionOffer(b.Id, false);
+        bSelected.Is_Selected__c = true;
+        insert new List<Disposition_Offer__c>{ aSelected, aOther, bSelected };
+
+        Test.startTest();
+        Integer queriesBefore = Limits.getQueries();
+        Map<Id, Id> result = DispositionOfferSelector.selectNewestSelectedIdByDispositionIds(
+            new Set<Id>{ a.Id, b.Id, noOffers.Id }
+        );
+        Integer queriesUsed = Limits.getQueries() - queriesBefore;
+        Test.stopTest();
+
+        Assert.areEqual(1, queriesUsed,
+            'ONE query must answer for ALL THREE dispositions - the caller runs inside a trigger '
+            + 'chunk of up to 200, so a per-record read here would blow the SOQL limit');
+        Assert.areEqual(aSelected.Id, result.get(a.Id),
+            'A must map to its SELECTED offer, not its unselected sibling');
+        Assert.areEqual(bSelected.Id, result.get(b.Id), 'B must map to its selected offer');
+        Assert.isFalse(result.containsKey(noOffers.Id),
+            'A disposition with no selected offer must be ABSENT from the map, never present with '
+            + 'a null value - the caller treats a get() miss as "no offer", and a key holding null '
+            + 'would read identically while making size() lie');
+        Assert.areEqual(2, result.size(), 'Exactly two dispositions resolved');
+    }
+
+    /** Null/empty-safe and, on empty, issues NO query at all. */
+    @isTest
+    static void selectNewestSelectedIdByDispositionIds_nullAndEmpty_returnEmptyWithoutQuerying() {
+        Test.startTest();
+        Integer queriesBefore = Limits.getQueries();
+        Integer nullSize =
+            DispositionOfferSelector.selectNewestSelectedIdByDispositionIds(null).size();
+        // ⚠ THE CLASS NAME AND THE `.` MUST STAY ON THE SAME LINE. Wrapping as
+        // `DispositionOfferSelector\n    .selectNewest...` compiles as a VARIABLE reference and
+        // fails the deploy with "Variable does not exist: DispositionOfferSelector" - measured on
+        // this exact line, 2026-08-25. The error names the class, not the line break, so it reads
+        // like a missing class rather than a formatting problem.
+        Set<Id> empty = new Set<Id>();
+        Integer emptySize =
+            DispositionOfferSelector.selectNewestSelectedIdByDispositionIds(empty).size();
+        Integer queriesUsed = Limits.getQueries() - queriesBefore;
+        Test.stopTest();
+
+        Assert.areEqual(0, nullSize, 'Null input returns an empty map');
+        Assert.areEqual(0, emptySize, 'An empty set returns an empty map');
+        Assert.areEqual(0, queriesUsed,
+            'Neither may issue a query - the stage-entry blocks call this AFTER their idempotency '
+            + 'early return, and a fully-suppressed chunk must still cost exactly one query total');
+    }
 }

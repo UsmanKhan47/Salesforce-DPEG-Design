@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        ADDED 2026-08-25 (native LOI/PSA Details, scope addition). Twin of
+        LOI__c/fields/Selected_Offer__c - read that file for the full reasoning; everything it
+        says about being a LINK rather than a copy, about being stamped onto the CHILD at insert
+        (and therefore needing no Queueable, unlike Disposition__c.Primary_PSA__c), and about
+        null being a normal non-error state applies here unchanged. THIS COMMENT SITS INSIDE THE
+        ROOT ELEMENT DELIBERATELY.
+
+        Stamped by DispositionStageEntryService.openDispositionContractReviews, in the same
+        Database.insert that creates the Contract Review.
+
+        ⚠ BLANK ON EVERY ACQUISITION CONTRACT REVIEW, PERMANENTLY, AND THAT IS CORRECT. This
+        object is shared between the buy side (Opportunity__c populated) and the sell side
+        (Disposition__c populated) - see the Disposition_PSA record type file for why a row must
+        never carry both parents. Only the sell side has offers, so only the sell side ever
+        carries a value here.
+
+        deleteConstraint SetNull. relationshipName Selected_Offer_PSAs, distinct from the LOI__c
+        twin's Selected_Offer_LOIs so the two child relationships on Disposition_Offer__c do not
+        collide.
+
+        FLS: read + edit on DPEG_Disposition_Edit (a lookup CAN carry editable = true, and the
+        one-off backfill runs in USER mode and is refused on a non-editable field), read-only on
+        DPEG_Disposition_View.
+    -->
+    <fullName>Selected_Offer__c</fullName>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <description>The selected Disposition Offer this PSA was raised against - stamped when the Contract Review is auto-created. Blank on acquisition Contract Reviews and on dispositions that never ran an offer round.</description>
+    <inlineHelpText>Opens the buyer offer this PSA came from. Set automatically when the Contract Review is created; blank if the disposition had no selected offer.</inlineHelpText>
+    <label>Selected Offer</label>
+    <referenceTo>Disposition_Offer__c</referenceTo>
+    <relationshipLabel>Contract Reviews (Selected Offer)</relationshipLabel>
+    <relationshipName>Selected_Offer_PSAs</relationshipName>
+    <required>false</required>
+    <trackFeedHistory>false</trackFeedHistory>
+    <trackTrending>false</trackTrending>
+    <type>Lookup</type>
+</CustomField>

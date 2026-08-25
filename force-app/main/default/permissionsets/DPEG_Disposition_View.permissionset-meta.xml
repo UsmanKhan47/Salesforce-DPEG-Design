@@ -1411,6 +1411,101 @@
         <field>Disposition__c.NDA_Expiry_Date__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!--
+        ADDED 2026-08-25 (native LOI/PSA Details). The read-only twin of the block in
+        DPEG_Disposition_Edit - the LOI/PSA sibling of the NDA block immediately above, landing for
+        the same reason: a Metadata-API-deployed field arrives with NO field permissions for ANY
+        profile, System Administrator included, so every field below is invisible to everyone until
+        this set deploys, and the FlexiPage renders NOTHING for a field the running user cannot
+        read (a missing grant looks exactly like an empty field, never like an error).
+
+        🔴 EVERY FIELD BELOW IS READ-ONLY HERE, INCLUDING THE FOUR LOOKUPS - and that is where this
+        block DIVERGES from the Edit set, which grants edit on the four. Two reasons, and neither
+        applies to a view persona: the Edit set needs it for the one-off `sf data update record`
+        backfill (USER mode, refused on a non-editable field), and for a user hand-creating a
+        second-round LOI. A view persona does neither. The nine FORMULA fields cannot carry
+        editable = true in EITHER set - that is a hard deploy error, not a policy choice.
+
+        Must land WITH objects/Disposition__c/fields/, objects/LOI__c/fields/Selected_Offer__c,
+        objects/Contract_Review__c/fields/Selected_Offer__c and
+        Disposition_Record_Page.flexipage-meta.xml.
+    -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Disposition__c.Primary_LOI__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Disposition__c.Primary_PSA__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Disposition__c.LOI_Stage__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Disposition__c.LOI_Status__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Disposition__c.LOI_Signed_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Disposition__c.LOI_Final_Agreed_Price__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Disposition__c.LOI_Counter_Price__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Disposition__c.LOI_Counter_Received_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Disposition__c.PSA_Negotiation_Status__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Disposition__c.PSA_Stage__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Disposition__c.PSA_Ball_In_Court__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Disposition__c.PSA_Execution_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!--
+        The two CHILD-side offer links (scope addition, same day). Read-only here. Both objects are
+        shared with the acquisition side, where the field is simply blank (no Disposition__c, so no
+        offers); granting read exposes nothing new to an acquisition persona, who does not hold
+        this set at all.
+    -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>LOI__c.Selected_Offer__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Contract_Review__c.Selected_Offer__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <hasActivationRequired>false</hasActivationRequired>
     <label>DPEG Disposition View</label>
     <objectPermissions>

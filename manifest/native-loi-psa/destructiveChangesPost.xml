@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+    NATIVE LOI/PSA DETAILS - the destructive half. 2026-08-25.
+
+    STATUS: PREPARED, NOT DEPLOYED. This file only DESCRIBES a deletion; it performs nothing on its
+    own. Deploy only with manifest/native-loi-psa/package.xml and only once the user authorises it -
+    see that file for the full command and the reasoning.
+
+    Retires c/dispositionChildDetails and its controller, added earlier the SAME DAY and superseded
+    within hours by the native lookup + formula + fieldSection route the NDA-stage Details section
+    already used. Nothing else in the org referenced either: a repo-wide grep for
+    "dispositionChildDetails" / "DispositionChildDetailsController" returned exactly six files, and
+    the three that survive this change (Disposition_Record_Page.flexipage-meta.xml,
+    DPEG_Apex_Access.permissionset-meta.xml, and this manifest pair) all had their references
+    removed in the constructive half.
+
+    🔴 POST-destructive, NOT PRE, AND THE ORDER IS LOAD-BEARING. Deleting the bundle while
+    Disposition_Record_Page still names it as a componentName fails the deploy; deleting the
+    controller while DPEG_Apex_Access still grants it fails the deploy. --post-destructive-changes
+    lands the rewritten page and permission set FIRST, then removes what they no longer reference.
+
+    ⚠ DispositionChildDetailsControllerTest IS LISTED SEPARATELY AND MUST BE. A test class is an
+    ApexClass like any other; leaving it behind would leave a class referencing a deleted one, which
+    fails every subsequent deploy that compiles the org.
+
+    ⚠ THE BUNDLE HAD NO JEST TEST (no __tests__ directory), so there is nothing else to remove.
+
+    Rollback: everything here is recoverable from git history - the repo held all four files up to
+    the commit that accompanies this manifest - and can be restored by a fresh deploy plus
+    re-adding the two componentInstances and the one classAccesses entry.
+    -->
+    <types>
+        <members>DispositionChildDetailsController</members>
+        <members>DispositionChildDetailsControllerTest</members>
+        <name>ApexClass</name>
+    </types>
+    <types>
+        <members>dispositionChildDetails</members>
+        <name>LightningComponentBundle</name>
+    </types>
+    <version>67.0</version>
+</Package>

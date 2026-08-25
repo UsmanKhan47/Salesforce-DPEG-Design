@@ -4,6 +4,13 @@ import getHistory from '@salesforce/apex/BovBrokerChangeController.getHistory';
 /** Notes longer than this are clipped inline and get a "View" button (mirrors c/brokerAssignmentHistory). */
 const NOTE_PREVIEW = 60;
 
+/**
+ * The card's visible title, WITHOUT the count — see `get cardTitle` for the count rule and for why
+ * a "(0)" must never appear pre-wire or on a failed read. Keep this in step with the
+ * `<masterLabel>` in `.js-meta.xml`, which App Builder shows and which is not readable from here.
+ */
+const TITLE_BASE = 'Broker Selection';
+
 /** Muted, non-alarming text for a failed read. DELIBERATELY NOT the empty-state sentence. */
 const UNAVAILABLE =
     'Broker change history is unavailable right now.';
@@ -94,9 +101,13 @@ function brokerNameOf(row) {
  *   line 3  "Logged By: {name}";
  *   line 4  the RETAINED notes affordance (see the template).
  *
- * 🔴 THE ENTRY MUST NOT CALL AN APPOINTMENT A REPLACEMENT. A bare name under a card titled
- * "Broker Replace History" does exactly that on an initial-appointment row, where nobody was
- * replaced at all. Two things stop it, and NEITHER invents a type field:
+ * 🔴 THE ENTRY MUST NOT CALL AN APPOINTMENT A REPLACEMENT — AND STILL MUST NOT, UNDER THE 2026-08-25
+ * TITLE. When the card was titled "Broker Replace History" a bare name did exactly that on an
+ * initial-appointment row, where nobody was replaced at all. The title is now "Broker Selection",
+ * which no longer asserts a replacement — but it does not distinguish the two row shapes either, so
+ * a bare name is now simply UNLABELLED rather than actively wrong. The mechanisms below are
+ * unchanged and still earn their place; what changed is the failure they prevent. Neither invents
+ * a type field:
  *   1. `brokerLabel` — a visually-hidden, shape-specific label on the headline ("Replaced broker:"
  *      / "Appointed broker:"). It also replaces the old assistive "replaced by", which described a
  *      relationship this card no longer renders and must not be left behind announcing one.
@@ -164,16 +175,27 @@ export default class BovBrokerChangeHistory extends LightningElement {
      * successfully.
      *
      * 🔴 THE UNAVAILABLE STATE MUST NOT SHOW A COUNT, AND NEITHER MUST THE PRE-WIRE RENDER.
-     * "Broker Replace History (0)" is a claim about the SALE — that no broker was ever replaced —
-     * in exactly the words a genuinely empty card uses. On a failed read the card knows nothing
-     * about the sale, which is the whole reason `isUnavailable` exists as a state separate from
-     * `isEmpty`; leaking a "(0)" into the title would reintroduce the collapse that state was
+     * "Broker Selection (0)" is a claim about the SALE — that no broker was ever appointed or
+     * replaced — in exactly the words a genuinely empty card uses. On a failed read the card knows
+     * nothing about the sale, which is the whole reason `isUnavailable` exists as a state separate
+     * from `isEmpty`; leaking a "(0)" into the title would reintroduce the collapse that state was
      * created to prevent, in the one place the state templates below cannot guard.
+     *
+     * ⚠ RENAMED 2026-08-25, user-instructed: "Broker Replace History" → "Broker Selection". The
+     * count and all three states are unchanged. TITLE_BASE is the single source for both branches
+     * and for `.js-meta.xml`'s masterLabel — the old code repeated the literal twice and a rename
+     * had to hit both. Title history: "Broker Replace History" (2026-08-20) → "Broker Selection"
+     * (2026-08-25); the LAYOUT history (row → tile → timeline) is in the class header.
+     *
+     * ⚠ "Broker Selection" is ALSO a `Disposition__c.Disposition_Stage__c` picklist value and the
+     * label of an approval process, both live on this same record page. THIS CARD IS NOT SCOPED TO
+     * THAT STAGE and must not be made so: it lists every appointment and replacement ever recorded,
+     * including ones written long after the sale left that stage.
      */
     get cardTitle() {
         return this.hasRows || this.isEmpty
-            ? `Broker Replace History (${this._rows.length})`
-            : 'Broker Replace History';
+            ? `${TITLE_BASE} (${this._rows.length})`
+            : TITLE_BASE;
     }
 
     /** True only once the wire has actually answered, which is what keeps the empty state honest. */

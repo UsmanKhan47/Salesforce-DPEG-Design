@@ -263,13 +263,13 @@ describe('c-bov-broker-change-history', () => {
         expect(unavailable(element)).toBeNull();
         // 🔴 ...and neither must a "(0)" in the TITLE, which is the same claim in fewer words and
         // is the one place the state templates cannot guard.
-        expect(title(element)).toBe('Broker Replace History');
+        expect(title(element)).toBe('Broker Selection');
         // 🔴 NO SPINNER, EVER. A spinner is the only element on this card capable of hanging
         // forever, which is the specific failure the design forbids.
         expect(element.shadowRoot.querySelector('lightning-spinner')).toBeNull();
     });
 
-    it('HEADER: the card reads "Broker Replace History (n)" and carries an icon', async () => {
+    it('HEADER: the card reads "Broker Selection (n)" and carries an icon', async () => {
         const element = createComponent();
 
         getHistory.emit(HISTORY);
@@ -280,7 +280,7 @@ describe('c-bov-broker-change-history', () => {
         ).toBe('standard:record_update');
         // 🔴 EXACT WORDING AND EXACT COUNT. The user specified this header text; "(2)" is the
         // count of rendered entries, so a title that stopped counting would pass a `toContain`.
-        expect(title(element)).toBe('Broker Replace History (2)');
+        expect(title(element)).toBe('Broker Selection (2)');
     });
 
     it('DATA: one timeline entry per change, headlined by the broker who was replaced', async () => {
@@ -302,8 +302,11 @@ describe('c-bov-broker-change-history', () => {
         // perfectly, names a real firm from the same row, and is the opposite fact. The fixture
         // deliberately carries TWO DIFFERENT firms so that swapping them fails here.
         expect(headline(first).name).toBe('JLL');
-        // ...and the one thing that keeps a bare firm name honest under a card titled "Broker
-        // Replace History": the assistive label that says which kind of row this is.
+        // ...and the one thing that keeps a bare firm name honest: the assistive label saying
+        // which kind of row this is. Written when the card was titled "Broker Replace History",
+        // where a bare name ASSERTED a replacement on an appointment row; after the 2026-08-25
+        // retitle to "Broker Selection" the title no longer makes that claim, so a bare name is
+        // now unlabelled rather than wrong — a weaker failure, but still the one this pins.
         expect(headline(first).label).toBe('Replaced broker:');
 
         // 🔴 LINE 2 — the calendar icon, the timestamp, the pipe, the reason, in that order.
@@ -562,7 +565,7 @@ describe('c-bov-broker-change-history', () => {
         );
         // The count IS shown once the wire has answered, even at zero — at that point it is a
         // fact about the sale rather than a guess.
-        expect(title(element)).toBe('Broker Replace History (0)');
+        expect(title(element)).toBe('Broker Selection (0)');
     });
 
     it('🔴 UNAVAILABLE: a failed read is its OWN state — never the empty sentence, never an alert', async () => {
@@ -588,9 +591,9 @@ describe('c-bov-broker-change-history', () => {
         // user's incident, on a card they did not ask to interact with.
         expect(element.shadowRoot.querySelector('.lv-error')).toBeNull();
 
-        // 🔴 NO COUNT IN THE TITLE. "Broker Replace History (0)" is the empty state's claim in
+        // 🔴 NO COUNT IN THE TITLE. "Broker Selection (0)" is the empty state's claim in
         // fewer words, and it is the one place the state templates cannot guard.
-        expect(title(element)).toBe('Broker Replace History');
+        expect(title(element)).toBe('Broker Selection');
         // ⚠ `expect(text(element)).not.toContain('nothing is deleted')` STOOD HERE AND WAS DELETED
         // ON 2026-08-21. It was a real falsifier while the intro rendered in the other two states
         // — it proved this state alone withheld the completeness claim. The 2026-08-21 removal

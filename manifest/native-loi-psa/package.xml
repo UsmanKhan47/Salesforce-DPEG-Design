@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+    NATIVE LOI/PSA DETAILS - 2026-08-25.
+
+    STATUS: PREPARED, NOT DEPLOYED. Do not deploy without the user's explicit go-ahead.
+
+    Replaces the Apex-backed c/dispositionChildDetails LWC (added earlier the same day) with the
+    SAME native mechanism the NDA-stage Details section already uses: lookups on Disposition__c ->
+    formula fields spanning them -> native flexipage:fieldSections scoped by stage.
+
+    🔴 THE CONSTRUCTIVE AND DESTRUCTIVE HALVES MUST BE ONE DEPLOY. Disposition_Record_Page and
+    DPEG_Apex_Access are in the CONSTRUCTIVE half precisely because they must lose their references
+    to the bundle and its controller in the SAME transaction the delete happens in:
+      - the page naming a componentName that no longer exists fails the deploy;
+      - a permission set naming an apexClass that no longer exists fails the deploy;
+      - and deleting the class while the page still references it fails too.
+    --post-destructive-changes runs the deletion AFTER the constructive components land, which is
+    the ordering that satisfies all three.
+
+    WHAT IS IN HERE AND WHY:
+      CustomField (13)
+        Disposition__c.Primary_LOI__c / Primary_PSA__c  the two lookups the formulas span
+        Disposition__c.LOI_* (5) / PSA_* (4)            the formula fields the page renders
+        LOI__c.Selected_Offer__c                        scope addition: link to the selected offer
+        Contract_Review__c.Selected_Offer__c            same, on the PSA side
+      PermissionSet (3)
+        DPEG_Disposition_Edit / _View                   FLS for all 13 - WITHOUT THIS THE PAGE
+                                                        RENDERS BLANK, NOT AN ERROR
+        DPEG_Apex_Access                                drops the deleted controller's grant
+      FlexiPage (1)   Disposition_Record_Page           two native fieldSections replace the two
+                                                        LWC instances; the sidebar's
+                                                        bovBrokerChangeHistory rule also gains
+                                                        NE LOI / NE PSA / NE Closing
+      Layout (2)      LOI + Contract Review             the new one-field "Disposition Offer"
+                                                        section (shared with the acquisition
+                                                        record types, where it renders blank -
+                                                        see each layout's own comment)
+      ApexClass (5)   the stage-entry service + its test, the new stamp queueable, and the offer
+                      selector + its test (a new SYSTEM_MODE method was added to it)
+
+    ⚠ THE TESTS ARE IN THIS PAYLOAD ON PURPOSE. `--tests` runs the ORG's copy of a test class, so a
+    committed-but-undeployed test METHOD silently never runs and the deploy still reports success.
+    DispositionStageEntryServiceTest and DispositionOfferSelectorTest both gained methods in this
+    change and both must land before they are relied on as proof.
+
+    ⚠ DispositionPrimaryChildStampQueueable HAS NO TEST CLASS OF ITS OWN, MATCHING ITS TWIN.
+    DispositionNdaStampQueueable has none either - both are covered through
+    DispositionStageEntryServiceTest, which is what drains the queue at Test.stopTest(). Two of that
+    class's methods exist specifically to cover this one, including its empty/null guard.
+
+    Dry run (validate only, no deploy):
+      sf project deploy start `
+        --manifest manifest/native-loi-psa/package.xml `
+        --post-destructive-changes manifest/native-loi-psa/destructiveChangesPost.xml `
+        --target-org usman-dpeg `
+        --test-level RunSpecifiedTests `
+        --tests DispositionStageEntryServiceTest --tests DispositionOfferSelectorTest `
+        --dry-run --wait 60
+
+    Then the real deploy: the same command with --dry-run removed.
+
+    🔴 A BACKFILL IS REQUIRED AFTER THIS DEPLOYS AND IS NOT PART OF IT. Every Disposition created
+    before these lookups existed has Primary_LOI__c / Primary_PSA__c null, and every pre-existing
+    LOI / Contract Review has Selected_Offer__c null - which renders as an EMPTY Details section,
+    not an error. The backfill is a set of `sf data update record` commands handed to the user
+    separately; it is deliberately not scripted here because `sf apex run` is unavailable in this
+    environment and a data change should not ride inside a metadata deploy.
+    -->
+    <types>
+        <members>Disposition__c.Primary_LOI__c</members>
+        <members>Disposition__c.Primary_PSA__c</members>
+        <members>Disposition__c.LOI_Stage__c</members>
+        <members>Disposition__c.LOI_Status__c</members>
+        <members>Disposition__c.LOI_Final_Agreed_Price__c</members>
+        <members>Disposition__c.LOI_Counter_Price__c</members>
+        <members>Disposition__c.LOI_Counter_Received_Date__c</members>
+        <members>Disposition__c.PSA_Negotiation_Status__c</members>
+        <members>Disposition__c.PSA_Stage__c</members>
+        <members>Disposition__c.PSA_Ball_In_Court__c</members>
+        <members>Disposition__c.PSA_Execution_Date__c</members>
+        <members>LOI__c.Selected_Offer__c</members>
+        <members>Contract_Review__c.Selected_Offer__c</members>
+        <name>CustomField</name>
+    </types>
+    <types>
+        <members>DPEG_Disposition_Edit</members>
+        <members>DPEG_Disposition_View</members>
+        <members>DPEG_Apex_Access</members>
+        <name>PermissionSet</name>
+    </types>
+    <types>
+        <members>Disposition_Record_Page</members>
+        <name>FlexiPage</name>
+    </types>
+    <types>
+        <members>LOI__c-LOI Layout</members>
+        <members>Contract_Review__c-Contract Review Layout</members>
+        <name>Layout</name>
+    </types>
+    <types>
+        <members>DispositionStageEntryService</members>
+        <members>DispositionStageEntryServiceTest</members>
+        <members>DispositionPrimaryChildStampQueueable</members>
+        <members>DispositionOfferSelector</members>
+        <members>DispositionOfferSelectorTest</members>
+        <name>ApexClass</name>
+    </types>
+    <version>67.0</version>
+</Package>

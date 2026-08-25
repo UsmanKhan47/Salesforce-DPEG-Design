@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        ADDED 2026-08-25 (native LOI/PSA Details). The disposition twin of
+        Opportunity.Primary_LOI__c and the sibling of Disposition__c.Primary_NDA__c, whose
+        file this one copies. THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY - a
+        comment above &lt;CustomField&gt; breaks `sf` at source conversion with a misleading
+        "unable to find matching parent xml file" error.
+
+        🔴 THIS FIELD IS WHAT MAKES THE NATIVE LOI DETAILS SECTION POSSIBLE AT ALL. A FlexiPage
+        fieldInstance cannot traverse a relationship, but a FORMULA field can - so the five
+        LOI_*__c formula fields in this folder read through this lookup and the FlexiPage names
+        them as ordinary Record. fields. Without the lookup there is nothing for those formulas
+        to span, which is exactly why the retired c:dispositionChildDetails LWC existed.
+
+        ⚠ IT RETRACTS A CLAIM THIS REPO MADE IN WRITING ON 2026-08-25, EARLIER THE SAME DAY.
+        Disposition_Record_Page.flexipage-meta.xml and DispositionStageEntryService.cls both
+        argued, verbatim, "THERE IS NO Primary_LOI__c AND NO Primary_PSA__c on Disposition__c -
+        verified against objects/Disposition__c/fields/". That was true when written and is
+        false now. Every place that reasoned FROM it has been rewritten in the same change,
+        not left to be rediscovered.
+
+        THE STAMP IS LOAD-BEARING, NOT BOOKKEEPING, exactly as on Primary_NDA__c.
+        DispositionStageEntryService's LOI block writes this through
+        DispositionPrimaryChildStampQueueable when it auto-creates the disposition LOI. A row
+        whose stamp is missing renders a BLANK Details section at the LOI stage - not an error,
+        which is the failure shape this repo keeps paying for. Rows created before this field
+        existed are covered by the one-off backfill in manifest/native-loi-psa/.
+
+        relationshipName is PrimaryDispositions, matching Primary_NDA__c's choice for the same
+        reason: LOI__c already carries PrimaryOpportunities (Opportunity.Primary_LOI__c) and
+        LOIs (LOI__c.Disposition__c), and a child relationship name must be unique per object.
+
+        deleteConstraint is SetNull, matching both twins: deleting an LOI must clear the
+        pointer, never cascade into the disposition.
+
+        🔴 FLS DIVERGES FROM Primary_NDA__c ON PURPOSE, AND THE REASON IS THE BACKFILL.
+        Primary_NDA__c is read-only in every set because its trigger is its only writer. This
+        field has a SECOND writer - the one-off `sf data update record` backfill, which runs in
+        USER mode and is refused outright on a field the running user cannot edit. So
+        DPEG_Disposition_Edit carries editable = true here and DPEG_Disposition_View stays
+        read-only. A lookup CAN carry editable = true; a formula field cannot (hard deploy
+        error), which is why the nine LOI_*/PSA_* formulas beside it are read-only in both.
+    -->
+    <fullName>Primary_LOI__c</fullName>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <description>The primary LOI for this disposition - stamped by the LOI stage-entry automation and spanned by the LOI_*__c formula fields that the LOI-stage Details section renders.</description>
+    <inlineHelpText>Set automatically when the disposition LOI is created. It points the LOI Details section at the right LOI, so it is not maintained by hand.</inlineHelpText>
+    <label>Primary LOI</label>
+    <referenceTo>LOI__c</referenceTo>
+    <relationshipLabel>Dispositions (Primary LOI)</relationshipLabel>
+    <relationshipName>PrimaryDispositions</relationshipName>
+    <required>false</required>
+    <trackFeedHistory>false</trackFeedHistory>
+    <trackTrending>false</trackTrending>
+    <type>Lookup</type>
+</CustomField>
