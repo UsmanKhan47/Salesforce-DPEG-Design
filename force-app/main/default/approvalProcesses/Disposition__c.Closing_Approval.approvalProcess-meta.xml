@@ -105,6 +105,19 @@
         ⚠ Approval_Pending__c AND Approval_Advance_Pending__c ARE OPPOSITES IN TIME AND ARE NOT
         INTERCHANGEABLE. Read the banner on
         objects/Disposition__c/fields/Approval_Pending__c.field-meta.xml first.
+
+        =====================================================================================
+        2026-08-26 - LABEL RENAME ONLY. Process <label> stays "Closing Approval" (already
+        distinct); step <label> changed from "Principal Review" to "Principal approves closing".
+        All five disposition approvals previously carried the step label "Principal Review", so
+        approvers saw identical names on every approval request and could not tell which decision
+        they were being asked for. fullName / developer name (Disposition__c.Closing_Approval)
+        and step <name> (Principal_Review_Step) are UNCHANGED. Zero runtime impact:
+        DispositionApprovalService.submit calls Approval.process(request) with only setObjectId
+        set, auto-routed by entryCriteria alone, never by name or label - confirmed by grep
+        across force-app/main/default/classes, which found no setProcessDefinitionNameOrId call
+        anywhere in the repo.
+        =====================================================================================
     -->
     <active>true</active>
     <allowRecall>true</allowRecall>
@@ -134,10 +147,10 @@
             </approver>
             <whenMultipleApprovers>FirstResponse</whenMultipleApprovers>
         </assignedApprover>
-        <label>Principal Review</label>
+        <label>Principal approves closing</label>
         <name>Principal_Review_Step</name>
     </approvalStep>
-    <description>Principal sign-off on the final sale terms and the closing wire. Entry: stage is Closing AND Wire Verification Completed is true. Approval fires the Set_Approval_Advance_Pending semaphore; a Queueable then advances the stage to Sale Closes.</description>
+    <description>Principal decision to approve the final sale terms and closing wire. Entry: stage is Closing AND Wire Verification Completed is true. Approval fires the Set_Approval_Advance_Pending semaphore; a Queueable then advances the stage to Sale Closes.</description>
     <enableMobileDeviceAccess>false</enableMobileDeviceAccess>
     <entryCriteria>
         <booleanFilter>1 AND 2</booleanFilter>

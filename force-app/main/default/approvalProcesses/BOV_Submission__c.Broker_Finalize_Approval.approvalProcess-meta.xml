@@ -98,6 +98,19 @@
         ⚠ THREE SIMILARLY NAMED FIELDS NOW LIVE ON THIS OBJECT: Submission_Status__c (the team's
         pick), Approval_Status__c (the principals' outcome) and Approval_Pending__c (whether a
         decision is still outstanding). Read the child field file before wiring anything.
+
+        =====================================================================================
+        2026-08-26 - LABEL RENAME ONLY. Process <label> changed from "Broker Finalize Approval"
+        to "Broker Selection Approval (BOV)"; step <label> changed from "Principal Review" to
+        "Principal confirms broker". All five disposition approvals previously carried the step
+        label "Principal Review", so approvers saw identical names on every approval request and
+        could not tell which decision they were being asked for. fullName / developer name
+        (BOV_Submission__c.Broker_Finalize_Approval) and step <name> (Principal_Review_Step) are
+        UNCHANGED. Zero runtime impact: BovSubmissionService submits by setObjectId only, the
+        same Approval.process(request) shape as the other four processes, auto-routed by
+        entryCriteria alone - confirmed by grep across force-app/main/default/classes, which
+        found no setProcessDefinitionNameOrId call anywhere in the repo.
+        =====================================================================================
     -->
     <active>true</active>
     <allowRecall>true</allowRecall>
@@ -129,10 +142,10 @@
             </approver>
             <whenMultipleApprovers>FirstResponse</whenMultipleApprovers>
         </assignedApprover>
-        <label>Principal Review</label>
+        <label>Principal confirms broker</label>
         <name>Principal_Review_Step</name>
     </approvalStep>
-    <description>ON-MARKET broker sign-off, on the selected BOV submission rather than the Disposition. Entry: Status is Selected. Approval sets Approval Status, which advances the parent Disposition from BOV Outreach to Broker Selection. See this file&apos;s XML comment.</description>
+    <description>Principal decision to confirm the broker selected from BOV outreach, on the selected BOV submission rather than the Disposition. Entry: Status is Selected. Approval sets Approval Status, which advances the parent Disposition from BOV Outreach to Broker Selection. See this file&apos;s XML comment.</description>
     <enableMobileDeviceAccess>false</enableMobileDeviceAccess>
     <entryCriteria>
         <criteriaItems>
@@ -169,7 +182,7 @@
             <type>FieldUpdate</type>
         </action>
     </initialSubmissionActions>
-    <label>Broker Finalize Approval</label>
+    <label>Broker Selection Approval (BOV)</label>
     <processOrder>1</processOrder>
     <recallActions>
         <action>

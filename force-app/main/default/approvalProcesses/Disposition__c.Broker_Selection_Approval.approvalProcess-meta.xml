@@ -123,6 +123,19 @@
         ⚠ Approval_Pending__c AND Approval_Advance_Pending__c ARE OPPOSITES IN TIME AND ARE NOT
         INTERCHANGEABLE. Read the banner on
         objects/Disposition__c/fields/Approval_Pending__c.field-meta.xml first.
+
+        =====================================================================================
+        2026-08-26 - LABEL RENAME ONLY. Process <label> changed from "Broker Selection Approval"
+        to "Broker Selection Approval (Off-Market)"; step <label> changed from "Principal Review"
+        to "Principal confirms broker". All five disposition approvals previously carried the
+        step label "Principal Review", so approvers saw identical names on every approval request
+        and could not tell which decision they were being asked for. fullName / developer name
+        (Disposition__c.Broker_Selection_Approval) and step <name> (Principal_Review_Step) are
+        UNCHANGED. Zero runtime impact: DispositionApprovalService.submit calls
+        Approval.process(request) with only setObjectId set, auto-routed by entryCriteria alone,
+        never by name or label - confirmed by grep across force-app/main/default/classes, which
+        found no setProcessDefinitionNameOrId call anywhere in the repo.
+        =====================================================================================
     -->
     <active>true</active>
     <allowRecall>true</allowRecall>
@@ -150,10 +163,10 @@
             </approver>
             <whenMultipleApprovers>FirstResponse</whenMultipleApprovers>
         </assignedApprover>
-        <label>Principal Review</label>
+        <label>Principal confirms broker</label>
         <name>Principal_Review_Step</name>
     </approvalStep>
-    <description>OFF-MARKET ONLY. Principal sign-off on the directly picked broker. Entry: stage is Broker Selection AND Is On Market is false. Approval fires the Set_Approval_Advance_Pending semaphore; a Queueable then advances the stage to NDA.</description>
+    <description>OFF-MARKET ONLY. Principal decision to confirm the directly picked broker. Entry: stage is Broker Selection AND Is On Market is false. Approval fires the Set_Approval_Advance_Pending semaphore; a Queueable then advances the stage to NDA.</description>
     <enableMobileDeviceAccess>false</enableMobileDeviceAccess>
     <entryCriteria>
         <booleanFilter>1 AND 2</booleanFilter>
@@ -192,7 +205,7 @@
             <type>FieldUpdate</type>
         </action>
     </initialSubmissionActions>
-    <label>Broker Selection Approval</label>
+    <label>Broker Selection Approval (Off-Market)</label>
     <processOrder>2</processOrder>
     <recallActions>
         <action>

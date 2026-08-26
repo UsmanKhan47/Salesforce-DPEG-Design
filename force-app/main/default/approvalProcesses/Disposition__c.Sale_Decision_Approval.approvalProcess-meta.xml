@@ -121,6 +121,20 @@
         .field-meta.xml, then workflows/Disposition__c.workflow-meta.xml, then this file, then
         the two Disposition permission sets, then the FlexiPage LAST. Reversing the last two
         hides all four Submit buttons for everyone, silently.
+
+        =====================================================================================
+        2026-08-26 - LABEL RENAME ONLY. Process <label> changed from "Sale Decision Approval" to
+        "Decide to Sell Approval"; step <label> changed from "Principal Review" to "Principal
+        decides to sell". All five disposition approvals previously carried the step label
+        "Principal Review", so approvers saw identical names on every approval request and could
+        not tell which decision they were being asked for. fullName / developer name
+        (Disposition__c.Sale_Decision_Approval) and step <name> (Principal_Review_Step) are
+        UNCHANGED. Zero runtime impact: DispositionService.submitSaleDecision and
+        DispositionApprovalService.submit both call Approval.process(request) with only
+        setObjectId set - the platform auto-routes to this process by entryCriteria alone, never
+        by name or label - confirmed by grep across force-app/main/default/classes, which found
+        no setProcessDefinitionNameOrId call anywhere in the repo.
+        =====================================================================================
     -->
     <active>true</active>
     <allowRecall>true</allowRecall>
@@ -147,10 +161,10 @@
             </approver>
             <whenMultipleApprovers>FirstResponse</whenMultipleApprovers>
         </assignedApprover>
-        <label>Principal Review</label>
+        <label>Principal decides to sell</label>
         <name>Principal_Review_Step</name>
     </approvalStep>
-    <description>Principal sign-off on the decision to sell. Either principal decides, first response wins. Entry: stage is Disposition Readiness. Approval fires the Set_Approval_Advance_Pending semaphore; a Queueable then advances the stage. See this file&apos;s XML comment.</description>
+    <description>Principal decision on whether to sell this asset. Either principal decides, first response wins. Entry: stage is Disposition Readiness. Approval fires the Set_Approval_Advance_Pending semaphore; a Queueable then advances the stage. See this file&apos;s XML comment.</description>
     <enableMobileDeviceAccess>false</enableMobileDeviceAccess>
     <entryCriteria>
         <criteriaItems>
@@ -183,7 +197,7 @@
             <type>FieldUpdate</type>
         </action>
     </initialSubmissionActions>
-    <label>Sale Decision Approval</label>
+    <label>Decide to Sell Approval</label>
     <processOrder>1</processOrder>
     <recallActions>
         <action>
