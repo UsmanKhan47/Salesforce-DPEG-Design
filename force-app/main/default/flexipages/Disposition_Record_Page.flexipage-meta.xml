@@ -620,10 +620,13 @@
          one-criterion edit if that changes.
          input (`@api recordId` in each JS). -->
     <!--
-         2026-08-26 (5) - RETRIEVED AFTER USER EDITS IN APP BUILDER (header spliced back). Change
-         taken from the org: uiBehavior on four Details-section fields moved from `none` to
-         `required` / `readonly` (see the fieldInstanceProperties below). No components added or
-         removed.
+         2026-08-26 (6) - RETRIEVED AFTER USER EDITS IN APP BUILDER (header spliced back). Changes
+         taken from the org: the ORIGINAL "Disposition Details" section (identifier
+         flexipage_fieldSection, Facet-26c606f3 columns) was REMOVED - the newer section of the same
+         label with the property-asset fields is the only one left; the three related lists
+         (ndasList / loisList / contractReviewsList) were REMOVED from the Components tab, so the
+         page now carries no force:relatedListSingleContainer; one visibility rule gained an
+         `OR ... NE Broker Selection` term.
     -->
     <flexiPageRegions>
         <itemInstances>
@@ -893,72 +896,6 @@
     </flexiPageRegions>
     <flexiPageRegions>
         <itemInstances>
-            <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>readonly</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.Property_Asset__c</fieldItem>
-                <identifier>FieldPropertyAsset</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <itemInstances>
-            <fieldInstance>
-                <fieldItem>Record.Property_Asset__r.Target_Sale_Price__c</fieldItem>
-                <identifier>RecordProperty_Asset_rTarget_Sale_Price_cField</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <itemInstances>
-            <fieldInstance>
-                <fieldItem>Record.Property_Asset__r.NOI__c</fieldItem>
-                <identifier>RecordProperty_Asset_rNOI_cField</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <name>Facet-45162e4e-45bb-485f-9f9e-900e8998bd8e</name>
-        <type>Facet</type>
-    </flexiPageRegions>
-    <flexiPageRegions>
-        <itemInstances>
-            <fieldInstance>
-                <fieldItem>Record.Property_Asset__r.Market_Cap_Rate__c</fieldItem>
-                <identifier>RecordProperty_Asset_rMarket_Cap_Rate_cField</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <itemInstances>
-            <fieldInstance>
-                <fieldItem>Record.Property_Asset__r.Peak_Sell_Date__c</fieldItem>
-                <identifier>RecordProperty_Asset_rPeak_Sell_Date_cField</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <name>Facet-0a494558-fee1-4b32-a27e-d8a2546e161e</name>
-        <type>Facet</type>
-    </flexiPageRegions>
-    <flexiPageRegions>
-        <itemInstances>
-            <componentInstance>
-                <componentInstanceProperties>
-                    <name>body</name>
-                    <value>Facet-45162e4e-45bb-485f-9f9e-900e8998bd8e</value>
-                </componentInstanceProperties>
-                <componentName>flexipage:column</componentName>
-                <identifier>flexipage_column</identifier>
-            </componentInstance>
-        </itemInstances>
-        <itemInstances>
-            <componentInstance>
-                <componentInstanceProperties>
-                    <name>body</name>
-                    <value>Facet-0a494558-fee1-4b32-a27e-d8a2546e161e</value>
-                </componentInstanceProperties>
-                <componentName>flexipage:column</componentName>
-                <identifier>flexipage_column2</identifier>
-            </componentInstance>
-        </itemInstances>
-        <name>Facet-26c606f3-be64-4cb0-99c4-27fdd04be0b1</name>
-        <type>Facet</type>
-    </flexiPageRegions>
-    <flexiPageRegions>
-        <itemInstances>
             <componentInstance>
                 <componentInstanceProperties>
                     <name>recordId</name>
@@ -993,48 +930,6 @@
                         <rightValue>Release Materials</rightValue>
                     </criteria>
                 </visibilityRule>
-            </componentInstance>
-        </itemInstances>
-        <itemInstances>
-            <componentInstance>
-                <componentInstanceProperties>
-                    <name>parentFieldApiName</name>
-                    <value>Disposition__c.Id</value>
-                </componentInstanceProperties>
-                <componentInstanceProperties>
-                    <name>relatedListApiName</name>
-                    <value>NDAs__r</value>
-                </componentInstanceProperties>
-                <componentName>force:relatedListSingleContainer</componentName>
-                <identifier>ndasList</identifier>
-            </componentInstance>
-        </itemInstances>
-        <itemInstances>
-            <componentInstance>
-                <componentInstanceProperties>
-                    <name>parentFieldApiName</name>
-                    <value>Disposition__c.Id</value>
-                </componentInstanceProperties>
-                <componentInstanceProperties>
-                    <name>relatedListApiName</name>
-                    <value>LOIs__r</value>
-                </componentInstanceProperties>
-                <componentName>force:relatedListSingleContainer</componentName>
-                <identifier>loisList</identifier>
-            </componentInstance>
-        </itemInstances>
-        <itemInstances>
-            <componentInstance>
-                <componentInstanceProperties>
-                    <name>parentFieldApiName</name>
-                    <value>Disposition__c.Id</value>
-                </componentInstanceProperties>
-                <componentInstanceProperties>
-                    <name>relatedListApiName</name>
-                    <value>Contract_Reviews__r</value>
-                </componentInstanceProperties>
-                <componentName>force:relatedListSingleContainer</componentName>
-                <identifier>contractReviewsList</identifier>
             </componentInstance>
         </itemInstances>
         <name>Facet-7e2c9a41-3f6b-4c8d-9a2e-1b5d8f3c6a90</name>
@@ -1507,31 +1402,6 @@
         <itemInstances>
             <componentInstance>
                 <componentInstanceProperties>
-                    <name>columns</name>
-                    <value>Facet-26c606f3-be64-4cb0-99c4-27fdd04be0b1</value>
-                </componentInstanceProperties>
-                <componentInstanceProperties>
-                    <name>horizontalAlignment</name>
-                    <value>false</value>
-                </componentInstanceProperties>
-                <componentInstanceProperties>
-                    <name>label</name>
-                    <value>Disposition Details</value>
-                </componentInstanceProperties>
-                <componentName>flexipage:fieldSection</componentName>
-                <identifier>flexipage_fieldSection</identifier>
-                <visibilityRule>
-                    <criteria>
-                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
-                        <operator>EQUAL</operator>
-                        <rightValue>Disposition Readiness</rightValue>
-                    </criteria>
-                </visibilityRule>
-            </componentInstance>
-        </itemInstances>
-        <itemInstances>
-            <componentInstance>
-                <componentInstanceProperties>
                     <name>label</name>
                     <value>Tabs</value>
                 </componentInstanceProperties>
@@ -1542,10 +1412,16 @@
                 <componentName>flexipage:tabset</componentName>
                 <identifier>mainTabset</identifier>
                 <visibilityRule>
+                    <booleanFilter>1 OR 2</booleanFilter>
                     <criteria>
                         <leftValue>{!Record.Disposition_Stage__c}</leftValue>
                         <operator>NE</operator>
                         <rightValue>Disposition Readiness</rightValue>
+                    </criteria>
+                    <criteria>
+                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
+                        <operator>NE</operator>
+                        <rightValue>Broker Selection</rightValue>
                     </criteria>
                 </visibilityRule>
             </componentInstance>
