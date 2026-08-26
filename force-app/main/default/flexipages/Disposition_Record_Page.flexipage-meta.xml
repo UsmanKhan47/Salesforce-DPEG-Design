@@ -620,10 +620,10 @@
          one-criterion edit if that changes.
          input (`@api recordId` in each JS). -->
     <!--
-         2026-08-26 (4) - RETRIEVED AFTER USER EDITS IN APP BUILDER (header spliced back). Change
-         taken from the org: a SECOND "Disposition Details" field section was added (Property
-         Asset lookup + the four Property_Asset__r spanning fields: Target Sale Price, NOI, Market
-         Cap Rate, Peak Sell Date), with its own stage visibility rule; nothing was removed.
+         2026-08-26 (5) - RETRIEVED AFTER USER EDITS IN APP BUILDER (header spliced back). Change
+         taken from the org: uiBehavior on four Details-section fields moved from `none` to
+         `required` / `readonly` (see the fieldInstanceProperties below). No components added or
+         removed.
     -->
     <flexiPageRegions>
         <itemInstances>
@@ -896,7 +896,7 @@
             <fieldInstance>
                 <fieldInstanceProperties>
                     <name>uiBehavior</name>
-                    <value>none</value>
+                    <value>readonly</value>
                 </fieldInstanceProperties>
                 <fieldItem>Record.Property_Asset__c</fieldItem>
                 <identifier>FieldPropertyAsset</identifier>
@@ -1045,7 +1045,7 @@
             <fieldInstance>
                 <fieldInstanceProperties>
                     <name>uiBehavior</name>
-                    <value>none</value>
+                    <value>readonly</value>
                 </fieldInstanceProperties>
                 <fieldItem>Record.Property_Asset__c</fieldItem>
                 <identifier>RecordProperty_Asset_cField</identifier>
@@ -1100,7 +1100,7 @@
             <fieldInstance>
                 <fieldInstanceProperties>
                     <name>uiBehavior</name>
-                    <value>none</value>
+                    <value>required</value>
                 </fieldInstanceProperties>
                 <fieldItem>Record.Package_Sent__c</fieldItem>
                 <identifier>RecordPackage_Sent_cField</identifier>
@@ -1117,7 +1117,7 @@
             <fieldInstance>
                 <fieldInstanceProperties>
                     <name>uiBehavior</name>
-                    <value>none</value>
+                    <value>required</value>
                 </fieldInstanceProperties>
                 <fieldItem>Record.Submission_Deadline__c</fieldItem>
                 <identifier>RecordSubmission_Deadline_cField</identifier>
