@@ -620,13 +620,12 @@
          one-criterion edit if that changes.
          input (`@api recordId` in each JS). -->
     <!--
-         2026-08-26 (2) - RETRIEVED AFTER USER EDITS IN APP BUILDER (retrieve strips comments; the
-         header block above was spliced back from the previous commit). Functional changes taken
-         from the org: the NDA / LOI / PSA sections in the Details tab are now shown by STAGE
-         (Disposition_Stage__c EQUAL NDA / LOI / PSA) instead of "primary child exists"; the general
-         "Disposition Details" section lost its NE-chain rule and is always visible; the PSA section
-         no longer shows Primary_PSA__r.Stage__c. The inline comments that sat beside those rules
-         were not restored - see `git show 7385470:<this file>` for them.
+         2026-08-26 (3) - RETRIEVED AFTER USER EDITS IN APP BUILDER (header spliced back from the
+         previous commit). Changes taken from the org: the `dispositionApprovalHistory` sidebar card
+         (consolidated Disposition / BOV / Offer approval history, added 2026-08-26 08:47) is NO
+         LONGER on the page; in the NDA section, Primary_NDA__r.Tracking_Status__c was replaced by
+         the Primary_NDA__c lookup itself. The LWC bundle and its Apex remain deployed and unused
+         by this page.
     -->
     <flexiPageRegions>
         <itemInstances>
@@ -1148,8 +1147,12 @@
         </itemInstances>
         <itemInstances>
             <fieldInstance>
-                <fieldItem>Record.Primary_NDA__r.Tracking_Status__c</fieldItem>
-                <identifier>RecordPrimary_NDA_rTracking_Status_cField</identifier>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>none</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.Primary_NDA__c</fieldItem>
+                <identifier>RecordPrimary_NDA_cField</identifier>
             </fieldInstance>
         </itemInstances>
         <name>Facet-4f1a83d6-5b29-4e07-8c34-a1d7e9b25c60</name>
@@ -1564,12 +1567,6 @@
                         <rightValue>NDA</rightValue>
                     </criteria>
                 </visibilityRule>
-            </componentInstance>
-        </itemInstances>
-        <itemInstances>
-            <componentInstance>
-                <componentName>dispositionApprovalHistory</componentName>
-                <identifier>dispositionApprovalHistory</identifier>
             </componentInstance>
         </itemInstances>
         <itemInstances>
