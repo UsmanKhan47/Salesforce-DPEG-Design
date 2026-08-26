@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<QuickAction xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!-- THIS NOTE LIVES IN A COMMENT INSIDE THE ROOT ELEMENT - a comment placed ABOVE
+         <QuickAction> breaks `sf` deploy at source conversion. See
+         LOI__c.Move_to_Under_Review.quickAction-meta.xml for the full rationale behind this set of
+         per-hop actions (user decision, 2026-08-26) and for why no <description> element is used.
+
+         THE TERMINAL HOP. LOI_DISPOSITION_NEXT_STAGE maps 'Negotiation' => 'Signed'. 'Signed' is
+         terminal on BOTH record types and is deliberately NOT a key in either map - adding a hop
+         out of it would move a sale past its own end state.
+
+         🔴 BOTH LITERALS ARE SHARED WITH Acquisition_LOI, SO THE RECORD-TYPE CRITERION IS
+         LOAD-BEARING. On the acquisition side 'Negotiation' is reached from 'Submitted' via
+         LOI__c.Mark_Countered and is followed by 'Signed' via the ordinary Advance Stage button,
+         which additionally tests Is_Advance_Allowed__c. A stage-only rule would render this button
+         alongside that one on an acquisition LOI.
+
+         ⚠ THIS BUTTON ALSO CARRIES {!Record.Is_Advance_Allowed__c} EQUAL true, exactly as the
+         disposition Advance_Stage entry it replaces did. That formula's only clause this action's
+         exact stage test does not already subsume is TEXT(LOI_Status__c) <> "Pending Approval" -
+         dropping it would have handed the sell side a way to advance an LOI mid-approval that the
+         generic button refused. The clause cannot be written as a criterion directly:
+         LOI__c.LOI_Status__c has NO field permission on DPEG_Disposition_Edit or
+         DPEG_Disposition_View (measured), and a visibility rule reading a field the running user
+         cannot read evaluates FALSE - it would hide the button permanently. A FORMULA field is
+         evaluated server-side and has no such dependency. -->
+    <actionSubtype>Action</actionSubtype>
+    <label>Signed</label>
+    <lightningWebComponent>advanceRecordStage</lightningWebComponent>
+    <optionsCreateFeedItem>false</optionsCreateFeedItem>
+    <type>LightningWebComponent</type>
+</QuickAction>

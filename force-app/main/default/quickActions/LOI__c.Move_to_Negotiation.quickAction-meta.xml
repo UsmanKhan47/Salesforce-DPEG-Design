@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<QuickAction xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!-- THIS NOTE LIVES IN A COMMENT INSIDE THE ROOT ELEMENT - a comment placed ABOVE
+         <QuickAction> breaks `sf` deploy at source conversion. See
+         LOI__c.Move_to_Under_Review.quickAction-meta.xml for the full rationale behind this set of
+         per-hop actions (user decision, 2026-08-26) and for why no <description> element is used.
+
+         LOI_DISPOSITION_NEXT_STAGE maps 'Under Review' => 'Negotiation', so LOI_Record_Page gates
+         this on {!Record.Stage__c} EQUAL 'Under Review'.
+
+         🔴 BOTH LITERALS ARE SHARED WITH Acquisition_LOI, SO THE RECORD-TYPE CRITERION IS
+         LOAD-BEARING, NOT DECORATIVE. The two Stage__c value sets used to be fully disjoint - the
+         2026-08-14 rename ended that for 'Under Review' and the 2026-08-21 sell-side redesign
+         ended it for 'Negotiation' and 'Signed'. A stage-only rule would put this button on an
+         ACQUISITION LOI at 'Under Review', where the correct next hop is 'Submitted' and where the
+         record may still be awaiting LOI approval.
+
+         🔴 NOT A NEGOTIATION LOOP. The old sell-side path (Countered by DPEG <-> Counter Received
+         from Buyer) was retired on 2026-08-21 along with its two quick actions and two LWC
+         bundles; counter rounds are now recorded on Counter History (Counter_Offer__c /
+         c/loiCounterOffer). Disposition_LOI supplies an EMPTY explicit-target set, so advanceTo()
+         is structurally unreachable on it and this sequence is a straight line. Do not restore a
+         back-edge here. -->
+    <actionSubtype>Action</actionSubtype>
+    <label>Negotiation</label>
+    <lightningWebComponent>advanceRecordStage</lightningWebComponent>
+    <optionsCreateFeedItem>false</optionsCreateFeedItem>
+    <type>LightningWebComponent</type>
+</QuickAction>

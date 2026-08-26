@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<QuickAction xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!-- THIS NOTE LIVES IN A COMMENT INSIDE THE ROOT ELEMENT - a comment placed ABOVE
+         <QuickAction> breaks `sf` deploy at source conversion with a misleading "unable to find
+         matching parent xml file" error. It is also why there is no <description>: no quick
+         action in this repo carries one (0 of 80 measured), QuickAction.Description is capped at
+         255 characters, and a comment is repo-only and never sent to the Metadata API.
+
+         ADDED 2026-08-26. User decision: "we don't need a quick action named 'Advance Stage';
+         instead we need the NEXT STAGE NAME." One headless action PER DISPOSITION HOP, labelled
+         with the stage the click lands on, replacing the single generic Advance Stage button on
+         the DISPOSITION side of NDA__c. Same shape as the four Disposition__c.Advance_to_*
+         actions built on 2026-08-19.
+
+         🔴 THE LABEL IS THE ONLY THING THAT DIFFERS BETWEEN THESE ACTIONS. It points at the SAME
+         c/advanceRecordStage bundle as NDA__c.Advance_Stage, and that component names no object
+         and holds no stage map: RecordStageAdvanceService derives the target from the record's
+         CURRENT stage via CONFIG_BY_TYPE, keyed per RECORD TYPE. So the label is a promise the
+         page's visibility rule keeps, not an instruction the client sends - the LWC could not
+         send a target if it wanted to (advance() takes only a recordId).
+
+         ⇒ THE LABEL AND THE VISIBILITY RULE MUST BE KEPT IN STEP BY HAND. This action is placed
+         on NDA_Record_Page under {!Record.Status__c} EQUAL 'Prepare', because
+         NDA_DISPOSITION_NEXT_STAGE maps 'Prepare' => 'Approved'. If that map entry ever changes,
+         this label lies and the rule must move with it. The server still refuses anything the map
+         does not allow, so the failure mode is a mislabelled button, never a bad write.
+
+         ACQUISITION IS UNTOUCHED. NDA__c.Advance_Stage still exists and still serves
+         Acquisition_NDA (Pending -> Received -> Signed -> Sent); it is not deleted, renamed or
+         re-pointed. -->
+    <actionSubtype>Action</actionSubtype>
+    <label>Approved</label>
+    <lightningWebComponent>advanceRecordStage</lightningWebComponent>
+    <optionsCreateFeedItem>false</optionsCreateFeedItem>
+    <type>LightningWebComponent</type>
+</QuickAction>

@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<QuickAction xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!-- THIS NOTE LIVES IN A COMMENT INSIDE THE ROOT ELEMENT - a comment placed ABOVE
+         <QuickAction> breaks `sf` deploy at source conversion with a misleading "unable to find
+         matching parent xml file" error. It is also why there is no <description>: no quick
+         action in this repo carries one (0 of 80 measured), QuickAction.Description is capped at
+         255 characters, and a comment is repo-only and never sent to the Metadata API.
+
+         ADDED 2026-08-26. User decision: "we don't need a quick action named 'Advance Stage';
+         instead we need the NEXT STAGE NAME." One headless action PER DISPOSITION HOP, labelled
+         with the stage the click lands on, replacing the single generic Advance Stage button on
+         the DISPOSITION side of LOI__c. Same shape as Disposition__c.Advance_to_* (2026-08-19).
+
+         🔴 THE LABEL IS THE ONLY THING THAT DIFFERS BETWEEN THESE ACTIONS. All three point at the
+         SAME c/advanceRecordStage bundle as LOI__c.Advance_Stage, and that component names no
+         object and holds no stage map: RecordStageAdvanceService derives the target from the
+         record's CURRENT stage via CONFIG_BY_TYPE, keyed per RECORD TYPE. advance() takes only a
+         recordId - the client could not send a target if it wanted to. So the label is a promise
+         the page's visibility rule keeps, and the two must be kept in step BY HAND.
+
+         THIS ONE: LOI_DISPOSITION_NEXT_STAGE maps 'Received' => 'Under Review', so
+         LOI_Record_Page gates it on {!Record.Stage__c} EQUAL 'Received'. 'Received' is the only
+         stage on Disposition_LOI that Acquisition_LOI does NOT also carry; the record-type
+         criterion is still present for uniformity with the other two, which genuinely need it.
+
+         ACQUISITION IS UNTOUCHED. LOI__c.Advance_Stage still serves Acquisition_LOI (Draft ->
+         Under Review -> Submitted -> Negotiation -> Signed) and is not deleted, renamed or
+         re-pointed; so do Mark_Countered and Mark_Completed at the 'Submitted' branch. -->
+    <actionSubtype>Action</actionSubtype>
+    <label>Under Review</label>
+    <lightningWebComponent>advanceRecordStage</lightningWebComponent>
+    <optionsCreateFeedItem>false</optionsCreateFeedItem>
+    <type>LightningWebComponent</type>
+</QuickAction>

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<QuickAction xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!-- THIS NOTE LIVES IN A COMMENT INSIDE THE ROOT ELEMENT - a comment placed ABOVE
+         <QuickAction> breaks `sf` deploy at source conversion. See
+         NDA__c.Move_to_Approved.quickAction-meta.xml for the full rationale behind this set of
+         per-hop actions (user decision, 2026-08-26) and for why no <description> element is used.
+
+         THE TERMINAL HOP. NDA_DISPOSITION_NEXT_STAGE maps 'Sent' => 'Signed', and 'Signed' is the
+         disposition NDA's terminal - it is NOT a key in that map, so no button follows this one.
+
+         🔴 'Sent' AND 'Signed' ARE BOTH SHARED WITH Acquisition_NDA, WHICH IS WHY THE PAGE RULE
+         MUST PIN THE RECORD TYPE. The acquisition sequence is Pending -> Received -> Signed ->
+         Sent (reordered 2026-08-16: 'Sent' is now the acquisition TERMINAL and means "the signed
+         copy went back to the broker"). A stage-only rule would therefore render this button on an
+         acquisition NDA sitting at its own terminal and offer to move it BACKWARDS to 'Signed'.
+         Status__c alone does not identify the record type on this object - Disposition_NDA's own
+         record type file records exactly that.
+
+         'Declined' is the terminal OFF-RAMP and is deliberately not reachable from here: it is
+         served by NDA__c.Mark_Declined -> c/ndaMarkDeclined, which passes it as an explicit target
+         from NDA_DISPOSITION_EXPLICIT_TARGETS. This action derives its target and cannot decline
+         anything. -->
+    <actionSubtype>Action</actionSubtype>
+    <label>Signed</label>
+    <lightningWebComponent>advanceRecordStage</lightningWebComponent>
+    <optionsCreateFeedItem>false</optionsCreateFeedItem>
+    <type>LightningWebComponent</type>
+</QuickAction>

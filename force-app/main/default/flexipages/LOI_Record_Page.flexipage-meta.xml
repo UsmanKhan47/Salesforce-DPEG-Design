@@ -4,6 +4,70 @@
          <FlexiPage> breaks `sf` deploy at source conversion with a misleading "unable to find
          matching parent xml file" error.
 
+         =====================================================================
+         🔴 2026-08-26 - "ADVANCE STAGE" IS REPLACED BY NAMED PER-HOP BUTTONS ON THE DISPOSITION
+         SIDE ONLY. USER DECISION: "we don't need a quick action named 'Advance Stage'; instead we
+         need the NEXT STAGE NAME."
+         =====================================================================
+
+         THREE NEW ENTRIES, ONE PER HOP OF LOI_DISPOSITION_NEXT_STAGE, each labelled with the stage
+         the click lands on: Move_to_Under_Review ("Under Review", at Received), Move_to_Negotiation
+         ("Negotiation", at Under Review) and Move_to_Signed ("Signed", at Negotiation). All three
+         point at the SAME c/advanceRecordStage bundle the generic button uses - the target is
+         derived server-side from the record's current stage, per record type - so the label is a
+         promise these rules keep, not anything the client sends. advance() takes only a recordId.
+
+         🔴 ACQUISITION IS UNCHANGED, AND THAT WAS THE CONSTRAINT. Both pre-existing Advance_Stage
+         entries KEEP their two criteria and each gains a third: {!Record.RecordType.DeveloperName}
+         NE Disposition_LOI - the SAME construct and the SAME operator as criterion 5 of the
+         Submit_for_Approval entry above, whose four-probe measurement and C2 polarity correction
+         are recorded at length below. On an Acquisition_LOI row the criterion is TRUE (nothing
+         moves) and on a Master row RecordType.DeveloperName reads BLANK, so blank NE
+         'Disposition_LOI' is TRUE and the button FAILS OPEN - which is this object's own
+         convention, argued in Is_Advance_Allowed__c's header. The three NEW entries use EQUAL
+         Disposition_LOI, which fails CLOSED on Master; correct for a disposition-only button.
+
+         ⚠ IT TAKES THE CRITERION ON *BOTH* Advance_Stage ENTRIES, NOT JUST THE DISPOSITION-GATED
+         ONE. The Acquisition_Deal_Actions entry has always rendered on a disposition LOI for
+         anyone holding that permission - the "RESIDUAL, COSMETIC AND DELIBERATE" paragraph below
+         is where this page accepted that. Left alone it would keep rendering "Advance Stage"
+         beside the new named buttons. The disposition-gated entry is now dead on every row
+         (criterion 1 wants the disposition persona, criterion 3 excludes the disposition record
+         type) and is RETAINED rather than deleted: this edit was scoped to adding criteria, and
+         deleting entries is how action bars have been emptied in this repo before.
+
+         🔴 EACH NEW ENTRY CARRIES {!Record.Is_Advance_Allowed__c} AS A FOURTH CRITERION, AND IT IS
+         NOT REDUNDANT PADDING. Its formula is
+           AND(Stage <> Signed, Stage <> Executed, Stage <> Submitted,
+               OR(RecordType <> Acquisition_LOI, Stage <> "Under Review", LOI_Status = Approved),
+               TEXT(LOI_Status__c) <> "Pending Approval")
+         On a Disposition_LOI every clause but the LAST is already subsumed by the exact Stage__c
+         test in each entry. The last one is not: it is what stops the sell side advancing an LOI
+         while an approval is pending, and the generic button this change replaces enforced it. It
+         CANNOT be written as a criterion directly - LOI__c.LOI_Status__c has NO field permission
+         on DPEG_Disposition_Edit or DPEG_Disposition_View (measured 2026-08-26), and a visibility
+         rule reading a field the running user cannot read evaluates FALSE, which would hide all
+         three buttons permanently. That is the D22/C1 failure mode this page already documents for
+         Deal_Driver__c. A FORMULA field is evaluated server-side and carries no such dependency,
+         and both disposition sets DO grant Is_Advance_Allowed__c.
+
+         ⚠ NO OR ANYWHERE, AS ALWAYS ON THIS PAGE. Every new rule is a pure AND chain. The
+         disposition sequence is now a straight line (Received -> Under Review -> Negotiation ->
+         Signed) with no back-edge, so no hop needed the duplicate-entry shape here - unlike
+         NDA_Record_Page, where Move_to_Sent is placed twice for its two source stages.
+
+         ⚠ STILL NOT PROVEN FROM A REPO: RENDERER BEHAVIOUR. After deploying, a human must open
+         (1) a disposition LOI at each of Received / Under Review / Negotiation and see exactly ONE
+         correctly-named button and NO "Advance Stage", (2) an acquisition LOI at Draft / Under
+         Review / Submitted / Negotiation and see its existing buttons unchanged, and (3) a
+         Master-typed LOI, confirming "Advance Stage" survives. Direction (1) alone cannot
+         distinguish a working rule from one the renderer ignores. Live counts on 2026-08-21 were
+         12 LOI rows, 0 of them Master-typed, so direction (3) may need a fixture.
+
+         NO PERMISSION SET CHANGED. The new criteria read the Disposition_Deal_Actions custom
+         permission (no FLS), RecordType, Stage__c and Is_Advance_Allowed__c - the last two
+         measured present on both DPEG_Disposition_Edit and DPEG_Disposition_View.
+
          TWO DISPOSITION ENTRIES ADDED 2026-08-09 (Tranche 3B). The four pre-existing entries
          are UNTOUCHED, byte for byte.
 
@@ -427,7 +491,7 @@
                         <valueListItems>
                             <value>LOI__c.Advance_Stage</value>
                             <visibilityRule>
-                                <booleanFilter>1 AND 2</booleanFilter>
+                                <booleanFilter>1 AND 2 AND 3</booleanFilter>
                                 <criteria>
                                     <leftValue>{!$Permission.CustomPermission.Acquisition_Deal_Actions}</leftValue>
                                     <operator>EQUAL</operator>
@@ -438,16 +502,104 @@
                                     <operator>EQUAL</operator>
                                     <rightValue>true</rightValue>
                                 </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.RecordType.DeveloperName}</leftValue>
+                                    <operator>NE</operator>
+                                    <rightValue>Disposition_LOI</rightValue>
+                                </criteria>
                             </visibilityRule>
                         </valueListItems>
                         <valueListItems>
                             <value>LOI__c.Advance_Stage</value>
                             <visibilityRule>
-                                <booleanFilter>1 AND 2</booleanFilter>
+                                <booleanFilter>1 AND 2 AND 3</booleanFilter>
                                 <criteria>
                                     <leftValue>{!$Permission.CustomPermission.Disposition_Deal_Actions}</leftValue>
                                     <operator>EQUAL</operator>
                                     <rightValue>true</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.Is_Advance_Allowed__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>true</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.RecordType.DeveloperName}</leftValue>
+                                    <operator>NE</operator>
+                                    <rightValue>Disposition_LOI</rightValue>
+                                </criteria>
+                            </visibilityRule>
+                        </valueListItems>
+                        <valueListItems>
+                            <value>LOI__c.Move_to_Under_Review</value>
+                            <visibilityRule>
+                                <booleanFilter>1 AND 2 AND 3 AND 4</booleanFilter>
+                                <criteria>
+                                    <leftValue>{!$Permission.CustomPermission.Disposition_Deal_Actions}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>true</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.RecordType.DeveloperName}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>Disposition_LOI</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.Stage__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>Received</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.Is_Advance_Allowed__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>true</rightValue>
+                                </criteria>
+                            </visibilityRule>
+                        </valueListItems>
+                        <valueListItems>
+                            <value>LOI__c.Move_to_Negotiation</value>
+                            <visibilityRule>
+                                <booleanFilter>1 AND 2 AND 3 AND 4</booleanFilter>
+                                <criteria>
+                                    <leftValue>{!$Permission.CustomPermission.Disposition_Deal_Actions}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>true</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.RecordType.DeveloperName}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>Disposition_LOI</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.Stage__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>Under Review</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.Is_Advance_Allowed__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>true</rightValue>
+                                </criteria>
+                            </visibilityRule>
+                        </valueListItems>
+                        <valueListItems>
+                            <value>LOI__c.Move_to_Signed</value>
+                            <visibilityRule>
+                                <booleanFilter>1 AND 2 AND 3 AND 4</booleanFilter>
+                                <criteria>
+                                    <leftValue>{!$Permission.CustomPermission.Disposition_Deal_Actions}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>true</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.RecordType.DeveloperName}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>Disposition_LOI</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.Stage__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>Negotiation</rightValue>
                                 </criteria>
                                 <criteria>
                                     <leftValue>{!Record.Is_Advance_Allowed__c}</leftValue>

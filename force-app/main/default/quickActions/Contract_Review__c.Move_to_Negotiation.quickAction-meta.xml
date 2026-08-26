@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<QuickAction xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!-- THIS NOTE LIVES IN A COMMENT INSIDE THE ROOT ELEMENT - a comment placed ABOVE
+         <QuickAction> breaks `sf` deploy at source conversion with a misleading "unable to find
+         matching parent xml file" error. It is also why there is no <description>: no quick
+         action in this repo carries one (0 of 80 measured), QuickAction.Description is capped at
+         255 characters, and a comment is repo-only and never sent to the Metadata API.
+
+         ADDED 2026-08-26. User decision: "we don't need a quick action named 'Advance Stage';
+         instead we need the NEXT STAGE NAME." One headless action PER DISPOSITION HOP, labelled
+         with the stage the click lands on, replacing the single generic Advance Stage button on
+         the DISPOSITION side of Contract_Review__c (the sell-side PSA).
+
+         🔴 THE FIELD IS Negotiation_Status__c, NOT Stage__c. Stage__c on this object is DERIVED
+         and unwritable - CONFIG_BY_TYPE records that explicitly - so both the page criterion and
+         the server write name Negotiation_Status__c. A rule written against Stage__c here would
+         look right and never fire.
+
+         CONTRACT_REVIEW_DISPOSITION_NEXT_STAGE maps 'Initial Draft' => 'Negotiation', so
+         Contract_Review_Record_Page gates this on {!Record.Negotiation_Status__c} EQUAL
+         'Initial Draft'. That literal is also DispositionStageEntryService's
+         DISPOSITION_PSA_INITIAL_STATUS - the value every sell-side PSA is created at - so this is
+         the first button an analyst sees on a new record.
+
+         🔴 THE LABEL IS THE ONLY THING THAT DIFFERS BETWEEN THESE ACTIONS. Both point at the same
+         c/advanceRecordStage bundle as Contract_Review__c.Advance_Stage; the target is derived
+         server-side from the record's current status, per RECORD TYPE. Keep label and rule in step
+         by hand.
+
+         ACQUISITION IS UNTOUCHED. Contract_Review__c.Advance_Stage still serves Acquisition_PSA
+         (Draft -> Negotiation -> Signed -> Executed) off its own separate map. The two maps were
+         split on 2026-08-14 precisely so one side cannot aim a status at the other; do not
+         collapse them, and note that 'Negotiation' is a value BOTH types carry, which is why the
+         page rule pins the record type. -->
+    <actionSubtype>Action</actionSubtype>
+    <label>Negotiation</label>
+    <lightningWebComponent>advanceRecordStage</lightningWebComponent>
+    <optionsCreateFeedItem>false</optionsCreateFeedItem>
+    <type>LightningWebComponent</type>
+</QuickAction>

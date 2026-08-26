@@ -4,6 +4,82 @@
          <FlexiPage> breaks `sf` deploy at source conversion with a misleading "unable to find
          matching parent xml file" error.
 
+         =====================================================================
+         🔴 2026-08-26 - "ADVANCE STAGE" IS REPLACED BY NAMED PER-HOP BUTTONS ON THE DISPOSITION
+         SIDE ONLY. USER DECISION: "we don't need a quick action named 'Advance Stage'; instead we
+         need the NEXT STAGE NAME."
+         =====================================================================
+
+         THREE NEW ENTRIES, ONE PER HOP OF NDA_DISPOSITION_NEXT_STAGE, each labelled with the stage
+         the click lands on: Move_to_Approved ("Approved", at Prepare), Move_to_Sent ("Sent", at
+         Approved and at the legacy Not Sent) and Move_to_Signed ("Signed", at Sent). All three
+         point at the SAME c/advanceRecordStage bundle the generic button uses - the target is
+         derived server-side from the record's current status, per record type, so the label is a
+         promise this file's visibility rules keep rather than anything the client sends.
+
+         🔴 ACQUISITION IS UNCHANGED, AND THAT WAS THE CONSTRAINT, NOT A SIDE EFFECT. Both
+         pre-existing Advance_Stage entries KEEP their criteria and each gains ONE more:
+         {!Record.RecordType.DeveloperName} NE Disposition_NDA. On an Acquisition_NDA row that
+         criterion is TRUE, so nothing an acquisition user sees moves. On a Master-typed row
+         RecordType.DeveloperName reads BLANK and blank NE 'Disposition_NDA' is also TRUE, so the
+         button FAILS OPEN there - the polarity code review forced on LOI_Record_Page's criterion 5
+         (C2, 2026-08-21) for exactly this reason. The three NEW entries use the opposite operator,
+         EQUAL Disposition_NDA, which fails CLOSED on Master; that is correct for them, because a
+         disposition-only button must not appear on a row whose type nobody has set.
+
+         ⚠ IT TAKES THE CRITERION ON *BOTH* Advance_Stage ENTRIES TO EMPTY THE BUTTON FROM A
+         DISPOSITION ROW, NOT JUST THE DISPOSITION-GATED ONE. The Acquisition_Deal_Actions entry
+         has always rendered on a disposition NDA for anyone holding that permission (this page and
+         LOI_Record_Page both record it as an accepted cosmetic residual that "fails loudly" at the
+         server). Left alone it would have gone on rendering "Advance Stage" beside the new named
+         buttons.
+
+         ⚠ THE DISPOSITION-GATED Advance_Stage ENTRY NOW HAS NO TRUE-CASE ON ANY ROW, AND IS
+         DELIBERATELY RETAINED RATHER THAN DELETED. Its criterion 2 is Is_Decline_Allowed__c, whose
+         formula is AND(RecordType.DeveloperName = "Disposition_NDA", ...), and its new criterion 4
+         demands NE Disposition_NDA - a contradiction, so it renders nowhere. Deleting it is the
+         tidier change and is NOT made here: this file's whole edit was scoped to "add a criterion,
+         change nothing else", and a deletion is the kind of change that has emptied action bars in
+         this repo before. Remove it as a separate, deliberate step if wanted.
+
+         ⚠ Move_to_Sent APPEARS TWICE, ON PURPOSE. NDA_DISPOSITION_NEXT_STAGE maps BOTH
+         'Approved' => 'Sent' and the legacy 'Not Sent' => 'Sent', and a flexipage booleanFilter
+         has no OR the renderer honours (measured on this page's sibling: a parenthesised OR
+         deploys, survives a retrieve and is ignored). Two valueListItems carrying the same <value>
+         is the shape this page itself introduced. The two are mutually exclusive by construction -
+         Status__c holds one value - so the button cannot render twice, which is a stronger
+         guarantee than the two Advance_Stage entries ever had. 'Not Sent' is on NO record type
+         since 2026-08-25 and a live aggregate that day measured ZERO rows carrying it; the entry
+         exists to match the service map, which keeps that hop on purpose. Retire both together.
+
+         🔴 THIS FILE'S OWN PARAGRAPH "WHY A NEW FORMULA FIELD RATHER THAN
+         {!Record.RecordType.DeveloperName} DIRECTLY IN THE VISIBILITY RULE" (below) IS NOW STALE
+         AND MUST NOT BE QUOTED AS A REASON NOT TO DO THIS. It says the construct is
+         "REPO-ASSERTED AND UNMEASURED at the flexipage layer" and that "no flexipage in this repo
+         has ever carried a bare {!Record.RecordType.*} criterion". Both were true when written on
+         2026-08-21 and both were overtaken the SAME DAY: LOI_Record_Page's criterion 5 is exactly
+         that construct, and it was validated by a four-probe check-only control against
+         usman-dpeg. Probe B is the one that matters - a bogus field placed BEHIND the RecordType
+         hop was rejected BY NAME, which proves the validator traversed the relationship and
+         resolved the field rather than waving a string through. The formula-checkbox alternative
+         was rejected here because it would mean THREE new formula fields plus FLS for each, and
+         because Is_Disposition_NDA__c already exists but is granted only on the two disposition
+         sets - a criterion reading a field the running user cannot read evaluates FALSE, which
+         would have hidden the acquisition Advance Stage button from every acquisition persona.
+
+         ⚠ STILL NOT PROVEN, AND NOT PROVABLE FROM A REPO: RENDERER BEHAVIOUR. Metadata validation
+         exercises the metadata layer only. After deploying, a human must open (1) a disposition
+         NDA at each of Prepare / Approved / Sent and confirm exactly ONE correctly-named button
+         and NO "Advance Stage", (2) an acquisition NDA at Pending / Received / Signed and confirm
+         "Advance Stage" is still there and none of the new buttons is, and (3) a Master-typed NDA
+         if one can be made, confirming "Advance Stage" survives. Checking only direction (1) makes
+         a rule the renderer ignores look identical to one that works.
+
+         NO PERMISSION SET CHANGED. All six criteria in the new entries read either the
+         Disposition_Deal_Actions custom permission (no FLS to be missing) or Status__c /
+         RecordType, both already readable by DPEG_Disposition_Edit and DPEG_Disposition_View
+         (NDA__c.Status__c measured present in both). Nothing new needs granting.
+
          🔴 AMENDED 2026-08-21 (buyer-to-broker-counterparty-change.md), LATER THE SAME DAY AS
          THE "THREE FIELDS ADDED" NOTE DIRECTLY BELOW. Record.Buyer__c is REMOVED from this page
          and replaced, in the same slot and under the same Is_Disposition_NDA__c visibility rule,
@@ -76,7 +152,7 @@
                         <valueListItems>
                             <value>NDA__c.Advance_Stage</value>
                             <visibilityRule>
-                                <booleanFilter>1 AND 2</booleanFilter>
+                                <booleanFilter>1 AND 2 AND 3</booleanFilter>
                                 <criteria>
                                     <leftValue>{!$Permission.CustomPermission.Acquisition_Deal_Actions}</leftValue>
                                     <operator>EQUAL</operator>
@@ -87,12 +163,17 @@
                                     <operator>NE</operator>
                                     <rightValue>Declined</rightValue>
                                 </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.RecordType.DeveloperName}</leftValue>
+                                    <operator>NE</operator>
+                                    <rightValue>Disposition_NDA</rightValue>
+                                </criteria>
                             </visibilityRule>
                         </valueListItems>
                         <valueListItems>
                             <value>NDA__c.Advance_Stage</value>
                             <visibilityRule>
-                                <booleanFilter>1 AND 2 AND 3</booleanFilter>
+                                <booleanFilter>1 AND 2 AND 3 AND 4</booleanFilter>
                                 <criteria>
                                     <leftValue>{!$Permission.CustomPermission.Disposition_Deal_Actions}</leftValue>
                                     <operator>EQUAL</operator>
@@ -107,6 +188,95 @@
                                     <leftValue>{!Record.Status__c}</leftValue>
                                     <operator>NE</operator>
                                     <rightValue>Signed</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.RecordType.DeveloperName}</leftValue>
+                                    <operator>NE</operator>
+                                    <rightValue>Disposition_NDA</rightValue>
+                                </criteria>
+                            </visibilityRule>
+                        </valueListItems>
+                        <valueListItems>
+                            <value>NDA__c.Move_to_Approved</value>
+                            <visibilityRule>
+                                <booleanFilter>1 AND 2 AND 3</booleanFilter>
+                                <criteria>
+                                    <leftValue>{!$Permission.CustomPermission.Disposition_Deal_Actions}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>true</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.RecordType.DeveloperName}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>Disposition_NDA</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.Status__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>Prepare</rightValue>
+                                </criteria>
+                            </visibilityRule>
+                        </valueListItems>
+                        <valueListItems>
+                            <value>NDA__c.Move_to_Sent</value>
+                            <visibilityRule>
+                                <booleanFilter>1 AND 2 AND 3</booleanFilter>
+                                <criteria>
+                                    <leftValue>{!$Permission.CustomPermission.Disposition_Deal_Actions}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>true</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.RecordType.DeveloperName}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>Disposition_NDA</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.Status__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>Approved</rightValue>
+                                </criteria>
+                            </visibilityRule>
+                        </valueListItems>
+                        <valueListItems>
+                            <value>NDA__c.Move_to_Sent</value>
+                            <visibilityRule>
+                                <booleanFilter>1 AND 2 AND 3</booleanFilter>
+                                <criteria>
+                                    <leftValue>{!$Permission.CustomPermission.Disposition_Deal_Actions}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>true</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.RecordType.DeveloperName}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>Disposition_NDA</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.Status__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>Not Sent</rightValue>
+                                </criteria>
+                            </visibilityRule>
+                        </valueListItems>
+                        <valueListItems>
+                            <value>NDA__c.Move_to_Signed</value>
+                            <visibilityRule>
+                                <booleanFilter>1 AND 2 AND 3</booleanFilter>
+                                <criteria>
+                                    <leftValue>{!$Permission.CustomPermission.Disposition_Deal_Actions}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>true</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.RecordType.DeveloperName}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>Disposition_NDA</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.Status__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>Sent</rightValue>
                                 </criteria>
                             </visibilityRule>
                         </valueListItems>

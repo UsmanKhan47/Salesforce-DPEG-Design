@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<QuickAction xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!-- THIS NOTE LIVES IN A COMMENT INSIDE THE ROOT ELEMENT - a comment placed ABOVE
+         <QuickAction> breaks `sf` deploy at source conversion. See
+         Contract_Review__c.Move_to_Negotiation.quickAction-meta.xml for the full rationale behind
+         this pair of per-hop actions (user decision, 2026-08-26) and for why there is no
+         <description> element.
+
+         THE TERMINAL HOP. CONTRACT_REVIEW_DISPOSITION_NEXT_STAGE maps 'Negotiation' => 'Signed'.
+
+         🔴 'Signed' IS THE SELL-SIDE TERMINAL AND 'Executed' IS NOT ON THIS RECORD TYPE AT ALL.
+         The user changed Disposition_PSA's sequence in Setup on 2026-08-21; the page's existing
+         Disposition_Deal_Actions entry had to be corrected from NE 'Executed' to NE 'Signed' the
+         same day because the old test was always true on a sell-side row. Both literals here are
+         also Acquisition_PSA values ('Negotiation' -> 'Signed' -> 'Executed'), so the page rule
+         pins the record type as well as the status - without it this button would render on an
+         acquisition PSA at 'Negotiation' beside the generic Advance Stage button that already
+         serves it.
+
+         ⚠ WHAT HAPPENS AFTER THIS CLICK IS NOT THIS BUTTON'S BUSINESS. PSA execution is what moves
+         the parent Disposition__c from PSA to Closing, and that is owned by
+         ContractExecutionService, not by RecordStageAdvanceService - see the ownership table in
+         RecordStageAdvanceService's header. -->
+    <actionSubtype>Action</actionSubtype>
+    <label>Signed</label>
+    <lightningWebComponent>advanceRecordStage</lightningWebComponent>
+    <optionsCreateFeedItem>false</optionsCreateFeedItem>
+    <type>LightningWebComponent</type>
+</QuickAction>
