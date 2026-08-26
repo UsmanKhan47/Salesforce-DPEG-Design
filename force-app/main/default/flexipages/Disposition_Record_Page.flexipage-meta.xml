@@ -636,6 +636,28 @@
              Disposition_Stage__c, Asking_Price__c, PSA_Executed__c, Title_Company__c,
              Closing_Statement_Uploaded__c (the closing card and deal summary already show these).
            - A second flexipage:column added inside the section.
+
+         =====================================================================
+         2026-08-26 - MAIN REGION REBUILT AS TWO APP BUILDER TABS (Components, Details)
+         AFTER A DEPLOY OVERWROTE THEM.
+         =====================================================================
+         The user had built two tabs directly in App Builder - Components and Details - in
+         this page's main region, and a deploy on 2026-08-25 at 13:05 overwrote them with the
+         flat, untabbed list of components that had been the main region's shape before that
+         session. Rebuilt here at the user's explicit instruction.
+
+         COMPONENTS (identifier componentsTab, first and default tab) holds, in order:
+         c_dispositionMain, ndasList, loisList, contractReviewsList - unchanged from the flat
+         layout, just relocated into the tab's own facet.
+
+         DETAILS (identifier detailsTab) holds flexipage_fieldSection, the disposition-fields
+         section with its NE-chain visibility rule.
+
+         ⚠ THE STAGE VISIBILITY RULES ON BOTH MOVED COMPONENTS ARE UNCHANGED. c_dispositionMain
+         keeps its five-criteria OR-of-EQUAL allowlist and flexipage_fieldSection keeps its
+         five-criteria AND-of-NE inverse, byte for byte - see the 2026-08-25 partition entries
+         above, which still govern this pair; moving them behind a tab click changes nothing
+         about which stage renders which surface, only where the user has to look for it.
     -->
     <flexiPageRegions>
         <itemInstances>
@@ -1041,6 +1063,24 @@
         <itemInstances>
             <componentInstance>
                 <componentInstanceProperties>
+                    <name>label</name>
+                    <value>Tabs</value>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>tabs</name>
+                    <value>Facet-3a9d5e72-1b4c-4f8a-b6d3-8e2c9f1a4b57</value>
+                </componentInstanceProperties>
+                <componentName>flexipage:tabset</componentName>
+                <identifier>mainTabset</identifier>
+            </componentInstance>
+        </itemInstances>
+        <name>main</name>
+        <type>Region</type>
+    </flexiPageRegions>
+    <flexiPageRegions>
+        <itemInstances>
+            <componentInstance>
+                <componentInstanceProperties>
                     <name>recordId</name>
                 </componentInstanceProperties>
                 <componentName>dispositionMain</componentName>
@@ -1070,52 +1110,6 @@
                     <criteria>
                         <leftValue>{!Record.Disposition_Stage__c}</leftValue>
                         <operator>EQUAL</operator>
-                        <rightValue>Release Materials</rightValue>
-                    </criteria>
-                </visibilityRule>
-            </componentInstance>
-        </itemInstances>
-        <itemInstances>
-            <componentInstance>
-                <componentInstanceProperties>
-                    <name>columns</name>
-                    <value>Facet-26c606f3-be64-4cb0-99c4-27fdd04be0b1</value>
-                </componentInstanceProperties>
-                <componentInstanceProperties>
-                    <name>horizontalAlignment</name>
-                    <value>false</value>
-                </componentInstanceProperties>
-                <componentInstanceProperties>
-                    <name>label</name>
-                    <value>Disposition Details</value>
-                </componentInstanceProperties>
-                <componentName>flexipage:fieldSection</componentName>
-                <identifier>flexipage_fieldSection</identifier>
-                <visibilityRule>
-                    <booleanFilter>1 AND 2 AND 3 AND 4 AND 5</booleanFilter>
-                    <criteria>
-                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
-                        <operator>NE</operator>
-                        <rightValue>BOV Outreach</rightValue>
-                    </criteria>
-                    <criteria>
-                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
-                        <operator>NE</operator>
-                        <rightValue>Active Listing</rightValue>
-                    </criteria>
-                    <criteria>
-                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
-                        <operator>NE</operator>
-                        <rightValue>Closing</rightValue>
-                    </criteria>
-                    <criteria>
-                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
-                        <operator>NE</operator>
-                        <rightValue>Sale Closes</rightValue>
-                    </criteria>
-                    <criteria>
-                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
-                        <operator>NE</operator>
                         <rightValue>Release Materials</rightValue>
                     </criteria>
                 </visibilityRule>
@@ -1163,8 +1157,94 @@
                 <identifier>contractReviewsList</identifier>
             </componentInstance>
         </itemInstances>
-        <name>main</name>
-        <type>Region</type>
+        <name>Facet-7e2c9a41-3f6b-4c8d-9a2e-1b5d8f3c6a90</name>
+        <type>Facet</type>
+    </flexiPageRegions>
+    <flexiPageRegions>
+        <itemInstances>
+            <componentInstance>
+                <componentInstanceProperties>
+                    <name>columns</name>
+                    <value>Facet-26c606f3-be64-4cb0-99c4-27fdd04be0b1</value>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>horizontalAlignment</name>
+                    <value>false</value>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>label</name>
+                    <value>Disposition Details</value>
+                </componentInstanceProperties>
+                <componentName>flexipage:fieldSection</componentName>
+                <identifier>flexipage_fieldSection</identifier>
+                <visibilityRule>
+                    <booleanFilter>1 AND 2 AND 3 AND 4 AND 5</booleanFilter>
+                    <criteria>
+                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
+                        <operator>NE</operator>
+                        <rightValue>BOV Outreach</rightValue>
+                    </criteria>
+                    <criteria>
+                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
+                        <operator>NE</operator>
+                        <rightValue>Active Listing</rightValue>
+                    </criteria>
+                    <criteria>
+                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
+                        <operator>NE</operator>
+                        <rightValue>Closing</rightValue>
+                    </criteria>
+                    <criteria>
+                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
+                        <operator>NE</operator>
+                        <rightValue>Sale Closes</rightValue>
+                    </criteria>
+                    <criteria>
+                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
+                        <operator>NE</operator>
+                        <rightValue>Release Materials</rightValue>
+                    </criteria>
+                </visibilityRule>
+            </componentInstance>
+        </itemInstances>
+        <name>Facet-b4f81c2a-6d3e-47a9-8c15-2e9f7a4b6d13</name>
+        <type>Facet</type>
+    </flexiPageRegions>
+    <flexiPageRegions>
+        <itemInstances>
+            <componentInstance>
+                <componentInstanceProperties>
+                    <name>active</name>
+                    <value>true</value>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>body</name>
+                    <value>Facet-7e2c9a41-3f6b-4c8d-9a2e-1b5d8f3c6a90</value>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>title</name>
+                    <value>Components</value>
+                </componentInstanceProperties>
+                <componentName>flexipage:tab</componentName>
+                <identifier>componentsTab</identifier>
+            </componentInstance>
+        </itemInstances>
+        <itemInstances>
+            <componentInstance>
+                <componentInstanceProperties>
+                    <name>body</name>
+                    <value>Facet-b4f81c2a-6d3e-47a9-8c15-2e9f7a4b6d13</value>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>title</name>
+                    <value>Details</value>
+                </componentInstanceProperties>
+                <componentName>flexipage:tab</componentName>
+                <identifier>detailsTab</identifier>
+            </componentInstance>
+        </itemInstances>
+        <name>Facet-3a9d5e72-1b4c-4f8a-b6d3-8e2c9f1a4b57</name>
+        <type>Facet</type>
     </flexiPageRegions>
     <flexiPageRegions>
         <itemInstances>
