@@ -282,8 +282,15 @@
                         </valueListItems>
                         <valueListItems>
                             <value>NDA__c.Mark_Declined</value>
+                            <!-- 2026-08-26 — criterion 3 added on user instruction: a SIGNED
+                                 disposition NDA must not offer Mark Declined. Deliberately on the
+                                 page, not in Is_Decline_Allowed__c: that formula is the
+                                 record-type discriminator (TRUE at Signed by its own documented
+                                 design — see its header and NDA_Path_Disposition) and is read by
+                                 other rules on this page, so narrowing it would change more than
+                                 this one button. -->
                             <visibilityRule>
-                                <booleanFilter>1 AND 2</booleanFilter>
+                                <booleanFilter>1 AND 2 AND 3</booleanFilter>
                                 <criteria>
                                     <leftValue>{!$Permission.CustomPermission.Disposition_Deal_Actions}</leftValue>
                                     <operator>EQUAL</operator>
@@ -293,6 +300,11 @@
                                     <leftValue>{!Record.Is_Decline_Allowed__c}</leftValue>
                                     <operator>EQUAL</operator>
                                     <rightValue>true</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.Status__c}</leftValue>
+                                    <operator>NE</operator>
+                                    <rightValue>Signed</rightValue>
                                 </criteria>
                             </visibilityRule>
                         </valueListItems>
