@@ -1226,6 +1226,31 @@
         <field>NDA__c.Broker__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!--
+        🔴 ADDED 2026-08-26 - A GAP THE DELETED MIRROR FIELDS WERE HIDING, FOUND BY BUILDING THE
+        NDA Details SECTION ON SPANNING ITEMS. Date_Sent__c and NDA_Expiry_Date__c were granted to
+        the ACQUISITION personas only (DPEG_Acquisition_View / _Edit) and to NO disposition
+        persona - measured across every file in this folder on 2026-08-26. The 2026-08-24 design
+        never noticed because it read them through Disposition__c.NDA_Date_Sent__c /
+        NDA_Expiry_Date__c FORMULA fields, and a formula needs FLS on ITSELF, not on the fields it
+        references. Deleting the mirrors (2026-08-25) and pointing the section at
+        Record.Primary_NDA__r.Date_Sent__c moves the FLS check onto the CHILD field, where the
+        grant was never made.
+        ⚠ THE SYMPTOM WOULD HAVE BEEN TWO PERMANENTLY BLANK ROWS, NOT AN ERROR - the exact
+        failure shape this module keeps paying for. Read-only in this set and in the Edit set:
+        nothing in the disposition flow writes either field from a Disposition__c page, and the
+        NDA record's own page (acquisition sets) is where they are edited.
+    -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>NDA__c.Date_Sent__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>NDA__c.NDA_Expiry_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
         <field>PSA_Version__c.Direction__c</field>
@@ -1403,10 +1428,36 @@
         DispositionNdaStampQueueable is still its writer.
 
         ⚠ THE "FOUR LOOKUPS" PHRASE IN THE REMOVED COMMENT COUNTED Primary_LOI__c,
-        Primary_PSA__c AND the two child-side Selected_Offer__c fields. Only the first two are
-        gone; LOI__c.Selected_Offer__c and Contract_Review__c.Selected_Offer__c are UNTOUCHED and
+        Primary_PSA__c AND the two child-side Selected_Offer__c fields. Only the first two were
+        gone; LOI__c.Selected_Offer__c and Contract_Review__c.Selected_Offer__c were UNTOUCHED and
         are granted immediately below.
+
+        🔴 PARTIALLY UNDONE 2026-08-26 - THE TWO LOOKUPS ARE BACK, THE FIFTEEN FORMULAS ARE NOT.
+        The user chose option A: restore Disposition__c.Primary_LOI__c / Primary_PSA__c and
+        rebuild the NDA / LOI / PSA Details sections on SPANNING field items
+        (Record.Primary_LOI__r.Stage__c and friends) rather than on local mirror fields. The two
+        lookup grants below are restored, READ-ONLY as they always were in this set. The Edit
+        set's editable = true rests on two things a VIEW persona does not do: hand-linking a
+        second-round child, and running scripts/backfill-disposition-primary-children.apex (whose
+        DML is plain - anonymous Apex cannot use SYSTEM_MODE - and therefore needs edit FLS from
+        whoever runs it).
+        ⚠ AND THE PARAGRAPH TWO ABOUT "any future field surfaced on that page still needs a grant"
+        NOW HAS A SHARPER FORM: a SPANNING item needs FLS on BOTH ends. These grants cover the
+        lookup on Disposition__c; the child fields the sections render (NDA__c.Status__c,
+        LOI__c.Stage__c, Contract_Review__c.Negotiation_Status__c, ...) are granted by the child
+        objects' own blocks in this file. If either end is missing the section renders BLANK, which
+        is indistinguishable from an empty record.
     -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Disposition__c.Primary_LOI__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Disposition__c.Primary_PSA__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <!--
         The two CHILD-side offer links (scope addition, same day). Read-only here. Both objects are
         shared with the acquisition side, where the field is simply blank (no Disposition__c, so no

@@ -25,6 +25,18 @@
     ⚠ THE BACKFILL THIS FILE PROMISED AT THE BOTTOM IS CANCELLED. If it was already run, the two
     lookups it populated are being deleted, so its effect is discarded with them.
 
+    🔴 PART-UNSUPERSEDED 2026-08-26, AND THIS MANIFEST IS NOW UNDEPLOYABLE AS WRITTEN. The user
+    chose option A: the two LOOKUPS (Disposition__c.Primary_LOI__c / Primary_PSA__c) and
+    DispositionPrimaryChildStampQueueable are RESTORED, the nine LOI_* / PSA_* formulas are NOT
+    and never will be, and the three Details sections were rebuilt on SPANNING field items
+    (Record.Primary_LOI__r.Stage__c and friends), which need no mirror field at all.
+    ⚠ SO NINE OF THE CustomField MEMBERS BELOW NAME FILES THAT NO LONGER EXIST IN THIS REPO. A
+    deploy of this manifest fails at source resolution, not at the org. Use a path based deploy of
+    the four restored artefacts instead, or strip the nine members first. The backfill also came
+    back, in a different shape: scripts/backfill-disposition-primary-children.apex, idempotent
+    anonymous Apex, replacing the `sf data update record` procedure described at the bottom of
+    this file.
+
     Everything below this point is retained VERBATIM as the record of what was built and why - it
     is quoted by the field files, the permission sets and the page header. It is history, not an
     instruction.
@@ -39,8 +51,8 @@
       - the page naming a componentName that no longer exists fails the deploy;
       - a permission set naming an apexClass that no longer exists fails the deploy;
       - and deleting the class while the page still references it fails too.
-    --post-destructive-changes runs the deletion AFTER the constructive components land, which is
-    the ordering that satisfies all three.
+    The post-destructive-changes flag runs the deletion AFTER the constructive components land,
+    which is the ordering that satisfies all three.
 
     WHAT IS IN HERE AND WHY:
       CustomField (13)
@@ -63,8 +75,9 @@
       ApexClass (5)   the stage-entry service + its test, the new stamp queueable, and the offer
                       selector + its test (a new SYSTEM_MODE method was added to it)
 
-    ⚠ THE TESTS ARE IN THIS PAYLOAD ON PURPOSE. `--tests` runs the ORG's copy of a test class, so a
-    committed-but-undeployed test METHOD silently never runs and the deploy still reports success.
+    ⚠ THE TESTS ARE IN THIS PAYLOAD ON PURPOSE. The `tests` flag runs the ORG's copy of a test
+    class, so a committed-but-undeployed test METHOD silently never runs and the deploy still
+    reports success.
     DispositionStageEntryServiceTest and DispositionOfferSelectorTest both gained methods in this
     change and both must land before they are relied on as proof.
 
@@ -74,15 +87,18 @@
     class's methods exist specifically to cover this one, including its empty/null guard.
 
     Dry run (validate only, no deploy):
-      sf project deploy start `
-        --manifest manifest/native-loi-psa/package.xml `
-        --post-destructive-changes manifest/native-loi-psa/destructiveChangesPost.xml `
-        --target-org usman-dpeg `
-        --test-level RunSpecifiedTests `
-        --tests DispositionStageEntryServiceTest --tests DispositionOfferSelectorTest `
-        --dry-run --wait 60
+      sf project deploy start, with these flags (each needs its own leading double dash, which
+      cannot be written inside an XML comment - see the note at the foot of this block):
+        manifest             manifest/native-loi-psa/package.xml
+        post-destructive-changes  manifest/native-loi-psa/destructiveChangesPost.xml
+        target-org           usman-dpeg
+        test-level           RunSpecifiedTests
+        tests                DispositionStageEntryServiceTest
+        tests                DispositionOfferSelectorTest
+        dry-run
+        wait                 60
 
-    Then the real deploy: the same command with --dry-run removed.
+    Then the real deploy: the same command with the dry-run flag removed.
 
     🔴 A BACKFILL IS REQUIRED AFTER THIS DEPLOYS AND IS NOT PART OF IT. Every Disposition created
     before these lookups existed has Primary_LOI__c / Primary_PSA__c null, and every pre-existing
@@ -90,6 +106,19 @@
     not an error. The backfill is a set of `sf data update record` commands handed to the user
     separately; it is deliberately not scripted here because `sf apex run` is unavailable in this
     environment and a data change should not ride inside a metadata deploy.
+    ⚠ BOTH HALVES OF THAT LAST SENTENCE ARE RETRACTED, 2026-08-26. `sf apex run` IS available here
+    (measured), and the backfill is now a script:
+    scripts/backfill-disposition-primary-children.apex, idempotent and covering both lookups. The
+    second half still holds and is why it is a separate script rather than part of any deploy.
+
+    🔴 THIS FILE WAS NOT WELL-FORMED XML UNTIL 2026-08-26, AND NOTHING CAUGHT IT FOR A DAY. The
+    comment above contained the CLI flags written with their real leading double dash, and an XML
+    comment may not contain a double hyphen anywhere - so `sf` could not parse this manifest at
+    all. That is the exact defect manifest/remove-disposition-child-mirrors/DEPLOY.md exists to
+    avoid (it holds that payload's flags in a Markdown file for this reason). The flags are now
+    listed by NAME only, above; add the leading double dash when typing them. Validate any edit to
+    this file with a real XML parser before committing it: a manifest that cannot be parsed fails
+    at the very start of a deploy, which reads like an environment problem rather than a typo.
     -->
     <types>
         <members>Disposition__c.Primary_LOI__c</members>

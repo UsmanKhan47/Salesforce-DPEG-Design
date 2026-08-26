@@ -2002,6 +2002,28 @@
         <field>NDA__c.Broker__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!--
+        🔴 ADDED 2026-08-26 - A GAP THE DELETED MIRROR FIELDS WERE HIDING, FOUND BY BUILDING THE
+        NDA Details SECTION ON SPANNING ITEMS. See the identical block in DPEG_Disposition_View
+        for the full reasoning; in short, Date_Sent__c and NDA_Expiry_Date__c were granted to the
+        ACQUISITION personas only and to NO disposition persona, and the 2026-08-24 design never
+        noticed because it read them through Disposition__c FORMULA mirrors (a formula needs FLS
+        on ITSELF, not on what it references). A spanning item checks the CHILD field.
+        🔴 READ-ONLY EVEN IN THIS EDIT SET, DELIBERATELY - THE ONE PLACE THIS FILE DIVERGES FROM
+        ITS OWN "everything is editable here" HABIT. The grant exists so a spanning DISPLAY item
+        resolves; nothing on the Disposition record page writes an NDA date, and widening it would
+        hand the disposition persona write access to a field the NDA lifecycle owns.
+    -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>NDA__c.Date_Sent__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>NDA__c.NDA_Expiry_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
         <field>PSA_Version__c.Direction__c</field>
@@ -2218,20 +2240,50 @@
         this file) AND WAS NOT PART OF THIS REMOVAL. It pre-dates the mirror work (decision
         D16.2, Tranche 3A) and DispositionNdaStampQueueable is still its writer. Read that
         field's own header for what is and is not true about it as of this date.
+
+        🔴 PARTIALLY UNDONE 2026-08-26 - THE TWO LOOKUPS ARE BACK, THE FIFTEEN FORMULAS ARE NOT.
+        The user chose option A: restore Disposition__c.Primary_LOI__c / Primary_PSA__c and
+        rebuild the three Details sections on SPANNING field items
+        (Record.Primary_LOI__r.Stage__c and friends) instead of on local mirror fields. So the
+        two lookup grants below are restored, at editable = true exactly as before; the nine
+        LOI_*__c / PSA_*__c and five NDA_*__c formula grants are NOT, because those fields stay
+        deleted and are not coming back.
+        ⚠ A SPANNING FIELD ITEM NEEDS FLS ON BOTH ENDS. The grants below cover the LOOKUP on
+        Disposition__c only. The CHILD fields the sections render (LOI__c.Stage__c,
+        Contract_Review__c.Negotiation_Status__c, NDA__c.Status__c, ...) are granted by the
+        child objects' own blocks elsewhere in this file - a spanning item renders blank if
+        EITHER end is unreadable, and blank is indistinguishable from empty. That is the
+        replacement for the "must land WITH the FlexiPage" dependency the retired mirror block
+        used to carry.
     -->
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Disposition__c.Primary_LOI__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Disposition__c.Primary_PSA__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <!--
         The two CHILD-side offer links (scope addition, same day). These sit on LOI__c and
         Contract_Review__c, not on Disposition__c, and they are stamped onto the child inside the
         same Database.insert that creates it - no queueable, no backfill dependency for NEW rows.
         editable = true because a user working a hand-created second-round LOI may legitimately
         need to set the link themselves.
-        ⚠ AMENDED 2026-08-25: this sentence previously opened "editable = true for the same
-        backfill reason as the two lookups above". Those two lookups
-        (Disposition__c.Primary_LOI__c / Primary_PSA__c) and the one-off `sf data update record`
-        backfill that justified their edit grant were BOTH deleted on this date - see the removal
-        note further up this file - so only the human-editing half of the reason survives. These
-        two child-side fields are NOT affected by that removal: they live on LOI__c and
-        Contract_Review__c, and the user's decision named Disposition__c only.
+        ⚠ AMENDED 2026-08-25 AND AGAIN 2026-08-26. This sentence originally opened "editable =
+        true for the same backfill reason as the two lookups above". On 2026-08-25 those two
+        lookups (Disposition__c.Primary_LOI__c / Primary_PSA__c) and the backfill that justified
+        their edit grant were deleted, leaving only the human-editing half of the reason. On
+        2026-08-26 the lookups were RESTORED (option A) and so was a backfill - now
+        scripts/backfill-disposition-primary-children.apex, executeAnonymous rather than `sf data
+        update record`. THE ORIGINAL CROSS-REFERENCE IS THEREFORE LIVE AGAIN AND THE REASON IS
+        UNCHANGED: anonymous Apex cannot use SYSTEM_MODE ("Cannot use SYSTEM_MODE access level in
+        anonymous execution of Apex"), so that script's DML is plain, FLS applies, and it writes
+        nothing unless the runner holds THIS SET. These two child-side fields were never affected
+        by any of it: they live on LOI__c and Contract_Review__c, nothing backfills them, and the
+        user's decisions named Disposition__c only.
 
         ⚠ BOTH OBJECTS ARE SHARED WITH THE ACQUISITION SIDE. The field is simply blank on every
         acquisition row (they have no Disposition__c and therefore no offers); granting read here

@@ -163,6 +163,19 @@
       DispositionChildDetailsController has no grant here - but do not read it as a description
       of the page as it stands. NOTHING was added back to this file: the sections are gone
       entirely, not re-implemented in Apex, so there is still nothing to grant.
+
+      🔴 AMENDED AGAIN 2026-08-26, AND THE CONCLUSION SURVIVES THE REVERSAL. The three Details
+      sections ARE BACK on Disposition_Record_Page (user decision, option A), together with the
+      Primary_LOI__c / Primary_PSA__c lookups and DispositionPrimaryChildStampQueueable. The
+      fifteen formula mirrors stayed deleted: the sections are built on SPANNING field items
+      (Record.Primary_LOI__r.Stage__c and friends), which is why they need no mirror fields and
+      no Apex.
+      ⚠ SO THIS FILE IS STILL UNCHANGED BY ALL OF IT, AND THE REASON IS WORTH STATING RATHER
+      THAN LEAVING TO INFERENCE: the surface is native, the stamping class is a QUEUEABLE
+      enqueued from a trigger (never invoked from a component), and neither shape takes a
+      classAccesses entry. If a future version of these sections goes back to an Apex-backed
+      component, it needs a grant here in the SAME deploy - that is the three-production-breaks
+      lesson in the header, and it is the only circumstance under which this paragraph changes.
     -->
     <classAccesses>
         <apexClass>DispositionController</apexClass>

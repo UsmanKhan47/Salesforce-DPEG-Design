@@ -3,6 +3,42 @@
 **STATUS: PREPARED, NOT DEPLOYED.** Nothing here has been run against any org. Do not run it
 without the user's explicit go-ahead.
 
+---
+
+## 🔴 SUPERSEDED IN PART — 2026-08-26
+
+**Do not run this payload as written.** On 2026-08-26 the user chose **option A**: restore
+`Disposition__c.Primary_LOI__c` and `Primary_PSA__c`, and rebuild the NDA / LOI / PSA Details
+sections on **spanning field items** (`Record.Primary_LOI__r.Stage__c` and friends) rather than on
+local mirror fields.
+
+What that leaves of this manifest:
+
+| Component | Still to be deleted? |
+|---|---|
+| The 15 formula mirror fields (5 `NDA_*__c`, 9 `LOI_*__c` / `PSA_*__c`, plus `LOI_Status__c`) | **YES.** A FlexiPage `fieldItem` CAN traverse a relationship — the premise those mirrors existed to work around was simply wrong. They are not coming back. |
+| `Disposition__c.Primary_LOI__c` / `Primary_PSA__c` | **NO — restored.** Remove both from `destructiveChangesPost.xml` before running anything. |
+| `DispositionPrimaryChildStampQueueable` | **NO — restored**, along with both enqueues in `DispositionStageEntryService`. Remove from the destructive manifest. |
+
+⚠ **The lookups may never have been deleted from the org at all.** The status line above says
+PREPARED, NOT DEPLOYED. Check the org before assuming a backfill is needed — if the destructive half
+never ran, the existing stamps are intact and `scripts/backfill-disposition-primary-children.apex`
+finds nothing to do. It is idempotent, so running it either way is safe.
+
+⚠ **Two permission-set claims below are now wrong in the same direction.** `DPEG_Disposition_Edit`
+and `DPEG_Disposition_View` carry the two lookup grants again, and each **gained**
+`NDA__c.Date_Sent__c` and `NDA__c.NDA_Expiry_Date__c` (read-only) on 2026-08-26 — a gap the deleted
+formula mirrors had been masking, because a formula field needs FLS on **itself**, not on the fields
+it references. A spanning item checks the child field, so the gap became visible the moment the
+mirrors went away.
+
+⚠ **The `--tests DispositionStageEntryServiceTest` line below is still the right test class**, but
+its content changed: `loiAndPsaAutoCreateEnqueueNothing` is back to
+`loiAndPsaAutoCreateEachEnqueueOneParentStamp` (asserting 2), and
+`primaryChildStampQueueableIsInertOnAnEmptyOrNullMap` is restored.
+
+---
+
 Read `package.xml` first — it carries the reasoning, the inventory and the two pre-flight checks.
 This file exists only because an XML comment may not contain a double hyphen, so `sf` flags cannot
 live inside the manifest itself.

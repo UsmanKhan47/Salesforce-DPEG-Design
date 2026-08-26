@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        ADDED 2026-08-25 (native LOI/PSA Details), DELETED the same day, RESTORED 2026-08-26 on
+        the user's decision (option A). Sibling of Primary_LOI__c in this folder - read that file
+        first; everything it says about why the lookup exists, the retracted "there is no
+        Primary_LOI__c/Primary_PSA__c" claim, the stamp being load-bearing, the moved backfill and
+        the FLS divergence from Primary_NDA__c applies here unchanged. THIS COMMENT SITS INSIDE
+        THE ROOT ELEMENT DELIBERATELY.
+
+        🔴 ONE THING FROM THAT FILE MATTERS MOST AND IS REPEATED RATHER THAN CROSS-REFERENCED:
+        THE NINE PSA_*__c / LOI_*__c FORMULA MIRRORS STAY DELETED. The 2026-08-26 PSA Details
+        section names SPANNING items (Record.Primary_PSA__r.Negotiation_Status__c and friends)
+        straight through this lookup - a FlexiPage fieldItem CAN traverse a relationship, which is
+        the thing the 2026-08-25 design got wrong. Anything below that still argues from the
+        formulas' existence is describing the retired design.
+
+        🔴 THE NAME IS `Primary_PSA__c`, NOT `Primary_Contract__c`, AND THAT IS A DELIBERATE
+        BREAK FROM THE OPPORTUNITY TWIN (Opportunity.Primary_Contract__c). The disposition side
+        of this application calls this stage PSA everywhere a user can see it -
+        Disposition_Stage__c's value is 'PSA', the record type is Disposition_PSA, and this
+        object already carries PSA_Executed__c. `Primary_PSA__c` is the name the FlexiPage's PSA
+        section spans (`Record.Primary_PSA__r.*`).
+        ⚠ THAT SENTENCE ALSO NAMED "the nine formula fields' PSA_* prefix" UNTIL 2026-08-26.
+        Those formulas are deleted; only the FlexiPage half of the reason survives, and it is
+        enough on its own.
+
+        ⚠ IT DOES NOT COLLIDE SEMANTICALLY WITH THE EXISTING PSA_Executed__c, AND THE TWO WERE
+        COMPARED BEFORE THIS NAME WAS CHOSEN. PSA_Executed__c is a plain CHECKBOX on the
+        disposition itself, set on the disposition's own record - it is the disposition's
+        assertion that a PSA is done. Primary_PSA__c is a LOOKUP to the Contract_Review__c row,
+        and the PSA section's Execution Date row is a SPANNING read of that row's own
+        Execution_Date__c. So: PSA_Executed__c = what this disposition says,
+        Primary_PSA__r.Execution_Date__c = what the contract record says. They can legitimately
+        disagree, and nothing synchronises them - deliberately, because inventing that rule was
+        not asked for and would silently overwrite whichever side a user edited last.
+        ⚠ THIS PARAGRAPH SAID "PSA_Execution_Date__c (this change) is a FORMULA" UNTIL
+        2026-08-26. The formula is gone; the DISTINCTION it was drawing is unchanged, which is
+        why the paragraph is rewritten rather than deleted.
+
+        referenceTo is Contract_Review__c (the object behind the "PSA" label in this module);
+        relationshipName is PrimaryDispositions, unique on that object beside PrimaryOpportunities
+        (Opportunity.Primary_Contract__c) and Contract_Reviews (Contract_Review__c.Disposition__c).
+    -->
+    <fullName>Primary_PSA__c</fullName>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <description>The primary PSA / Contract Review for this disposition - stamped by the PSA stage-entry automation and spanned by the PSA Details section on the record page (Record.Primary_PSA__r.*). The PSA_*__c formula mirrors this once fed were deleted 2026-08-25 and are not coming back.</description>
+    <inlineHelpText>Set automatically when the disposition Contract Review is created. It points the PSA Details section at the right record, so it is not maintained by hand.</inlineHelpText>
+    <label>Primary PSA</label>
+    <referenceTo>Contract_Review__c</referenceTo>
+    <relationshipLabel>Dispositions (Primary PSA)</relationshipLabel>
+    <relationshipName>PrimaryDispositions</relationshipName>
+    <required>false</required>
+    <trackFeedHistory>false</trackFeedHistory>
+    <trackTrending>false</trackTrending>
+    <type>Lookup</type>
+</CustomField>

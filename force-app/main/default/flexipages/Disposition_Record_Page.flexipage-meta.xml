@@ -658,6 +658,103 @@
          five-criteria AND-of-NE inverse, byte for byte - see the 2026-08-25 partition entries
          above, which still govern this pair; moving them behind a tab click changes nothing
          about which stage renders which surface, only where the user has to look for it.
+
+         =====================================================================
+         2026-08-26 (LATEST) - NDA / LOI / PSA SECTIONS REBUILT IN THE DETAILS TAB, ON
+         SPANNING FIELDS. THE 15 FORMULA MIRROR FIELDS STAY DELETED.
+         =====================================================================
+         User decision, option A: restore Disposition__c.Primary_LOI__c and Primary_PSA__c
+         (deleted 2026-08-25) and rebuild the three child-detail surfaces - but NOT the mirror
+         fields. Three flexipage:fieldSections are appended to the Details tab facet, in order
+         NDA, LOI, PSA, after the existing "Disposition Details" section.
+
+         🔴 THE ONE THING THAT MAKES THIS VERSION DIFFERENT FROM BOTH PREVIOUS ATTEMPTS: EVERY
+         FIELD ITEM IS SPANNING. Record.Primary_NDA__r.Status__c, Record.Primary_LOI__r.Stage__c,
+         Record.Primary_PSA__r.Negotiation_Status__c and so on - seventeen items across the three
+         sections, none of them a field on Disposition__c.
+         ⚠ THIS FILE ARGUED THE OPPOSITE IN WRITING, TWICE, AND THE ARGUMENT WAS WRONG. The
+         2026-08-24 and 2026-08-25 entries above both reason from "a FlexiPage fieldInstance
+         cannot traverse a relationship, so the values must be mirrored onto the parent by
+         formula fields". A fieldItem CAN traverse a relationship - THIS PAGE ALREADY DID IT
+         four times before this change (Record.Property_Asset__r.Target_Sale_Price__c, NOI__c,
+         Market_Cap_Rate__c, Peak_Sell_Date__c, in the Disposition Details section, retrieved
+         from the org on 2026-08-25). The mirror fields were a workaround for a limitation that
+         does not exist, which is why they are not coming back and why re-adding one should be
+         treated as a defect rather than a feature.
+
+         WHAT EACH SECTION SHOWS (two columns each, column 1 then column 2):
+             NDA   Primary_NDA__r  Status__c, Broker__c, Date_Sent__c
+                                   | Date_Signed__c, NDA_Expiry_Date__c, Tracking_Status__c
+             LOI   Primary_LOI__r  Stage__c, LOI_Signed_Date__c, Final_Agreed_Price__c
+                                   | Counter_Price__c, Counter_Received_Date__c, Selected_Offer__c
+             PSA   Primary_PSA__r  Negotiation_Status__c, Stage__c, Ball_In_Court__c
+                                   | Execution_Date__c, Selected_Offer__c
+
+         🔴 NO uiBehavior PROPERTY ON ANY OF THE SEVENTEEN, AND THAT IS THE FILE'S OWN
+         CONVENTION, NOT AN OMISSION. Every LOCAL field item in the Disposition Details section
+         carries uiBehavior = none; every SPANNING one carries no fieldInstanceProperties at all,
+         because a spanning field is read-only by construction and the platform will not accept
+         an edit behaviour for it. The retired 2026-08-25 sections used uiBehavior = readonly -
+         correct there, because those were LOCAL formula fields on Disposition__c.
+
+         🔴 VISIBILITY IS "THE LOOKUP IS NOT BLANK", NOT THE STAGE, AND THAT IS A DELIBERATE
+         CHANGE OF RULE. The retired sections each fired on a single Disposition_Stage__c EQUAL
+         test, which meant the LOI vanished from the page the moment the deal advanced to PSA -
+         the same defect the loisList / contractReviewsList entry above rejected for related
+         lists ("a stage-scoped list hides a record that still exists"). Keying on the lookup
+         instead means each section appears when its child exists and STAYS, so at Closing a
+         closer sees the LOI and the executed PSA together.
+             criteria: {!Record.Primary_NDA__r.Name} NE (blank), and the LOI / PSA equivalents
+
+         🔴 IT TESTS THE CHILD'S NAME THROUGH THE LOOKUP, NOT THE LOOKUP. THAT IS NOT COSMETIC AND
+         IT IS NOT NEGOTIABLE - IT IS A HARD API RULE, MEASURED. The first version of these three
+         rules named the lookup directly ({!Record.Primary_NDA__c}) and the deploy was REJECTED on
+         2026-08-26 with, verbatim:
+             FlexiPage Disposition_Record_Page: 'Primary_NDA__c' is a reference field, which
+             doesn't support the NE operator.
+         A reference (lookup) field accepts no NE at all in a FlexiPage criterion, so "the lookup
+         is not blank" cannot be written against the lookup. Spanning to the child's Name gives a
+         TEXT left value, which does support NE, and it is null exactly when the lookup is blank -
+         the same test, expressed on a field type the API will accept.
+         ⚠ Name IS SAFE TO TEST HERE BECAUSE ALL THREE CHILDREN AUTO-NUMBER IT. NDA__c, LOI__c and
+         Contract_Review__c each declare an AutoNumber nameField (NDA-{0000}, LOI-{0000},
+         CTR-{0000}), so Name is populated on every row that exists and there is no "child exists
+         but is unnamed" state for the rule to fall through. Do not copy this pattern to a lookup
+         whose target has a free-text Name without re-checking that.
+         ⚠ SPANNING IN A CRITERION IS ESTABLISHED IN THIS REPO, THOUGH NOT PREVIOUSLY ON THIS PAGE:
+         {!Record.RecordType.DeveloperName} is used the same way on NDA_Record_Page,
+         LOI_Record_Page and Contract_Review_Record_Page.
+         ⚠ THE EMPTY rightValue REMAINS THE ONE UNPRECEDENTED SHAPE HERE (checked 2026-08-26: 192
+         rightValue elements across the repo, none blank). It survived the rejection above, which
+         named only the field type - so it is not what failed. DO NOT FALL BACK TO STAGE RULES if
+         it ever is: that reintroduces the vanishing-LOI regression described above. Fix the shape.
+
+         ⚠ THESE THREE ARE STAGE-BLIND AND THE "Disposition Details" SECTION ABOVE THEM IS NOT,
+         SO THE DETAILS TAB IS NO LONGER A ONE-SECTION SURFACE. At Closing, Sale Closes, Active
+         Listing, BOV Outreach and Release Materials the NE chain hides Disposition Details while
+         these three may still render. That is intended. It also means the 11-stage partition
+         invariant documented at length above governs the MAIN REGION's stage surfaces ONLY - it
+         never governed the Details tab's contents and must not be "restored" by adding stage
+         criteria to these three.
+
+         🔴 FLS IS NOW A TWO-ENDED QUESTION. A spanning item renders blank unless the running
+         user can read BOTH the lookup on Disposition__c AND the field on the child. Building
+         this surfaced a real gap the formula mirrors had been masking (a formula needs FLS on
+         itself, not on what it references): NDA__c.Date_Sent__c and NDA__c.NDA_Expiry_Date__c
+         were granted to the ACQUISITION permission sets only, to no disposition persona at all.
+         Both were added read-only to DPEG_Disposition_View and DPEG_Disposition_Edit in the same
+         change. Those two sets and this page must deploy together.
+
+         ⚠ AND THE SECTIONS DEPEND ON A STAMP THAT MAY BE MISSING ON OLD ROWS.
+         DispositionPrimaryChildStampQueueable only fires when the stage-entry automation CREATES
+         the child; anything older, hand-created, or created while the lookups did not exist has
+         a null lookup and will show no section. scripts/backfill-disposition-primary-children.apex
+         closes that, idempotently. A blank section is the failure mode either way - never an
+         error - so verify by opening a record, not by reading the deploy result.
+
+         ⚠ A FLEXIPAGE DEPLOY CAN ROLL BACK AND STILL REPORT SUCCESS (this file's own 2026-08-10
+         entry). Read the page back after deploying and confirm all four sections are present in
+         the Details tab.
     -->
     <flexiPageRegions>
         <itemInstances>
@@ -1207,7 +1304,280 @@
                 </visibilityRule>
             </componentInstance>
         </itemInstances>
+        <itemInstances>
+            <componentInstance>
+                <componentInstanceProperties>
+                    <name>columns</name>
+                    <value>Facet-2b7d41c9-8e35-4a62-9d17-5c0f3a8e6b21</value>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>horizontalAlignment</name>
+                    <value>false</value>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>label</name>
+                    <value>NDA</value>
+                </componentInstanceProperties>
+                <componentName>flexipage:fieldSection</componentName>
+                <identifier>flexipage_fieldSection_ndaDetails</identifier>
+                <visibilityRule>
+                    <criteria>
+                        <leftValue>{!Record.Primary_NDA__r.Name}</leftValue>
+                        <operator>NE</operator>
+                        <rightValue></rightValue>
+                    </criteria>
+                </visibilityRule>
+            </componentInstance>
+        </itemInstances>
+        <itemInstances>
+            <componentInstance>
+                <componentInstanceProperties>
+                    <name>columns</name>
+                    <value>Facet-6d0b27a4-3c81-49f5-92e6-b8f14a7d3e09</value>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>horizontalAlignment</name>
+                    <value>false</value>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>label</name>
+                    <value>LOI</value>
+                </componentInstanceProperties>
+                <componentName>flexipage:fieldSection</componentName>
+                <identifier>flexipage_fieldSection_loiDetails</identifier>
+                <visibilityRule>
+                    <criteria>
+                        <leftValue>{!Record.Primary_LOI__r.Name}</leftValue>
+                        <operator>NE</operator>
+                        <rightValue></rightValue>
+                    </criteria>
+                </visibilityRule>
+            </componentInstance>
+        </itemInstances>
+        <itemInstances>
+            <componentInstance>
+                <componentInstanceProperties>
+                    <name>columns</name>
+                    <value>Facet-7c26b0e9-4f83-41d5-a06b-9e5138f2c74a</value>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>horizontalAlignment</name>
+                    <value>false</value>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>label</name>
+                    <value>PSA</value>
+                </componentInstanceProperties>
+                <componentName>flexipage:fieldSection</componentName>
+                <identifier>flexipage_fieldSection_psaDetails</identifier>
+                <visibilityRule>
+                    <criteria>
+                        <leftValue>{!Record.Primary_PSA__r.Name}</leftValue>
+                        <operator>NE</operator>
+                        <rightValue></rightValue>
+                    </criteria>
+                </visibilityRule>
+            </componentInstance>
+        </itemInstances>
         <name>Facet-b4f81c2a-6d3e-47a9-8c15-2e9f7a4b6d13</name>
+        <type>Facet</type>
+    </flexiPageRegions>
+    <flexiPageRegions>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Primary_NDA__r.Status__c</fieldItem>
+                <identifier>RecordPrimary_NDA_rStatus_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Primary_NDA__r.Broker__c</fieldItem>
+                <identifier>RecordPrimary_NDA_rBroker_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Primary_NDA__r.Date_Sent__c</fieldItem>
+                <identifier>RecordPrimary_NDA_rDate_Sent_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <name>Facet-9c48e5f1-2a76-4d83-b1e9-7f3c6d0a4b52</name>
+        <type>Facet</type>
+    </flexiPageRegions>
+    <flexiPageRegions>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Primary_NDA__r.Date_Signed__c</fieldItem>
+                <identifier>RecordPrimary_NDA_rDate_Signed_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Primary_NDA__r.NDA_Expiry_Date__c</fieldItem>
+                <identifier>RecordPrimary_NDA_rNDA_Expiry_Date_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Primary_NDA__r.Tracking_Status__c</fieldItem>
+                <identifier>RecordPrimary_NDA_rTracking_Status_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <name>Facet-4f1a83d6-5b29-4e07-8c34-a1d7e9b25c60</name>
+        <type>Facet</type>
+    </flexiPageRegions>
+    <flexiPageRegions>
+        <itemInstances>
+            <componentInstance>
+                <componentInstanceProperties>
+                    <name>body</name>
+                    <value>Facet-9c48e5f1-2a76-4d83-b1e9-7f3c6d0a4b52</value>
+                </componentInstanceProperties>
+                <componentName>flexipage:column</componentName>
+                <identifier>flexipage_column_ndaDetails1</identifier>
+            </componentInstance>
+        </itemInstances>
+        <itemInstances>
+            <componentInstance>
+                <componentInstanceProperties>
+                    <name>body</name>
+                    <value>Facet-4f1a83d6-5b29-4e07-8c34-a1d7e9b25c60</value>
+                </componentInstanceProperties>
+                <componentName>flexipage:column</componentName>
+                <identifier>flexipage_column_ndaDetails2</identifier>
+            </componentInstance>
+        </itemInstances>
+        <name>Facet-2b7d41c9-8e35-4a62-9d17-5c0f3a8e6b21</name>
+        <type>Facet</type>
+    </flexiPageRegions>
+    <flexiPageRegions>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Primary_LOI__r.Stage__c</fieldItem>
+                <identifier>RecordPrimary_LOI_rStage_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Primary_LOI__r.LOI_Signed_Date__c</fieldItem>
+                <identifier>RecordPrimary_LOI_rLOI_Signed_Date_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Primary_LOI__r.Final_Agreed_Price__c</fieldItem>
+                <identifier>RecordPrimary_LOI_rFinal_Agreed_Price_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <name>Facet-8e35c9b2-7d14-4a06-b3f8-2c69d5017a4e</name>
+        <type>Facet</type>
+    </flexiPageRegions>
+    <flexiPageRegions>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Primary_LOI__r.Counter_Price__c</fieldItem>
+                <identifier>RecordPrimary_LOI_rCounter_Price_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Primary_LOI__r.Counter_Received_Date__c</fieldItem>
+                <identifier>RecordPrimary_LOI_rCounter_Received_Date_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Primary_LOI__r.Selected_Offer__c</fieldItem>
+                <identifier>RecordPrimary_LOI_rSelected_Offer_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <name>Facet-1a94f6d3-0b58-4c27-8e91-3d7b2a6f05c8</name>
+        <type>Facet</type>
+    </flexiPageRegions>
+    <flexiPageRegions>
+        <itemInstances>
+            <componentInstance>
+                <componentInstanceProperties>
+                    <name>body</name>
+                    <value>Facet-8e35c9b2-7d14-4a06-b3f8-2c69d5017a4e</value>
+                </componentInstanceProperties>
+                <componentName>flexipage:column</componentName>
+                <identifier>flexipage_column_loiDetails1</identifier>
+            </componentInstance>
+        </itemInstances>
+        <itemInstances>
+            <componentInstance>
+                <componentInstanceProperties>
+                    <name>body</name>
+                    <value>Facet-1a94f6d3-0b58-4c27-8e91-3d7b2a6f05c8</value>
+                </componentInstanceProperties>
+                <componentName>flexipage:column</componentName>
+                <identifier>flexipage_column_loiDetails2</identifier>
+            </componentInstance>
+        </itemInstances>
+        <name>Facet-6d0b27a4-3c81-49f5-92e6-b8f14a7d3e09</name>
+        <type>Facet</type>
+    </flexiPageRegions>
+    <flexiPageRegions>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Primary_PSA__r.Negotiation_Status__c</fieldItem>
+                <identifier>RecordPrimary_PSA_rNegotiation_Status_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Primary_PSA__r.Stage__c</fieldItem>
+                <identifier>RecordPrimary_PSA_rStage_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Primary_PSA__r.Ball_In_Court__c</fieldItem>
+                <identifier>RecordPrimary_PSA_rBall_In_Court_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <name>Facet-3f8d15a7-6e92-4b30-8d47-c02a9b6e51f3</name>
+        <type>Facet</type>
+    </flexiPageRegions>
+    <flexiPageRegions>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Primary_PSA__r.Execution_Date__c</fieldItem>
+                <identifier>RecordPrimary_PSA_rExecution_Date_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Primary_PSA__r.Selected_Offer__c</fieldItem>
+                <identifier>RecordPrimary_PSA_rSelected_Offer_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <name>Facet-5b71e4c8-9a03-4f26-b58d-1e70c3a94d62</name>
+        <type>Facet</type>
+    </flexiPageRegions>
+    <flexiPageRegions>
+        <itemInstances>
+            <componentInstance>
+                <componentInstanceProperties>
+                    <name>body</name>
+                    <value>Facet-3f8d15a7-6e92-4b30-8d47-c02a9b6e51f3</value>
+                </componentInstanceProperties>
+                <componentName>flexipage:column</componentName>
+                <identifier>flexipage_column_psaDetails1</identifier>
+            </componentInstance>
+        </itemInstances>
+        <itemInstances>
+            <componentInstance>
+                <componentInstanceProperties>
+                    <name>body</name>
+                    <value>Facet-5b71e4c8-9a03-4f26-b58d-1e70c3a94d62</value>
+                </componentInstanceProperties>
+                <componentName>flexipage:column</componentName>
+                <identifier>flexipage_column_psaDetails2</identifier>
+            </componentInstance>
+        </itemInstances>
+        <name>Facet-7c26b0e9-4f83-41d5-a06b-9e5138f2c74a</name>
         <type>Facet</type>
     </flexiPageRegions>
     <flexiPageRegions>

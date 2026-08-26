@@ -25,30 +25,33 @@
  *
  * 🔴 THE LAST TWO COLUMNS ARE THE PART A READER MUST NOT SKIM. All five blocks use SYSTEM_MODE
  * DML, but they reach that answer by SEVERAL different routes and they handle the parent write three
- * different ways. ONE block defers a parent stamp to a Queueable (NDA); the LOI, PSA and Release
- * Materials blocks have nothing to defer; and the Active Listing block writes its parent field IN A
+ * different ways. THREE blocks defer a parent stamp to a Queueable (NDA, LOI, PSA); the Release
+ * Materials block has nothing to defer; and the Active Listing block writes its parent field IN A
  * BEFORE-SAVE CONTEXT, which is neither of the other two answers. Each block's reasoning is argued at the
  * block, from scratch, because inheriting a justification is precisely the mistake review W1
  * caught in DispositionNdaStampQueueable (which had copied OpportunityReviewService's LOI-block
  * wording verbatim into a case where it did not hold).
  *
- * ⚠ THIS COUNT HAS NOW BEEN WRONG IN BOTH DIRECTIONS INSIDE ONE WEEK — READ THE WHOLE ARC BEFORE
- * CHANGING IT AGAIN. Until 2026-08-25 it said "Only the NDA block defers a parent stamp"; earlier
- * on 2026-08-25 it was changed to "THREE blocks now defer (NDA, LOI, PSA)" when
+ * ⚠ THIS COUNT WENT 1 → 3 → 1 → 3 ACROSS TWO DAYS — READ THE WHOLE ARC BEFORE CHANGING IT AGAIN,
+ * AND NOTE THAT THE TWO ENDPOINTS ARE NOT THE SAME DESIGN. Until 2026-08-25 it said "Only the NDA
+ * block defers a parent stamp"; earlier on 2026-08-25 it became THREE when
  * `Disposition__c.Primary_LOI__c` and `Primary_PSA__c` were added so the record page's LOI/PSA
- * Details sections could be NATIVE fieldSections spanning formula fields; and LATER THE SAME DAY it
- * went back to ONE, because the user retired the whole child-mirror idea ("why have you created
- * NDA, PSA and LOI fields on Disposition object — we don't need them"). Both lookups, the nine
- * LOI_*__c / PSA_*__c formulas, the five NDA_*__c formulas, the three FlexiPage Details sections
- * and `DispositionPrimaryChildStampQueueable` itself were deleted together
+ * Details sections could be native `fieldSection`s; later THE SAME DAY it went back to ONE, because
+ * the user retired the whole child-mirror idea ("why have you created NDA, PSA and LOI fields on
+ * Disposition object — we don't need them") and both lookups, the nine LOI_*__c / PSA_*__c
+ * formulas, the five NDA_*__c formulas, the three FlexiPage Details sections and
+ * `DispositionPrimaryChildStampQueueable` were deleted together
  * (manifest/remove-disposition-child-mirrors/).
- * 🔴 SO THE ORIGINAL "NO PARENT STAMP AND NO QUEUEABLE" ANSWER FOR THE LOI AND PSA BLOCKS IS
- * CORRECT AGAIN, AND FOR THE ORIGINAL REASON: there is no `Primary_LOI__c` and no `Primary_PSA__c`
- * on `Disposition__c`, so there is nothing to write back. `Primary_NDA__c` is once more the ONLY
- * `Primary_*` lookup on the object. Do not add a Queueable to those blocks "for symmetry" — that
- * is the exact round trip this paragraph exists to stop a fourth time.
- * ⚠ `DispositionNdaStampQueueable` IS UNAFFECTED and keeps its own from-scratch reasoning, per the
- * W1 lesson above.
+ * 🔴 RESTORED 2026-08-26 ON THE USER'S DECISION (option A), AND THE COUNT IS **3** AGAIN — BUT THE
+ * FIELD FAMILY IS NOT. Only the two LOOKUPS (`Primary_LOI__c`, `Primary_PSA__c`) and this class's
+ * enqueues came back, together with `DispositionPrimaryChildStampQueueable`. THE 15 FORMULA MIRROR
+ * FIELDS STAY DELETED AND MUST NOT BE RE-CREATED: the three Details sections are now built on
+ * SPANNING field items (`Record.Primary_LOI__r.Stage__c` and friends) which need nothing on
+ * `Disposition__c` but the lookup itself. So the lookups are load-bearing exactly as
+ * `Primary_NDA__c` is — a null stamp renders a BLANK section, not an error — while the mirrors were
+ * pure duplication and are gone for good.
+ * ⚠ `DispositionNdaStampQueueable` IS UNAFFECTED THROUGHOUT and keeps its own from-scratch
+ * reasoning, per the W1 lesson above.
  *
  * ⚠ AND THE ACTIVE LISTING BLOCK'S SYSTEM_MODE REASON IS NOT THE OTHER THREE'S. They need it
  * because the disposition persona holds `allowCreate = false` on their child object. The
@@ -117,15 +120,15 @@
  * Trigger-driven, so the `.claude/rules/bulk-test-rule.md` per-transaction-singleton exemption
  * does NOT apply and literal 251-record bulk tests exist for all five stages. Budget is
  * 1 SOQL / 1 DML PER STAGE ENTERED IN THE CHUNK (≤ 5 / ≤ 5, raised from ≤ 4 on 2026-08-20 by the
- * Release Materials block), plus ≤ 1 enqueue (the NDA parent stamp) — CONSTANT IN
+ * Release Materials block), plus ≤ 3 enqueues (the NDA, LOI and PSA parent stamps) — CONSTANT IN
  * THE NUMBER OF DISPOSITIONS.
- * ⚠ THE ENQUEUE CEILING WENT 1 → 3 → 1 ON 2026-08-25 AND IS BACK AT **1**. It read "≤ 3 (the NDA,
- * LOI and PSA parent stamps)" for part of that day, while `Primary_LOI__c` / `Primary_PSA__c`
- * existed. Those lookups and `DispositionPrimaryChildStampQueueable` were deleted later the same
- * day, so the LOI and PSA blocks enqueue nothing again. The single surviving guard is
- * `Limits.getQueueableJobs() < Limits.getLimitQueueableJobs()` on the NDA block, so in an ASYNC
- * caller (chained-job cap of 1) an exhausted budget silently skips that stamp — the residual that
- * block documents at its own enqueue. That constancy is the property the bulk tests assert, not merely that 251 rows
+ * ⚠ THE ENQUEUE CEILING WENT 1 → 3 → 1 ON 2026-08-25 AND IS BACK AT **3** SINCE 2026-08-26, when
+ * the user restored `Primary_LOI__c` / `Primary_PSA__c` (option A — see the arc paragraph above;
+ * the 15 formula mirrors stayed deleted and the Details sections are now spanning field items).
+ * Each of the three stamping blocks enqueues its OWN guarded job, so a single chunk entering all
+ * three stages costs 3. Each guard is `Limits.getQueueableJobs() < Limits.getLimitQueueableJobs()`,
+ * so in an ASYNC caller (chained-job cap of 1) the FIRST block to run wins and the others silently
+ * skip their stamp — the residual each block documents at its own enqueue. That constancy is the property the bulk tests assert, not merely that 251 rows
  * produced 251 children. A chunk that enters no target stage at all — the overwhelmingly common
  * case, since this trigger fires on EVERY Disposition write in the org — costs zero queries, zero
  * DML and zero enqueues.
@@ -157,6 +160,7 @@
  *
  * @see force-app/main/default/classes/OpportunityReviewService.cls (the acquisitions twin)
  * @see force-app/main/default/classes/DispositionNdaStampQueueable.cls (the deferred NDA stamp)
+ * @see force-app/main/default/classes/DispositionPrimaryChildStampQueueable.cls (the deferred LOI/PSA stamps)
  * @see force-app/main/default/classes/DispositionOfferSelector.cls (the selected-offer resolution)
  * @see force-app/main/default/classes/NdaSelector.cls (the NDA idempotency read)
  * @see force-app/main/default/classes/LoiSelector.cls (the LOI idempotency read)
@@ -752,21 +756,24 @@ public with sharing class DispositionStageEntryService {
         // attempts (bare DML -> TypeException; SYSTEM_MODE -> ENTITY_IS_LOCKED) that produced
         // this pattern.
         //
-        // 🔴 THIS HALF EXISTS ONLY BECAUSE `Disposition__c.Primary_NDA__c` EXISTS. It is the only
-        // Primary_* lookup on the object — there is no Primary_LOI__c and no Primary_PSA__c —
-        // which is exactly why the LOI and PSA blocks below have no Queueable and must not be
-        // given one.
-        // ⚠ THAT WAS BRIEFLY FALSE ON 2026-08-25 (two lookups added for the record page's LOI/PSA
-        // Details sections, both deleted the same day with the sections themselves —
-        // manifest/remove-disposition-child-mirrors/). The sentence is true again as written. The
-        // retracted name in the older copies of this line was `Primary_Contract__c`; the lookup
-        // that actually existed in the interval was named `Primary_PSA__c`.
+        // 🔴 THIS HALF EXISTS ONLY BECAUSE `Disposition__c.Primary_NDA__c` EXISTS.
+        // ⚠ THIS LINE ONCE READ "It is the only Primary_* lookup on the object — there is no
+        // Primary_LOI__c and no Primary_Contract__c — which is exactly why the LOI and PSA blocks
+        // below have no Queueable and must not be given one." THAT IS RETRACTED, TWICE OVER.
+        // `Primary_LOI__c` and `Primary_PSA__c` were added on 2026-08-25, deleted later the same
+        // day, and RESTORED 2026-08-26 on the user's decision (option A). There are THREE
+        // Primary_* lookups on `Disposition__c` and three stamps in this class; the LOI and PSA
+        // blocks below enqueue `DispositionPrimaryChildStampQueueable`, which argues its own
+        // deferral from scratch rather than inheriting this block's.
+        // (Note the name the retracted text guessed at: the PSA lookup is `Primary_PSA__c`, not
+        // the Opportunity twin's `Primary_Contract__c`.)
         //
-        // ⚠ AND `Primary_NDA__c` NOW HAS NO READER. As of 2026-08-25 nothing in this repo resolves
-        // anything THROUGH it — the five NDA_*__c formula fields that spanned it and the NDA-stage
-        // Details section that rendered them are gone. The stamp is retained deliberately (see
-        // that field's own header); it is bookkeeping until something reads it again, which is a
-        // change from what this block's residual note below asserts.
+        // ⚠ WHAT READS `Primary_NDA__c` CHANGED SHAPE ON 2026-08-26 AND STILL EXISTS. The five
+        // NDA_*__c formula mirrors that used to span it are gone for good; the NDA Details section
+        // on `Disposition_Record_Page` now names SPANNING field items
+        // (`Record.Primary_NDA__r.Status__c` and friends) instead, so the lookup is read directly
+        // by the page and the stamp is load-bearing again — which is what the residual note below
+        // assumes.
         //
         // The enqueue is GUARDED exactly as OpportunityReviewService's is: this trigger can fire
         // inside an async context that has already spent its chained-job budget (the async cap is
@@ -776,11 +783,12 @@ public with sharing class DispositionStageEntryService {
         // ⚠ RESIDUAL, STATED RATHER THAN HIDDEN: when the budget IS exhausted the stamp is
         // silently skipped and Primary_NDA__c stays null. The NDA itself still exists and is
         // still reachable from the disposition's related list, so nothing is lost — but anything
-        // that resolves THROUGH the lookup finds nothing.
-        // ⚠ AMENDED 2026-08-25: this note used to end "Identical trade, identical wording, to the
-        // LOI block; if it ever needs closing, close both." There is no LOI stamp any more, so
-        // there is no "both" — this is the only stamp in this class. And the residual currently
-        // has no observable consequence at all, because nothing reads the lookup (see above).
+        // that resolves THROUGH the lookup finds nothing — concretely, the NDA Details section on
+        // the record page renders BLANK.
+        // ⚠ AMENDED 2026-08-25 to say "there is no LOI stamp any more, so there is no 'both'", and
+        // AMENDED BACK 2026-08-26 when the user restored the two lookups (option A). The original
+        // wording is operative again: identical trade, identical wording, to the LOI block; if it
+        // ever needs closing, close all three.
         if (Limits.getQueueableJobs() < Limits.getLimitQueueableJobs()) {
             System.enqueueJob(new DispositionNdaStampQueueable(ndaByDisposition));
         }
@@ -888,22 +896,23 @@ public with sharing class DispositionStageEntryService {
      *          an approval lock and it writes back to the locked parent. With nothing to write
      *          back, there is nothing to defer: a Queueable here would be a job that does nothing,
      *          and a reader would take its existence as evidence of a hazard that is not present."
-     *          THE PREMISE DIED FOR ROUGHLY HALF A DAY AND THEN CAME BACK: `Primary_LOI__c` and
-     *          `Primary_PSA__c` were added to `Disposition__c` on 2026-08-25 so the LOI/PSA Details
-     *          sections could be NATIVE `fieldSection`s spanning formula fields, replacing an
-     *          Apex-backed LWC — and were DELETED LATER THE SAME DAY on the user's decision that
-     *          the disposition record does not need child-mirror fields at all
-     *          (manifest/remove-disposition-child-mirrors/). `DispositionPrimaryChildStampQueueable`,
-     *          which this block enqueued in the interval, went with them.
-     *          🔴 SO THE RETRACTED TEXT ABOVE IS OPERATIVE AGAIN, WORD FOR WORD, AND IT IS LEFT
-     *          QUOTED RATHER THAN PROMOTED BACK INTO THE BODY SO THE ROUND TRIP STAYS VISIBLE:
-     *          there is no parent write here, so there is nothing to defer, and a Queueable would
-     *          be a job that does nothing while advertising a hazard that is not present.
-     *          ⚠ IF A `Primary_LOI__c` IS EVER PROPOSED AGAIN, THE ANSWER IS NOT AUTOMATICALLY
-     *          "add the Queueable back" — it is to re-derive the deferral (approval lock +
-     *          re-entrancy) from scratch and, separately, to re-derive whether the write must also
-     *          escape SHARING, which the deleted class did via a narrow `without sharing` inner
-     *          class and the NDA twin does not do at all.
+     *          THE PREMISE DIED, CAME BACK FOR HALF A DAY, AND IS DEAD AGAIN — AND THE RETRACTION
+     *          IS FINAL THIS TIME BECAUSE IT IS THE USER'S OWN DECISION: `Primary_LOI__c` and
+     *          `Primary_PSA__c` were added to `Disposition__c` on 2026-08-25, DELETED later the
+     *          same day (manifest/remove-disposition-child-mirrors/), and RESTORED 2026-08-26 when
+     *          the user chose option A over rebuilding the sections in Apex.
+     *          🔴 SO THERE IS A PARENT WRITE HERE AGAIN, AND THIS BLOCK ENQUEUES
+     *          `DispositionPrimaryChildStampQueueable` — see that class's header, which re-argues
+     *          the deferral from scratch (approval lock + re-entrancy) rather than inheriting the
+     *          NDA block's reasoning, and which also documents why it escapes SHARING where the
+     *          NDA twin does not.
+     *          ⚠ WHAT DID **NOT** COME BACK, AND MUST NOT: the nine LOI_*__c / PSA_*__c formula
+     *          mirror fields (and the five NDA_*__c ones). The 2026-08-25 design put those formulas
+     *          on `Disposition__c` so a FlexiPage `fieldItem` — which could not traverse a
+     *          relationship — had something local to name. The 2026-08-26 design drops them
+     *          entirely and names SPANNING items instead (`Record.Primary_LOI__r.Stage__c`), so the
+     *          LOOKUP is the whole dependency. If a future change proposes a mirror field "so the
+     *          section can show X", the answer is a spanning item, not a formula.
      *          ⚠ (b) AND (c) BELOW ARE UNAFFECTED AND STILL TRUE. They establish that `LOI` is not
      *          any approval's ENTRY stage, which is why the lock is an EDGE case here
      *          (`recordEditability = AdminOnly` still lets an administrator re-stage a record
@@ -1059,21 +1068,36 @@ public with sharing class DispositionStageEntryService {
         }
         Database.insert(toInsert, true, AccessLevel.SYSTEM_MODE);
 
-        // 🔴 NO PARENT STAMP AND NO QUEUEABLE — see point 3 above. Do not add one 'for symmetry'.
+        // 🔴 THE PARENT STAMP — SEE POINT 3 ABOVE, WHICH THIS CHANGE REWROTE RATHER THAN IGNORED.
+        // The line that stood here until 2026-08-25 read, verbatim: "NO PARENT STAMP AND NO
+        // QUEUEABLE — see point 3 above. Do not add one 'for symmetry'." It was correct while
+        // `Disposition__c` had no `Primary_LOI__c`, it was briefly restored on 2026-08-25 when the
+        // lookup was deleted, and it is retracted again as of 2026-08-26: the user restored the
+        // lookup (option A) so the record page's LOI Details section can span it. There IS a parent
+        // write, and this is NOT symmetry — it is the same hazard the NDA block faces, reached by
+        // the same route. `DispositionPrimaryChildStampQueueable`'s header argues it from scratch.
         //
-        // ⚠ THIS LINE WAS REPLACED BY AN ENQUEUE FOR PART OF 2026-08-25 AND RESTORED THE SAME DAY,
-        // WHICH IS WHY IT NOW CARRIES ITS OWN HISTORY. In the interval `Disposition__c` had a
-        // `Primary_LOI__c` lookup, so there WAS a parent write, and this block enqueued
-        // `DispositionPrimaryChildStampQueueable` with a `Map<Id, Id>` built from `toInsert`. The
-        // user then retired the whole child-mirror field family ("we don't need them"), the lookup
-        // and that class were deleted (manifest/remove-disposition-child-mirrors/), and with
-        // nothing to write back the enqueue became a job that does nothing.
+        // The enqueue is GUARDED exactly as the NDA block's is: this trigger can fire inside an
+        // async context that has already spent its chained-job budget (the async cap is 1), and an
+        // uncaught LimitException here would roll back the stage change it is riding on.
         //
-        // 🔴 THE COST OF THE ROUND TRIP IS RECORDED SO IT IS NOT PAID A THIRD TIME: the enqueue
-        // also carried a documented RESIDUAL — an async caller that has spent its chained-job
-        // budget (cap 1) silently skips the stamp, leaving the lookup null and the LOI-stage
-        // Details section BLANK rather than errored. That residual is gone with the feature; do
-        // not re-introduce it without re-reading point 3.
+        // ⚠ RESIDUAL, STATED RATHER THAN HIDDEN AND IDENTICAL TO THE NDA BLOCK'S: when the budget
+        // IS exhausted the stamp is silently skipped and `Primary_LOI__c` stays null. The LOI
+        // itself still exists and is still reachable from the disposition's LOIs related list, but
+        // the LOI Details section — which now renders SPANNING items through this lookup rather
+        // than the retired formula mirrors — goes BLANK. The failure shape is unchanged by the
+        // 2026-08-26 redesign; only what does the reading changed. If that residual ever needs
+        // closing, close all three stamps together.
+        Map<Id, Id> loiByDisposition = new Map<Id, Id>();
+        for (LOI__c loi : toInsert) {
+            loiByDisposition.put(loi.Disposition__c, loi.Id);
+        }
+        if (Limits.getQueueableJobs() < Limits.getLimitQueueableJobs()) {
+            System.enqueueJob(new DispositionPrimaryChildStampQueueable(
+                loiByDisposition,
+                DispositionPrimaryChildStampQueueable.PrimaryLookup.PRIMARY_LOI
+            ));
+        }
     }
 
     // ═════════════════════════════════════════════════════════════════════════
@@ -1096,16 +1120,16 @@ public with sharing class DispositionStageEntryService {
      *    not any approval's entry stage (`Sale_Decision` = `Disposition Readiness`,
      *    `Broker_Selection` = `Broker Selection` + Off Market, `Closing_Approval` = `Closing` +
      *    wire-verified). No Queueable, and adding one would assert a hazard that is not there."
-     *    🔴 UN-REVERSED LATER THE SAME DAY — THE RETRACTED TEXT ABOVE IS OPERATIVE AGAIN IN FULL.
-     *    Both clauses hold. The SECOND never stopped holding (`PSA` is still no approval's entry
-     *    stage). The FIRST was dead for part of 2026-08-25, while a `Primary_PSA__c` lookup existed
-     *    (note the name it actually carried: `Primary_PSA__c`, not the `Primary_Contract__c` the
-     *    retracted text guessed at, which is the Opportunity twin's name) and this block enqueued
-     *    `DispositionPrimaryChildStampQueueable` with `PrimaryLookup.PRIMARY_PSA`. The user retired
-     *    the child-mirror fields the same day; the lookup and that class were deleted
-     *    (manifest/remove-disposition-child-mirrors/), so there is once more NO PARENT WRITE here
-     *    and no Queueable. The whole arc is kept because this point has now flipped twice and the
-     *    next reader deserves to see that before flipping it a third time.
+     *    🔴 THE SECOND CLAUSE STILL HOLDS; THE FIRST IS DEAD AGAIN AS OF 2026-08-26. `PSA` is
+     *    still no approval's entry stage. But `Disposition__c.Primary_PSA__c` exists — added
+     *    2026-08-25, deleted later that day with the child-mirror family
+     *    (manifest/remove-disposition-child-mirrors/), and RESTORED 2026-08-26 on the user's
+     *    decision (option A: keep the two lookups, rebuild the Details sections on SPANNING field
+     *    items, leave the 15 formula mirrors deleted). This block therefore enqueues
+     *    `DispositionPrimaryChildStampQueueable` with `PrimaryLookup.PRIMARY_PSA` again.
+     *    ⚠ Note the name the retracted text guessed at: the lookup is `Primary_PSA__c`, not the
+     *    Opportunity twin's `Primary_Contract__c`. The whole arc is kept because this point has now
+     *    flipped three times, and the next reader deserves to see that before flipping it a fourth.
      *    ⚠ TWO CLAUSES HERE WERE REWRITTEN ON 2026-08-19. The entry-criteria list moved
      *    (`Broker_Selection` no longer keys on `BOV Outreach`), and the third clause is RETRACTED
      *    verbatim: "none of the three approvals performs a field update, so the stage is only ever
@@ -1209,11 +1233,22 @@ public with sharing class DispositionStageEntryService {
         }
         Database.insert(toInsert, true, AccessLevel.SYSTEM_MODE);
 
-        // 🔴 NO PARENT STAMP AND NO QUEUEABLE — see point 3 above.
-        //
-        // ⚠ Replaced by an enqueue for part of 2026-08-25 and restored the same day, exactly as
-        // the LOI block immediately above — read its comment rather than re-deriving this one.
-        // `Disposition__c` has no `Primary_PSA__c` again, so there is nothing to write back.
+        // 🔴 THE PARENT STAMP. The line that stood here until 2026-08-25 read, verbatim: "NO
+        // PARENT STAMP AND NO QUEUEABLE — see point 3 above." True while `Disposition__c` had no
+        // `Primary_PSA__c`; briefly true again after that lookup was deleted later the same day;
+        // false once more since 2026-08-26, when the user restored it (option A). Same hazard,
+        // same guard, same residual as the LOI block immediately above — read its comment rather
+        // than re-deriving this one.
+        Map<Id, Id> psaByDisposition = new Map<Id, Id>();
+        for (Contract_Review__c cr : toInsert) {
+            psaByDisposition.put(cr.Disposition__c, cr.Id);
+        }
+        if (Limits.getQueueableJobs() < Limits.getLimitQueueableJobs()) {
+            System.enqueueJob(new DispositionPrimaryChildStampQueueable(
+                psaByDisposition,
+                DispositionPrimaryChildStampQueueable.PrimaryLookup.PRIMARY_PSA
+            ));
+        }
     }
 
     // ═════════════════════════════════════════════════════════════════════════
