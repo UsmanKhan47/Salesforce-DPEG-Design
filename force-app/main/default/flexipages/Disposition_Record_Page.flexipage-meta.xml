@@ -1278,6 +1278,48 @@
                 </visibilityRule>
             </componentInstance>
         </itemInstances>
+        <!--
+             2026-08-26 - c/dispositionApprovalHistory ADDED HERE, LAST AMONG THE SIDEBAR CARDS
+             AND ABOVE THE TABSET.
+
+             WHY THE COMPONENT EXISTS: the disposition flow's five approvals target THREE objects.
+             Sale_Decision_Approval, Broker_Selection_Approval and Closing_Approval target
+             Disposition__c; Broker_Finalize_Approval targets the SELECTED BOV_Submission__c and
+             Offer_Selection_Approval targets the SELECTED Disposition_Offer__c. The standard
+             Approval History related list matches ProcessInstance.TargetObjectId to the record it
+             renders on, so the last two are STRUCTURALLY INVISIBLE on this page. User report
+             2026-08-25: "I sent the disposition for approval on BOV Outreach but it is not
+             appearing on the disposition record." Nothing was broken; the list could not, by
+             construction, show what they submitted.
+
+             🔴 THIS DOES NOT REPLACE THE force:relatedListContainer IN THE header REGION AND IS
+             NOT AN ARGUMENT FOR REMOVING IT. That component carries showActionBar=true and is the
+             ONLY route to the Recall button on a record the approval has locked
+             (recordEditability=AdminOnly) - see the 2026-08-19 Approval History entry in this
+             file's header, which records the incident that put it there. The new card is
+             READ-ONLY and offers no actions at all. Removing either one re-opens a closed defect.
+
+             🔴 NO visibilityRule, DELIBERATELY, AND IT IS THE ONLY SIDEBAR CARD WITHOUT ONE.
+             bovBrokerChangeHistory and dispositionBuyerTimeline above are both stage-gated because
+             each describes one phase of the sale. An approval is raised at FOUR different stages
+             and the whole point of this card is that a user could not find one - a stage rule
+             would hide the Sale Decision approval from every later stage and reproduce the defect
+             one stage further along. The consequence is accepted and recorded in the controller's
+             header: this is the component most exposed to a missing FLS grant, which is why each
+             of its three new selector reads is the narrowest that answers its question.
+
+             PLACED LAST AMONG THE CARDS: the three above are the day-to-day work surfaces of the
+             current stage, and approvals are a reference the user goes looking for rather than
+             something they watch. ABOVE the tabset rather than inside it because a component
+             behind a tab click would barely improve on absent - the same reasoning the header
+             region's Approval History entry records.
+        -->
+        <itemInstances>
+            <componentInstance>
+                <componentName>dispositionApprovalHistory</componentName>
+                <identifier>dispositionApprovalHistory</identifier>
+            </componentInstance>
+        </itemInstances>
         <itemInstances>
             <componentInstance>
                 <componentInstanceProperties>

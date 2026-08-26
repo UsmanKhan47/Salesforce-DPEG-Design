@@ -113,6 +113,26 @@
         <apexClass>DispositionApprovalController</apexClass>
         <enabled>true</enabled>
     </classAccesses>
+    <!--
+      2026-08-26. DispositionApprovalHistoryController backs lwc/dispositionApprovalHistory, the
+      consolidated read-only "Approval History" card in the Disposition record page SIDEBAR. It
+      exists because two of the five disposition approvals target a CHILD record
+      (Broker_Finalize_Approval -> BOV_Submission__c, Offer_Selection_Approval ->
+      Disposition_Offer__c) and are therefore structurally invisible in the standard Approval
+      History related list on the parent - the 2026-08-25 user report.
+      Granted here on the same ENTRY-POINT-ONLY pattern as everything above: the service it calls
+      (DispositionApprovalHistoryService) and the four selectors behind it
+      (ProcessInstanceSelector, DispositionSelector, BovSubmissionSelector,
+      DispositionOfferSelector) are reached only through this controller and get no grant of their
+      own. ProcessInstance / ProcessInstanceHistory need no objectPermissions block anywhere -
+      they are system entities whose visibility follows access to the target record.
+      Added in the SAME change as the controller, deliberately: the three live-breaks recorded at
+      the top of this file were each a controller that shipped without its grant.
+    -->
+    <classAccesses>
+        <apexClass>DispositionApprovalHistoryController</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
     <classAccesses>
         <apexClass>DispositionBuyerTimelineController</apexClass>
         <enabled>true</enabled>

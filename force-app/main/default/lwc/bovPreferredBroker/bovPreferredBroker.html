@@ -44,6 +44,29 @@
   region, with more room for a long firm name before it wraps.
 
   ══════════════════════════════════════════════════════════════════════════════
+  🔴 2026-08-25 (3) — THE ROW GREW A RIGHT-HAND SIDE. IT IS STILL TWO LINES TALL.
+  ══════════════════════════════════════════════════════════════════════════════
+  User instruction: show Valuation, Days to Market and Cap Rate on the right of
+  this row. THE COMPACTION ABOVE IS NOT UNDONE BY IT — the new block is two lines
+  of exactly the two font scales already on the left (`font-scale-1` value over
+  `font-scale-neg-1`... see the `.css`, which pins the value to the NAME's scale
+  precisely so the row cannot get taller than the taller of two two-line blocks).
+  Nothing was added ABOVE or BELOW; the row grew sideways into space the panel
+  was not using.
+
+  🔴 THIS COMPONENT FORMATS NOTHING. All three arrive as finished strings from
+  `c/bovBrokerPanel`, which builds them with `c/utils.formatMillions` and the two
+  expressions `c/bovComparisonMatrix` uses for its own Valuation / Days to Mkt /
+  Cap Rate columns. That is what stops the row and the table beneath it printing
+  one broker's numbers two ways.
+
+  ⚠ THE OTHER PARENT IS UNTOUCHED, BY CONSTRUCTION AND NOT BY A FLAG.
+  `c/dispositionBuyerTimeline` (the ~276px sidebar) passes none of the three, so
+  `hasStats` is false and it renders precisely the row it rendered yesterday. A
+  `showStats` boolean would have been a fourth thing for a caller to get wrong;
+  "you get the columns you supply" needs no caller to remember anything.
+
+  ══════════════════════════════════════════════════════════════════════════════
   🔴 2026-08-25 (1) — THE PANEL NAMES A PERSON, AND THE "YES" PILL IS GONE.
   ══════════════════════════════════════════════════════════════════════════════
   Two user instructions, both applied here and both visible in the markup below:
@@ -165,5 +188,50 @@
                 </template>
             </p>
         </div>
+
+        <!--
+            ── THE THREE STAT COLUMNS (2026-08-25 (3)) ──────────────────────────
+            User instruction: Valuation, Days to Market and Cap Rate on the right
+            of this row, in that order.
+
+            🔴 A `for:each` OVER ONE ARRAY, NOT THREE COPIES OF THIS MARKUP. The
+            columns differ only in their two strings; three hand-written blocks
+            is three places for one column's typography to drift away from the
+            other two. The order is the ARRAY's order — see `stats` in the `.js`.
+
+            🔴 VALUE ABOVE LABEL, WHICH IS ALSO THE DOM ORDER. That matches
+            `c/brokerListing`'s tiles (`.cfo-tile-value` then `.cfo-tile-label`)
+            exactly, so the two cards on this stage read as one design language.
+            It means a screen reader announces "$12.5M, Valuation" — value first.
+            Deliberate: it is the same order the sibling card already announces,
+            and reversing it here would make two adjacent cards disagree.
+
+            ⚠ THE LABEL IS UPPERCASED **IN CSS**, NOT IN THE STRING. `Valuation`
+            is what reaches the DOM and what is announced; `text-transform` is
+            what makes it an eyebrow. An upper-cased literal would be read out as
+            an initialism by some screen readers.
+
+            ⚠ THE WHOLE BLOCK IS GATED, AND `hasStats` IS NOT "ARE THERE
+            NUMBERS". All-`—` is the ordinary state on this card (a preferred
+            broker is flagged before anyone quotes) and MUST still render. The
+            gate exists so the OTHER parent — `c/dispositionBuyerTimeline`'s
+            ~276px sidebar, which passes none of the three — renders exactly what
+            it rendered before this change. See the `.js` header.
+
+            🔴 IT IS A SIBLING OF `.pref-detail`, NOT INSIDE IT. `.pref-panel`'s
+            `gap` is what separates the two blocks, and `.pref-detail`'s own
+            `gap` is the NAME-to-META spacing — nesting the stats there would
+            stack them under the firm line instead of beside it.
+        -->
+        <template lwc:if={hasStats}>
+            <div class="pref-stats">
+                <template for:each={stats} for:item="stat">
+                    <div class="pref-stat" key={stat.key}>
+                        <span class="pref-stat-value">{stat.value}</span>
+                        <span class="pref-stat-label">{stat.label}</span>
+                    </div>
+                </template>
+            </div>
+        </template>
     </div>
 </template>

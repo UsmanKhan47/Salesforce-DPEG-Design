@@ -1,0 +1,302 @@
+/*
+ * c/dispositionApprovalHistory
+ * ---------------------------------------------------------------------------------------------
+ * 🔴 THE RAIL, THE GRID AND THE TOKEN VOCABULARY ARE DELIBERATELY IDENTICAL TO
+ * `bovBrokerChangeHistory.css` AND `dispositionBuyerTimeline.css`. Those two cards sit directly
+ * above this one in the ~340px Disposition sidebar; three stacked cards with three visual
+ * vocabularies read as three unrelated widgets. Only the class PREFIX differs (`dah-`), because a
+ * shared prefix across component-scoped stylesheets would suggest a sharing that cannot exist.
+ *
+ * ⚠ A TIMELINE IS SINGLE-COLUMN BY DEFINITION. The repo's usual narrow-column recipe
+ * (`repeat(auto-fill, minmax(min(18rem, 100%), 1fr))`) must NOT be "restored" here: two entries
+ * side by side leave the connecting line joining nothing.
+ *
+ * ⚠ ENTRIES ARE SEPARATED BY THE ITEM'S OWN `padding-bottom`, NEVER BY THE LIST'S `gap`. A gap
+ * sits OUTSIDE every item, so the rail's track cannot span it and the line breaks between every
+ * pair of dots.
+ *
+ * ⚠ EVERY `gap` ON A `.dah-meta` LINE IS LOAD-BEARING MARKUP. The template compiler discards
+ * whitespace-only text nodes BETWEEN sibling elements, so with no gap the second line renders
+ * "BOV-0027|Derek Simmons". The Jest suite pins those gaps for that reason.
+ *
+ * ── COLOUR ───────────────────────────────────────────────────────────────────────────────────
+ * Every colour is an SLDS 2 global styling hook with its canonical fallback. The pills use the
+ * measured-safe pairing `*-base-95` background + `*-base-30`/`-40` text + `*-base-80` ring — NOT
+ * `*-container-1`, which is a SOLID DARK FILL in the base theme and produces dark-on-dark.
+ * The neutral pill uses `--slds-g-color-neutral-base-95` + `--slds-g-color-on-surface-2`; muted
+ * label text uses `--slds-g-color-on-surface-1`, never `--slds-g-color-neutral-base-60` (that one
+ * is ~3.5:1 on white and fails AA).
+ */
+
+:host {
+    display: block;
+    overflow-wrap: anywhere;
+}
+
+.dah-mono {
+    font-variant-numeric: tabular-nums;
+}
+
+/*
+ * A LOCAL visually-hidden rule, never the global `slds-assistive-text`: that class lives in a
+ * document-level SLDS stylesheet and under NATIVE shadow DOM it never reaches into this component,
+ * which would leave the words "Approval for" and "Submitted by" VISIBLE on screen.
+ * ⚠ NOT `display: none` — that would hide it from the accessibility tree, which is the one thing
+ * it exists to add to.
+ */
+.dah-sr-only {
+    position: absolute;
+    width: var(--slds-g-sizing-border-1, 1px);
+    height: var(--slds-g-sizing-border-1, 1px);
+    margin: calc(-1 * var(--slds-g-sizing-border-1, 1px));
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+}
+
+.dah-timeline {
+    display: block;
+    margin: 0;
+    padding: var(--slds-g-spacing-4, 1rem);
+    list-style: none;
+}
+
+.dah-entry {
+    position: relative;
+    display: grid;
+    grid-template-columns: var(--slds-g-sizing-4, 0.75rem) 1fr;
+    column-gap: var(--slds-g-spacing-3, 0.75rem);
+    min-width: 0;
+    padding-bottom: var(--slds-g-spacing-4, 1rem);
+}
+
+.dah-entry:last-child {
+    padding-bottom: 0;
+}
+
+.dah-rail {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 0;
+}
+
+/* `flex: none` or the dot is squashed by the track beside it. */
+.dah-dot {
+    flex: none;
+    width: var(--slds-g-sizing-3, 0.5rem);
+    height: var(--slds-g-sizing-3, 0.5rem);
+    margin-top: var(--slds-g-spacing-1, 0.25rem);
+    border-radius: var(--slds-g-radius-border-circle, 100%);
+    background: var(--slds-g-color-accent-container-1, #0176d3);
+}
+
+/*
+ * `flex: 1 1 auto` is what makes the line reach the next dot WITHOUT anyone measuring an entry —
+ * the rail stretches to the grid row. Do not replace it with a height.
+ */
+.dah-track {
+    flex: 1 1 auto;
+    width: var(--slds-g-sizing-border-1, 1px);
+    margin-top: var(--slds-g-spacing-1, 0.25rem);
+    background: var(--slds-g-color-border-1, #c9c9c9);
+}
+
+/* Or the line trails off into the card's padding and reads as "and then something else happened". */
+.dah-entry:last-child .dah-track {
+    display: none;
+}
+
+.dah-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--slds-g-spacing-3, 0.75rem);
+    min-width: 0;
+}
+
+.dah-head {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--slds-g-spacing-2, 0.5rem);
+    min-width: 0;
+}
+
+/*
+ * 🔴 THE PROCESS NAME MUST WRAP, NEVER TRUNCATE. "Broker Finalize Approval" legitimately needs two
+ * lines at 340px, and it is the one string that tells the user their submission is here — clipping
+ * it to an ellipsis would defeat the card.
+ */
+.dah-process {
+    min-width: 0;
+    margin: 0;
+    font-size: var(--slds-g-font-scale-1, 0.875rem);
+    font-weight: var(--slds-g-font-weight-7, 700);
+    color: var(--slds-g-color-on-surface-3, #181818);
+}
+
+.dah-facts {
+    display: flex;
+    flex-direction: column;
+    gap: var(--slds-g-spacing-2, 0.5rem);
+    min-width: 0;
+}
+
+.dah-meta {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--slds-g-spacing-1, 0.25rem);
+    min-width: 0;
+    margin: 0;
+    font-size: var(--slds-g-font-scale-base, 0.8125rem);
+    color: var(--slds-g-color-on-surface-1, #757575);
+}
+
+.dah-meta-icon {
+    flex: none;
+    --slds-c-icon-color-foreground-default: var(
+        --slds-g-color-on-surface-1,
+        #757575
+    );
+}
+
+.dah-when,
+.dah-detail,
+.dah-amount,
+.dah-by,
+.dah-actor,
+.dah-step-status {
+    min-width: 0;
+    color: var(--slds-g-color-on-surface-2, #2e2e2e);
+}
+
+.dah-target {
+    min-width: 0;
+    font-weight: var(--slds-g-font-weight-7, 700);
+    color: var(--slds-g-color-brand-base-50, #0176d3);
+}
+
+.dah-sep {
+    flex: none;
+    color: var(--slds-g-color-border-1, #c9c9c9);
+}
+
+.dah-note {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--slds-g-spacing-1, 0.25rem);
+    min-width: 0;
+    margin: 0;
+    font-size: var(--slds-g-font-scale-base, 0.8125rem);
+    color: var(--slds-g-color-on-surface-1, #757575);
+}
+
+/* `pre-line` keeps a multi-line approver comment readable without letting it force a scrollbar. */
+.dah-note-txt {
+    min-width: 0;
+    color: var(--slds-g-color-on-surface-2, #2e2e2e);
+    white-space: pre-line;
+}
+
+/*
+ * THE TRAIL. Inset from the entry's text column and hairlined on the leading edge so a reader can
+ * see at a glance which approval a step belongs to. `padding-inline-start` / `border-inline-start`
+ * rather than `left`, so it mirrors correctly in a right-to-left locale.
+ */
+.dah-steps {
+    display: flex;
+    flex-direction: column;
+    gap: var(--slds-g-spacing-2, 0.5rem);
+    min-width: 0;
+    margin: 0;
+    padding-inline-start: var(--slds-g-spacing-3, 0.75rem);
+    border-inline-start: var(--slds-g-sizing-border-1, 1px) solid
+        var(--slds-g-color-border-1, #c9c9c9);
+    list-style: none;
+}
+
+.dah-step {
+    display: flex;
+    flex-direction: column;
+    gap: var(--slds-g-spacing-1, 0.25rem);
+    min-width: 0;
+}
+
+.dah-step-status {
+    font-weight: var(--slds-g-font-weight-7, 700);
+}
+
+/*
+ * THE STATUS PILL. `flex: none` or it shrinks away beside a long process name.
+ * The colours live on the four modifiers below — none of them on this base rule, so a variant that
+ * loses its modifier renders an UNCOLOURED pill with its word intact rather than a coloured pill
+ * with the wrong meaning.
+ */
+.dah-pill {
+    display: inline-flex;
+    align-items: center;
+    flex: none;
+    min-width: 0;
+    padding: var(--slds-g-spacing-1, 0.25rem) var(--slds-g-spacing-2, 0.5rem);
+    border-radius: var(--slds-g-radius-border-pill, 15rem);
+    font-size: var(--slds-g-font-scale-neg-2, 0.625rem);
+    font-weight: var(--slds-g-font-weight-7, 700);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.dah-pill--approved {
+    color: var(--slds-g-color-success-base-30, #194e31);
+    background: var(--slds-g-color-success-base-95, #ebf7e6);
+    box-shadow: inset 0 0 0 var(--slds-g-sizing-border-1, 1px)
+        var(--slds-g-color-success-base-80, #91db8b);
+}
+
+.dah-pill--rejected {
+    color: var(--slds-g-color-error-base-30, #8e030f);
+    background: var(--slds-g-color-error-base-95, #fef1ee);
+    box-shadow: inset 0 0 0 var(--slds-g-sizing-border-1, 1px)
+        var(--slds-g-color-error-base-80, #feb8ab);
+}
+
+.dah-pill--pending {
+    color: var(--slds-g-color-warning-base-40, #825101);
+    background: var(--slds-g-color-warning-base-95, #fff1ea);
+    box-shadow: inset 0 0 0 var(--slds-g-sizing-border-1, 1px)
+        var(--slds-g-color-warning-base-80, #ffba90);
+}
+
+.dah-pill--neutral {
+    color: var(--slds-g-color-on-surface-2, #2e2e2e);
+    background: var(--slds-g-color-neutral-base-95, #f3f3f3);
+    box-shadow: inset 0 0 0 var(--slds-g-sizing-border-1, 1px)
+        var(--slds-g-color-border-1, #c9c9c9);
+}
+
+.dah-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: var(--slds-g-spacing-1, 0.25rem);
+    padding: var(--slds-g-spacing-5, 1.5rem) var(--slds-g-spacing-4, 1rem);
+}
+
+.dah-state-icon {
+    --slds-c-icon-color-foreground-default: var(
+        --slds-g-color-on-surface-1,
+        #757575
+    );
+    margin-bottom: var(--slds-g-spacing-1, 0.25rem);
+}
+
+.dah-unavailable {
+    min-width: 0;
+    max-width: var(--slds-g-sizing-content-2, 45ch);
+    margin: 0;
+    font-size: var(--slds-g-font-scale-neg-1, 0.75rem);
+    color: var(--slds-g-color-on-surface-1, #757575);
+}

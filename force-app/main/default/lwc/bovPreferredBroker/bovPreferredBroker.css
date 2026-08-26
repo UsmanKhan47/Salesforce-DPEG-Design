@@ -36,6 +36,25 @@
   by a factor of nearly two.
 
   ═════════════════════════════════════════════════════════════════════════════
+  🔴 2026-08-25 (3) — THE RIGHT-HAND STAT COLUMNS. THE ROW DID NOT GET TALLER.
+  ═════════════════════════════════════════════════════════════════════════════
+  Valuation / Days to Market / Cap Rate, by user instruction, as a `flex: none`
+  block at the right-hand end of the row. Four rules are new — `.pref-stats`,
+  `.pref-stat`, `.pref-stat-value`, `.pref-stat-label` — and ONE existing
+  declaration changed: `.pref-detail` gained `flex: 1 1 auto`, which is the only
+  thing pushing the block to the right edge.
+
+  🔴 THE HEIGHT BUDGET FROM (2) IS INTACT AND THAT IS A CONSTRUCTION, NOT LUCK.
+  Each column is TWO lines of the SAME two font scales already on the left, with
+  the same `--slds-g-spacing-1` between them, so the stats block is exactly as
+  tall as `.pref-detail` and `.pref-panel`'s `align-items: center` aligns the two
+  by construction. The row is still `padding-3` + two lines.
+  ⚠ NO NEW COLOUR ENTERED THIS FILE. The value is the same measured
+  `success-base-30` as `.pref-name`; the label is the same `neutral-base-30` as
+  `.pref-meta`. The contrast table above therefore still covers every text
+  colour in the panel, which is what makes it worth keeping.
+
+  ═════════════════════════════════════════════════════════════════════════════
   🔴 2026-08-25 (2) — THE PANEL IS A DENSE ROW. `.pref-meta` IS NEW.
   ═════════════════════════════════════════════════════════════════════════════
   Roughly half the previous height, by user instruction — the panel is section 1
@@ -137,6 +156,23 @@
     flex-direction: column;
     gap: var(--slds-g-spacing-1, 0.25rem);
     min-width: 0;
+    /*
+      🔴 `flex: 1 1 auto` IS WHAT PUTS THE STAT COLUMNS AT THE RIGHT EDGE
+      (2026-08-25 (3)). Nothing in this panel is right-aligned by an alignment
+      property: `.pref-stats` is `flex: none`, so the ONLY thing that can push it
+      to the far edge is this block growing to fill everything left over. Delete
+      the `1` and the three columns slide left and sit against the broker's name
+      on a wide card — with no other visible change and nothing a jsdom suite
+      can see.
+      ⚠ NOT `margin-left: auto` ON `.pref-stats`, which is the other way to do
+      it: this stylesheet's spacing is all `gap` (see `.pref-name`'s note on why
+      the paragraphs carry `margin: 0`), and one auto margin would be the single
+      exception a later reader has to discover.
+      ⚠ IT DOES NOT DISTURB THE OTHER PARENT. With no stats block this is the
+      last item on the line, so growing changes only where its own (left-aligned)
+      text may extend to — not where any of it is drawn.
+    */
+    flex: 1 1 auto;
 }
 
 /*
@@ -201,6 +237,113 @@
 .pref-firm {
     min-width: 0;
     overflow-wrap: anywhere;
+}
+
+/*
+  -- THE THREE STAT COLUMNS, RIGHT-HAND SIDE (2026-08-25 (3)) -----------------
+  🔴 `flex: none` IS LOAD-BEARING, FOR THE SAME REASON AS THE SHIELD'S. Flex
+  items shrink, and this block sits beside an UNBOUNDED free-text name. Left
+  shrinkable it would give up width to a long broker name and start wrapping
+  `$12.5M` mid-token, while `.pref-detail` — which has `min-width: 0` and
+  `overflow-wrap: anywhere` precisely so that it can absorb the squeeze — sat
+  comfortably. The rule is: the free text yields, the numbers do not.
+
+  ⚠ `flex-wrap: wrap` IS A LAST-RESORT GUARD, NOT THE LAYOUT. With `flex: none`
+  this block is sized to its content, so the wrap engages only if something ever
+  constrains it from outside. It is one declaration and it is the difference
+  between the three columns stacking and the card scrolling sideways.
+
+  🔴 THE WRAP IS **NOT** ON `.pref-panel`, AND THAT IS DELIBERATE. Putting it
+  there looks like the more general fix and is a regression for the OTHER parent:
+  flex line-breaking uses each item's base size BEFORE shrinking, so a wrapping
+  panel drops `.pref-detail` onto its own line UNDER the shield as soon as a
+  broker's name is longer than the line — in `c/dispositionBuyerTimeline`'s
+  ~276px sidebar, which passes no stats at all, that is most names. The existing
+  `min-width: 0` + `overflow-wrap: anywhere` pair is what handles narrow widths
+  there, and it still does.
+
+  ⚠ `align-items: flex-end` RIGHT-ALIGNS THE TWO LINES WITHIN EACH COLUMN; the
+  BLOCK is pushed right by `.pref-detail`'s `flex-grow`, not by anything here.
+  Two different mechanisms, one visual result — see the note on `.pref-detail`.
+
+  ⚠ THE COLUMN GAP IS `-4` (1rem) WHILE THE LINE GAP INSIDE A COLUMN IS `-1`.
+  The columns are three separate facts and need to read as three; the value and
+  its label are one fact and must not.
+*/
+.pref-stats {
+    flex: none;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: var(--slds-g-spacing-4, 1rem);
+}
+
+/*
+  🔴 THE COLUMN MIRRORS `.pref-detail`'S RHYTHM ON PURPOSE: two lines, the same
+  two font scales, the same `--slds-g-spacing-1` gap between them. That is what
+  makes `.pref-panel`'s `align-items: center` line the value up with the broker's
+  name and the label up with the muted line — WITHOUT any per-line alignment,
+  baseline group or magic offset. Change either font scale here and the two
+  halves of the row stop agreeing, which is the one thing this file's compaction
+  notes ask a reader not to do.
+  ⚠ `gap` IS MARKUP AGAIN. The compiler discards the whitespace between the two
+  spans, so with the gap gone the value and its label butt together and no
+  rendered text changes to show it.
+*/
+.pref-stat {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: var(--slds-g-spacing-1, 0.25rem);
+}
+
+/*
+  THE VALUE. Deliberately the SAME three declarations as `.pref-name` — scale,
+  weight and the measured green — because the numbers are peers of the broker's
+  name, not a caption beside it, and because a value line taller than the name
+  would make this row taller than the compaction allows.
+  ⚠ `success-base-30` ON `success-base-95` IS 8.72:1 (slds) / 8.74 (cosmos
+  light) / 9.24 (dark) — the table at the top of this file. It is the ONLY text
+  green this panel uses; do not reach for `on-surface-*` here, which measures
+  4.16:1 on this tint (also in that table).
+  ⚠ `tabular-nums` KEEPS THE THREE VALUES ON A COMMON GRID as they change — the
+  numerals are then all one width, so `$9.4M` and `$12.5M` do not shuffle the
+  column edges on every refresh. Not a size or colour, so it is not a hardcoded
+  value for the linter's purposes.
+*/
+.pref-stat-value {
+    font-size: var(--slds-g-font-scale-1, 0.875rem);
+    font-weight: var(--slds-g-font-weight-7, 700);
+    color: var(--slds-g-color-success-base-30, #194e31);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+/*
+  THE EYEBROW UNDER THE VALUE.
+  🔴 `neutral-base-30`, **NOT** `on-surface-1`, AND THAT IS THE SAME MEASUREMENT
+  `.pref-meta` RECORDS. `--slds-g-color-on-surface-1` (#757575) is this repo's
+  usual secondary-text hook and is 4.16:1 on this panel's #ebf7e6 tint — under AA
+  at this size, and invisible to every gate we have (the SLDS linter only checks
+  that a hook was used; axe's contrast rule is inert in jsdom).
+  ⚠ `c/brokerListing`'s `.cfo-tile-label` — the tile this column is modelled on —
+  DOES use `on-surface-1`. Its own header records that as pre-existing and out of
+  that change's scope. It is on a NEUTRAL tile, and it is not a licence to copy
+  the hook onto a green one.
+  ⚠ THE UPPERCASING IS HERE, NOT IN THE STRING. `Valuation` is what is in the DOM
+  and what is announced; some screen readers spell out an all-caps literal.
+  ⚠ `letter-spacing: 0.0625rem` — tracking is what makes small uppercase text
+  legible rather than a smear. Measured: this declaration is NOT flagged by
+  `slds/no-hardcoded-values-slds2` (that rule is about SIZING declarations), and
+  it is the same value `c/brokerListing`'s tile labels use.
+*/
+.pref-stat-label {
+    font-size: var(--slds-g-font-scale-neg-2, 0.625rem);
+    font-weight: var(--slds-g-font-weight-4, 400);
+    text-transform: uppercase;
+    letter-spacing: 0.0625rem;
+    color: var(--slds-g-color-neutral-base-30, #444);
+    white-space: nowrap;
 }
 
 /*

@@ -20,6 +20,22 @@ import { LightningElement, api } from 'lwc';
 const UNNAMED = 'Unnamed broker';
 
 /**
+ * What a STAT COLUMN shows when the parent supplied no string for it.
+ *
+ * 🔴 THE SAME GLYPH `c/utils.formatMillions` AND `c/bovComparisonMatrix` ALREADY
+ * USE FOR A MISSING NUMBER, and that is the whole point — the matrix's Valuation
+ * / Days to Mkt / Cap Rate columns and these three read the same `BovRow` fields
+ * through the same formatters, so a blank here beside a `—` there would be two
+ * renderings of one absent value.
+ *
+ * ⚠ IT IS A PARTIAL-SUPPLY GUARD, NOT THE NORMAL PATH. `c/bovBrokerPanel` formats
+ * all three and hands down `—` itself for a null field. This constant only fires
+ * if a caller supplies SOME of the three, which would otherwise render a column
+ * with an empty value line above a label.
+ */
+const NO_VALUE = '—';
+
+/**
  * c-bov-preferred-broker — the highlighted preferred-broker panel.
  *
  * ══════════════════════════════════════════════════════════════════════════════
@@ -54,6 +70,40 @@ const UNNAMED = 'Unnamed broker';
  * broken `c/bovBrokerPanel`'s existing mount for no gain, and the panel still
  * needs the firm — it just no longer leads with it.
  *
+ * ══════════════════════════════════════════════════════════════════════════════
+ * 🔴 2026-08-25 (3) — FIVE PROPS NOW. THE THREE NEW ONES ARE PRE-FORMATTED.
+ * ══════════════════════════════════════════════════════════════════════════════
+ * User instruction: the row shows Valuation, Days to Market and Cap Rate on its
+ * right-hand side. All three arrive as FINISHED STRINGS — this component does no
+ * number formatting at all, and must not start.
+ *
+ * 🔴 WHY THE FORMATTING IS THE PARENT'S. The same three fields are already
+ * rendered by `c/bovComparisonMatrix` inches below this row, from the SAME
+ * `BovController.BovRow` payload, through `c/utils.formatMillions` and the two
+ * inline expressions beside it. Formatting them a second time here — even
+ * "identically" — is how `$12.5M` up here becomes `$12.50M` down there after
+ * someone edits one of the two copies. The parent formats once, with the shared
+ * helper, and hands the result to both surfaces. Same argument, and the same
+ * `c/utils` helper, that put `brokerOptionLabel` in a shared module.
+ *
+ * 🔴 `''` MEANS "THIS PARENT DOES NOT SHOW STATS" — IT IS NOT A MISSING VALUE.
+ * The distinction is load-bearing and is the reverse of `contactName`/`firmName`,
+ * where `''` means the row's field is null:
+ *   · all three `''`  -> the stats block is NOT RENDERED AT ALL (`hasStats`).
+ *   · any non-empty   -> the block renders, and a missing NUMBER is the `—` the
+ *                        parent already put in the string.
+ * That is what keeps this addition invisible to the OTHER parent below: the
+ * ~276px sidebar has no room for three columns, `c/dispositionBuyerTimeline`
+ * passes none of them, and its rendering is unchanged BY CONSTRUCTION rather
+ * than by a mode flag. A component that always rendered the block — three em
+ * dashes wide — would have forced that parent to opt out of something it never
+ * asked for.
+ *
+ * ⚠ THE `''`-NEVER-`undefined` CONTRACT APPLIES TO ALL FIVE. A getter bound to
+ * an attribute on a custom element is written UNCONDITIONALLY, so `undefined`
+ * reaches the DOM as the literal string "undefined" — measured in this repo. The
+ * normalisation is HERE (see the getters) rather than in each caller.
+ *
  * ── TWO PARENTS SINCE 2026-08-25 ────────────────────────────────────────────
  *   · `c/bovBrokerPanel` — the "Brokers" card at BOV Outreach;
  *   · `c/dispositionBuyerTimeline` — SECTION 1 of the record-page card.
@@ -78,6 +128,23 @@ export default class BovPreferredBroker extends LightningElement {
 
     /** The preferred broker's firm name, straight off `BovController.BovRow.brokerFirm`. */
     @api firmName;
+
+    /**
+     * The quoted valuation, ALREADY FORMATTED — e.g. `'$12.5M'`, or `'—'`.
+     *
+     * ⚠ A STRING, NOT A NUMBER, AND NOT BY ACCIDENT. `c/bovBrokerPanel` runs
+     * `c/utils.formatMillions` over `BovRow.bovAmount` — the same call
+     * `c/bovComparisonMatrix` makes for its Valuation column — so the two
+     * surfaces cannot render one broker's number two ways. Do not add a
+     * `Number()` path here to "make the API nicer": that is the second copy.
+     */
+    @api valuationLabel;
+
+    /** Days to market, already formatted — e.g. `'45d'`, or `'—'`. Same contract as `valuationLabel`. */
+    @api daysToMarketLabel;
+
+    /** Cap rate, already formatted — e.g. `'6.25%'`, or `'—'`. Same contract as `valuationLabel`. */
+    @api capRateLabel;
 
     /**
      * The name on the PRIMARY line — never empty, never the string "undefined".
@@ -120,5 +187,65 @@ export default class BovPreferredBroker extends LightningElement {
 
     get trimmedFirm() {
         return typeof this.firmName === 'string' ? this.firmName.trim() : '';
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // THE THREE STAT COLUMNS (2026-08-25)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Whether the right-hand stats block renders at all.
+     *
+     * 🔴 "DID A PARENT ASK FOR STATS", NOT "ARE THERE NUMBERS". A preferred
+     * broker is typically a THIN row — flagged before anyone has quoted — so
+     * `'—' / '—' / '—'` is the ordinary state of this block on the Brokers card
+     * and must still render: three labelled em dashes say the facts are not
+     * recorded yet, which is information. Withholding the block on all-dashes
+     * would make the row silently change shape the moment a broker responds.
+     *
+     * ⚠ WHICH IS EXACTLY WHY THE TEST IS ON THE UNFORMATTED `''`. Only a parent
+     * that supplies NOTHING gets no block — see the header for why that is what
+     * keeps `c/dispositionBuyerTimeline` unchanged.
+     */
+    get hasStats() {
+        return !!(
+            this.trimmedValuation ||
+            this.trimmedDaysToMarket ||
+            this.trimmedCapRate
+        );
+    }
+
+    /**
+     * The three columns, in the user's order: Valuation, Days to Market, Cap Rate.
+     *
+     * 🔴 ONE ARRAY RENDERED BY A `for:each`, NOT THREE HAND-WRITTEN BLOCKS. The
+     * three columns are identical in every respect but their two strings, and
+     * three copies of the same two-span markup is three places for one of them
+     * to drift out of the shared typography — which is the defect the whole
+     * `.pref-stat-value` / `.pref-stat-label` pair exists to prevent.
+     *
+     * ⚠ `key` IS THE LABEL because it is fixed, unique and stable — these are
+     * three constant columns, not data rows.
+     */
+    get stats() {
+        return [
+            { key: 'Valuation', label: 'Valuation', value: this.trimmedValuation || NO_VALUE },
+            { key: 'Days to Market', label: 'Days to Market', value: this.trimmedDaysToMarket || NO_VALUE },
+            { key: 'Cap Rate', label: 'Cap Rate', value: this.trimmedCapRate || NO_VALUE }
+        ];
+    }
+
+    get trimmedValuation() {
+        return typeof this.valuationLabel === 'string' ? this.valuationLabel.trim() : '';
+    }
+
+    get trimmedDaysToMarket() {
+        return typeof this.daysToMarketLabel === 'string'
+            ? this.daysToMarketLabel.trim()
+            : '';
+    }
+
+    get trimmedCapRate() {
+        return typeof this.capRateLabel === 'string' ? this.capRateLabel.trim() : '';
     }
 }

@@ -89,6 +89,63 @@ export function formatMillions(n) {
 }
 
 /**
+ * Days-to-market as a bare day count with a `d` suffix — `'45d'`. Null /
+ * undefined render as an em dash (`—`).
+ *
+ * ── WHY IT IS AN EXPORT AND NOT AN INLINE TERNARY (2026-08-25) ──────────────
+ * It was `r.daysToMarket != null ? r.daysToMarket + 'd' : '—'`, inline in
+ * `c/bovComparisonMatrix.rows`, and it had exactly one caller. It now has two:
+ * the BOV Comparison Matrix's "Days to Mkt" column, and the Days to Market
+ * column on `c/bovPreferredBroker`'s row, which `c/bovBrokerPanel` renders
+ * DIRECTLY ABOVE that table from the SAME `BovController.BovRow` payload.
+ * A second inline copy in the panel is a second place for the suffix or the
+ * fallback to change, on two surfaces a user sees at once.
+ *
+ * ⚠ `!= null` CATCHES BOTH `null` AND `undefined` AND LETS A REAL `0` THROUGH.
+ * `0` days to market is a meaningful value ("already on the market"); a falsy
+ * test would print `—` for it and say something false about the broker's quote.
+ *
+ * @param {number|string|null|undefined} n Raw day count.
+ * @returns {string} e.g. `'45d'`, `'0d'`, or `'—'` when null/undefined.
+ */
+export function formatDaysToMarket(n) {
+    if (n == null) {
+        return '—';
+    }
+    return n + 'd';
+}
+
+/**
+ * A BOV cap rate as a percentage to TWO decimal places — `'6.25%'`. Null /
+ * undefined render as an em dash (`—`).
+ *
+ * Same extraction, same day and same reason as `formatDaysToMarket` above: it
+ * was inline in `c/bovComparisonMatrix.rows` with one caller and now has two.
+ *
+ * 🔴 TWO DECIMALS IS THE **BOV** VARIANT AND IT IS NOT UNIVERSAL.
+ * `c/sellMeterList` formats `mktCapRate` with `toFixed(1)` and is deliberately
+ * NOT migrated to this helper — its rendered output would change from `6.5%` to
+ * `6.50%` and its suite asserts the exact string. That is this module's standing
+ * rule (see the header): genuinely-divergent variants each keep their own
+ * behaviour rather than being collapsed into one "improved" function. If a third
+ * caller ever wants a different precision it gets its own export, not a
+ * parameter — a `formatCapRate(n, dp)` is how the BOV surfaces silently start
+ * disagreeing with each other again.
+ *
+ * ⚠ `parseFloat`, BECAUSE APEX DECIMALS ARRIVE AS STRINGS over the wire and
+ * `'6.25'.toFixed` is not a function.
+ *
+ * @param {number|string|null|undefined} n Raw cap rate as a percentage (6.25 = 6.25%).
+ * @returns {string} e.g. `'6.25%'`, or `'—'` when null/undefined.
+ */
+export function formatCapRate(n) {
+    if (n == null) {
+        return '—';
+    }
+    return parseFloat(n).toFixed(2) + '%';
+}
+
+/**
  * EXACT currency, grouped, never abbreviated — `$1,850,000`. Cents are shown
  * only when non-zero (`$1,850,000.50`). Null / empty / non-numeric render as an
  * em dash (`—`).

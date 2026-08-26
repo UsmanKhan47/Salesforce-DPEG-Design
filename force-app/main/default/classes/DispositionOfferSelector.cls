@@ -352,6 +352,62 @@ public with sharing class DispositionOfferSelector {
         return offerByDisposition;
     }
 
+    /**
+     * The IDENTITY of every offer on one Disposition — its Id, its `OFFER-{0000}` number and the
+     * amount offered. Backs `DispositionApprovalHistoryService.getHistory`, which needs the Id SET
+     * to find approvals whose `TargetObjectId` is an OFFER rather than the Disposition, and the
+     * Name/amount to LABEL those rows once found. Added 2026-08-26 with the consolidated Approval
+     * History card on the Disposition record page.
+     *
+     * 🔴 IT RETURNS **EVERY** OFFER, NOT ONLY `Is_Selected__c = true` ONES, AND THAT IS THE POINT.
+     * `Offer_Selection_Approval`'s entry criterion is `Is_Selected__c = true`, so reusing
+     * `selectSelectedByDispositionIds` looks equivalent. It is not: `DispositionApprovalService
+     * .selectOffer` clears the flag on every offer but the newly chosen one, so an offer that was
+     * selected, submitted and REJECTED — and then displaced by a re-pick — carries
+     * `Is_Selected__c = false` while owning a real, completed approval. Filtering on the flag would
+     * make the card forget every rejected offer, which is precisely the history an approver wants.
+     * An approval-history read filters on nothing but parentage.
+     *
+     * ── 🔴 `WITH USER_MODE`, NOT THE `SYSTEM_MODE` ITS THREE SIBLINGS IN THIS CLASS USE ────────
+     * Read the METHOD, not the class (ARCHITECTURE.md §2). The other three reads here run on a
+     * TRIGGER/automation path, on a principal's behalf, over the 2026-08-19 `Is_Selected__c` field
+     * that ships with no FLS — the documented automation exception. THIS read is a human asking a
+     * record page a question, so a missing grant is a real provisioning gap that must surface as an
+     * error the admin can fix, not be silently bypassed. `Is_Selected__c` is deliberately NOT in
+     * the SELECT, so the field that forced the exception is not a gate here at all.
+     *
+     * ⚠ `Offer_Amount__c` IS NULLABLE and the caller renders nothing rather than a zero when it is
+     * null — `0` is a real, if unusual, offer and must not stand in for "not recorded".
+     * ⚠ NO `Broker__r` TRAVERSAL. A broker name would add OBJECT read on `Contact` as a gate, and
+     * that grant lives in a different permission set from the disposition ones (see
+     * `DispositionBuyerTimelineController`'s header). The offer NUMBER plus the AMOUNT identify the
+     * row without it.
+     *
+     * ── NO `ORDER BY` ─────────────────────────────────────────────────────────────────────────
+     * Nothing ranks these rows. They are folded into a `Map<Id, …>` and looked up by Id; the card's
+     * ordering is the APPROVALS' (`ProcessInstanceSelector.selectHistoryByTargetIds`).
+     *
+     * @param dispositionId Disposition__c Id whose offers to identify; null-safe.
+     * @return Id / Name / Offer_Amount__c for every offer on the Disposition; an empty list when it
+     *         has none or the input is null. Never null.
+     * @example
+     * List&lt;Disposition_Offer__c&gt; targets =
+     *     DispositionOfferSelector.selectApprovalTargetsByDispositionId(dispId);
+     */
+    public static List<Disposition_Offer__c> selectApprovalTargetsByDispositionId(
+        Id dispositionId
+    ) {
+        if (dispositionId == null) {
+            return new List<Disposition_Offer__c>();
+        }
+        return [
+            SELECT Id, Name, Offer_Amount__c
+            FROM Disposition_Offer__c
+            WHERE Disposition__c = :dispositionId
+            WITH USER_MODE
+        ];
+    }
+
 
     /**
      * The one query that must not be sharing-filtered. Narrow on purpose: it holds a single

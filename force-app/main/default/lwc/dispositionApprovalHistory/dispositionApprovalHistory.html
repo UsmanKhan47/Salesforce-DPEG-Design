@@ -1,0 +1,225 @@
+<template>
+    <!-- 🔴 THE CARD CHROME IS UNCONDITIONAL, AND ON THIS CARD THAT MATTERS MORE THAN USUAL.
+         The defect this component fixes is a user who submitted an approval and could not find
+         it. A titled card that says "Approval History (0)" tells them, unambiguously, that the
+         page looked and found nothing — an absent card would leave them exactly where they
+         started, wondering whether the page shows approvals at all.
+         The count is appended only once the wire has answered — see `cardTitle` in the JS. -->
+    <lightning-card icon-name="standard:approval">
+        <span slot="title">{cardTitle}</span>
+
+        <!-- ═══════════════════════════════════════════════════════════════════════════════
+             DATA — A VERTICAL TIMELINE. ONE ENTRY PER ProcessInstance, NEWEST FIRST.
+             ═══════════════════════════════════════════════════════════════════════════════
+             The rail, the two-column grid and the token vocabulary are lifted CLASS-STRUCTURE
+             -FOR-CLASS-STRUCTURE from `c/bovBrokerChangeHistory` and `c/dispositionBuyerTimeline`,
+             the two cards this one sits beneath in the ~340px sidebar. That is a requirement, not
+             a coincidence: three cards in one column with three visual vocabularies read as three
+             unrelated widgets. Only the CLASS PREFIX differs (`dah-`), because LWC stylesheets are
+             component-scoped and a shared prefix would suggest a sharing that does not exist.
+
+             ⚠ THE RAIL (dot + connecting line) IS PURELY DECORATIVE and is `aria-hidden`. It
+             carries nothing the text lines do not already carry.
+
+             ORDERING IS THE SERVER'S — `ProcessInstanceSelector.selectHistoryByTargetIds` orders
+             the rows (CreatedDate DESC, Id DESC) and `DispositionApprovalHistoryService` orders
+             each trail (newest first). NOTHING IS RE-SORTED HERE; a client-side sort would be a
+             second, weaker copy of a rule that already exists in two places for good reasons.
+
+             role="list" is NOT redundant: `list-style: none` makes WebKit drop the implicit list
+             role, and aria-label is only exposed on an element whose role supports naming. axe has
+             no rule for it, so a passing toBeAccessible() is not evidence against it. -->
+        <template lwc:if={hasRows}>
+            <ul class="dah-timeline" role="list" aria-label="Approval history">
+                <template for:each={rows} for:item="row">
+                    <li key={row.processInstanceId} class="dah-entry">
+                        <div class="dah-rail" aria-hidden="true">
+                            <span class="dah-dot"></span>
+                            <span class="dah-track"></span>
+                        </div>
+
+                        <div class="dah-body">
+                            <!-- LINE 1 — the approval process's LABEL plus its outcome pill.
+                                 🔴 THE PILL CARRIES ITS STATE AS VISIBLE TEXT, NEVER AS COLOUR
+                                 ALONE. "Recalled" is a word here, not an orange dot. -->
+                            <div class="dah-head">
+                                <h3 class="dah-process slds-hyphenate">{row.processName}</h3>
+                                <span class={row.statusClass}>{row.statusLabel}</span>
+                            </div>
+
+                            <div class="dah-facts">
+                                <!-- LINE 2 — WHICH RECORD THIS APPROVAL IS ABOUT. This is the
+                                     line the whole component exists for: on a BOV or offer row it
+                                     names a record that is NOT the one the user is looking at,
+                                     and the link is the only way to reach it from here.
+                                     ⚠ THE SEPARATORS ARE INSIDE THEIR OWN `lwc:if` BLOCKS. A pipe
+                                     hard-coded outside one renders a dangling "BOV-0027 |" on
+                                     every row whose hint is null, which is most of them. -->
+                                <p class="dah-meta">
+                                    <span class="dah-sr-only">Approval for</span>
+                                    <a
+                                        href={row.targetUrl}
+                                        class="dah-target"
+                                        data-id={row.targetId}
+                                        >{row.targetLabel}</a
+                                    >
+                                    <template lwc:if={row.hasDetail}>
+                                        <span class="dah-sep" aria-hidden="true">|</span>
+                                        <span class="dah-detail">{row.targetDetail}</span>
+                                    </template>
+                                    <template lwc:if={row.hasAmount}>
+                                        <span class="dah-sep" aria-hidden="true">|</span>
+                                        <!-- 🔴 EXACT, NEVER ABBREVIATED. "$2.0M" would render
+                                             $2,040,000 and $1,960,000 identically, on the one line
+                                             whose job is to say WHICH offer was decided. -->
+                                        <span class="dah-amount dah-mono">
+                                            <lightning-formatted-number
+                                                value={row.targetAmount}
+                                                format-style="currency"
+                                                maximum-fraction-digits="0"
+                                            ></lightning-formatted-number>
+                                        </span>
+                                    </template>
+                                </p>
+
+                                <!-- LINE 3 — who submitted it and when. -->
+                                <p class="dah-meta">
+                                    <lightning-icon
+                                        icon-name="utility:event"
+                                        size="xx-small"
+                                        class="dah-meta-icon"
+                                        alternative-text="Submitted on"
+                                    ></lightning-icon>
+                                    <span class="dah-when dah-mono">
+                                        <lightning-formatted-date-time
+                                            value={row.submittedDateTime}
+                                            year="numeric"
+                                            month="short"
+                                            day="2-digit"
+                                            hour="2-digit"
+                                            minute="2-digit"
+                                        ></lightning-formatted-date-time>
+                                    </span>
+                                    <template lwc:if={row.hasSubmittedBy}>
+                                        <span class="dah-sep" aria-hidden="true">|</span>
+                                        <span class="dah-sr-only">Submitted by</span>
+                                        <span class="dah-by">{row.submittedBy}</span>
+                                    </template>
+                                </p>
+
+                                <!-- The note typed into the Submit dialog. It lives on the
+                                     `Started` step, which the service excludes from the trail
+                                     below precisely so this does not print twice. -->
+                                <!-- ⚠ `dah-submit-note` CARRIES NO STYLE — it exists so a test can
+                                     tell THIS note from a STEP's note. Both wear `dah-note` for
+                                     the shared look, and a `.dah-note-txt` query without this
+                                     hook matches an approver's comment three lines further down
+                                     (measured: it did, and the assertion that caught it was
+                                     asserting the opposite of what it read). -->
+                                <template lwc:if={row.hasSubmittedComments}>
+                                    <p class="dah-note dah-submit-note">
+                                        <lightning-icon
+                                            icon-name="utility:note"
+                                            size="xx-small"
+                                            class="dah-meta-icon"
+                                            alternative-text="Submission comment"
+                                        ></lightning-icon>
+                                        <span class="dah-note-txt"
+                                            >{row.submittedComments}</span
+                                        >
+                                    </p>
+                                </template>
+
+                                <!-- THE TRAIL. Absent entirely on a just-submitted approval whose
+                                     only history row was the excluded `Started` one — an empty
+                                     <ul> with an aria-label announces a list of nothing. -->
+                                <template lwc:if={row.hasSteps}>
+                                    <ul
+                                        class="dah-steps"
+                                        role="list"
+                                        aria-label="Approval steps"
+                                    >
+                                        <template
+                                            for:each={row.steps}
+                                            for:item="step"
+                                        >
+                                            <li key={step.stepId} class="dah-step">
+                                                <p class="dah-meta">
+                                                    <span class="dah-sr-only"
+                                                        >Step status</span
+                                                    >
+                                                    <span class="dah-step-status"
+                                                        >{step.stepStatus}</span
+                                                    >
+                                                    <template lwc:if={step.hasActor}>
+                                                        <span
+                                                            class="dah-sep"
+                                                            aria-hidden="true"
+                                                            >|</span
+                                                        >
+                                                        <span class="dah-actor"
+                                                            >{step.actorName}</span
+                                                        >
+                                                    </template>
+                                                    <span
+                                                        class="dah-sep"
+                                                        aria-hidden="true"
+                                                        >|</span
+                                                    >
+                                                    <span class="dah-when dah-mono">
+                                                        <lightning-formatted-date-time
+                                                            value={step.createdDateTime}
+                                                            year="numeric"
+                                                            month="short"
+                                                            day="2-digit"
+                                                            hour="2-digit"
+                                                            minute="2-digit"
+                                                        ></lightning-formatted-date-time>
+                                                    </span>
+                                                </p>
+                                                <template lwc:if={step.hasComments}>
+                                                    <p class="dah-note">
+                                                        <span class="dah-sr-only"
+                                                            >Comment</span
+                                                        >
+                                                        <span class="dah-note-txt"
+                                                            >{step.comments}</span
+                                                        >
+                                                    </p>
+                                                </template>
+                                            </li>
+                                        </template>
+                                    </ul>
+                                </template>
+                            </div>
+                        </div>
+                    </li>
+                </template>
+            </ul>
+        </template>
+
+        <!-- ═══════════════════════════════════════════════════════════════════════════════
+             🔴 THERE IS NO EMPTY STATE, AND ITS ABSENCE IS A DECISION.
+             ═══════════════════════════════════════════════════════════════════════════════
+             User instruction, 2026-08-25 (the same conversation that produced this card): stop
+             shipping hard-coded empty sentences. A sale that has never been submitted for anything
+             renders the title "Approval History (0)" and an empty card body — the count IS the
+             empty state, and it is a number rather than a claim, so it cannot go stale or
+             contradict the rows beside it. Do not re-add an icon-and-sentence block here without
+             a fresh instruction; `c/dispositionCallForOffers` had one removed for the same reason.
+             ⚠ THE ERROR STATE BELOW IS A DIFFERENT THING AND STAYS. "(0)" is a claim about the
+             SALE; a failed read is a fact about the READER, and the two must never share wording
+             or the reader is told the sale has no approvals when in truth they cannot see them.
+             That is the exact wrong answer this whole card was built to stop showing. -->
+        <template lwc:if={isUnavailable}>
+            <div class="dah-state" role="status">
+                <lightning-icon
+                    icon-name="utility:info"
+                    size="small"
+                    class="dah-state-icon"
+                ></lightning-icon>
+                <p class="dah-unavailable">{unavailableText}</p>
+            </div>
+        </template>
+    </lightning-card>
+</template>

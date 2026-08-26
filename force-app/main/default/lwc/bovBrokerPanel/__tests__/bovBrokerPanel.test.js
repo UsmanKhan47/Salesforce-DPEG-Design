@@ -37,10 +37,17 @@
  *    it is `toBe(true)` / `toBe(false)`."* The preferred view became a HERO PANEL
  *    rather than a filtered table, so `@api preferredOnly` was deleted from
  *    `c/bovComparisonMatrix` and the top child is now `c/bovPreferredBroker`.
- *    WHAT REPLACES IT is the `firmName` contract, asserted on the RENDERED child
+ *    WHAT REPLACES IT is the PROP contract, asserted on the RENDERED child
  *    — including the blank-name case, where this component must pass `''` and NOT
  *    `undefined`: a getter bound to an attribute is written unconditionally, and
  *    `undefined` reaches the DOM as the literal string "undefined".
+ *    ⚠ AMENDED 2026-08-25 (3): THAT CONTRACT IS FIVE PROPS, NOT ONE. The user
+ *    asked for Valuation / Days to Market / Cap Rate on the preferred row, so
+ *    `valuationLabel` / `daysToMarketLabel` / `capRateLabel` joined the two
+ *    names. All three are FORMATTED HERE, with the same `c/utils` helpers
+ *    `c/bovComparisonMatrix` uses for the identical columns in the table below —
+ *    so the tests assert the exact strings ('$12.5M', '45d', '6.25%') that the
+ *    matrix's own suite asserts, and a drift in either breaks both.
  * 4. `LightningModal.open()` IS A STATIC ON A CLASS and cannot be driven like a
  *    wire adapter, so both modals are mocked wholesale. Their own behaviour is
  *    proved in lwc/bovReplaceBrokerModal/__tests__ and
@@ -241,6 +248,33 @@ const PREFERRED_ROW = {
     bovAmount: null,
     daysToMarket: null,
     capRate: null
+};
+
+/**
+ * The SAME preferred broker, but one who HAS quoted — the state after a response
+ * is logged against the flagged row.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════
+ * 🔴 IT EXISTS BECAUSE `PREFERRED_ROW` CANNOT FALSIFY THE THREE FORMATTERS.
+ * ══════════════════════════════════════════════════════════════════════════════
+ * Every number on the thin row above is null, so all three stat columns render
+ * `—` — and a component that hard-coded three em dashes, or three empty strings
+ * the child then defaulted, would pass every assertion driven off it. Only a row
+ * carrying real numbers can tell `formatMillions(12500000)` from a constant.
+ *
+ * 🔴 THE THREE VALUES ARE `SUBMISSIONS[0]`'s, DELIBERATELY, AND THAT IS THE
+ * CROSS-SUITE PIN. `c/bovComparisonMatrix`'s own suite asserts that these exact
+ * three inputs render '$12.5M' / '45d' / '6.25%' in its Valuation / Days to Mkt /
+ * Cap Rate columns. This file asserts the same three strings for the same three
+ * inputs on the preferred ROW. The two surfaces sit inches apart inside one card
+ * and read one payload, so if either helper's output ever drifts, BOTH suites go
+ * red — which is the whole reason the formatting was moved into `c/utils`.
+ */
+const PREFERRED_ROW_QUOTED = {
+    ...PREFERRED_ROW,
+    bovAmount: 12500000,
+    daysToMarket: 45,
+    capRate: 6.25
 };
 
 /** The read-only label this panel must hand the replacement dialog. */
@@ -525,10 +559,11 @@ describe('c-bov-broker-panel', () => {
         const panel = preferredPanel(element);
         expect(panel).not.toBeNull();
 
-        // 🔴 THE WHOLE CONTRACT BETWEEN THESE TWO COMPONENTS, ON THE RENDERED
-        // CHILD — not on this component's getter. A getter-only assertion has
-        // passed in this project while the rendered output was wrong.
+        // 🔴 THE NAME HALF OF THE CONTRACT, ON THE RENDERED CHILD — not on this
+        // component's getter. A getter-only assertion has passed in this project
+        // while the rendered output was wrong.
         expect(panel.firmName).toBe('Cushman & Wakefield');
+        expect(panel.contactName).toBe('Ada Lin');
 
         // ⚠ AND THE PANEL ACTUALLY RENDERED IT. The prop assertion above passes
         // whether or not the child does anything with the value; a child's shadow
@@ -571,23 +606,115 @@ describe('c-bov-broker-panel', () => {
      * would stay green if this component started passing `undefined` and the
      * child happened to absorb it.
      */
-    it('🔴 A PREFERRED BROKER WITH NO FIRM NAME: the panel still renders, reading "Unnamed broker"', async () => {
+    it('🔴 A PREFERRED BROKER WITH NO NAME AT ALL: the panel still renders, reading "Unnamed broker"', async () => {
         const element = createComponent();
 
+        // 🔴 BOTH NAMES NULL, AND THAT IS A FIX TO THIS TEST (2026-08-25 (3)).
+        // It nulled only `brokerFirm` and still expected "Unnamed broker", which
+        // stopped being true when the CONTACT became the primary line: with a
+        // contact present and no firm the correct rendering is the contact's
+        // name, and the child's suite pins that promotion separately. Commit
+        // `eefa83e` left this test asserting the pre-compaction component.
         getSubmissions.emit([
             ...SUBMISSIONS,
-            { ...PREFERRED_ROW, brokerFirm: null }
+            { ...PREFERRED_ROW, brokerFirm: null, contactName: null }
         ]);
         await Promise.resolve();
 
         const panel = preferredPanel(element);
         expect(panel).not.toBeNull();
 
-        // An EMPTY STRING, never `undefined` and never `null`.
+        // EMPTY STRINGS, never `undefined` and never `null`.
         expect(panel.firmName).toBe('');
+        expect(panel.contactName).toBe('');
 
-        const firm = panel.shadowRoot.querySelector('.pref-firm');
-        expect(firm.textContent).toBe('Unnamed broker');
+        // ⚠ `.pref-name` IS THE PRIMARY LINE SINCE THE COMPACTION, and it carries
+        // the visually-hidden subject as well as the name — hence `toContain`.
+        const name = panel.shadowRoot.querySelector('.pref-name');
+        expect(name.textContent).toContain('Unnamed broker');
+        expect(panel.shadowRoot.textContent).not.toContain('undefined');
+    });
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // 🔴 THE THREE STAT COLUMNS ON THE PREFERRED ROW (2026-08-25 (3))
+    // ═════════════════════════════════════════════════════════════════════════
+
+    /** The child's three stat columns as `{ value, label }`, in document order. */
+    const childStats = (el) =>
+        [...preferredPanel(el).shadowRoot.querySelectorAll('.pref-stat')].map(
+            (column) => ({
+                value: column.querySelector('.pref-stat-value').textContent,
+                label: column.querySelector('.pref-stat-label').textContent
+            })
+        );
+
+    /**
+     * ══════════════════════════════════════════════════════════════════════════
+     * 🔴 THE FORMATTING IS THIS COMPONENT'S JOB, AND THIS IS WHERE IT IS PROVED.
+     * ══════════════════════════════════════════════════════════════════════════
+     * User instruction (2026-08-25): show Valuation, Days to Market and Cap Rate
+     * on the preferred row. The child holds NO formatter — it renders finished
+     * strings — so every number rule lives here and is asserted here.
+     *
+     * 🔴 THE FIXTURE CARRIES REAL NUMBERS ON PURPOSE. The ordinary `PREFERRED_ROW`
+     * is a thin row with all three fields null, so it renders three em dashes and
+     * cannot tell a formatter from a constant. See `PREFERRED_ROW_QUOTED`.
+     *
+     * ⚠ ASSERTED IN BOTH PLACES, AND THE PAIR IS THE POINT: the PROPS (this
+     * component's output) and the child's RENDERED TEXT (that it did something
+     * with them). A prop-only assertion passes with a child that drops the value;
+     * a text-only assertion passes if this component starts passing `undefined`
+     * and the child absorbs it.
+     */
+    it('🔴 A QUOTED PREFERRED BROKER: valuation, days and cap rate are FORMATTED here and rendered there', async () => {
+        const element = createComponent();
+
+        getSubmissions.emit([...SUBMISSIONS, PREFERRED_ROW_QUOTED]);
+        await Promise.resolve();
+
+        const panel = preferredPanel(element);
+
+        // 🔴 THE EXACT STRINGS `c/bovComparisonMatrix`'s SUITE ASSERTS for these
+        // same three inputs. Both surfaces render one payload inside one card;
+        // a drift in either shared helper reds both files.
+        expect(panel.valuationLabel).toBe('$12.5M');
+        expect(panel.daysToMarketLabel).toBe('45d');
+        expect(panel.capRateLabel).toBe('6.25%');
+
+        expect(childStats(element)).toEqual([
+            { value: '$12.5M', label: 'Valuation' },
+            { value: '45d', label: 'Days to Market' },
+            { value: '6.25%', label: 'Cap Rate' }
+        ]);
+    });
+
+    /**
+     * 🔴 THE ORDINARY CASE, AND IT IS THE NULL ONE. A broker is flagged preferred
+     * BEFORE they quote — `PREFERRED_ROW`'s own comment calls it "the THIN row a
+     * preferred broker really is" — so three em dashes is what this row shows on
+     * most dispositions, and the block must still render. A gate on "are there
+     * numbers" would make the row silently change shape the day a response lands.
+     *
+     * ⚠ `—`, NOT `''` AND NOT "undefined". The em dash comes from the `c/utils`
+     * helpers' own null branch, so the row and the matrix below it print the same
+     * glyph for the same missing number.
+     */
+    it('🔴 A THIN PREFERRED BROKER (no numbers at all): three labelled em dashes, still rendered', async () => {
+        const element = createComponent();
+
+        getSubmissions.emit(WITH_PREFERRED);
+        await Promise.resolve();
+
+        const panel = preferredPanel(element);
+        expect(panel.valuationLabel).toBe('—');
+        expect(panel.daysToMarketLabel).toBe('—');
+        expect(panel.capRateLabel).toBe('—');
+
+        expect(childStats(element)).toEqual([
+            { value: '—', label: 'Valuation' },
+            { value: '—', label: 'Days to Market' },
+            { value: '—', label: 'Cap Rate' }
+        ]);
         expect(panel.shadowRoot.textContent).not.toContain('undefined');
     });
 

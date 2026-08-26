@@ -945,4 +945,62 @@ public with sharing class BovSubmissionSelector {
                      CreatedDate ASC, Id ASC
         ];
     }
+
+    /**
+     * The IDENTITY of every BOV submission on one Disposition — its Id, its `BOV-{0000}` number and
+     * one human hint at whose submission it is. Backs `DispositionApprovalHistoryService.getHistory`,
+     * which needs the Id SET to find approvals whose `TargetObjectId` is a submission rather than
+     * the Disposition, and the Name/hint to LABEL those rows once found.
+     * Added 2026-08-26 with the consolidated Approval History card.
+     *
+     * 🔴 IT RETURNS **EVERY** SUBMISSION, NOT ONLY THE `Selected` ONE, AND THAT IS LOAD-BEARING.
+     * `Broker_Finalize_Approval`'s entry criterion is `Submission_Status__c = 'Selected'`, so it is
+     * tempting to reuse `selectSelectedByDispositionId` here. That would DELETE HISTORY: a broker
+     * who was selected, submitted, approved and later REPLACED is no longer `Selected`, and their
+     * approval — a real, completed, audited decision — would vanish from the card the moment the
+     * replacement landed. `BovSubmissionService.replaceSelectedBroker` makes that an ordinary
+     * outcome, not an edge case. An approval-history read filters on nothing but parentage.
+     *
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * ⚠ WHY THIS IS A SEPARATE METHOD RATHER THAN A REUSE OF `selectByDispositionId` ABOVE
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * That method returns the same ROWS and already carries `Name`, `Contact_Name__c` and
+     * `Broker_Firm__c`, so functionally it fits. It selects ELEVEN fields, and under `WITH
+     * USER_MODE` every selected field is an FLS gate — reusing it would give this card EIGHT extra
+     * ways to fail for values it never reads. That matters more here than it would elsewhere on
+     * this page because **the Approval History card carries NO FlexiPage visibility rule**: it
+     * renders at every stage of every disposition, so it is the component most likely to be the
+     * first to hit a missing grant. Same per-caller split, same reasoning, as
+     * `DispositionSelector.selectBrokerContextById` vs `selectApprovalContextById`.
+     *
+     * ⚠ `Contact_Name__c` AND `Broker_Firm__c` ARE BOTH NULLABLE and are both stamped from the
+     * `Broker__c` lookup, so a row can legitimately carry neither. The caller falls back to the
+     * `BOV-{0000}` number, which the platform guarantees. This method does NOT traverse `Broker__r`
+     * for a name: that would add OBJECT read on `Contact` as a gate — a grant that lives in a
+     * DIFFERENT permission set from the disposition ones (see
+     * `DispositionBuyerTimelineController`'s header) — for a hint the card can do without.
+     *
+     * ── NO `ORDER BY` ─────────────────────────────────────────────────────────────────────────
+     * Nothing ranks these rows. They are folded into a `Map<Id, …>` and looked up by Id; the card's
+     * ordering is the APPROVALS' (`ProcessInstanceSelector.selectHistoryByTargetIds`). Adding one
+     * would imply a display order that does not exist.
+     *
+     * @param dispositionId Disposition__c Id whose submissions to identify; null-safe.
+     * @return Id / Name / Contact_Name__c / Broker_Firm__c for every submission on the
+     *         Disposition; an empty list when it has none or the input is null. Never null.
+     * @example
+     * List&lt;BOV_Submission__c&gt; targets =
+     *     BovSubmissionSelector.selectApprovalTargetsByDispositionId(dispId);
+     */
+    public static List<BOV_Submission__c> selectApprovalTargetsByDispositionId(Id dispositionId) {
+        if (dispositionId == null) {
+            return new List<BOV_Submission__c>();
+        }
+        return [
+            SELECT Id, Name, Contact_Name__c, Broker_Firm__c
+            FROM BOV_Submission__c
+            WHERE Disposition__c = :dispositionId
+            WITH USER_MODE
+        ];
+    }
 }

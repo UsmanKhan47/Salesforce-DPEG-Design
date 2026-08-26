@@ -24,14 +24,25 @@
   rendering with a datatable, so `c/bovComparisonMatrix` lost `@api preferredOnly`
   entirely and the top child is now `c/bovPreferredBroker`. Read that bundle's
   `.js` header for the full list of what the flag was driving and what came out
-  with it. The `toBe(true)` pin is replaced by an assertion on the rendered
-  child's `firmName`, which is the whole of the new contract.
+  with it. The `toBe(true)` pin is replaced by assertions on the rendered child's
+  props.
+  ⚠ AMENDED 2026-08-25 (3): `firmName` WAS "the whole of the new contract" WHEN
+  THAT WAS WRITTEN AND IS NO LONGER. The contract is now FIVE props — the two
+  names plus `valuationLabel` / `daysToMarketLabel` / `capRateLabel`, the three
+  stat columns the user asked for on the right of the row. A pin that asserts
+  only `firmName` no longer describes the boundary between these two components;
+  see the mount below and this bundle's Jest suite, which pins all five on the
+  RENDERED child and the three values in the child's own shadow root.
 
-  ⚠ THE TOP CHILD TAKES A PROP AND HAS NO WIRE. It is presentational: this
+  ⚠ THE TOP CHILD TAKES PROPS AND HAS NO WIRE. It is presentational: this
   component already holds every BOV row and already finds the flagged one, so it
-  hands the firm name down. That is also why `_refreshAll` below only calls
-  `refreshData()` on the matrix — the panel re-renders from this component's own
-  wire, with nothing to re-provision.
+  hands the names and the three FORMATTED numbers down. That is also why
+  `_refreshAll` below only calls `refreshData()` on the matrix — the panel
+  re-renders from this component's own wire, with nothing to re-provision.
+  🔴 AND IT IS WHY THE FORMATTING IS HERE. The three numbers are formatted with
+  the same `c/utils` helpers the matrix below uses for the same three columns
+  (`formatMillions` / `formatDaysToMarket` / `formatCapRate`), so one broker's
+  valuation cannot read `$12.5M` in the row and something else in the table.
 
   🔴 THE PREFERRED PANEL IS GATED **HERE**, WITH `lwc:if`, AND THAT IS THE GAP FIX.
   `dispositionMain.css` documented the defect this replaces: a child that
@@ -103,21 +114,39 @@
 
         <div class="panel-stack">
             <template lwc:if={hasPreferredBroker}>
-                <!-- ⚠ BOTH ATTRIBUTES ARE ALWAYS STRINGS, NEVER `undefined`.
+                <!-- ⚠ ALL FIVE ATTRIBUTES ARE ALWAYS STRINGS, NEVER `undefined`.
                      Each getter returns `''` when the flagged row carries that
                      value as null, and `c/bovPreferredBroker` turns an empty
-                     pair into "Unnamed broker". `Broker_Firm__c` is legitimately
-                     nullable and was null on live data this week, and the broker
-                     Contact lookup is nullable too.
+                     name pair into "Unnamed broker". `Broker_Firm__c` is
+                     legitimately nullable and was null on live data this week,
+                     and the broker Contact lookup is nullable too.
                      🔴 `contact-name` ADDED 2026-08-25 — the panel now leads with
                      the PERSON and demotes the firm to a muted second line (user
                      instruction: "show broker contacts, not accounts"). Both
                      values come off the SAME `BovController.BovRow`, so this
                      panel and the matrix below it cannot name two different
-                     brokers. -->
+                     brokers.
+
+                     🔴 THE THREE `*-label` ATTRIBUTES ADDED 2026-08-25 (3) —
+                     Valuation, Days to Market, Cap Rate on the right of the row,
+                     by user instruction. THEY ARE FINISHED STRINGS: this
+                     component formats them with the SAME `c/utils` helpers
+                     `c/bovComparisonMatrix` uses for the identical three columns
+                     in the table directly beneath, so the row and the table
+                     cannot disagree about one broker's numbers. The child holds
+                     no formatter at all — see its `.js` header, and see
+                     `c/sellMeterInitiateModal` for the same caller-formats
+                     contract on another dialog.
+                     ⚠ A MISSING NUMBER ARRIVES AS `—` (the helpers' own
+                     fallback), NOT as `''`. `''` is reserved for "this parent
+                     shows no stats", which is how the OTHER parent of this
+                     bundle keeps its narrow sidebar row unchanged. -->
                 <c-bov-preferred-broker
                     contact-name={preferredBrokerContact}
                     firm-name={preferredBrokerFirm}
+                    valuation-label={preferredBrokerValuation}
+                    days-to-market-label={preferredBrokerDaysToMarket}
+                    cap-rate-label={preferredBrokerCapRate}
                 ></c-bov-preferred-broker>
 
                 <!--

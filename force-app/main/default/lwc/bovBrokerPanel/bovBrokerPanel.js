@@ -1,7 +1,12 @@
 import { LightningElement, api, wire } from 'lwc';
 import { ShowToastEvent } from 'lightning/platformShowToastEvent';
 import { refreshApex } from '@salesforce/apex';
-import { brokerOptionLabel } from 'c/utils';
+import {
+    brokerOptionLabel,
+    formatMillions,
+    formatDaysToMarket,
+    formatCapRate
+} from 'c/utils';
 import BovAddResponseModal from 'c/bovAddResponseModal';
 import BovReplaceBrokerModal from 'c/bovReplaceBrokerModal';
 import getSubmissions from '@salesforce/apex/BovController.getSubmissions';
@@ -99,9 +104,13 @@ const replacedMessage = (outgoing) =>
  * the shared LDS cache entry SHOULD re-provision it, but that is an assumption
  * about LDS internals that no Jest stub models; calling its
  * `@api refreshData()` makes the outcome true by construction and observable.
- * ⚠ `c/bovPreferredBroker` HAS NO WIRE AND SO HAS NO `refreshData()`. It renders
- * `preferredBrokerFirm`, derived from this component's own `_data`, so the
- * `refreshApex` above IS its refresh path.
+ * ⚠ `c/bovPreferredBroker` HAS NO WIRE AND SO HAS NO `refreshData()`. Every one
+ * of the five values it renders is derived from this component's own `_data`, so
+ * the `refreshApex` above IS its refresh path.
+ * 🔴 THAT MATTERS MORE SINCE 2026-08-25 (3) THAN IT DID WHEN IT WAS TWO NAMES. A
+ * broker's Valuation / Days to Market / Cap Rate CHANGE — they are null when the
+ * broker is first flagged and populated when the response is logged — so a
+ * broken refresh here now leaves stale NUMBERS on screen, not just a stale name.
  *
  * ══════════════════════════════════════════════════════════════════════════════
  * 🔴 NOTHING HERE NAVIGATES.
@@ -224,6 +233,61 @@ export default class BovBrokerPanel extends LightningElement {
     get preferredBrokerContact() {
         const row = this._preferredRow;
         return (row && row.contactName) || '';
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // The preferred broker's THREE NUMBERS, formatted here (2026-08-25)
+    // ─────────────────────────────────────────────────────────────────────────
+    //
+    // ══════════════════════════════════════════════════════════════════════════
+    // 🔴 FORMATTED HERE, WITH THE MATRIX'S OWN HELPERS, AND NEVER IN THE CHILD.
+    // ══════════════════════════════════════════════════════════════════════════
+    // User instruction (2026-08-25): the preferred row shows Valuation, Days to
+    // Market and Cap Rate. `c/bovComparisonMatrix` — the table rendered INCHES
+    // BELOW this row, inside this same card, from the SAME `getSubmissions`
+    // payload — already renders those three fields as its Valuation / Days to
+    // Mkt / Cap Rate columns. The two surfaces are read together, so they cannot
+    // be allowed to render one broker's numbers two ways.
+    //
+    // That is why all three go through `c/utils`: `formatMillions` was already
+    // shared, and `formatDaysToMarket` / `formatCapRate` were lifted out of the
+    // matrix's `rows` getter in this same change specifically so this component
+    // could call them instead of copying two ternaries. ONE implementation, two
+    // callers, no drift — the same argument that put `brokerOptionLabel` there.
+    // ⚠ DO NOT "SIMPLIFY" ANY OF THESE THREE INTO AN INLINE EXPRESSION. An
+    // inline copy is byte-identical on the day it is written and is exactly how
+    // the disagreement starts.
+    //
+    // ⚠ THE HELPERS RETURN `—` FOR A NULL, AND `—` IS A NON-EMPTY STRING. That
+    // matters: `c/bovPreferredBroker` renders its stats block when ANY of the
+    // three is non-empty, so a preferred broker with no numbers at all — the
+    // ORDINARY case, since a broker is flagged preferred before they quote —
+    // still gets three labelled em dashes rather than a row that silently
+    // changes shape once a valuation arrives.
+    //
+    // 🔴 AND THAT IS ALSO WHY THESE ARE PLAIN `''` WHEN THERE IS NO PREFERRED
+    // ROW AT ALL. `''` is the child's "this parent shows no stats" signal, which
+    // is what `c/dispositionBuyerTimeline` relies on to keep the same row in a
+    // ~276px sidebar. It is unreachable from here — the tag is gated by
+    // `lwc:if={hasPreferredBroker}` — but the getters are `@api`-facing and are
+    // written to the child's contract, not to this template's gate.
+
+    /** The preferred broker's valuation, formatted exactly as the matrix's Valuation column. */
+    get preferredBrokerValuation() {
+        const row = this._preferredRow;
+        return row ? formatMillions(row.bovAmount) : '';
+    }
+
+    /** The preferred broker's days to market, formatted exactly as the matrix's "Days to Mkt" column. */
+    get preferredBrokerDaysToMarket() {
+        const row = this._preferredRow;
+        return row ? formatDaysToMarket(row.daysToMarket) : '';
+    }
+
+    /** The preferred broker's cap rate, formatted exactly as the matrix's Cap Rate column. */
+    get preferredBrokerCapRate() {
+        const row = this._preferredRow;
+        return row ? formatCapRate(row.capRate) : '';
     }
 
     /**

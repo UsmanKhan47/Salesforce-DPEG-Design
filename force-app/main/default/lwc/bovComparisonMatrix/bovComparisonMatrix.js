@@ -1,7 +1,7 @@
 import { LightningElement, api, wire } from 'lwc';
 import { NavigationMixin } from 'lightning/navigation';
 import { refreshApex } from '@salesforce/apex';
-import { formatMillions } from 'c/utils';
+import { formatMillions, formatDaysToMarket, formatCapRate } from 'c/utils';
 import getSubmissions from '@salesforce/apex/BovController.getSubmissions';
 
 /*
@@ -19,6 +19,11 @@ import getSubmissions from '@salesforce/apex/BovController.getSubmissions';
  * ⚠ `refreshApex` STAYED, and `formatMillions` stayed. The first backs
  * `@api refreshData()` (the panel calls it after every write); the second formats
  * the Valuation column.
+ * ⚠ `formatDaysToMarket` AND `formatCapRate` JOINED IT ON 2026-08-25 and are NOT
+ * new behaviour: they are the two inline ternaries that used to sit in `rows`,
+ * moved to `c/utils` when `c/bovPreferredBroker` gained the same three columns
+ * for the preferred broker in the row above this table. Same payload, same
+ * strings, one implementation. Do not inline them again "to save an import".
  */
 
 const SELECTED_BAR = '#2e7d32';
@@ -238,8 +243,13 @@ export default class BovComparisonMatrix extends NavigationMixin(LightningElemen
                 brokerFirm: r.brokerFirm || '—',
                 contactName: r.contactName || '—',
                 bovAmountLabel: formatMillions(r.bovAmount),
-                daysLabel: r.daysToMarket != null ? r.daysToMarket + 'd' : '—',
-                capRateLabel: r.capRate != null ? parseFloat(r.capRate).toFixed(2) + '%' : '—',
+                // ⚠ SHARED HELPERS SINCE 2026-08-25, NOT INLINE TERNARIES. Both
+                // were inline here with one caller each; `c/bovBrokerPanel` now
+                // renders the same two fields for the PREFERRED broker in the row
+                // directly above this table, off the same payload. The rendered
+                // strings are unchanged — this suite pins '45d' and '6.25%'.
+                daysLabel: formatDaysToMarket(r.daysToMarket),
+                capRateLabel: formatCapRate(r.capRate),
                 scoreText: score != null ? String(score) : '—',
                 scoreBar: score != null
                     ? `width:${Math.min(100, score)}%;height:100%;background:${selected ? SELECTED_BAR : BACKUP_BAR};border-radius:4px`

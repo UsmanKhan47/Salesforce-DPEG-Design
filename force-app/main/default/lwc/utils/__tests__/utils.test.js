@@ -11,6 +11,8 @@ import {
     MONTHS,
     formatMoney,
     formatMillions,
+    formatDaysToMarket,
+    formatCapRate,
     formatExactCurrency,
     formatShortDate,
     formatLongDate,
@@ -177,6 +179,76 @@ describe('c/utils formatMillions (always $M, em-dash fallback)', () => {
         expect(formatMillions(1850000)).toBe('$1.9M');
         expect(formatMillions(1860000)).toBe('$1.9M');
         expect(formatMillions(1850000)).toBe(formatMillions(1860000));
+    });
+});
+
+/*
+ * ═══════════════════════════════════════════════════════════════════════════
+ * THE TWO BOV COLUMN FORMATTERS (extracted 2026-08-25)
+ * ═══════════════════════════════════════════════════════════════════════════
+ * Both were inline ternaries inside `c/bovComparisonMatrix.rows` with one caller
+ * each. They now have two: that table, and the three stat columns on
+ * `c/bovPreferredBroker`'s row, which `c/bovBrokerPanel` renders DIRECTLY ABOVE
+ * the table from the SAME payload. The strings below are the exact strings both
+ * of those suites assert — this file is where their contract is pinned directly.
+ */
+describe('c/utils formatDaysToMarket (day count + d, em-dash fallback)', () => {
+    it('renders null / undefined as an em dash', () => {
+        expect(formatDaysToMarket(null)).toBe('—');
+        expect(formatDaysToMarket(undefined)).toBe('—');
+    });
+
+    it('suffixes a day count with d', () => {
+        expect(formatDaysToMarket(45)).toBe('45d');
+        expect(formatDaysToMarket(60)).toBe('60d');
+    });
+
+    /**
+     * 🔴 ZERO IS A REAL VALUE AND MUST NOT PRINT AS `—`. "0 days to market"
+     * means the asset is already listed; a falsy null-check would replace that
+     * with the same glyph used for "we don't know", which says something false
+     * about the broker's quote. `!= null` is what keeps them apart.
+     */
+    it('🔴 renders a genuine ZERO, never the em dash', () => {
+        expect(formatDaysToMarket(0)).toBe('0d');
+        expect(formatDaysToMarket(0)).not.toBe('—');
+    });
+
+    it('coerces a number-over-the-wire string', () => {
+        expect(formatDaysToMarket('45')).toBe('45d');
+    });
+});
+
+describe('c/utils formatCapRate (BOV cap rate, 2dp, em-dash fallback)', () => {
+    it('renders null / undefined as an em dash', () => {
+        expect(formatCapRate(null)).toBe('—');
+        expect(formatCapRate(undefined)).toBe('—');
+    });
+
+    it('renders a percentage to two decimals', () => {
+        expect(formatCapRate(6.25)).toBe('6.25%');
+        expect(formatCapRate(6.8)).toBe('6.80%');
+    });
+
+    it('renders a genuine zero rather than the em dash', () => {
+        expect(formatCapRate(0)).toBe('0.00%');
+    });
+
+    it('coerces a Decimal-over-the-wire string', () => {
+        expect(formatCapRate('6.1')).toBe('6.10%');
+    });
+
+    /**
+     * 🔴 TWO DECIMALS IS THE **BOV** VARIANT. `c/sellMeterList` formats its
+     * `mktCapRate` with `toFixed(1)` and is deliberately NOT migrated to this
+     * helper — its output would change from `6.5%` to `6.50%` and its suite
+     * asserts the exact string. This assertion is the pin on that decision: if
+     * someone "unifies" the precision, this fails here rather than silently
+     * re-rendering another module's table.
+     */
+    it('🔴 keeps TWO decimals — sellMeterList uses ONE and is not a caller', () => {
+        expect(formatCapRate(6.5)).toBe('6.50%');
+        expect(formatCapRate(6.5)).not.toBe('6.5%');
     });
 });
 

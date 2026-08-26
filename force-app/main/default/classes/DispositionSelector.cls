@@ -803,4 +803,47 @@ public with sharing class DispositionSelector {
             WITH SYSTEM_MODE
         ];
     }
+
+    /**
+     * ONE Disposition's `DISP-{0000}` number and nothing else. Backs
+     * `DispositionApprovalHistoryService.getHistory`, which labels the rows of the consolidated
+     * Approval History card — three of the five disposition approvals target the Disposition
+     * ITSELF, and their row needs the same "which record is this?" label the BOV and offer rows get.
+     * Added 2026-08-26.
+     *
+     * ⚠ IT IS THE NARROWEST READ IN THIS CLASS ON PURPOSE, AND IT IS NOT A REUSE OF ANY OF THE
+     * SEVEN `…ById` METHODS ABOVE. Under `WITH USER_MODE` every selected field is an FLS gate, and
+     * this caller renders on EVERY disposition at EVERY stage with no FlexiPage visibility rule —
+     * so it is the read most exposed to a missing grant, and it selects exactly one field, the
+     * AutoNumber the platform always exposes. Reusing `selectApprovalContextById` (five fields,
+     * including a `Property_Asset__r` traversal) would import five failure modes for a value this
+     * caller does not read. Same per-caller split this class already makes between
+     * `selectApprovalContextById` and `selectBrokerContextById`.
+     *
+     * ── NOT-FOUND CONTRACT: read-for-display, so a LIST ────────────────────────────────────────
+     * ⚠ IT RETURNS `List<Disposition__c>`, NOT `Disposition__c`, EVEN THOUGH IT READS ONE RECORD.
+     * The four singular methods above FETCH FOR USE and throw `QueryException` on a miss, which is
+     * right for a Submit handler that cannot proceed. This one feeds a read-only card: a
+     * sharing-filtered miss must degrade to "no label for that row", not take down a card whose
+     * BOV and offer rows are still perfectly readable. Same shape as
+     * `ProcessInstanceSelector.selectPendingByTargetId`.
+     *
+     * @param dispositionId The Disposition to label; null-safe.
+     * @return A single-element list carrying Id + Name, or an empty list when the input is null or
+     *         the record is not visible. Never null.
+     * @example
+     * List&lt;Disposition__c&gt; rows = DispositionSelector.selectNameById(dispositionId);
+     */
+    public static List<Disposition__c> selectNameById(Id dispositionId) {
+        if (dispositionId == null) {
+            return new List<Disposition__c>();
+        }
+        return [
+            SELECT Id, Name
+            FROM Disposition__c
+            WHERE Id = :dispositionId
+            WITH USER_MODE
+            LIMIT 1
+        ];
+    }
 }
