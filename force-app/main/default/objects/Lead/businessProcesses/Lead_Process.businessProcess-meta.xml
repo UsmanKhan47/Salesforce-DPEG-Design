@@ -10,12 +10,17 @@
         types). Lead had no BusinessProcess in this repo before this file, because Lead had no
         record types at all before Task 1 of this plan.
 
-        ONE SHARED PROCESS FOR BOTH LEAD RECORD TYPES, DELIBERATELY - see
-        Lead/recordTypes/Acquisition_Broker.recordType-meta.xml and
-        Lead/recordTypes/IR_Investor.recordType-meta.xml, which both reference
-        <businessProcess>Lead_Process</businessProcess>. This change must be behaviour-neutral
-        for every existing Lead; giving IR its own Status set is a later, separate decision, not
-        this one. Do not split this into two processes without a fresh decision to do so.
+        THIS PROCESS IS USED BY Lead/recordTypes/Acquisition_Broker.recordType-meta.xml, which
+        references <businessProcess>Lead_Process</businessProcess>. This paragraph originally
+        claimed it was shared by BOTH Lead record types - that premise is now stale (CORRECTED
+        2026-08-25, code review C3). The other Lead record type referenced here as "IR_Investor"
+        was renamed to Investor_Onboarding (Lead/recordTypes/Investor_Onboarding.recordType-meta.xml;
+        there is no IR_Investor.recordType-meta.xml anywhere in this repo) and was later given its
+        OWN, separate business process, "Investor Onboarding Lead"
+        (objects/Lead/businessProcesses/Investor Onboarding Lead.businessProcess-meta.xml), with
+        its own Status value set (adds Create Profile, omits Qualified and Disqualified). Do not
+        assume every Lead record type shares this process - check each record type's own
+        <businessProcess> reference before editing either file.
 
         VALUES DERIVED FROM A LIVE ORG DESCRIBE (`sf sobject describe, sobject=Lead` against
         usman-dpeg), NOT from this repo's Status.field-meta.xml, which is a bare stub with no

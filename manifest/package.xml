@@ -567,7 +567,6 @@
         <members>NDA__c.Opportunity__c</members>
         <members>NDA__c.Party_Role__c</members>
         <members>NDA__c.Status__c</members>
-        <members>Offering__c.IR_Owner__c</members>
         <members>Offering__c.Opportunity__c</members>
         <members>Offering__c.Status__c</members>
         <members>Onboarding__c.Address_Display__c</members>

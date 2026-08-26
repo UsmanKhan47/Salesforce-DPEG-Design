@@ -2083,7 +2083,6 @@ public with sharing class TestDataFactory {
         for (Integer i = 0; i < count; i++) {
             offerings.add(new Offering__c(
                 Opportunity__c = opportunityId,
-                IR_Owner__c = UserInfo.getUserId(),
                 Status__c = 'Draft'
             ));
         }

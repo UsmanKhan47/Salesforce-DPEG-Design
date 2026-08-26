@@ -16,9 +16,29 @@
                 <label>Draft</label>
             </value>
             <value>
-                <fullName>Active</fullName>
+                <fullName>Pre Launch</fullName>
                 <default>false</default>
-                <label>Active</label>
+                <label>Pre Launch</label>
+            </value>
+            <value>
+                <fullName>Active Fundraising</fullName>
+                <default>false</default>
+                <label>Active Fundraising</label>
+            </value>
+            <value>
+                <fullName>Fully Subscribed</fullName>
+                <default>false</default>
+                <label>Fully Subscribed</label>
+            </value>
+            <value>
+                <fullName>Signatures Pending</fullName>
+                <default>false</default>
+                <label>Signatures Pending</label>
+            </value>
+            <value>
+                <fullName>Ready to Activate</fullName>
+                <default>false</default>
+                <label>Ready to Activate</label>
             </value>
             <value>
                 <fullName>Closed</fullName>

@@ -34,4 +34,21 @@
         <tab>standard-report</tab>
         <visibility>Visible</visibility>
     </tabSettings>
+    <!--
+        ⚠ ADDED 2026-08-25 - Offering/Bank Account/Property declarative build. Tab visibility ONLY,
+        consistent with this set's layer-2 app/tab-visibility purpose - no objectPermissions or
+        fieldPermissions added here; those live in DPEG_IR_Default_Access / DPEG_IR_Principle_Read.
+    -->
+    <tabSettings>
+        <tab>Bank_Account__c</tab>
+        <visibility>Visible</visibility>
+    </tabSettings>
+    <tabSettings>
+        <tab>Offering__c</tab>
+        <visibility>Visible</visibility>
+    </tabSettings>
+    <tabSettings>
+        <tab>Property__c</tab>
+        <visibility>Visible</visibility>
+    </tabSettings>
 </PermissionSet>

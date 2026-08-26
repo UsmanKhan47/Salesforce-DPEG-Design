@@ -12,7 +12,7 @@
         ⚠ DESCRIPTION TRIMMED 2026-08-20 - was 442 chars, over the 255-char cap (deployment
         validation error). Meaning preserved, wording shortened.
     -->
-    <description>IR layer-3 module data. Lead CRUD minus Delete w/ onboarding FLS; Contact/Account/ACR CRUD(+Acct delete); Task/Event CRUD; EditTask+EmailSingle+ConvertLeads+EmailTemplateMgmt; 3 IR flows; Investor_Onboarding+Investor RTs; conversion + junction FLS.</description>
+    <description>IR layer-3 module data. Lead CRUD minus Delete w/ onboarding FLS; Contact/Account/ACR CRUD(+Acct delete); Task/Event CRUD; EditTask+EmailSingle+ConvertLeads+EmailTemplateMgmt; 7 IR flows; Investor_Onboarding+Investor RTs; conversion + junction FLS.</description>
     <!--
         ⚠ ADDED (Account/Contact junction change, 2026-08-20) - the four new "Investing Entity"
         fields on Account (Entity_Type__c, Tax_ID__c, Tax_Address__c, Appfolio_ID__c). None of
@@ -203,6 +203,321 @@
         <field>Lead.Referred_By__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!--
+        ⚠ ADDED 2026-08-25 - Offering/Bank Account/Property declarative build. Full CRUD FLS on
+        Bank_Account__c (new object), Offering__c (3 existing + 12 new fields) and Property__c
+        (35 existing + 1 new field), added additively - every pre-existing entry in this file is
+        left untouched. See ARCHITECTURE.md's PermissionSet REPLACE-not-merge warning.
+    -->
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Bank_Account__c.Account_Nickname__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Bank_Account__c.Account_Number__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Bank_Account__c.Entity_Name__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Bank_Account__c.Routing_Number__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Offering__c.Distribution_Schedule__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Offering__c.Funding_Deadline__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Offering__c.GP_Bank_Account__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Offering__c.GP_Entity__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Offering__c.Investment_Time_Horizon__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!--
+        ⚠ ADDED 2026-08-25 (PM follow-up) - Offering Assign to Me + Owner-Queue Gating build. FLS
+        for the new Is_Owner_Queue__c formula field - readable only, since formula fields cannot be
+        editable. Interleaved here to preserve this block's alphabetical ordering (between
+        Investment_Time_Horizon__c and Minimum_Investment__c). Added additively.
+    -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Offering__c.Is_Owner_Queue__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Offering__c.Minimum_Investment__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Offering__c.Offering_Name__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Offering__c.Opportunity__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Offering__c.Price_Per_Share__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Offering__c.Status__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Offering__c.Target_Cash_on_Cash__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Offering__c.Target_Investor_AAR__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Offering__c.Target_Raise__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Offering__c.Type__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.ADR__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!--
+        ⚠ ADDED 2026-08-25 (PM follow-up) - Acquisition/Valuation/Loan fields build. Full CRUD FLS
+        on 4 new Property__c fields: Acquisition_Date__c, Valuation__c, Loan_to_Value__c,
+        Loan_Balance__c. Interleaved at their correct alphabetical positions within the existing
+        Property__c run below (this comment marks the first of the four; the others are Loan_
+        Balance__c/Loan_to_Value__c between Days_On_Market_Avg__c and Lot_Size_Acres__c, and
+        Valuation__c between Unit_Count__c and Visitor_Demographics__c). Added additively.
+    -->
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Acquisition_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Address__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Annual_NOI__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Asking_Price__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Asset_Type__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Cap_Rate_Asking__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.City__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.CoStar_URL__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Comp_Monthly_Visits__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Comp_Sales__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.County__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Days_On_Market_Avg__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Loan_Balance__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Loan_to_Value__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Lot_Size_Acres__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Lot_Size__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Market_Cap_Rate__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Market_Rent_PSF__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Monthly_Visits__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Occupancy_Pct__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Occupancy_Rate_Market__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Offering__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Parcel_ID__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Peak_Hour__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Placer_Fetch_Status__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Placer_URL__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Seller_Entity__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Square_Footage__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.State__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Trade_Area_Population__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Unit_Count__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Valuation__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Visitor_Demographics__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.WALT_Years__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Year_Built__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Year_Renovated__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.YoY_Growth__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Zip__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Zoning__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <!-- ⚠ ADDED 2026-08-21 - "Add" sorts before "Lead" alphabetically, hence first. -->
     <flowAccesses>
         <enabled>true</enabled>
@@ -223,6 +538,28 @@
     <flowAccesses>
         <enabled>true</enabled>
         <flow>IR_Manage_Investing_Entity</flow>
+    </flowAccesses>
+    <!-- ⚠ ADDED 2026-08-25 (PM follow-up) - Offering Assign to Me + Owner-Queue Gating build.
+         Grants access to the new IR_Offering_Assign_to_Me screen flow, launched from the
+         Offering__c.Assign_to_Me quick action. Placed here (before IR_Offering_PreLaunch) to
+         preserve this section's alphabetical ordering ("IR_Offering_Assign..." sorts before
+         "IR_Offering_PreLaunch" - 'A' < 'P'). API name corrected to capital M 2026-08-25 (code
+         review, minor warning) to match this flow's own label and the quick action that
+         references it - see flows/IR_Offering_Assign_to_Me.flow-meta.xml header comment. -->
+    <flowAccesses>
+        <enabled>true</enabled>
+        <flow>IR_Offering_Assign_to_Me</flow>
+    </flowAccesses>
+    <!-- ⚠ ADDED 2026-08-25 - Offering PreLaunch declarative build. Grants access to the new
+         IR_Offering_PreLaunch screen flow, launched from the Offering__c.Pre_Launch quick action.
+         Placed last to preserve this section's alphabetical ordering ("IR_Offering..." sorts
+         after "IR_Manage..."). Offering__c object CRUD and Status__c FLS already exist elsewhere
+         in this file (see the 2026-08-25 Offering/Bank Account/Property block above) - no
+         quick-action-specific grant exists in PermissionSet metadata, so flow access is the only
+         new grant this feature needs. -->
+    <flowAccesses>
+        <enabled>true</enabled>
+        <flow>IR_Offering_PreLaunch</flow>
     </flowAccesses>
     <hasActivationRequired>false</hasActivationRequired>
     <label>DPEG IR Default Access</label>
@@ -284,6 +621,38 @@
         <allowRead>true</allowRead>
         <modifyAllRecords>false</modifyAllRecords>
         <object>Event</object>
+        <viewAllRecords>false</viewAllRecords>
+    </objectPermissions>
+    <!--
+        ⚠ ADDED 2026-08-25 - Offering/Bank Account/Property declarative build. Full CRUD
+        (Create/Read/Edit/Delete, no viewAll/modifyAll) on the two existing objects and the new
+        Bank_Account__c object.
+    -->
+    <objectPermissions>
+        <allowCreate>true</allowCreate>
+        <allowDelete>true</allowDelete>
+        <allowEdit>true</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>false</modifyAllRecords>
+        <object>Bank_Account__c</object>
+        <viewAllRecords>false</viewAllRecords>
+    </objectPermissions>
+    <objectPermissions>
+        <allowCreate>true</allowCreate>
+        <allowDelete>true</allowDelete>
+        <allowEdit>true</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>false</modifyAllRecords>
+        <object>Offering__c</object>
+        <viewAllRecords>false</viewAllRecords>
+    </objectPermissions>
+    <objectPermissions>
+        <allowCreate>true</allowCreate>
+        <allowDelete>true</allowDelete>
+        <allowEdit>true</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>false</modifyAllRecords>
+        <object>Property__c</object>
         <viewAllRecords>false</viewAllRecords>
     </objectPermissions>
     <recordTypeVisibilities>

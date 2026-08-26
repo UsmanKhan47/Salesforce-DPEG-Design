@@ -73,35 +73,56 @@
         rebuild. THE APPS MUST BE VISIBLE HERE AND VERIFIED BEFORE Acquisition_App_Access IS
         UNASSIGNED. Never the other way round.
 
-        (B) 🔴 SIX recordTypeVisibilities WERE ADDED TO STOP THIS FILE SILENTLY WIPING THEM.
-        Account.Broker_Firm, Account.Investing_Entity, Contact.Broker, Contact.Investor,
-        Lead.Acquisition_Broker and Lead.IR_Investor were LIVE IN THE ORG on this set and were
-        ABSENT FROM THIS FILE. A PermissionSet deploy REPLACES the whole grant list rather than
-        merging into it, so the very next deploy of this file - including the app move in (A),
-        made for an entirely unrelated reason - would have destroyed all six with no error and no
-        warning. That is the identical failure that took down Broker Protection twice
-        (2026-08-05 and 2026-08-06). Measured by retrieving this set from usman-dpeg into a
-        scratch directory and diffing normalized grant lists: org 59 grants, repo 53, six
-        org-only, zero repo-only.
+        (B) 🔴 FIVE recordTypeVisibilities WERE ADDED TO STOP THIS FILE SILENTLY WIPING THEM.
+        Account.Broker_Firm, Account.Investing_Entity, Contact.Broker, Contact.Investor and
+        Lead.Acquisition_Broker were LIVE IN THE ORG on this set and were ABSENT FROM THIS FILE.
+        A PermissionSet deploy REPLACES the whole grant list rather than merging into it, so the
+        very next deploy of this file - including the app move in (A), made for an entirely
+        unrelated reason - would have destroyed all five with no error and no warning. That is
+        the identical failure that took down Broker Protection twice (2026-08-05 and 2026-08-06).
+        Measured on 2026-08-10 by retrieving this set from usman-dpeg into a scratch directory and
+        diffing normalized grant lists: five org-only, zero repo-only.
+
+        ⚠ CORRECTED 2026-08-25 (code review C3) - this paragraph originally also named a SIXTH
+        reconciled record type, "Lead.IR_Investor", and a recordTypeVisibilities entry for it was
+        added to this file (Offering/Bank Account/Property build, then briefly restored in an
+        earlier fix pass for this same task). That was wrong: Lead.IR_Investor does not exist
+        under that name in this org or this repo - it was renamed to Lead.Investor_Onboarding
+        (see objects/Lead/recordTypes/Investor_Onboarding.recordType-meta.xml; there is no
+        IR_Investor.recordType-meta.xml anywhere in this repo, and objects/Lead/recordTypes/
+        contains only Acquisition_Broker and Investor_Onboarding). This set (DPEG_Admin_Access)
+        deliberately does NOT grant Lead.Investor_Onboarding - that grant already lives on
+        DPEG_IR_Default_Access and DPEG_IR_Principle_Read, the two IR-scoped permission sets
+        where it belongs. The erroneous entry was removed. Do not re-add Lead.IR_Investor or
+        Lead.Investor_Onboarding here without a real, reviewed reason for the Admin persona to
+        need IR record-type access.
 
         ⚠ THE 2026-08-09 RECONCILIATION NOTE ABOVE IS THEREFORE NOT A STANDING GUARANTEE. It
         said "ZERO org-only grants were found" and it is retained as the record of what was true
         that day, but it did not hold one day later. Re-run the diff before EVERY deploy of this
         file; do not cite that paragraph as a reason to skip it.
 
-        ⚠ CONSEQUENCE TO KNOW BEFORE DEPLOYING THIS FILE ANYWHERE BUT usman-dpeg: those six
-        record types exist in the ORG but NOT in this repo (no recordTypes/ files for them), and
-        they are not alone - the org also holds permission sets and a group that were built
-        directly in usman-dpeg and never brought into source. Deploying this file to usman-dpeg
-        SUCCEEDS because the record types are present there. Deploying it to a scratch org built
-        from this repo alone will FAIL on all six. The alternative - leaving them out -
-        guarantees a silent wipe on the next deploy to the org that actually matters, which is
-        strictly worse. Bringing the unsourced metadata into source is the real fix and is out of
-        this change's scope; it is recorded in docs/permission-set-retirement-runbook.md.
+        ⚠ CONSEQUENCE TO KNOW BEFORE DEPLOYING THIS FILE (UPDATED 2026-08-25, code review C3):
+        this paragraph originally said all six reconciled record types existed in the ORG but NOT
+        in this repo. That is now stale - five of them (Account.Broker_Firm,
+        Account.Investing_Entity, Contact.Broker, Contact.Investor, Lead.Acquisition_Broker) now
+        have recordTypes/ files in this repo (see objects/Account/recordTypes/,
+        objects/Contact/recordTypes/, objects/Lead/recordTypes/), so a scratch org built from this
+        repo alone will deploy those five successfully. The sixth, formerly referred to here as
+        "Lead.IR_Investor," was never brought into source under that name because it does not
+        exist under that name anywhere - it was renamed to Lead.Investor_Onboarding, which DOES
+        have a recordTypes/ file in this repo
+        (objects/Lead/recordTypes/Investor_Onboarding.recordType-meta.xml) but is deliberately NOT
+        granted on this set (see the correction to paragraph (B) above). The org also still holds
+        permission sets and a group that were built directly in usman-dpeg and never brought into
+        source, unrelated to this record-type question. Bringing any remaining unsourced metadata
+        into source is out of this change's scope; it is recorded in
+        docs/permission-set-retirement-runbook.md.
 
-        🔴 DO NOT "TIDY" THE SIX recordTypeVisibilities BELOW BECAUSE THEIR RECORD TYPES ARE NOT
-        IN THIS REPO. They are live grants in the org. Removing them from this file is exactly
-        the silent wipe this whole comment exists to prevent.
+        🔴 DO NOT "TIDY" THE FIVE recordTypeVisibilities BELOW EVEN THOUGH THEIR RECORD TYPES ARE
+        NOW ALSO IN THIS REPO. They are live grants in the org that this file must keep carrying
+        regardless of where else the record type is sourced. Removing them from this file is
+        exactly the silent wipe this whole comment exists to prevent.
 
         ⚠ RELATED, NOT FIXED HERE, AND MORE DANGEROUS: the DPEG_Principal_PSG group in the ORG
         carries a member that the repo copy of that group does NOT list. A PermissionSetGroup
@@ -125,7 +146,33 @@
         <application>Transaction</application>
         <visible>true</visible>
     </applicationVisibilities>
-    <description>Restores what the Admin profile grants but never deploys (profiles are .forceignored): every custom tab, ten field grants, the four Lightning apps, and the Opportunity/Disposition/NDA/LOI/Account/Contact/Lead record types. See the in-file comment.</description>
+    <description>Restores what the Admin profile grants but never deploys (profiles are .forceignored): every custom tab, field grants for newly deployed fields, the four Lightning apps, and the reconciled record types. See the in-file comment.</description>
+    <!--
+        ⚠ ADDED 2026-08-25 - Offering/Bank Account/Property declarative build. Full CRUD FLS on
+        Bank_Account__c (new object), Offering__c (3 existing + 12 new fields) and Property__c
+        (35 existing + 1 new field), added additively per the "PermissionSet deploy REPLACES the
+        whole grant list" warning above - every pre-existing entry in this file is left untouched.
+    -->
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Bank_Account__c.Account_Nickname__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Bank_Account__c.Account_Number__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Bank_Account__c.Entity_Name__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Bank_Account__c.Routing_Number__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
         <field>Contract_Review__c.Disposition__c</field>
@@ -176,8 +223,335 @@
         <field>NDA__c.Party_Role__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Offering__c.Distribution_Schedule__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Offering__c.Funding_Deadline__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Offering__c.GP_Bank_Account__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Offering__c.GP_Entity__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Offering__c.Investment_Time_Horizon__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!--
+        ⚠ ADDED 2026-08-25 (code review, Assign to Me follow-up) - FLS for the Is_Owner_Queue__c
+        formula field, needed because Offering_Record_Page.flexipage-meta.xml's Pre_Launch action
+        visibility rule reads it as its second AND criterion; without read access here the rule
+        silently never evaluates true for this persona (Admin profile, which is one of the two
+        profiles assigned to Offering_Record_Page). Read-only - editable=false, since formula
+        fields cannot be editable, matching the pattern already used for this same field on
+        DPEG_IR_Default_Access. FLS-only fix; this set is not being given flowAccesses to
+        IR_Offering_PreLaunch as part of this change. Interleaved to preserve this block's
+        alphabetical ordering (between Investment_Time_Horizon__c and Minimum_Investment__c).
+    -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Offering__c.Is_Owner_Queue__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Offering__c.Minimum_Investment__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Offering__c.Offering_Name__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Offering__c.Opportunity__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Offering__c.Price_Per_Share__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Offering__c.Status__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Offering__c.Target_Cash_on_Cash__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Offering__c.Target_Investor_AAR__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Offering__c.Target_Raise__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Offering__c.Type__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.ADR__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!--
+        ⚠ ADDED 2026-08-25 (PM follow-up) - Acquisition/Valuation/Loan fields build. Full CRUD FLS
+        on 4 new Property__c fields: Acquisition_Date__c, Valuation__c, Loan_to_Value__c,
+        Loan_Balance__c. Interleaved at their correct alphabetical positions within the existing
+        Property__c run below (this comment marks the first of the four; the others are Loan_
+        Balance__c/Loan_to_Value__c between Days_On_Market_Avg__c and Lot_Size_Acres__c, and
+        Valuation__c between Unit_Count__c and Visitor_Demographics__c). Added additively.
+    -->
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Acquisition_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Address__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Annual_NOI__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Asking_Price__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Asset_Type__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Cap_Rate_Asking__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.City__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.CoStar_URL__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Comp_Monthly_Visits__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Comp_Sales__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.County__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Days_On_Market_Avg__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Loan_Balance__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Loan_to_Value__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Lot_Size_Acres__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Lot_Size__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Market_Cap_Rate__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Market_Rent_PSF__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Monthly_Visits__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Occupancy_Pct__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Occupancy_Rate_Market__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Offering__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Parcel_ID__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Peak_Hour__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Placer_Fetch_Status__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Placer_URL__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Seller_Entity__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Square_Footage__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.State__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Trade_Area_Population__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Unit_Count__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Valuation__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Visitor_Demographics__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.WALT_Years__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Year_Built__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Year_Renovated__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.YoY_Growth__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Zip__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Zoning__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <hasActivationRequired>false</hasActivationRequired>
     <label>DPEG Admin Access</label>
+    <!--
+        ⚠ ADDED 2026-08-25 - Offering/Bank Account/Property declarative build. This set carried
+        ZERO objectPermissions before this change (see the class description above); these three
+        are the first, consistent with this set's stated purpose of restoring what the Admin
+        profile grants but never deploys.
+    -->
+    <objectPermissions>
+        <allowCreate>true</allowCreate>
+        <allowDelete>true</allowDelete>
+        <allowEdit>true</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>false</modifyAllRecords>
+        <object>Bank_Account__c</object>
+        <viewAllRecords>false</viewAllRecords>
+    </objectPermissions>
+    <objectPermissions>
+        <allowCreate>true</allowCreate>
+        <allowDelete>true</allowDelete>
+        <allowEdit>true</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>false</modifyAllRecords>
+        <object>Offering__c</object>
+        <viewAllRecords>false</viewAllRecords>
+    </objectPermissions>
+    <objectPermissions>
+        <allowCreate>true</allowCreate>
+        <allowDelete>true</allowDelete>
+        <allowEdit>true</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>false</modifyAllRecords>
+        <object>Property__c</object>
+        <viewAllRecords>false</viewAllRecords>
+    </objectPermissions>
     <!--
       The five Account / Contact / Lead entries below were RECONCILED IN FROM THE ORG on
       2026-08-10 - they were live on this set in usman-dpeg and missing from this file, so the
@@ -206,22 +580,6 @@
         <visible>true</visible>
     </recordTypeVisibilities>
     <recordTypeVisibilities>
-        <recordType>Account.Broker_Firm</recordType>
-        <visible>true</visible>
-    </recordTypeVisibilities>
-    <recordTypeVisibilities>
-        <recordType>Account.Investing_Entity</recordType>
-        <visible>true</visible>
-    </recordTypeVisibilities>
-    <recordTypeVisibilities>
-        <recordType>Contact.Broker</recordType>
-        <visible>true</visible>
-    </recordTypeVisibilities>
-    <recordTypeVisibilities>
-        <recordType>Contact.Investor</recordType>
-        <visible>true</visible>
-    </recordTypeVisibilities>
-    <recordTypeVisibilities>
         <recordType>Contract_Review__c.Acquisition_PSA</recordType>
         <visible>true</visible>
     </recordTypeVisibilities>
@@ -246,10 +604,6 @@
         <visible>true</visible>
     </recordTypeVisibilities>
     <recordTypeVisibilities>
-        <recordType>Lead.Acquisition_Broker</recordType>
-        <visible>true</visible>
-    </recordTypeVisibilities>
-    <recordTypeVisibilities>
         <recordType>NDA__c.Acquisition_NDA</recordType>
         <visible>true</visible>
     </recordTypeVisibilities>
@@ -271,6 +625,11 @@
     </tabSettings>
     <tabSettings>
         <tab>Active_Transactions</tab>
+        <visibility>Visible</visibility>
+    </tabSettings>
+    <!-- ⚠ ADDED 2026-08-25 - Offering/Bank Account/Property declarative build (new object's tab). -->
+    <tabSettings>
+        <tab>Bank_Account__c</tab>
         <visibility>Visible</visibility>
     </tabSettings>
     <tabSettings>

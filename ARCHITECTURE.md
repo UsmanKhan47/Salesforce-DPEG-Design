@@ -8,7 +8,7 @@ This document is the source of truth for **how the DPEG application is shaped**:
 
 **Audience:** Human contributors + Claude subagents (auto-loaded into `CLAUDE.md` via `@ARCHITECTURE.md`).
 
-**API Version:** 66.0 (authoritative: `sfdx-project.json` → `sourceApiVersion`).
+**API Version:** use the latest api version (authoritative: `sfdx-project.json` → `sourceApiVersion`).
 
 **Reference document:** `docs/DPEG_Technical_Solution_Design_v1.3.docx`
 
@@ -142,10 +142,3 @@ All external API credentials stored in Named Credentials (or ASB secrets vault f
 
 ---
 
-## 6. Keeping This Document Current
-
-- When a subagent (design / developer / admin) establishes a new convention, update the relevant section here **in the same PR**.
-- When a custom object is added, populate its entry under **§1 Current objects**.
-- When an external integration is wired, document it under **§4 Integration Architecture**.
-- When a new Apex service is introduced, add it to the **§2 Key Apex Services** table.
-- Breaking changes to these conventions require updating `.claude/agents/*.md` to match.

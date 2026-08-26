@@ -27,10 +27,19 @@
         deliberate narrowing. The full value set was pulled from a LIVE ORG DESCRIBE
         (`sf sobject describe, sobject=Lead`), never from this repo's field files, because
         `sf project retrieve` unions local and remote picklist values and a repo field file can
-        list values the org no longer has. Both Lead record types (this one and IR_Investor)
-        carry the IDENTICAL, COMPLETE value set with the SAME single default (Status = New) -
-        narrowing either record type's values is a separate, deliberate change for later, and
-        this fix is deliberately behaviour-neutral for every existing Lead.
+        list values the org no longer has. AT THE TIME THIS WAS WRITTEN, both Lead record types
+        (this one and the one then named IR_Investor) carried the IDENTICAL, COMPLETE value set
+        with the SAME single default (Status = New) - narrowing either record type's values was
+        described as a separate, deliberate change for later, and this fix was deliberately
+        behaviour-neutral for every existing Lead.
+
+        ⚠ CORRECTED 2026-08-25 (code review C3) - that "IDENTICAL" claim is now stale. The record
+        type once named IR_Investor here is Lead/recordTypes/Investor_Onboarding.recordType-meta.xml
+        today, and its Status picklist no longer matches this one: it ADDS "Create Profile" and
+        OMITS both "Qualified" and "Disqualified" (see that file directly rather than trusting
+        this comment). The narrowing described above as "a separate, deliberate change for later"
+        has since happened for that record type; this record type (Acquisition_Broker) still
+        carries the original five-value Status set unchanged.
 
         ⚠ FIX ROUND 2 (2026-08-10, check-only dry-run against usman-dpeg, deploy id
         0Afiw000000HR8fCAG) - added <businessProcess>Lead_Process</businessProcess>. Lead,
