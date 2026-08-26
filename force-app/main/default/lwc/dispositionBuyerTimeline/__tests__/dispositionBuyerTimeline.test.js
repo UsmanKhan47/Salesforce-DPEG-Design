@@ -33,7 +33,8 @@
  * negations inside tests still named for buyers.
  *
  * 🔴 THE TWO FALSIFIERS THAT MATTER MOST HERE ARE STILL THE DECLINED-ROW ONES.
- *   1. A declined party must render EM-DASHES IN ALL THREE VALUE COLUMNS. The
+ *   1. A declined party must render EM-DASHES IN ALL FOUR VALUE COLUMNS (three
+ *      until 2026-08-25; "Days to respond" is the fourth). The
  *      payload below deliberately gives the declined row a real
  *      `ndaSignedDate`, because that is EXACTLY THE STATE THE PRODUCTION DATA
  *      IS IN: `NDA_Signed_Status_Sync` never clears `Date_Signed__c`, so a
@@ -74,6 +75,31 @@
  *   - T-RAIL-CSS, T-TOKENS and four DOM pins were added.
  * ⚠ THE TWO RAILS ARE DIFFERENT THINGS. See the block above the RAIL tests
  * before concluding that the response entry's rail contradicts T-RAIL.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * 🔴 SIX PINS WERE STALE AND RED WHEN THIS FILE WAS OPENED ON 2026-08-26
+ * ═══════════════════════════════════════════════════════════════════════════
+ * "Days to respond" shipped on 2026-08-25 as a FOURTH dt/dd pair on the NDA
+ * tile, and nothing in this file moved with it. Five pins simply counted three
+ * pairs; the sixth — T-NO-OFFER's `not.toContain('days to respond')` — actively
+ * FORBADE the new column, on the strength of an argument about a DIFFERENT one
+ * deleted in 2026-08-21 (that one measured to the first OFFER). All six are
+ * repaired here, the fixtures now carry `daysToRespond`, and the forbidding pin
+ * is replaced by a presence assertion. Read the note inside T-NO-OFFER before
+ * restoring it — the label was never the thing that was wrong.
+ * ⚠ THE LESSON IS IN THE COUNTS: `toHaveLength(3)` on a dt list is a ledger of
+ * decisions, not a constant. Move it WITH the template.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * 🔴 THE CADENCE LINE (2026-08-26) — RESPONSE TILES ONLY
+ * ═══════════════════════════════════════════════════════════════════════════
+ * A muted sentence under each response's notes saying how long after the
+ * previous event it landed. The CADENCE block below owns it. Three properties
+ * are pinned and nothing else: the exact wording of both bases (including the
+ * deliberately asymmetric "Same day…" pair), that a null interval renders
+ * NOTHING rather than an em-dash, and that the line sits OUTSIDE the <dl> —
+ * axe's `definition-list` rule admits only dt/dd, and a conditional <dd> is
+ * exactly the shape it catches. The NUMBERS are the Apex suite's to prove.
  *
  * ═══════════════════════════════════════════════════════════════════════════
  * 🔴 THE SIX-COLUMN TABLE IS GONE AND MUST NOT COME BACK (2026-08-21).
@@ -127,6 +153,14 @@ const COMPLETE_ROW = {
     ndaSignedDate: '2026-03-02',
     materialsReleasedDate: '2026-03-09',
     daysToRelease: 7,
+    // ⚠ ADDED 2026-08-26 WHEN THE SIX STALE PINS WERE REPAIRED, NOT INVENTED FOR
+    // A NEW TEST. `daysToRespond` shipped on 2026-08-25 and the fixtures were
+    // never updated, so every NDA tile in this file rendered a FOURTH em-dashed
+    // cell that six count/label assertions did not expect — that is the whole
+    // cause of the six failures this file carried. A real number here is what
+    // makes those repaired pins prove the column renders, rather than merely
+    // prove it exists and is empty.
+    daysToRespond: 2,
     hasDateAnomaly: false
 };
 
@@ -140,6 +174,8 @@ const IN_FLIGHT_ROW = {
     ndaSignedDate: null,
     materialsReleasedDate: null,
     daysToRelease: null,
+    // Nothing released, so nothing to measure a response back to. Null, never 0.
+    daysToRespond: null,
     hasDateAnomaly: false
 };
 
@@ -157,6 +193,9 @@ const ANOMALY_ROW = {
     ndaSignedDate: '2026-04-10',
     materialsReleasedDate: '2026-04-06',
     daysToRelease: null,
+    // The service suppressed this one too and raised the SAME single flag — one
+    // "Check dates" badge per tile, not one per out-of-order pair.
+    daysToRespond: null,
     hasDateAnomaly: true
 };
 
@@ -178,6 +217,13 @@ const DECLINED_ROW = {
     ndaSignedDate: '2026-02-14',
     materialsReleasedDate: '2026-02-20',
     daysToRelease: 6,
+    // 🔴 A REAL NUMBER ON A DECLINED ROW, FOR THE SAME REASON AS THE RETAINED
+    // `ndaSignedDate` ABOVE. `daysToRespond` is a SALE-level figure the service
+    // computes from the earliest response on the disposition, so it is
+    // non-null on a declined party's row whenever it is non-null on anyone's.
+    // The component must em-dash it anyway; the assertion below names the value
+    // that must not appear.
+    daysToRespond: 4,
     hasDateAnomaly: false
 };
 
@@ -215,6 +261,13 @@ const RESPONSE_ROW = {
     responseName: 'RMR-0007',
     method: 'Offer',
     notes: 'Verbal at 4.2m, 6.1 cap.',
+    // ── THE CADENCE PAIR (2026-08-26). This is the LATER of the two responses
+    // in MERGED, so it is measured to the one before it. ⚠ THE TWO FIELDS ARE
+    // ALWAYS SET TOGETHER — the service promises both non-null or both null, and
+    // a fixture that broke that promise would test a shape production cannot
+    // produce.
+    intervalDays: 6,
+    intervalBasis: 'previous',
     ndaId: null,
     ndaName: null,
     status: null,
@@ -222,6 +275,7 @@ const RESPONSE_ROW = {
     ndaSignedDate: null,
     materialsReleasedDate: null,
     daysToRelease: null,
+    daysToRespond: null,
     hasDateAnomaly: null
 };
 
@@ -235,7 +289,11 @@ const BARE_RESPONSE_ROW = {
     // The service's fixed placeholder — never a blank, which reads as a
     // rendering failure rather than as missing data.
     brokerName: 'No broker recorded',
-    notes: null
+    notes: null,
+    // The EARLIEST response on the sale — measured back to the day the materials
+    // went out, which is the other basis and the other sentence.
+    intervalDays: 3,
+    intervalBasis: 'released'
 };
 
 /**
@@ -272,7 +330,14 @@ describe('c-disposition-buyer-timeline', () => {
         return [...element.shadowRoot.querySelectorAll('.dbt-tile')];
     }
 
-    /** The three value cells of a tile, in template order, as text. */
+    /**
+     * The value cells of a tile, in template order, as text. FOUR on an NDA tile
+     * since 2026-08-25 ("Days to respond"), two on a response tile.
+     *
+     * ⚠ THE COUNT IS NOT PART OF THIS HELPER'S NAME ANY MORE. It said "the three
+     * value cells" while the template rendered four, which is how six
+     * assertions in this file went stale unnoticed.
+     */
     function valueCells(row) {
         return [...row.querySelectorAll('.dbt-c')].map((cell) =>
             cell.textContent.trim()
@@ -407,7 +472,11 @@ describe('c-disposition-buyer-timeline', () => {
         expect(valueCells(dataRows(element)[0])).toEqual([
             'Mar 2, 2026',
             'Mar 9, 2026',
-            '7 days'
+            '7 days',
+            // ⚠ "Days to respond", back since 2026-08-25 and NOT the column that
+            // was deleted on 2026-08-21 — that one measured to the first OFFER
+            // and died with it. See T-NO-OFFER below.
+            '2 days'
         ]);
     });
 
@@ -420,6 +489,7 @@ describe('c-disposition-buyer-timeline', () => {
         expect(valueCells(dataRows(element)[1])).toEqual([
             EM_DASH,
             EM_DASH,
+            EM_DASH,
             EM_DASH
         ]);
         // It is ACTIVE, so it must not be styled or announced as terminated.
@@ -428,18 +498,30 @@ describe('c-disposition-buyer-timeline', () => {
         );
     });
 
-    it('🔴 DECLINED: em-dashes in ALL THREE value columns, including the retained signed date', async () => {
+    it('🔴 DECLINED: em-dashes in ALL FOUR value columns, including the retained signed date', async () => {
         const element = createComponent();
 
         getTimeline.emit(TIMELINE);
         await Promise.resolve();
 
         const declinedRow = dataRows(element)[3];
-        expect(valueCells(declinedRow)).toEqual([EM_DASH, EM_DASH, EM_DASH]);
-        // The payload carried a real 2026-02-14 signature date and a real
-        // 6-day duration. Neither may appear anywhere in the row.
+        // ⚠ FOUR SINCE 2026-08-25. The suppression must cover the column that
+        // ARRIVED, not only the three it was written against — a new value
+        // column silently escaping the declined branch is exactly the leak this
+        // test exists to catch, and it would have done so had the count been
+        // maintained.
+        expect(valueCells(declinedRow)).toEqual([
+            EM_DASH,
+            EM_DASH,
+            EM_DASH,
+            EM_DASH
+        ]);
+        // The payload carried a real 2026-02-14 signature date, a real 6-day
+        // release duration and a real 4-day respond duration. None may appear
+        // anywhere in the row.
         expect(declinedRow.textContent).not.toContain('Feb 14');
         expect(declinedRow.textContent).not.toContain('6 days');
+        expect(declinedRow.textContent).not.toContain('4 days');
     });
 
     it('🔴 DECLINED: the state is READABLE TEXT plus an aria-label, not colour alone', async () => {
@@ -648,6 +730,204 @@ describe('c-disposition-buyer-timeline', () => {
     });
 
     // ═════════════════════════════════════════════════════════════════════════
+    // 🔴 THE CADENCE LINE (2026-08-26) — "3 days after materials were sent"
+    // ═════════════════════════════════════════════════════════════════════════
+    // One muted sentence under each response's notes, saying how long after the
+    // PREVIOUS event this one landed. The server does the arithmetic and sends
+    // `intervalDays` + `intervalBasis`; this component owns only the WORDING,
+    // so these tests are about the six strings and about when the line is
+    // absent — never about which number is right, which the Apex suite owns.
+    //
+    // 🔴 THE THREE PHRASINGS ARE PINNED WITH `toBe`, NOT `toContain`. A
+    // substring match on "days after" would pass for both bases and for both
+    // wordings of zero, i.e. it would not detect the one class of regression
+    // these tests exist to catch: the right number under the wrong subject.
+    //
+    // ⚠ AND THE STRINGS ARE THE USER'S, VERBATIM AND ASYMMETRIC. "Same day as
+    // the previous response" carries the "as"; "Same day materials were sent"
+    // does not. Tidying them into a matching pair reds these tests on purpose.
+    // ═════════════════════════════════════════════════════════════════════════
+
+    /** The cadence line's text on one tile, or null when it is not rendered. */
+    const intervalLine = (tile) => {
+        const line = tile.querySelector('.dbt-interval');
+        return line === null ? null : line.textContent.trim();
+    };
+
+    /** A one-row payload carrying just the interval pair under test. */
+    const withInterval = (intervalDays, intervalBasis) => [
+        { ...RESPONSE_ROW, intervalDays, intervalBasis }
+    ];
+
+    it('CADENCE: the earliest response measures back to the day the MATERIALS went out', async () => {
+        const element = createComponent();
+
+        getTimeline.emit(MERGED);
+        await Promise.resolve();
+
+        // RMR-0008 is the older of the two responses and carries
+        // `intervalBasis: 'released'` — the sentence names the materials, not a
+        // previous response that does not exist.
+        const bare = responseTiles(element)[1];
+        expect(bare.querySelector('.dbt-rmr').textContent.trim()).toBe('RMR-0008');
+        expect(intervalLine(bare)).toBe('3 days after materials were sent');
+    });
+
+    it('CADENCE: a later response measures back to the PREVIOUS response', async () => {
+        const element = createComponent();
+
+        getTimeline.emit(MERGED);
+        await Promise.resolve();
+
+        const later = responseTiles(element)[0];
+        expect(later.querySelector('.dbt-rmr').textContent.trim()).toBe('RMR-0007');
+        expect(intervalLine(later)).toBe('6 days after the previous response');
+    });
+
+    it('🔴 CADENCE: ZERO reads as "Same day", never as "0 days"', async () => {
+        const element = createComponent();
+
+        getTimeline.emit(withInterval(0, 'previous'));
+        await Promise.resolve();
+
+        // 🔴 The single most informative value this line takes — two responses
+        // in one day is the market coming back all at once. A truthiness guard
+        // (`if (!days)`) would delete exactly this line, which is why the
+        // component tests null/undefined explicitly.
+        expect(intervalLine(responseTiles(element)[0])).toBe(
+            'Same day as the previous response'
+        );
+    });
+
+    it('🔴 CADENCE: ZERO on the released basis has its OWN wording, not the previous one', async () => {
+        const element = createComponent();
+
+        getTimeline.emit(withInterval(0, 'released'));
+        await Promise.resolve();
+
+        // ⚠ NO "as" IN THIS ONE. The two zero sentences are deliberately
+        // asymmetric — each is the way a person would say it out loud.
+        expect(intervalLine(responseTiles(element)[0])).toBe(
+            'Same day materials were sent'
+        );
+    });
+
+    it('CADENCE: 1 renders singular on both bases, so the card never says "1 days"', async () => {
+        const element = createComponent();
+
+        getTimeline.emit(withInterval(1, 'previous'));
+        await Promise.resolve();
+        expect(intervalLine(responseTiles(element)[0])).toBe(
+            '1 day after the previous response'
+        );
+
+        // ⚠ The singular rule lives in `formatDays`, which this card's two other
+        // durations already share — so this pins REUSE, not a second copy of
+        // the rule. A private pluraliser added here would pass the first half
+        // of this test and would be free to disagree with "Days to release".
+        const second = createComponent();
+        getTimeline.emit(withInterval(1, 'released'));
+        await Promise.resolve();
+        expect(intervalLine(responseTiles(second)[0])).toBe(
+            '1 day after materials were sent'
+        );
+    });
+
+    it('CADENCE: a plural gap on the released basis names the materials', async () => {
+        const element = createComponent();
+
+        getTimeline.emit(withInterval(3, 'released'));
+        await Promise.resolve();
+
+        expect(intervalLine(responseTiles(element)[0])).toBe(
+            '3 days after materials were sent'
+        );
+    });
+
+    /**
+     * 🔴 THE ABSENCE PIN, WITH ITS PRESENCE CONTROL ON THE SAME COMPONENT.
+     * `intervalDays: null` is a normal state — nothing released yet, an undated
+     * response, or a response logged before the materials went out — and the
+     * correct rendering is NOTHING AT ALL, not an em-dash: a lone "—" with no
+     * label beside it is a mark with no subject.
+     *
+     * ⚠ THE POSITIVE RENDER COMES FIRST AND ON THE SAME INSTANCE. A bare
+     * `toBeNull()` on `.dbt-interval` passes just as happily when the feature
+     * has been deleted from the template altogether, so the null case is
+     * asserted only after the very same component has been shown to draw the
+     * line for a payload that has one.
+     */
+    it('🔴 CADENCE: a null interval renders NO line — not an em-dash, not a blank', async () => {
+        const element = createComponent();
+
+        getTimeline.emit(withInterval(4, 'previous'));
+        await Promise.resolve();
+        expect(intervalLine(responseTiles(element)[0])).toBe(
+            '4 days after the previous response'
+        );
+
+        getTimeline.emit(withInterval(null, null));
+        await Promise.resolve();
+
+        const tile = responseTiles(element)[0];
+        expect(tile.querySelector('.dbt-interval')).toBeNull();
+        // and nothing took its place: no stray em-dash appeared under the notes.
+        expect(tile.querySelector('.dbt-notes').textContent.trim()).toBe(
+            'Verbal at 4.2m, 6.1 cap.'
+        );
+        expect(tile.textContent).not.toContain('after the previous response');
+        expect(tile.textContent).not.toContain('after materials were sent');
+    });
+
+    it('CADENCE: an unrecognised basis degrades to the previous-response wording, not to a blank', async () => {
+        const element = createComponent();
+
+        // A number that arrived is a fact. If a third basis is ever added
+        // server-side and this component is not updated, showing the gap under
+        // the commoner sentence is closer to the truth than showing nothing.
+        getTimeline.emit(withInterval(2, 'something-new'));
+        await Promise.resolve();
+
+        expect(intervalLine(responseTiles(element)[0])).toBe(
+            '2 days after the previous response'
+        );
+    });
+
+    it('CADENCE: the line is inside the tile and OUTSIDE the definition list', async () => {
+        const element = createComponent();
+
+        getTimeline.emit(MERGED);
+        await Promise.resolve();
+
+        const tile = responseTiles(element)[0];
+        const line = tile.querySelector('.dbt-interval');
+        expect(line).not.toBeNull();
+        // 🔴 A dt/dd list admits ONLY dt and dd, in order, with no wrappers —
+        // axe's `definition-list` rule is strict about it and a CONDITIONAL dd
+        // is the exact shape it catches. So the sentence lives after the </dl>,
+        // as a sibling. `is accessible` below covers the rule; this pins the
+        // STRUCTURE, which is what a future "tidy it into the list" edit
+        // changes first.
+        expect(line.closest('dl')).toBeNull();
+        expect(tile.querySelector('dl.dbt-facts')).not.toBeNull();
+        // It is a paragraph, not a labelled cell: no `.dbt-c` treatment.
+        expect(line.tagName).toBe('P');
+        expect(line.classList.contains('dbt-c')).toBe(false);
+    });
+
+    it('CADENCE: the line is accessible in a list holding both kinds', async () => {
+        const element = createComponent();
+
+        getTimeline.emit(MERGED);
+        await Promise.resolve();
+
+        // Both response tiles carry a cadence line here, so this run genuinely
+        // exercises the new element rather than passing on its absence.
+        expect(responseTiles(element).filter((t) => intervalLine(t) !== null)).toHaveLength(2);
+        await expect(element).toBeAccessible();
+    });
+
+    // ═════════════════════════════════════════════════════════════════════════
     // 🔴 THE ENTRY RAIL (2026-08-24 restyle) — A SECOND, WEAKER RAIL.
     //
     // Ported from c/bovBrokerChangeHistory, which renders the same rail in the
@@ -790,14 +1070,25 @@ describe('c-disposition-buyer-timeline', () => {
 
         const nda = ndaTiles(element)[0];
         expect(nda.querySelector('.dbt-nda').textContent.trim()).toBe('NDA-0101');
-        expect(nda.querySelectorAll('dt')).toHaveLength(3);
-        expect(nda.querySelectorAll('dd')).toHaveLength(3);
+        expect(nda.querySelectorAll('dt')).toHaveLength(4);
+        expect(nda.querySelectorAll('dd')).toHaveLength(4);
         expect([...nda.querySelectorAll('dt')].map((d) => d.textContent.trim())).toEqual([
             'NDA signed',
             'Materials released',
-            'Days to release'
+            'Days to release',
+            'Days to respond'
         ]);
-        expect(valueCells(nda)).toEqual(['Mar 2, 2026', 'Mar 9, 2026', '7 days']);
+        expect(valueCells(nda)).toEqual([
+            'Mar 2, 2026',
+            'Mar 9, 2026',
+            '7 days',
+            '2 days'
+        ]);
+        // 🔴 AND THE CADENCE LINE IS A RESPONSE-TILE FEATURE ONLY (2026-08-26).
+        // It is the newest thing on this card that could have leaked into the
+        // NDA branch, and "an NDA tile is UNCHANGED" is precisely the claim that
+        // must survive it.
+        expect(nda.querySelector('.dbt-interval')).toBeNull();
         // The NDA tile has no method badge — that is the response tile's.
         expect(nda.querySelector('.dbt-badge--method')).toBeNull();
         expect(nda.querySelector('.dbt-rmr')).toBeNull();
@@ -927,12 +1218,18 @@ describe('c-disposition-buyer-timeline', () => {
         // 1. THE OLD SELECTOR. `.dbt-buyer` was the tile heading's class.
         expect(element.shadowRoot.querySelector('.dbt-buyer')).toBeNull();
 
-        // 2. THE COLUMN COUNT. Five dt/dd pairs was the old shape; three is the
-        //    new one. A re-added column shows up here before it shows up
+        // 2. THE COLUMN COUNT. Five dt/dd pairs was the old shape; FOUR is the
+        //    current one (three from 2026-08-21, plus "Days to respond" from
+        //    2026-08-25). A re-added column shows up here before it shows up
         //    anywhere else.
+        //    ⚠ THIS NUMBER IS A LEDGER OF DELIBERATE DECISIONS, NOT A CONSTANT.
+        //    It went stale for a day when the fourth pair shipped without it,
+        //    and a stale count here does not fail safe: it fails LOUD on every
+        //    fixture, which is what made the drift findable. Update it WITH the
+        //    template, and only alongside a decision recorded somewhere.
         dataRows(element).forEach((tile) => {
-            expect(tile.querySelectorAll('dt').length).toBe(3);
-            expect(tile.querySelectorAll('dd').length).toBe(3);
+            expect(tile.querySelectorAll('dt').length).toBe(4);
+            expect(tile.querySelectorAll('dd').length).toBe(4);
         });
 
         // 3. 🔴 THE RENDERED WORDS. A re-added surface usually arrives under a new
@@ -940,8 +1237,32 @@ describe('c-disposition-buyer-timeline', () => {
         //    a "First offer" label sat on every tile. These are the assertions
         //    that catch that.
         const text = element.shadowRoot.textContent.toLowerCase();
+
+        //    ⚠ GUARD THE GUARD, FIRST. Every assertion in this block is an
+        //    ABSENCE over `shadowRoot.textContent`, and this repo has a measured
+        //    case of that string being "" while children rendered — which would
+        //    make all of them vacuously green. This positive proves the text of
+        //    the tiles genuinely reaches this string.
+        expect(text).toContain('nda-0101');
+
         expect(text).not.toContain('first offer');
-        expect(text).not.toContain('days to respond');
+
+        //    🔴 THE `days to respond` ABSENCE PIN WAS DELETED ON 2026-08-26, AND
+        //    IT WAS NOT WEAKENED — IT WAS WRONG. Read this before restoring it.
+        //    Two DIFFERENT columns have carried that label:
+        //      · the one deleted on 2026-08-21 measured to the first OFFER, and
+        //        died with `firstOfferDate` because nothing links an offer to an
+        //        NDA. THAT is what this test is about, and `first offer` above
+        //        is the assertion that owns it;
+        //      · the one shipped on 2026-08-25 measures to the first RELEASE
+        //        MATERIALS RESPONSE, which IS linked to the sale. The old
+        //        objection does not reach it.
+        //    The absence pin could not tell them apart — it matched a LABEL, not
+        //    a claim — so it forbade the second column on the strength of an
+        //    argument about the first, and had been red ever since that column
+        //    shipped. It is replaced by the positive assertion below, which
+        //    pins the surviving column's presence rather than its absence.
+        expect(text).toContain('days to respond');
 
         // ─────────────────────────────────────────────────────────────────
         // 🔴 THE "buyer" PIN WAS NARROWED ON 2026-08-24 — NOT WEAKENED, AND
@@ -1071,7 +1392,11 @@ describe('c-disposition-buyer-timeline', () => {
         expect(labels).toEqual([
             'NDA signed',
             'Materials released',
-            'Days to release'
+            'Days to release',
+            // ⚠ The fourth pair since 2026-08-25. Its value is a number with no
+            // unit of its own, so it is the pair that needs a label MOST — an
+            // unlabelled "2 days" under a date could be either duration.
+            'Days to respond'
         ]);
     });
 

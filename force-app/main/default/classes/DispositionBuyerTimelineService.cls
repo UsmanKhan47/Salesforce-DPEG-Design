@@ -177,11 +177,44 @@
  * back-dated to before the release. So the row is not silently blanked either: `hasDateAnomaly` is
  * set, and the component flags it, so the analyst learns their dates disagree instead of just seeing
  * an em-dash. Both durations go through the ONE `span` helper; see its note on the shared flag.
+ * ⚠ `intervalDays` (2026-08-26) OBEYS THE SAME SUPPRESSION AND DELIBERATELY DOES **NOT** RAISE THE
+ * FLAG. It goes through `daysBetweenOrNull` — the arithmetic `span` was split into on that day — so
+ * there is still exactly one definition of a duration this card will state. It skips the flag
+ * because `hasDateAnomaly` renders as a "Check dates" badge on the NDA TILE only; a response row
+ * setting it would populate an NDA-half field the DTO promises is null there and would show the
+ * user nothing. A back-dated response therefore drops its own interval line silently, which is the
+ * correct outcome for a single missing sentence on a tile whose date is right there above it.
  *
  * 🔴 AND NULL IS NEVER SOFTENED TO `0` ON EITHER. `0` is a REAL answer for both — an NDA signed and
  * released the same day, a broker responding the day materials landed — so a `0` standing in for
  * "no data" would erase the best-case row into the not-yet-started ones. Every null renders as an
  * em-dash; nothing renders as a zero it did not earn.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════
+ * 🔴 THE CADENCE (2026-08-26) — `intervalDays` / `intervalBasis` ON RESPONSE ROWS
+ * ══════════════════════════════════════════════════════════════════════════════════════════
+ * User instruction, 2026-08-26: under each response's notes, show the gap to the response
+ * BEFORE it — and for the earliest one, the gap back to the day the materials went out. So the
+ * card reads as a CADENCE ("3 days, then same day, then 2 days") rather than as N unrelated
+ * distances from one origin.
+ *
+ * 🔴 IT IS COMPUTED HERE, NOT IN THE COMPONENT, FOR THE SAME REASON THE SORT IS. "The previous
+ * response" is a fact about the whole list, and the list is rendered NEWEST FIRST — so the tile
+ * ABOVE any given one is the LATER response. A client walking what it was handed would produce
+ * the gap to the row AFTER each entry: a plausible number, one position out, in the wrong
+ * direction, on every tile. `stampIntervals` sorts its own ascending copy and is therefore
+ * independent of display order, which is what the instruction asked for.
+ *
+ * ⚠ THE ORIGIN IS `NDA__c.Materials_Released_Date__c`, WHICH IS PER-NDA AND NOT ON THE PARENT.
+ * There is NO `Disposition__c.Materials_Released_Date__c` — checked; the field's own XML records
+ * why a sale-level date was rejected ("materials went to buyer A on Tuesday and buyer B on
+ * Friday"). `earliestMaterialsReleasedDate` reduces the per-NDA values to the one day the
+ * materials first went out. `daysToRespond` reads the SAME field per row, so the two columns
+ * agree on a normal sale by construction rather than by coincidence.
+ *
+ * 🔴 THE TWO FIELDS ARE ALWAYS SET TOGETHER — both non-null, or both null. Null is the ONLY
+ * value for "cannot be stated" and is never softened to 0; `0` is a real, valuable answer here
+ * (two brokers back on one day). See the DTO fields.
  *
  * ══════════════════════════════════════════════════════════════════════════════════════════
  * ⚠ A NULL BROKER IS A REACHABLE, NORMAL STATE — AND THERE IS NO BACKFILL
@@ -278,6 +311,21 @@ public with sharing class DispositionBuyerTimelineService {
     /** `TimelineRow.kind` for a Release Materials response entry. Matches the LWC's own constant. */
     @TestVisible
     private static final String KIND_RESPONSE = 'Response';
+
+    /**
+     * `TimelineRow.intervalBasis` when the gap was measured to the CHRONOLOGICALLY PREVIOUS
+     * response. Matches the LWC's own constant — the component turns it into "…after the previous
+     * response", so the two spellings must not drift.
+     */
+    @TestVisible
+    private static final String BASIS_PREVIOUS = 'previous';
+
+    /**
+     * `TimelineRow.intervalBasis` when the gap was measured to the day the MATERIALS WENT OUT —
+     * i.e. this is the first response on the sale. Matches the LWC's own constant.
+     */
+    @TestVisible
+    private static final String BASIS_RELEASED = 'released';
 
     /**
      * ONE ENTRY ON THE MERGED TIMELINE — either an NDA or a Release Materials response. A DTO across
@@ -430,6 +478,48 @@ public with sharing class DispositionBuyerTimelineService {
         /** `Notes__c`, or null when none was entered. Notes are optional on a response. */
         @AuraEnabled
         public String notes;
+
+        /**
+         * WHOLE DAYS BETWEEN THIS RESPONSE AND THE ONE BEFORE IT (2026-08-26). Response rows only —
+         * always null on an NDA row.
+         *
+         * `intervalBasis` says WHAT the "one before it" was, and the two are ALWAYS SET TOGETHER:
+         * both non-null, or both null. A basis without a number would describe a comparison that
+         * was never made, and a number without a basis would be a duration to an unnamed thing —
+         * the component renders one sentence out of the pair and cannot render half of it.
+         *
+         * 🔴 `0` IS A REAL ANSWER AND IS NEVER A STAND-IN FOR "unknown", exactly as on
+         * `daysToRespond`. Two responses on the same day is the single most informative shape this
+         * line has ("the market came back all at once"), and it is the row an analyst most wants to
+         * see. The component renders it as "Same day…", not as "0 days…".
+         *
+         * NULL — the line is simply not rendered — in every one of these, and they are all normal:
+         *   · an NDA row (this is a response-half field);
+         *   · the EARLIEST response on a sale whose NDAs carry no `Materials_Released_Date__c`
+         *     (materials not released yet, or released before the field existed) — there is
+         *     nothing to measure from, and `0` would claim it was answered the day it was sent;
+         *   · a response with a null `Entry_DateTime__c` (the field defaults to `NOW()` but is not
+         *     `required`) — it has no place in the chronology at all, so it neither receives an
+         *     interval nor becomes the predecessor of the response after it;
+         *   · a NEGATIVE span — a response logged BEFORE the materials went out. Never rendered as
+         *     a negative; see `daysBetweenOrNull`.
+         */
+        @AuraEnabled
+        public Integer intervalDays;
+
+        /**
+         * `BASIS_PREVIOUS` ('previous') or `BASIS_RELEASED` ('released') — what `intervalDays`
+         * was measured FROM, and therefore which sentence the component writes. Null whenever
+         * `intervalDays` is null; see that field.
+         *
+         * 🔴 IT IS A BASIS, NOT AN ORDINAL. `'released'` does NOT mean "this is row 1 of the
+         * feed" — it means "the thing before this one was the materials going out". On a sale
+         * whose earliest response predates the released date the earliest row's span is negative,
+         * so IT gets null/null and the SECOND response — still measured against its predecessor —
+         * carries `'previous'`. Read the basis; do not infer it from the row's position.
+         */
+        @AuraEnabled
+        public String intervalBasis;
     }
 
     /**
@@ -502,18 +592,151 @@ public with sharing class DispositionBuyerTimelineService {
 
         // ── SOURCE 2. Buyer-role NDAs only; `Party_Role__c` is filtered in the selector, and the
         // broker's name is TRAVERSED in that query rather than resolved by a second read.
-        for (NDA__c nda : NdaSelector.selectBuyerTimelineByDispositionId(dispositionId)) {
+        // ⚠ THE LIST IS HELD IN A LOCAL RATHER THAN ITERATED INLINE (2026-08-26) so that
+        // `materialsSentDate` below can scan it. STILL ONE QUERY — `selectBuyerTimelineByDisposit-
+        // ionId` is called exactly once, as before; only the loop moved off the call.
+        List<NDA__c> ndas = NdaSelector.selectBuyerTimelineByDispositionId(dispositionId);
+
+        // WHEN THE MATERIALS WENT OUT, as one fact about the SALE. Null until they have.
+        Date materialsSentDate = earliestMaterialsReleasedDate(ndas);
+
+        for (NDA__c nda : ndas) {
             rows.add(buildNdaRow(nda, firstResponseDate));
         }
 
+        // ── The response rows are collected SEPARATELY and stamped before joining the merged list,
+        // because `stampIntervals` walks a chronology of RESPONSES ONLY. Appending them to `rows`
+        // first and filtering by `kind` afterwards would work today and would silently start
+        // including a third kind the day one is added.
+        List<TimelineRow> responseRows = new List<TimelineRow>();
         for (ReleaseMaterialsResponseService.ResponseRow response : responses) {
-            rows.add(buildResponseRow(response));
+            responseRows.add(buildResponseRow(response));
         }
+        stampIntervals(responseRows, materialsSentDate);
+        rows.addAll(responseRows);
 
         // ONE chronology across both kinds. A TOTAL order, so the result does not depend on
         // `List.sort` being stable — which is not documented and must not be assumed.
         rows.sort(new NewestFirst());
         return rows;
+    }
+
+    /**
+     * THE DAY THE MATERIALS WENT OUT ON THIS SALE — the earliest non-null
+     * `Materials_Released_Date__c` across the buyer NDAs. Pure: no SOQL. Null until at least one
+     * NDA carries a date.
+     *
+     * 🔴 IT IS A MINIMUM ACROSS THE NDAs BECAUSE THE FIELD IS PER-NDA AND THERE IS NO SALE-LEVEL
+     * ONE. `Materials_Released_Date__c` lives on `NDA__c`, not on `Disposition__c` — checked, and
+     * it is deliberate: the field's own XML says a single parent date "cannot express 'materials
+     * went to buyer A on Tuesday and buyer B on Friday'". `DispositionStageEntryService` stamps
+     * every buyer NDA in ONE pass on stage entry, so on a normal sale every row carries the same
+     * day and the minimum IS that day; the minimum is what stays correct on the abnormal sale
+     * where an analyst has since edited one row. "The materials went out" first became true on the
+     * earliest of them.
+     *
+     * ⚠ A DECLINED NDA'S DATE COUNTS HERE, AND THAT IS NOT A LEAK OF THE SUPPRESSION IN
+     * `buildNdaRow`. That suppression stops a declined party's own TILE showing its dates; this
+     * value never reaches an NDA tile at all — it is the start of a DURATION rendered on a
+     * RESPONSE tile, and it names no party. Excluding declined rows would blank the first
+     * response's interval on the (entirely normal) sale whose only NDA later declined, which is
+     * precisely the sale where "the market came back in 3 days" is worth knowing.
+     *
+     * @param ndas The buyer-role NDAs on the sale, in any order; null-safe and empty-safe.
+     * @return The earliest released date, or null when none of them carries one.
+     */
+    private static Date earliestMaterialsReleasedDate(List<NDA__c> ndas) {
+        if (ndas == null || ndas.isEmpty()) {
+            return null;
+        }
+        Date earliest = null;
+        for (NDA__c nda : ndas) {
+            Date released = nda.Materials_Released_Date__c;
+            if (released == null) {
+                continue;
+            }
+            if (earliest == null || released < earliest) {
+                earliest = released;
+            }
+        }
+        return earliest;
+    }
+
+    /**
+     * STAMPS `intervalDays` / `intervalBasis` ON EVERY RESPONSE ROW (2026-08-26). Pure: no SOQL, no
+     * DML. Mutates the rows it is given and returns nothing.
+     *
+     * The chain is: materials went out -> response 1 -> response 2 -> … Each row's number is the
+     * gap to the thing IMMEDIATELY BEFORE IT, so the card reads as a cadence ("3 days, then same
+     * day, then 2 days") rather than as N unrelated distances from one origin.
+     *
+     * 🔴 IT SORTS ITS OWN COPY ASCENDING AND DOES **NOT** RELY ON THE ORDER IT IS HANDED. The feed
+     * renders NEWEST FIRST (`NewestFirst`, and `ReleaseMaterialsResponseSelector` orders DESC too),
+     * so "the previous row" in display order is the LATER response — the exact opposite of what
+     * this computes. Walking the incoming list would give every row the gap to the response AFTER
+     * it: a plausible-looking number, off by one position, in the wrong direction, on every tile.
+     * The sort is what makes the value independent of display order, which is the property the
+     * instruction asked for.
+     *
+     * ⚠ AN UNDATED RESPONSE IS EXCLUDED FROM THE CHAIN ENTIRELY — it gets no interval AND it is not
+     * the predecessor of the row after it. `Entry_DateTime__c` defaults to `NOW()` but is not
+     * `required`, so a data-loader row can carry null (`earliestResponseDate` and `NewestFirst`
+     * both already handle this shape). A row claiming no time at all cannot be a link in a
+     * chronology; letting it be one would attribute a real gap to an instant nobody recorded.
+     *
+     * ⚠ `Datetime.date()` CONVERTS IN THE RUNNING USER'S TIMEZONE — same deliberate choice, same
+     * trade-off, as `earliestResponseDate`: the far end of the FIRST row's span is
+     * `Materials_Released_Date__c`, a plain `Date` every user sees identically, and each response's
+     * own timestamp is already rendered on its tile in the viewer's timezone. So a same-day pair
+     * reads 0 to the person looking at the two timestamps that produced it.
+     *
+     * @param responseRows Every response row on the sale, in any order; mutated in place.
+     * @param materialsSentDate The sale's released date (see `earliestMaterialsReleasedDate`), or
+     *                          null when the materials have not gone out.
+     */
+    private static void stampIntervals(List<TimelineRow> responseRows, Date materialsSentDate) {
+        List<TimelineRow> chain = new List<TimelineRow>();
+        for (TimelineRow row : responseRows) {
+            if (row.entryDateTime != null) {
+                chain.add(row);
+            }
+        }
+        chain.sort(new OldestFirst());
+
+        Date previousDate = materialsSentDate;
+        String basis = BASIS_RELEASED;
+        for (TimelineRow row : chain) {
+            Date currentDate = row.entryDateTime.date();
+            Integer days = daysBetweenOrNull(previousDate, currentDate);
+            row.intervalDays = days;
+            // 🔴 THE PAIR IS SET TOGETHER. A basis on a null number would name a comparison that
+            // was never made — see the DTO fields.
+            row.intervalBasis = days == null ? null : basis;
+            // ⚠ THE CHAIN ADVANCES EVEN WHEN THE SPAN WAS NULL. A first response that predates the
+            // released date (negative, suppressed) still HAPPENED, and the response after it is
+            // genuinely N days after IT. Skipping the advance would measure row 2 back to the
+            // materials date and label it 'previous' — a wrong number under a wrong word.
+            previousDate = currentDate;
+            basis = BASIS_PREVIOUS;
+        }
+    }
+
+    /**
+     * The EXACT INVERSE of `NewestFirst`, by construction rather than by restatement.
+     *
+     * 🔴 IT DELEGATES RATHER THAN DUPLICATES ON PURPOSE. `NewestFirst` is a TOTAL order with a
+     * null rule and an Id tie-break; a hand-written ascending twin would be a second copy of both,
+     * free to drift. Delegating guarantees that "the previous response" is always the tile
+     * immediately BELOW this one in the rendered feed, including for two responses that share an
+     * instant — where an independently-written tie-break could disagree and make the card show a
+     * gap between two rows in the opposite order to how they are drawn.
+     */
+    private class OldestFirst implements Comparator<TimelineRow> {
+        private final NewestFirst inverse = new NewestFirst();
+
+        public Integer compare(TimelineRow a, TimelineRow b) {
+            return inverse.compare(b, a);
+        }
     }
 
     /**
@@ -611,6 +834,13 @@ public with sharing class DispositionBuyerTimelineService {
      * ⚠ IT MAPS AN ALREADY-BUILT DTO RATHER THAN A QUERIED SOBJECT, which is what keeps the broker
      * placeholder and the null-notes contract owned by `ReleaseMaterialsResponseService`. The only
      * things this method decides are the row's KIND and its SORT KEY.
+     *
+     * ⚠ IT DOES NOT SET `intervalDays` / `intervalBasis`, AND IT CANNOT. Those are a fact about
+     * this response's PLACE IN A SEQUENCE, so they need every other response and the sale's
+     * released date — none of which a per-row mapper has. `stampIntervals` fills them in
+     * afterwards, over the whole list. Do not "complete" this method by passing them in one at a
+     * time: a per-row caller would have to decide what "previous" means, which is the one decision
+     * that must be made once.
      *
      * @param response A response row from `ReleaseMaterialsResponseService.getResponses`.
      * @return The timeline row. Never null; every NDA-half field is left null.
@@ -717,16 +947,43 @@ public with sharing class DispositionBuyerTimelineService {
      * @return Whole days, or null.
      */
     private static Integer span(Date fromDate, Date toDate, TimelineRow row) {
+        Integer days = daysBetweenOrNull(fromDate, toDate);
+        if (days == null && fromDate != null && toDate != null) {
+            // 🔴 NEVER RENDER A NEGATIVE DURATION. Suppress the number, raise the flag.
+            // Both ends present + a null result can only mean the negative branch.
+            row.hasDateAnomaly = true;
+        }
+        return days;
+    }
+
+    /**
+     * THE ARITHMETIC ITSELF — whole days from `fromDate` to `toDate`, or null when either end is
+     * missing OR the span is negative. NO flag, NO row, no side effects.
+     *
+     * 🔴 IT IS THE **ONE** DEFINITION OF "a duration this card is willing to state", and `span` is
+     * now a thin wrapper that adds only the anomaly flag. Extracted 2026-08-26 for
+     * `stampIntervals`, which needs the same suppression rule but must NOT set `hasDateAnomaly`:
+     * that flag renders as a "Check dates" badge on the NDA tile ONLY, so setting it from a
+     * response row would populate an NDA-half field the DTO header promises is null there, and
+     * would surface nothing to the user. `span`'s own header warns that "two places deciding what
+     * a negative duration means is how they start disagreeing" — extracting rather than copying is
+     * how that warning is honoured with a second caller that wants the number without the flag.
+     *
+     * ⚠ `Date.daysBetween` IS THE RIGHT PRIMITIVE AND SUBTRACTION IS NOT — `Date` has no `-`
+     * operator in Apex, and `getTime()` differencing would drag milliseconds and a timezone into a
+     * pure-Date calculation. It is SIGNED, which is exactly why the negative test below is a rule
+     * and not defensive decoration.
+     *
+     * @param fromDate The earlier end; null-safe.
+     * @param toDate   The later end; null-safe.
+     * @return Whole days (0 is a real answer), or null.
+     */
+    private static Integer daysBetweenOrNull(Date fromDate, Date toDate) {
         if (fromDate == null || toDate == null) {
             return null;
         }
         Integer days = fromDate.daysBetween(toDate);
-        if (days < 0) {
-            // 🔴 NEVER RENDER A NEGATIVE DURATION. Suppress the number, raise the flag.
-            row.hasDateAnomaly = true;
-            return null;
-        }
-        return days;
+        return days < 0 ? null : days;
     }
 
     /**

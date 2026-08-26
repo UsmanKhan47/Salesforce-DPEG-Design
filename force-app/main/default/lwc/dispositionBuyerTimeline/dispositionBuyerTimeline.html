@@ -295,6 +295,40 @@
                                     <dt class="dbt-label">Notes</dt>
                                     <dd class="dbt-c dbt-notes">{row.notes}</dd>
                                 </dl>
+
+                                <!-- ═══════════════════════════════════════════
+                                     THE CADENCE LINE (2026-08-26). "3 days after
+                                     materials were sent" on the earliest
+                                     response, "Same day as the previous
+                                     response" / "2 days after the previous
+                                     response" on the ones after it.
+                                     ═══════════════════════════════════════════
+                                     🔴 IT SITS **OUTSIDE** THE <dl>, NOT AS A
+                                     FIFTH dt/dd PAIR, AND THAT IS DELIBERATE
+                                     TWICE OVER:
+                                       · axe's `definition-list` rule allows only
+                                         dt/dd in order with no wrapper elements,
+                                         and this line is gated by an lwc:if — a
+                                         conditional dd inside the list is the
+                                         shape that rule exists to catch;
+                                       · it is a SENTENCE, not a labelled value.
+                                         A "Interval" label beside "3 days" would
+                                         be a heading for prose, and the whole
+                                         point of the wording is that it needs no
+                                         label to be understood.
+                                     ⚠ THE GATE IS THE EMPTY STRING, NOT A
+                                     SEPARATE BOOLEAN. `formatInterval` returns
+                                     '' when the server stated no interval, and
+                                     '' is falsy — one value decides both whether
+                                     the line renders and what it says, so the
+                                     two cannot disagree. 🔴 IT IS ALSO NEVER
+                                     EM-DASHED like the cells above it: a lone
+                                     "—" with no label beside it is a mark with
+                                     no subject. Nothing is the right rendering
+                                     of nothing here. -->
+                                <template lwc:if={row.intervalText}>
+                                    <p class="dbt-interval">{row.intervalText}</p>
+                                </template>
                             </template>
 
                             <template lwc:else>

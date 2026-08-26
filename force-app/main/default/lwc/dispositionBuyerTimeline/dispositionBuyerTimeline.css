@@ -203,6 +203,22 @@
     white-space: pre-line;
 }
 
+/* The cadence line under a response's notes — "3 days after materials were sent" (2026-08-26).
+   ⚠ TOKEN FOR TOKEN THE SAME MUTED TREATMENT AS `.dbt-broker` AND `.dbt-bov-firm`: font-scale-neg-1
+   over on-surface-1. It is derived context about an entry, exactly as the broker subtitle is, and a
+   third weight of grey on one tile would read as a third level of importance that does not exist.
+   NO NEW COLOUR LITERAL IS INTRODUCED — #757575 is on-surface-1's canonical fallback, already the
+   fallback on both rules named above. ⚠ on-surface-1 IS the grey one; see the file header before
+   reaching for a "more muted" -2 or -3, which are DARKER, or for neutral-base-60, which fails AA.
+   The top margin (and not a `.dbt-facts` gap) is what separates it from the notes above: the <dl>
+   owns the spacing BETWEEN its pairs, and this line is not one of them. */
+.dbt-interval {
+    min-width: 0;
+    margin: var(--slds-g-spacing-2, 0.5rem) 0 0;
+    font-size: var(--slds-g-font-scale-neg-1, 0.75rem);
+    color: var(--slds-g-color-on-surface-1, #757575);
+}
+
 /* Tile head: NDA number left, badges right; a badge wraps beneath the number at extreme narrow
    widths rather than pushing the tile wider. */
 .dbt-tile-head {

@@ -36,6 +36,29 @@
  *     Recorded as a known imperfection, not an oversight.
  *
  * ==========================================================================
+ * 🔴 THE CADENCE LINE (2026-08-26) — RESPONSE TILES ONLY
+ * ==========================================================================
+ * One muted sentence under each response's notes: "3 days after materials were
+ * sent" on the earliest response, "Same day as the previous response" / "2 days
+ * after the previous response" on the ones after it.
+ *   · 🔴 THE ARITHMETIC IS THE SERVER'S, NOT THIS FILE'S. Apex sends
+ *     `intervalDays` (whole days, already suppressed to null when negative or
+ *     unmeasurable) and `intervalBasis` ('released' | 'previous'); this
+ *     component chooses ONE OF TWO SENTENCES and nothing else. It does NOT
+ *     re-derive the gap from the timestamps it renders — the chronology spans
+ *     rows and the feed is drawn NEWEST FIRST, so a client-side "previous" would
+ *     mean the tile ABOVE, which is the LATER response. Same reasoning as the
+ *     sort: the order and the intervals are statements about the data.
+ *   · ⚠ THE NDA TILE DOES NOT GET ONE. `intervalDays` is a response-half field
+ *     and an NDA has no place in the response chronology — the "existing tiles
+ *     do not change shape" rule above still holds, and a pin in the Jest suite
+ *     says so.
+ *   · A null interval renders NOTHING — no line, and specifically NOT an
+ *     em-dash. The em-dash is right for a MISSING VALUE IN A LABELLED CELL,
+ *     where the label says what the dash stands for; this sentence has no label,
+ *     so a lone dash would be a mark with no subject. See `formatInterval`.
+ *
+ * ==========================================================================
  * 🔴 THREE NAMES, ALL DIFFERENT, ALL DELIBERATE. READ THIS BEFORE "FIXING" ANY.
  * ==========================================================================
  *   BUNDLE / APEX API NAME  ->  dispositionBuyerTimeline  (a BUYER concept)
@@ -226,6 +249,62 @@ const EM_DASH = '—';
 const KIND_RESPONSE = 'Response';
 
 /**
+ * `TimelineRow.intervalBasis` — WHAT the response's `intervalDays` was measured
+ * from, and therefore which of the two sentences the tile writes (2026-08-26).
+ *
+ * ⚠ THEY MUST MATCH `DispositionBuyerTimelineService.BASIS_RELEASED` /
+ * `BASIS_PREVIOUS` EXACTLY. The pairing is not compile-checked; the Jest suite
+ * pins these strings on this side and the Apex suite pins them on the other —
+ * the same arrangement, for the same reason, as `KIND_RESPONSE` above.
+ *
+ * 🔴 THE BASIS IS READ, NEVER INFERRED FROM POSITION. "First tile in the feed"
+ * is not the same question: the feed is NEWEST first, so the first RESPONSE
+ * chronologically is normally the LAST response tile on screen — and on a sale
+ * whose earliest response predates the materials going out, that row carries no
+ * interval at all and the 'released' sentence belongs to nobody.
+ */
+const BASIS_RELEASED = 'released';
+
+/**
+ * The other basis: the gap to the chronologically PREVIOUS response. Any value
+ * that is not `BASIS_RELEASED` is treated as this one, so a future third basis
+ * degrades to the commoner sentence rather than to a blank line.
+ */
+const BASIS_PREVIOUS = 'previous';
+
+/**
+ * THE TWO SENTENCES, ONE PER BASIS — the component's only wording for the
+ * interval line (2026-08-26).
+ *
+ * 🔴 THE `sameDay` STRINGS ARE NOT "0 days" AND THEY ARE NOT SYMMETRICAL WITH
+ * EACH OTHER. Both are the user's own wording, verbatim: "Same day as the
+ * previous response" carries the "as", "Same day materials were sent" does not.
+ * The asymmetry is what makes each one read as English, and it is pinned by
+ * exact-match assertions in the Jest suite — "harmonising" them reds those
+ * tests, which is the point.
+ *
+ * 🔴 `0` HAS ITS OWN SENTENCE RATHER THAN FALLING THROUGH THE `after` ONE
+ * BECAUSE "0 days after the previous response" is the shape of a number that
+ * failed to arrive. Zero is the single most informative value this line takes —
+ * two responses on the same day is the market coming back all at once — so it
+ * gets the phrasing a person would use out loud.
+ *
+ * ⚠ `after` IS THE SUBJECT ONLY; the count is prepended by `formatDays`, which
+ * already owns the "1 day" / "N days" singular rule for this card's two other
+ * durations. One place decides how a day count is spelled.
+ */
+const INTERVAL_PHRASES = {
+    [BASIS_RELEASED]: {
+        sameDay: 'Same day materials were sent',
+        after: 'materials were sent'
+    },
+    [BASIS_PREVIOUS]: {
+        sameDay: 'Same day as the previous response',
+        after: 'the previous response'
+    }
+};
+
+/**
  * SECTION 3 — the name shown for a submission carrying neither a broker contact
  * nor a firm name.
  *
@@ -310,6 +389,44 @@ export default class DispositionBuyerTimeline extends LightningElement {
             return EM_DASH;
         }
         return value === 1 ? '1 day' : `${value} days`;
+    }
+
+    /**
+     * THE RESPONSE TILE'S INTERVAL LINE — "3 days after materials were sent",
+     * "Same day as the previous response" — or the EMPTY STRING when there is no
+     * interval to state (2026-08-26).
+     *
+     * 🔴 IT RETURNS `''`, NOT AN EM-DASH, AND THAT IS THE ONE DIFFERENCE FROM
+     * `formatDays` ABOVE. An em-dash is the right rendering of a MISSING VALUE
+     * IN A LABELLED CELL — the label says what the dash stands for. This is a
+     * whole free-standing sentence with no label beside it, so a lone "—"
+     * underneath the notes would be a mark with no subject. The template gates
+     * on the empty string and renders nothing at all instead.
+     *
+     * 🔴 `0` IS A REAL AND VALUABLE ANSWER, SO THE GUARD IS AN EXPLICIT
+     * null/undefined TEST AND NEVER `if (!days)`. `!0` is true, and a falsy
+     * check would silently delete the same-day line — the single most
+     * informative one this feature draws.
+     *
+     * ⚠ AN UNRECOGNISED BASIS DEGRADES TO THE 'previous' WORDING rather than to
+     * a blank. A number that arrived is a fact; if a future third basis is added
+     * server-side and this file is not updated, showing the gap under the
+     * commoner sentence is closer to the truth than showing nothing.
+     *
+     * @param {number|null} days The whole-day gap from the server; null when
+     *        the server could not state one.
+     * @param {string|null} basis `BASIS_RELEASED` or `BASIS_PREVIOUS`.
+     * @returns {string} The sentence, or '' when there is nothing to say.
+     */
+    formatInterval(days, basis) {
+        if (days === null || days === undefined) {
+            return '';
+        }
+        const phrases = INTERVAL_PHRASES[basis] || INTERVAL_PHRASES[BASIS_PREVIOUS];
+        if (days === 0) {
+            return phrases.sameDay;
+        }
+        return `${this.formatDays(days)} after ${phrases.after}`;
     }
 
     get hasError() {
@@ -473,6 +590,11 @@ export default class DispositionBuyerTimeline extends LightningElement {
             // rendering of "none entered" — never a blank cell, which reads as
             // a rendering failure rather than as missing data.
             notes: row.notes || EM_DASH,
+            // The cadence line under the notes (2026-08-26). '' when the server
+            // could state no interval — the template renders NOTHING then, which
+            // is why this is the one value on the tile that is not em-dashed.
+            // See `formatInterval`.
+            intervalText: this.formatInterval(row.intervalDays, row.intervalBasis),
             entryDateTime: row.entryDateTime,
             tileClass: 'dbt-tile dbt-tile--response',
             // The accessible name for the whole tile group. The badge and the

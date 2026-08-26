@@ -748,6 +748,131 @@ private class DispositionBuyerTimelineTest {
         Assert.isNull(rows[1].entryDateTime, 'and the undated row is at the bottom');
     }
 
+    // ═════════════════════════════════════════════════════════════════════════
+    // 🔴 THE CADENCE (2026-08-26) — `intervalDays` / `intervalBasis`
+    // ═════════════════════════════════════════════════════════════════════════
+
+    /** `TimelineRow.intervalBasis` — the gap was measured to the previous RESPONSE. */
+    private static final String BASIS_PREVIOUS = 'previous';
+
+    /** `TimelineRow.intervalBasis` — the gap was measured to the day the MATERIALS went out. */
+    private static final String BASIS_RELEASED = 'released';
+
+    /**
+     * 🔴 THE CENTRAL CADENCE TEST. Materials out on day D; responses on D+3, again on D+3, and on
+     * D+5. The answers are 3/'released', 0/'previous', 2/'previous' — each row measured to the
+     * thing IMMEDIATELY BEFORE IT, not to one shared origin.
+     *
+     * 🔴 THE ROWS ARE INSERTED NEWEST-FIRST, WHICH IS THE OPPOSITE OF THE ANSWER, AND THAT IS THE
+     * POINT. `ReleaseMaterialsResponseSelector` orders `Entry_DateTime__c DESC` and the merged feed
+     * renders newest first, so an implementation that simply walked the list it was handed would
+     * measure each row to the response AFTER it: on this exact fixture that produces
+     * 5/'released', null (negative, suppressed) and 0/'previous' — three wrong answers, every one
+     * of them a plausible-looking number. Only a chronological walk produces 3/0/2.
+     * ⚠ SO DO NOT "SIMPLIFY" THE FIXTURE BY INSERTING IN DATE ORDER. A fixture whose source order
+     * already matches its answer cannot tell a sort from the absence of one.
+     *
+     * 🔴 THE SAME-DAY PAIR IS THE SECOND FALSIFIER. `0` is a REAL answer — two brokers coming back
+     * on one day — and it is the value a `!interval`-style truthiness guard, or a null-means-
+     * nothing-to-say shortcut, would silently delete anywhere along the chain. The two rows are
+     * given DIFFERENT TIMES on that day (09:00 and 15:00) so which one is "first" is decided by
+     * the data rather than by `List.sort`'s undocumented stability or by an Id tie-break.
+     *
+     * ⚠ THE ASSERTIONS ARE KEYED BY RECORD Id, NOT BY POSITION. The NDA's `CreatedDate` is NOW, so
+     * its tile sorts ABOVE all three back-dated responses; a positional assertion here would be
+     * pinning the merged sort (which `mergedTimeline_interleavesBothKindsNewestFirst` already
+     * owns) rather than the arithmetic.
+     */
+    @isTest
+    static void responseIntervals_measureTheChainAndNotTheInsertOrder() {
+        Disposition__c d = freshDisposition();
+        Date released = Date.today().addDays(-10);
+
+        NDA__c nda = timelineNda(d.Id, broker().Id);
+        nda.Status__c = STATUS_SIGNED;
+        nda.Date_Signed__c = released.addDays(-2);
+        nda.Materials_Released_Date__c = released;
+        insert nda;
+
+        // ⚠ `Datetime.newInstance(Date, Time)` BUILDS IN THE RUNNING USER'S TIMEZONE, and the
+        // service converts back with `Datetime.date()` in the same one — so the calendar day this
+        // fixture names is the calendar day the arithmetic sees, whatever the org's timezone is.
+        Release_Materials_Response__c onDayFive =
+            TestDataFactory.createReleaseMaterialsResponse(d.Id, false);
+        onDayFive.Entry_DateTime__c =
+            Datetime.newInstance(released.addDays(5), Time.newInstance(11, 0, 0, 0));
+
+        Release_Materials_Response__c dayThreeAfternoon =
+            TestDataFactory.createReleaseMaterialsResponse(d.Id, false);
+        dayThreeAfternoon.Entry_DateTime__c =
+            Datetime.newInstance(released.addDays(3), Time.newInstance(15, 0, 0, 0));
+
+        Release_Materials_Response__c dayThreeMorning =
+            TestDataFactory.createReleaseMaterialsResponse(d.Id, false);
+        dayThreeMorning.Entry_DateTime__c =
+            Datetime.newInstance(released.addDays(3), Time.newInstance(9, 0, 0, 0));
+
+        // NEWEST FIRST — deliberately the reverse of the chronology under test.
+        insert new List<Release_Materials_Response__c>{
+            onDayFive, dayThreeAfternoon, dayThreeMorning
+        };
+
+        Test.startTest();
+        List<DispositionBuyerTimelineService.TimelineRow> rows =
+            DispositionBuyerTimelineService.getTimeline(d.Id);
+        Test.stopTest();
+
+        Map<Id, DispositionBuyerTimelineService.TimelineRow> byResponseId =
+            new Map<Id, DispositionBuyerTimelineService.TimelineRow>();
+        DispositionBuyerTimelineService.TimelineRow ndaRow = null;
+        for (DispositionBuyerTimelineService.TimelineRow row : rows) {
+            if (KIND_RESPONSE.equals(row.kind)) {
+                byResponseId.put(row.responseId, row);
+            } else {
+                ndaRow = row;
+            }
+        }
+        Assert.areEqual(4, rows.size(), 'FIXTURE PRECONDITION: one NDA and three responses');
+        Assert.areEqual(3, byResponseId.size(), 'FIXTURE PRECONDITION: three distinct responses');
+        Assert.isNotNull(ndaRow, 'FIXTURE PRECONDITION: the NDA row is on the timeline');
+
+        // ── 1. THE EARLIEST RESPONSE MEASURES BACK TO THE MATERIALS, NOT TO A PREVIOUS RESPONSE.
+        DispositionBuyerTimelineService.TimelineRow first = byResponseId.get(dayThreeMorning.Id);
+        Assert.areEqual(3, first.intervalDays,
+            'D -> D+3 is three whole days. `5` here means the chain was walked in the order the '
+            + 'selector returned it (newest first), which measures every row to the one AFTER it.');
+        Assert.areEqual(BASIS_RELEASED, first.intervalBasis,
+            'and it is the RELEASED basis — there is no earlier response to compare it to');
+
+        // ── 2. 🔴 SAME DAY IS `0`, AND `0` IS AN ANSWER. Never null, never skipped.
+        DispositionBuyerTimelineService.TimelineRow second = byResponseId.get(dayThreeAfternoon.Id);
+        Assert.areEqual(0, second.intervalDays,
+            '🔴 TWO RESPONSES ON ONE DAY IS ZERO DAYS APART — the most informative value this line '
+            + 'takes, and the one a truthiness guard anywhere in the chain silently deletes. A '
+            + 'null here means `0` was mistaken for "nothing to say".');
+        Assert.areEqual(BASIS_PREVIOUS, second.intervalBasis,
+            'measured to the response that morning, not back to the materials');
+
+        // ── 3. AND THE CHAIN CONTINUES FROM THE MOST RECENT LINK, NOT FROM THE FIRST.
+        DispositionBuyerTimelineService.TimelineRow third = byResponseId.get(onDayFive.Id);
+        Assert.areEqual(2, third.intervalDays,
+            'D+3 -> D+5 is two days. `5` here would mean every row is being measured back to the '
+            + 'materials date instead of to its immediate predecessor.');
+        Assert.areEqual(BASIS_PREVIOUS, third.intervalBasis, 'still the previous-response basis');
+
+        // ── 4. THE PAIR IS A RESPONSE-HALF FIELD. An NDA row carries neither half of it.
+        Assert.isNull(ndaRow.intervalDays, 'An NDA row has no place in the response chronology');
+        Assert.isNull(ndaRow.intervalBasis, 'so it carries no basis either');
+
+        // ── 5. THE TWO SPELLINGS THE COMPONENT DEPENDS ON. `c/dispositionBuyerTimeline` chooses
+        // between two sentences by comparing `intervalBasis` against its OWN copy of these
+        // strings; the pairing is not compile-checked in either direction, so each side pins it.
+        Assert.areEqual(BASIS_RELEASED, DispositionBuyerTimelineService.BASIS_RELEASED,
+            'The service constant and the LWC constant must both read `released`');
+        Assert.areEqual(BASIS_PREVIOUS, DispositionBuyerTimelineService.BASIS_PREVIOUS,
+            'and both read `previous`');
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // Selector contract
     // ─────────────────────────────────────────────────────────────────────────
