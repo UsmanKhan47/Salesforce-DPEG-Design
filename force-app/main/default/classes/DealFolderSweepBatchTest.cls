@@ -64,9 +64,19 @@ private class DealFolderSweepBatchTest {
 
     /**
      * 🔴 REQUIREMENT #7, SECOND HALF (the first half is
-     * `DealFolderServiceTest.credentialDenied401_stampsFailedWithTheCredentialHint`). A row a
-     * Transactions-persona close left `Failed`, carrying the credential hint, is picked up by the
+     * `DealFolderServiceTest.credentialDenied401_stampsFailedWithTheCredentialHint`). A row left
+     * `Failed` by a credential-refused claim, carrying the credential hint, is picked up by the
      * sweep — running as a granted scheduling principal in production — and succeeds.
+     *
+     * ⚠ AMENDED 2026-08-27. This used to call "a Transactions-persona close" the canonical
+     * scenario. It is not, since the claim moved to `CLAIM_STAGES`: the likeliest refusal is now
+     * the `LOI_Approval` final-rejection field update running as the READ-ONLY APPROVER, with
+     * `Transaction_Complete_Close` surviving only as a backstop at `Closed Won`.
+     * 🔴 THE ERROR STRING BELOW IS A FIXTURE **INPUT**, NOT AN ASSERTION — which is exactly why it
+     * went stale silently while this suite stayed green. It is a hand-written sample of what
+     * `DealFolderService.HINT_CREDENTIAL` produces, and the sweep does not parse it; the test only
+     * needs a `Failed` row that carries SOME durable hint. Keep it in step with the real constant
+     * anyway, because a reader will take it for production copy.
      */
     @isTest
     static void sweepBatch_retriesAFailedRowCarryingTheCredentialHint_andSucceeds() {
@@ -76,9 +86,9 @@ private class DealFolderSweepBatchTest {
             Id = property.Id,
             SharePoint_Folder_Status__c = 'Failed',
             SharePoint_Folder_Error__c = 'FAILED to create the SharePoint deal folder: HTTP 401 — '
-                + 'Access denied | LIKELY CAUSE: the user whose save closed this deal has no access '
-                + 'to the SharePoint external credential. SharePoint_Integration_Access is granted '
-                + 'to DPEG_Junior_Analyst_PSG only...'
+                + 'Access denied | LIKELY CAUSE: the user whose save advanced this deal has no '
+                + 'access to the SharePoint external credential. SharePoint_Integration_Access is '
+                + 'granted to DPEG_Junior_Analyst_PSG only...'
         );
         Test.setMock(HttpCalloutMock.class, new SharePointCalloutMock(201,
             SharePointCalloutMock.successBody('recovered-item', 'https://contoso.sharepoint.com/x/recovered')));
@@ -91,7 +101,7 @@ private class DealFolderSweepBatchTest {
                           FROM Property__c WHERE Id = :property.Id];
         Assert.areEqual('Created', p.SharePoint_Folder_Status__c,
             'DealFolderSweepBatch must pick up the Failed row and, once the credential works, create '
-            + 'the folder on retry — this is the SharePoint feature\'s answer to the whole persona gap');
+            + 'the folder on retry — this is the SharePoint feature\'s answer to a credential refusal, a dead job link or a deferred chunk');
         Assert.areEqual('recovered-item', p.SharePoint_Folder_ID__c, '');
         Assert.isNull(p.SharePoint_Folder_Error__c, 'A successful retry must clear the stale failure text');
     }

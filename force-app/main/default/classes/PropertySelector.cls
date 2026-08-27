@@ -12,7 +12,9 @@
  *
  * Consumers:
  *   - PropertyAssetService.ensureOnClosedWon -> selectAssetSeedByIds
- *   - DealFolderService                      -> selectFolderStateByIds   (added 2026-08-11)
+ *   - DealFolderService                      -> selectFolderStateByIds   (added 2026-08-11;
+ *     re-keyed 2026-08-27 from 'Closed Won' entry to CLAIM-STAGE entry — see that class's
+ *     CLAIM_STAGES. The QUERY is unchanged; only how often and how early it runs moved.)
  *   - DealFolderSweepBatch.start             -> queryFolderSweep         (added 2026-08-11)
  *
  * ⚠ ALL THREE METHODS ARE `WITH SYSTEM_MODE` INSIDE A `private without sharing` INNER CLASS, AND
@@ -110,7 +112,14 @@ public with sharing class PropertySelector {
      *
      * Called by `DealFolderService` on BOTH of its paths — once synchronously per trigger chunk to
      * decide what to stamp `Pending` and whether to enqueue anything at all, and once again inside
-     * the async job immediately before the callouts. The second read is not redundant: it is the
+     * the async job immediately before the callouts.
+     *
+     * ⚠ 2026-08-27 — THE SYNCHRONOUS CALLER MOVED EARLIER IN THE PIPELINE, and both halves of the
+     * justification below got STRONGER rather than weaker. The claim now fires on entry to any of
+     * `DealFolderService.CLAIM_STAGES`, so this read runs on essentially every deal at its FIRST
+     * forward step, driven by any deal driver in the org — not on the subset that closed, driven by
+     * the closing desk. A `USER_MODE` throw here would therefore roll back a Begin Review click
+     * rather than a close, and a sharing-filtered result would mint duplicates far more often. The second read is not redundant: it is the
      * IDEMPOTENCY GUARD evaluated at the moment of work, which is what makes a concurrent second
      * close, a chained continuation and a sweep retry all converge on ONE folder.
      *
@@ -121,13 +130,15 @@ public with sharing class PropertySelector {
      *
      * ── MODE — `WITH SYSTEM_MODE`, justified here ──
      * An AUTOMATION-PATH read in the ARCHITECTURE.md §2 sense: nobody asked for it. It happens on
-     * the running user's behalf while the platform files a won deal's documents. All four
+     * the running user's behalf while the platform files the documents of a deal ENTERING A CLAIM
+     * STAGE (`DealFolderService.CLAIM_STAGES`). All four
      * SharePoint fields are created in THIS SAME CHANGE, and a Metadata-API-deployed custom field
      * arrives with NO field permissions for ANY profile, **System Administrator included**.
      * `WITH USER_MODE` does not degrade, it THROWS (`System.QueryException: No such column ...`,
      * which is how the platform reports an FLS denial). On the synchronous path that throw escapes
-     * an after-update trigger as `CANNOT_INSERT_UPDATE_ACTIVATE_ENTITY` and **rolls back the deal
-     * close itself** — verbatim the `TaskSelector.selectByTransactionDealIds` production incident,
+     * an after-update trigger as `CANNOT_INSERT_UPDATE_ACTIVATE_ENTITY` and **rolls back the deal's
+     * FIRST FORWARD STAGE ADVANCE** — a Begin Review click, not a close, since the 2026-08-27
+     * claim-stage move — verbatim the `TaskSelector.selectByTransactionDealIds` production incident,
      * and here it would be caused by the very fields the deploy just created. On the sweep path the
      * same throw kills the recovery engine for the administrator who deployed it.
      *
@@ -160,11 +171,20 @@ public with sharing class PropertySelector {
      * `.claude/rules/apex-layering-rule.md`.
      *
      * 🔴 WHY BOTH `Pending` AND `Failed`, AND WHY NEITHER IS ENOUGH ALONE. `Pending` is written
-     * synchronously by the trigger before any callout, so it catches a job that DIED UNCATCHABLY or
-     * never ran at all. `Failed` is written by `DealFolderFinalizer` or by the service's own error
-     * branch, so it catches the case this feature must survive: a deal closed by the TRANSACTIONS
-     * persona, whose Queueable runs as a user holding no External Credential Principal Access, so
-     * every callout is refused. Those deals MUST reach a sweep running as a granted principal.
+     * synchronously by the trigger before any callout, so it catches a job that DIED UNCATCHABLY,
+     * never ran at all, or — now the LARGEST source of work here — was DEFERRED past
+     * `MAX_PROPERTIES_PER_TRANSACTION` or the callout time budget, which every bulk claim-stage
+     * entry leaves behind by design. `Failed` is written by `DealFolderFinalizer` or by the
+     * service's own error branch, so it catches transient Graph failures plus the TWO remaining
+     * credential-refusal routes: (i) the `LOI_Approval` final-rejection field update
+     * (`LOI ⇒ Underwriting`, a claim-stage entry) running as the READ-ONLY APPROVER, and (ii)
+     * `Transaction_Complete_Close` as a backstop claim at `Closed Won`.
+     * ⚠ AMENDED 2026-08-27 — this paragraph used to name "a deal closed by the TRANSACTIONS
+     * persona" as *the case this feature must survive*. That whole-persona outage no longer
+     * exists: the ordinary claimer is now the human clicking Begin Review, a deal driver on
+     * `DPEG_Junior_Analyst_PSG`, which HOLDS the grant. The sweep is still load-bearing, for the
+     * reasons above rather than that one. See `DealFolderSweepBatch`'s header.
+     * Those rows MUST reach a sweep running as a granted principal.
      * `Created` and `Skipped` are terminal and are excluded BY THE QUERY, which is what makes
      * re-running the sweep free.
      *
@@ -267,7 +287,10 @@ public with sharing class PropertySelector {
      *     `LeadConvertService` is owned by whoever converted the Lead, NOT by the queue, so that
      *     rule does not reach it.
      *   - `Opportunity` OWD is `ReadWrite`, so ANY user with Edit on Opportunity can drive a deal
-     *     to Closed Won — including one who can see none of its Property rows.
+     *     into a CLAIM STAGE — including one who can see none of its Property rows.
+     *     ⚠ WIDENED 2026-08-27: this used to say "to Closed Won", which described a much smaller
+     *     population. Entering `Under Review` needs no NDA, no contract and no approval, so the
+     *     set of principals who can trigger this read is now every deal driver in the org.
      *
      * ═══ 🔴 THE FAILURE THIS PREVENTS IS A **DUPLICATE**, NOT A SILENCE ═══
      * Every other `without sharing` read in this repo prevents a SILENT NO-OP: zero rows, nothing

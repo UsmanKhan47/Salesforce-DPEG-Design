@@ -7,11 +7,19 @@
  * closing route:
  *
  *   `SharePoint_Integration_Access` is granted to `DPEG_Junior_Analyst_PSG` **only**, not to
- *   `DPEG_Transaction_Team`. A Queueable runs as the ENQUEUING USER (measured live), and the
- *   `Transaction_Complete_Close` flow writes `StageName = 'Closed Won'` with no `<runInMode>` —
- *   i.e. as the TRANSACTIONS persona. **Every deal closed through that route will have its
- *   SharePoint callouts refused and will land on `Failed`.** This sweep, running as a granted
- *   scheduling principal, is the ONLY thing that then creates those folders.
+ *   `DPEG_Transaction_Team`. A Queueable runs as the ENQUEUING USER (measured live).
+ *   ⚠ NARROWED 2026-08-27: `DealFolderService` now claims on entry to any CLAIM STAGE, so the
+ *   ordinary claimer is a deal driver clicking **Begin Review** — who HOLDS the grant. The
+ *   whole-persona refusal this paragraph used to describe is gone. What remains, and still needs
+ *   this sweep, is (a) the `LOI_Approval` final-rejection field update, which runs as the
+ *   READ-ONLY APPROVER inside the approval transaction, (b) `Transaction_Complete_Close` as a
+ *   backstop claim at `Closed Won`, and — now the largest source of work — (c) the DEFERRED tail
+ *   every bulk stage advance leaves behind, which is `Pending` by design and which nothing else
+ *   drains. This sweep, running as a granted scheduling principal, is the ONLY thing that then
+ *   creates those folders.
+ *   ✅ MEASURED 2026-08-27 in `usman-dpeg`: `CronTrigger` holds `DPEG SharePoint Deal Folder
+ *   Sweep`, `0 0 2 * * ?`, State `WAITING` — this gate is satisfied HERE. It is not deployable
+ *   metadata, so it must be re-measured in every other org.
  *
  * Unscheduled, those rows sit on `Failed` with a fully explanatory `SharePoint_Folder_Error__c`
  * forever — which is a WORSE state than a bare `Pending`, because the row LOOKS handled. Same class

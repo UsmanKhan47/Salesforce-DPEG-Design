@@ -2,29 +2,45 @@
  * The RETRY / RECOVERY engine for SharePoint deal folders. Selects every `Property__c` whose
  * `SharePoint_Folder_Status__c` is `Pending` or `Failed` and re-runs the identical creation path.
  *
- * ═══ 🔴 UNDER GATE-1 DECISION (i) THIS IS **MORE** LOAD-BEARING THAN THE DESIGN ANTICIPATED ═══
- * The design treated the sweeper as Option B's primary venue and, under Option A, as a safety net.
- * That reading is wrong for THIS org, and the reason is a measured provisioning fact rather than a
- * hypothetical:
+ * ═══ 🔴 WHY THIS IS STILL LOAD-BEARING — RE-ARGUED 2026-08-27, ON DIFFERENT GROUNDS ═══
+ * ⚠ **THE ARGUMENT THAT USED TO SIT HERE IS DEAD AND HAS BEEN DELETED RATHER THAN SOFTENED.** It
+ * ran: `SharePoint_Integration_Access` is granted to `DPEG_Junior_Analyst_PSG` ONLY; a Queueable
+ * runs as the ENQUEUING USER (measured live: `RAN AS USERNAME: usman.khan.dpeg@...`, NOT Automated
+ * Process); the `Transaction_Complete_Close` flow writes `Closed Won` with no `<runInMode>`, i.e.
+ * as the TRANSACTIONS persona — therefore an ENTIRE ORDINARY CLOSING ROUTE had every callout
+ * refused, and this batch was the only thing that closed that gap.
+ * **`DealFolderService` no longer claims at `Closed Won` alone.** It claims on entry to any of
+ * `CLAIM_STAGES`, and the ordinary claimer is now the human clicking **Begin Review** — a deal
+ * driver on `DPEG_Junior_Analyst_PSG`, which HOLDS the grant. The whole-persona outage is gone.
+ * The three measured facts above are all still TRUE; they simply no longer describe the dominant
+ * path.
  *
- *   • A Queueable runs as the ENQUEUING USER — measured live (`RAN AS USERNAME:
- *     usman.khan.dpeg@...`, callout 200), NOT as Automated Process. So per-user External Credential
- *     Principal Access applies to `DealFolderQueueable`.
- *   • `SharePoint_Integration_Access` was granted to **`DPEG_Junior_Analyst_PSG` ONLY** — NOT to
- *     `DPEG_Transaction_Team`.
- *   • The `Transaction_Complete_Close` flow writes `StageName = 'Closed Won'` with **no
- *     `<runInMode>`**, i.e. as the TRANSACTIONS persona.
+ * 🔴 **THE SWEEP IS NOT LESS NECESSARY — ITS JOB CHANGED FROM ONE BIG CAUSE TO FOUR SMALL ONES**,
+ * none of which any other component recovers:
+ *   1. **DEFERRED CHAINS.** `DealFolderService` defers past `MAX_PROPERTIES_PER_TRANSACTION` (10)
+ *      or past `CALLOUT_TIME_BUDGET_MS`. A bulk stage advance therefore leaves a long `Pending`
+ *      tail by design. This is now the LARGEST source of work here, and it grew: the claim moved
+ *      from the trickle of deals that close to the flow of deals that enter the pipeline.
+ *   2. **DEAD JOB LINKS.** A link that dies uncatchably (callout count, CPU, cumulative callout
+ *      time) leaves its rows `Pending`/`Failed`; `DealFolderFinalizer` records WHY but never
+ *      retries, deliberately.
+ *   3. **TRANSIENT GRAPH FAILURES.** 429s and 5xx land on `Failed` and are retried here, with no
+ *      attempt cap (see below).
+ *   4. **THE TWO SURVIVING CREDENTIAL-REFUSAL ROUTES**, both now narrow rather than wholesale:
+ *      (a) the `LOI_Approval` FINAL-REJECTION field update (`LOI ⇒ Underwriting` — a claim-stage
+ *          entry) runs inside the approval transaction as the **READ-ONLY APPROVER**, who is very
+ *          unlikely to hold the grant; and (b) `Transaction_Complete_Close`, which survives only as
+ *          a **BACKSTOP** claim at `Closed Won` for a deal that reached close with no folder.
+ *      Both are expected to land here and must be recovered by this batch running as a granted
+ *      scheduling principal.
  *
- * Therefore **every deal closed through the Transactions route runs the folder job as a user with
- * no credential grant, and its callouts WILL be refused.** That is not an edge case to be defended
- * against — it is a whole, ordinary closing route, and it is expected to land here. Those deals
- * must fail VISIBLY (`Failed`, with `DealFolderService.HINT_CREDENTIAL` naming this exact gap in
- * `SharePoint_Folder_Error__c`) and must be recovered by THIS batch running as a granted scheduling
- * principal. This job is the only thing in the design that closes that gap.
- *
- * 🔴 **A DEPLOY THAT DOES NOT SCHEDULE `DealFolderSweepSchedule` THEREFORE DOES NOT SHIP A DEGRADED
- * FEATURE — IT SHIPS A FEATURE THAT DOES NOT WORK FOR AN ENTIRE PERSONA**, while nothing errors and
- * the rows sit in a status that reads as tracked. Verified post-deploy gate; see that class.
+ * ✅ **IT IS SCHEDULED IN THIS ORG — MEASURED 2026-08-27.** `CronTrigger` holds
+ * `DPEG SharePoint Deal Folder Sweep`, `0 0 2 * * ?`, State `WAITING`. The warning that used to
+ * stand here — that a deploy which does not schedule `DealFolderSweepSchedule` ships a feature that
+ * silently does not work — is SATISFIED here and is retained at that class rather than repeated, so
+ * a future org (a scratch rebuild, a sandbox refresh) still gets the warning at the point of use.
+ * ⚠ A scheduled-job INSTANCE is not deployable metadata, so this fact is about THIS org only and
+ * must be re-measured, not assumed, anywhere else.
  *
  * ═══ WHY `Pending` **AND** `Failed`, AND WHY NEITHER IS ENOUGH ALONE ═══
  *   `Pending`  written SYNCHRONOUSLY by the trigger, before any callout exists. It catches a job

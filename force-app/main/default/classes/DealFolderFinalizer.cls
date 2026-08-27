@@ -17,7 +17,8 @@
  *
  * ═══ IT RECORDS; IT DOES NOT RETRY ═══
  * `DealFolderSweepBatch` is the retry, and it already sees these rows — they were stamped `Pending`
- * synchronously and `Failed` is in the same work queue. Re-enqueueing from here would be worse than
+ * synchronously (at CLAIM-STAGE entry since 2026-08-27, which is a deal's first forward step rather
+ * than its close) and `Failed` is in the same work queue. Re-enqueueing from here would be worse than
  * useless: a Finalizer's enqueue is accepted-but-never-executed inside `@isTest`, so the retry
  * would be untestable, and an uncatchable failure is usually DETERMINISTIC, so an immediate replay
  * would burn the same budget the same way. The same division of labour `RoutingFailureFinalizer`

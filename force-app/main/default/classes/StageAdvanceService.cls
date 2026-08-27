@@ -104,12 +104,23 @@ public with sharing class StageAdvanceService {
     // exact form.
     //
     // 🔴 BOTH 'Under Contract (PSA)' AND 'About to Close' MAP TO 'Closed Won', AND THAT
-    // PAIR IS LOAD-BEARING OUTSIDE THIS CLASS. PropertyAssetService.ensureOnClosedWon and
-    // DealFolderService.ensureOnClosedWon live on OpportunityReviewTrigger — rather than
-    // in the Transaction_Complete_Close flow — precisely because of it: a deal driver can
-    // reach 'Closed Won' from EITHER key, so half the closes carry no Transaction__c at
-    // all. Renaming one key without the other silently re-opens that route-vs-state
-    // defect. Both moved together here.
+    // PAIR IS LOAD-BEARING OUTSIDE THIS CLASS. PropertyAssetService.ensureOnClosedWon
+    // lives on OpportunityReviewTrigger — rather than in the Transaction_Complete_Close
+    // flow — precisely because of it: a deal driver can reach 'Closed Won' from EITHER
+    // key, so half the closes carry no Transaction__c at all. Renaming one key without
+    // the other silently re-opens that route-vs-state defect. Both moved together here.
+    //
+    // ⚠ DealFolderService WAS NAMED IN THIS PAIR UNTIL 2026-08-27 AND HAS BEEN REMOVED ON
+    // PURPOSE. It now keys on ENTRY TO ANY OF FOUR CLAIM STAGES ('Under Review',
+    // 'Underwriting', 'About to Close', 'Closed Won'), so which of the two keys above
+    // reaches 'Closed Won' no longer decides whether it fires — an ordinary deal has
+    // already claimed its folder at 'Under Review'. Do not re-add it here.
+    // PropertyAssetService's dependency on this pair is UNCHANGED and is the entire
+    // reason the paragraph above still exists.
+    // ⚠ 'About to Close' IS still load-bearing for DealFolderService, but as a MEMBER OF
+    // ITS CLAIM SET reached through advanceTo (which validates only the TARGET, never the
+    // current stage) — a different dependency on a different mechanism. See
+    // DealFolderService.CLAIM_STAGES.
     private static final Map<String, String> NEXT_STAGE = new Map<String, String>{
         'New' => 'Under Review',
         'Under Review' => 'Underwriting',

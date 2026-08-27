@@ -1,8 +1,15 @@
 /**
  * Creates the SharePoint deal folder — and its six lifecycle subfolders — when an acquisition deal
- * ENTERS `Closed Won`. The orchestration half of the feature: it owns stage-entry detection, folder
- * naming, the callout budget, the result stamp and every skip decision. The single `Http.send`
- * lives in `SharePointCalloutService`; every SOQL statement lives in `PropertySelector`.
+ * ENTERS ANY **CLAIM STAGE** (`CLAIM_STAGES`, below: `Under Review`, `Underwriting`,
+ * `About to Close`, `Closed Won`). The orchestration half of the feature: it owns stage-entry
+ * detection, folder naming, the callout budget, the result stamp and every skip decision. The
+ * single `Http.send` lives in `SharePointCalloutService`; every SOQL statement lives in
+ * `PropertySelector`.
+ *
+ * ⚠ MOVED 2026-08-27 (FSD conformance tranche 2, Item 1) from a single `Closed Won` key to the
+ * four-stage set. The folder is now claimed at the deal's FIRST forward step rather than its last;
+ * the `SharePoint_Folder_ID__c` guard makes every later claim-stage entry a ZERO-callout, ZERO-DML,
+ * ZERO-enqueue no-op, so an ordinary deal still claims exactly once, at `Under Review`.
  *
  * Design: `agent-output/design-requirements-sharepoint-deal-folder.md`, with three Gate-1 decisions
  * that OVERRIDE that document's recommended defaults (recorded here because the document still
@@ -15,22 +22,52 @@
  *   (iii) LOCATION — the LIBRARY ROOT. `SharePoint_Config__c.Parent_Folder_ID__c` is honoured when
  *         populated but is expected blank.
  *
- * ── 🔴 WHY IT HANGS OFF THE OPPORTUNITY TRIGGER ──
- * Same argument `PropertyAssetService` won, and it is not reused loosely: `StageAdvanceService
- * .NEXT_STAGE` maps **both** `Under Contract (PSA) ⇒ Closed Won` and `About to Close ⇒ Closed Won`,
- * so a deal driver
- * reaches Closed Won with no `Transaction__c` in the picture at all. Building this into the
- * `Transaction_Complete_Close` flow would have missed half the closes, invisibly. Keying on the
- * OPPORTUNITY STAGE catches every route by construction. ⚠ Note this argument does NOT rule Flow
- * out on its own (a record-triggered Flow on Opportunity would catch both routes too) — what rules
- * Flow out is that a per-record interview would attempt 251 × 7 = 1,757 HTTP Callout actions
- * against a hard limit of 100 per transaction, and Flow's callout action has no `HttpCalloutMock`
- * seam at all.
+ * ── 🔴 WHY IT HANGS OFF THE OPPORTUNITY TRIGGER — RE-ARGUED 2026-08-27 ──
+ * ⚠ THE ARGUMENT THAT USED TO SIT HERE IS NOW MOOT AND HAS BEEN DELETED RATHER THAN SOFTENED. It
+ * ran: `StageAdvanceService.NEXT_STAGE` maps **both** `Under Contract (PSA) ⇒ Closed Won` and
+ * `About to Close ⇒ Closed Won`, so building the claim into the `Transaction_Complete_Close` flow
+ * would have missed half the closes. Under `CLAIM_STAGES` the claim no longer happens at close at
+ * all — it happens at `Under Review`, three or four stages earlier — so which of the two keys
+ * reaches `Closed Won` decides nothing here. Do not reinstate it.
+ *
+ * TWO reasons survive, and one is NEW:
+ *   1. **The callout arithmetic rules Flow out, and it always did the real work.** A per-record
+ *      Flow interview would attempt 251 × 7 = 1,757 HTTP Callout actions against a hard limit of
+ *      100 per transaction. Apex can enqueue ONE bounded job per trigger chunk; a Flow cannot.
+ *   2. **Flow's callout action has no `HttpCalloutMock` seam at all**, so the never-throw contract
+ *      below — the hardest constraint in this class — would be untestable in the venue that
+ *      needs it most.
+ *   3. 🔴 **NEW: a FOUR-STAGE key is itself an argument for Apex.** The claim now fires on entry to
+ *      any of four stages, reached by at least seven distinct routes (`advance`, `advanceTo`, the
+ *      `Opportunity_Initiate_Underwriting` before-save jump, the `LOI_Approval` final-rejection
+ *      field update, the `Transaction_Complete_Close` flow, a direct data-load insert, and the
+ *      Dead/Pass two-save recovery). Expressing "entered any member of a SET, from any
+ *      non-member" declaratively means a Decision element per stage per entry route, re-derived
+ *      by hand every time the set changes. Here it is one `Set<String>` and one `contains` pair,
+ *      and it is `@TestVisible`.
  *
  * ═══ 🔴 THE NEVER-THROW RULE — THE HARDEST CONSTRAINT IN THIS CLASS ═══
- * `ensureOnClosedWon` MUST NOT THROW A CATCHABLE EXCEPTION, under any input, ever. A SharePoint
- * problem rolling back a Closed Won is strictly worse than a missing folder: the folder is
- * recoverable by a sweep, the deal close is a human's work.
+ * `ensureOnClaimStageEntry` MUST NOT THROW A CATCHABLE EXCEPTION, under any input, ever. A
+ * SharePoint problem rolling back a stage advance is strictly worse than a missing folder: the
+ * folder is recoverable by a sweep, the stage advance is a human's work.
+ *
+ * ═══ 🔴 THE STAKES CHANGED ON 2026-08-27 EVEN THOUGH THE MECHANISM DID NOT ═══
+ * All six never-throw mechanisms below are STRUCTURAL and transfer unchanged. What moved is what a
+ * breach would now COST, and that is worth four sentences of its own:
+ *   (i)   **A rollback now blocks a deal at its FIRST forward step, not its last.** The old failure
+ *         mode was "a won deal will not save"; the new one is "no deal can leave `New`".
+ *   (ii)  **A throw surfaces in a user's toast, verbatim.** `StageAdvanceService.setStage` catches
+ *         `DmlException` and rethrows `e.getDmlMessage(0)` unmodified, so anything thrown from here
+ *         is shown to whoever clicked **Begin Review** — with SharePoint's wording, not ours.
+ *   (iii) **The contract is now exercised on essentially EVERY deal, at up to four entry points.**
+ *         It used to run on the subset of deals that closed. Any latent throwing path added here is
+ *         therefore a pipeline-wide outage rather than a closing-desk one.
+ *   (iv)  🔴 **One entry point is inside an APPROVAL TRANSACTION, as a READ-ONLY APPROVER.** The
+ *         `LOI_Approval` final-rejection field update writes `LOI ⇒ Underwriting`, a claim-stage
+ *         entry. `OpportunityReviewService`'s header records what a throw there costs: it rolls
+ *         back the APPROVAL itself and shows the approver a platform error on an Approve click —
+ *         the D10 `ApprovalAuditService` incident shape. Safe today because this service never
+ *         throws; it raises the price of ever introducing a path that does.
  *
  * ⚠ **READ THAT CLAIM EXACTLY AS FAR AS IT GOES — "cannot throw" would be an overstatement.** Apex
  * has failure modes a `catch (Exception)` demonstrably does not intercept: SP-R1 measured a
@@ -107,7 +144,12 @@
  *      and identical residual to `PropertyAssetService`: throwing would make a manually created
  *      deal unclosable, and the result fields live on `Property__c`, so a Property-less deal has
  *      nowhere to record a folder. Counted on `runSkippedNoProperty`; recovery query is
- *      `SELECT Id FROM Opportunity WHERE StageName = 'Closed Won' AND Property__c = null`.
+ *      `SELECT Id FROM Opportunity WHERE StageName IN ('Under Review','Underwriting',`
+ *      `'About to Close','Closed Won') AND Property__c = null`.
+ *      ⚠ AMENDED 2026-08-27 — `WHERE StageName = 'Closed Won'` no longer describes the population.
+ *      The claim now fires at `Under Review`, so a Property-less deal is skipped THERE, and a
+ *      `Closed Won`-only query would miss every deal still in flight. Keep this list in step with
+ *      `CLAIM_STAGES`; the two are the same set and there is no way to make the platform enforce it.
  *  R2. **A partial subfolder failure is TERMINAL, not retried.** If the parent folder is created
  *      and a subfolder is refused, the row is stamped `Created` with the missing names in
  *      `SharePoint_Folder_Error__c`. It cannot be auto-retried: the parent id is populated, which
@@ -119,33 +161,51 @@
  *      Bounded by stamping in the same transaction as the callouts and by `allOrNone = false`.
  *  R4. **A `webUrl` longer than 255 characters is not stored** (the field is `Url`, 255). The id is
  *      still stored, the folder is still `Created`, and the omission is named in the error field.
- *  R5. 🔴 **EVERY DEAL ALREADY AT `Closed Won` ON DEPLOY DAY GETS NO FOLDER — PERMANENTLY, FROM
- *      BOTH PATHS, WITH NOTHING ERRORING. USER DECISION 2026-08-11: OUT OF SCOPE, DOCUMENTED.**
+ *  R5. 🔴 **NO BACKFILL. A DEAL ALREADY AT `Closed Won` ON DEPLOY DAY GETS NO FOLDER —
+ *      PERMANENTLY, FROM BOTH PATHS, WITH NOTHING ERRORING. USER DECISION 2026-08-11, RE-CONFIRMED
+ *      2026-08-27 AT THE FOUR-STAGE MOVE: OUT OF SCOPE, DOCUMENTED, NOT SOLVED.**
  *      This is the one residual that is invisible from inside the feature, which is why it is
- *      stated at this length rather than in a clause. Two independent mechanisms exclude those
- *      deals and each would be sufficient on its own:
- *        • the TRIGGER keys on stage ENTRY (`prior == null || !CLOSED_WON.equals(prior.StageName)`),
- *          so a deal that was already Closed Won before the deploy never "enters" it again — no
- *          later save of that Opportunity, for any reason, will ever claim its folder;
+ *      stated at this length rather than in a clause.
+ *      ✅ **THE MOVE TO `CLAIM_STAGES` SHRANK THE EXCLUDED POPULATION TO ITS FLOOR, and that is
+ *      worth stating precisely rather than as reassurance.** When the key was `Closed Won` alone,
+ *      every historical deal in the org was excluded — a won deal never enters `Closed Won` again,
+ *      and a deal at `New` had only one future opportunity to claim. Under the four-stage set every
+ *      deal EARLIER in the pipeline still has at least one claim stage AHEAD of it (`New` →
+ *      `Under Review`; `Under Review` → `Underwriting`; `Underwriting`/`LOI`/`Under Contract (PSA)`
+ *      → `About to Close` or `Closed Won`), so it claims on its next forward move and needs no
+ *      backfill at all. What remains excluded is exactly ONE population: **deals sitting at
+ *      `Closed Won` when this change deploys.** They have no forward move left.
+ *      Two independent mechanisms exclude them, each sufficient on its own:
+ *        • the TRIGGER keys on stage ENTRY (`prior == null ||
+ *          !CLAIM_STAGES.contains(prior.StageName)`), so a deal already at `Closed Won` never
+ *          "enters" a claim stage again — no later save of that Opportunity, for any reason, will
+ *          ever claim its folder;
  *        • the SWEEPER's locator is `SharePoint_Folder_Status__c IN ('Pending','Failed')`
  *          (`PropertySelector.queryFolderSweep`), and only this class writes that field — so a
  *          Property no trigger ever claimed has a NULL status and is not in the sweeper's queue.
- *      The feature therefore applies to deals closing FROM THE DEPLOY FORWARD, and historical
- *      deals are deliberately excluded rather than merely unhandled. There is no error, no counter
- *      and no `Skipped` stamp to find them by: the population is silent by construction, and the
- *      only way to see it is to go looking for it.
- *      **REMEDY, if it is ever wanted — a ONE-OFF anonymous-Apex stamp, never a code change.**
- *      Stamping the backlog `Pending` puts it into the sweeper's existing queue, after which the
- *      deployed batch does the work with no new class and no re-close:
+ *      🔴 **THERE IS NO ERROR, NO COUNTER AND NO `Skipped` STAMP TO FIND THIS POPULATION BY.** It
+ *      is silent by construction — `runSkippedNoProperty` / `runSkippedUnnamable` /
+ *      `runSkippedDisabled` all count deals that REACHED this code, and these never do. The only
+ *      way to see it is to go looking for it with the query below.
+ *      **REMEDY, IF IT IS EVER WANTED — A ONE-OFF ANONYMOUS-APEX `Pending` STAMP, NEVER A CODE
+ *      CHANGE.** Do not widen `CLAIM_STAGES`, do not add a "stage IS" fallback beside the entry
+ *      test, and do not build a backfill batch: all three would re-key this service on state rather
+ *      than transition and would re-claim on every subsequent save forever. Stamping the backlog
+ *      `Pending` puts it into the sweeper's existing queue, after which the deployed batch does the
+ *      work with no new class and no re-save:
  *        `List<Property__c> backlog = [SELECT Id FROM Property__c WHERE SharePoint_Folder_ID__c = null`
  *        `  AND SharePoint_Folder_Status__c = null AND Id IN`
  *        `  (SELECT Property__c FROM Opportunity WHERE StageName = 'Closed Won' AND Property__c != null)];`
  *        `for (Property__c p : backlog) { p.SharePoint_Folder_Status__c = 'Pending'; }`
  *        `Database.update(backlog, false, AccessLevel.SYSTEM_MODE);`
- *      ⚠ Do it in bounded batches and expect the sweep to take several daily runs to drain: the
- *      sweeper processes `SCOPE` (= `MAX_PROPERTIES_PER_TRANSACTION`) properties per transaction at
- *      seven callouts each, so the backlog's size in properties is the number of transactions it
- *      costs. ⚠ Run it only AFTER `SharePoint_Config__c` is populated — stamping `Pending` while
+ *      ⚠ `StageName = 'Closed Won'` is correct HERE and nowhere else in this header — this remedy
+ *      targets the excluded population specifically, not the claim population.
+ *      ⚠ Do it in bounded batches. The sweeper processes `SCOPE`
+ *      (= `MAX_PROPERTIES_PER_TRANSACTION`) properties per `execute()` TRANSACTION at seven
+ *      callouts each, so a backlog of N properties costs `ceil(N / SCOPE)` transactions — but ONE
+ *      batch RUN performs many `execute()` transactions, so the backlog drains in a SINGLE nightly
+ *      run unless it is large enough to hit a daily limit. Transactions are not runs; do not budget
+ *      one nightly run per chunk. ⚠ Run it only AFTER `SharePoint_Config__c` is populated — stamping `Pending` while
  *      the integration is disabled just converts the whole backlog to `Skipped` on the next sweep.
  *
  * ⚠ **ONE ASYMMETRY IN `applyStatus` WORTH KNOWING BEFORE ANYONE DEACTIVATES A PICKLIST VALUE.**
@@ -167,6 +227,49 @@
  *                                     duplicate-folder falsifier.
  *   ASYNC (per job link):             <= 70 callouts · 1 SOQL · <= 1 DML.
  *
+ * ═══ 🔴 WHAT THE 2026-08-27 TRIGGER-POINT MOVE DID **NOT** CHANGE — CHECKED ONE BY ONE ═══
+ * Everything in this list is a PER-TRANSACTION budget or a PER-RECORD guard. The stage a claim is
+ * keyed on is not an input to any of them, so all eight transfer BYTE-FOR-BYTE. They are enumerated
+ * rather than implied so that a future reader re-tuning the trigger point does not re-open one of
+ * them "for consistency":
+ *   • **the never-throw contract** — STRUCTURAL. It is the ABSENCE of throwing paths, NOT the
+ *     ordering of statements in the handler (see the ⚠ above). Stage-independent by construction.
+ *   • **`allOrNone = false` on every stamp** — one refused row must never take the others.
+ *   • **the enqueue's `Limits.getQueueableJobs()` guard, AND the deliberate asymmetry that the SOQL
+ *     and the DML carry no matching guard.** Do not harmonise. The argument is above and is about
+ *     what is durably owed, not about which stage was entered.
+ *   • **the `SharePoint_Folder_ID__c` idempotency guard** — keyed on the PROPERTY, never the stage.
+ *     It is precisely what makes claim-stage entries 2, 3 and 4 free.
+ *   • **the `applyStatus` describe guard** and its documented asymmetry.
+ *   • **`MAX_PROPERTIES_PER_TRANSACTION = 10`** — a callout budget, not a throughput knob.
+ *   • **`CALLOUT_TIME_BUDGET_MS = 90000`** and the `SharePointCalloutService.TIMEOUT_MS` derived
+ *     from it.
+ *   • **`DealFolderSweepBatch.SCOPE`**, which takes its value from the first of those.
+ * ═══ 🔴 WHAT IT **DID** CHANGE — THE COUNTERPART LIST, AND THE ONE THAT MATTERS AT REVIEW ═══
+ * The list above is reassuring and true, and on its own it is misleading. Two things really moved:
+ *   1. 🔴 **THIS CLASS'S CONSUMPTION ON AN ORDINARY SAVE WENT FROM NOTHING TO SOMETHING.** A
+ *      `New → Under Review` save previously cost **0 SOQL / 0 DML / 0 enqueues** here — it was not
+ *      a Closed Won, so `enteringPropertyIds` returned empty and the method was free. It now costs
+ *      **1 SOQL / 1 DML / 1 enqueue**, on essentially every deal in the org, at its first forward
+ *      step. The per-transaction shape is unchanged and still CONSTANT in deal count; what changed
+ *      is HOW OFTEN a non-zero shape occurs.
+ *      ⚠ Re-read the `GOVERNOR BUDGET` block above with that in mind: *"a chunk claiming nothing
+ *      costs ZERO of all four"* is still true, but it used to be the COMMON case and is now the
+ *      UNCOMMON one.
+ *      🔴 The consequence is about UNCATCHABLE limits, not about totals. This class now contributes
+ *      three `LimitException`-capable statements (the selector's SOQL, `stampAll`'s DML, the
+ *      enqueue) to transaction classes it previously contributed nothing to — **including the LOI
+ *      approval transaction**, via the `LOI ⇒ Underwriting` rejection field update. Anything added
+ *      here is added to those transactions too.
+ *      🔴 **DO NOT "FIX" THIS WITH A GUARD.** The deliberate asymmetry above — guard on the
+ *      enqueue, none on the SOQL or the DML — is correct and stays; skipping a read or a stamp has
+ *      no durable backstop, and a guard is only safe where the skipped work is already owed. The
+ *      point of this paragraph is disclosure, not a change.
+ *   2. **The ARRIVAL RATE at SharePoint moved earlier and widened.** Graph traffic becomes
+ *      `7 × (deals entering their FIRST claim stage per day)` instead of `7 × (deals closing per
+ *      day)`. Still bounded at 70 per transaction, still degrading into deferral rather than
+ *      failure.
+ *
  * @see SharePointCalloutService.cls (the ONLY Http.send; owns the endpoint and conflictBehavior)
  * @see SharePointConfig.cls         (zero-SOQL config; no fallback, ever)
  * @see DealFolderQueueable.cls      (the async venue and the self-chain)
@@ -175,9 +278,52 @@
  */
 public with sharing class DealFolderService {
 
-    /** The terminal stage that files a deal's documents. Matches `PropertyAssetService.CLOSED_WON`
-     *  exactly — stage-ENTRY semantics must not drift between two services on one trigger. */
-    @TestVisible private static final String CLOSED_WON = 'Closed Won';
+    /**
+     * 🔴 THE AUTHORITATIVE STATEMENT OF WHICH STAGES CLAIM A DEAL FOLDER. Entering ANY member from
+     * a NON-member claims; every subsequent member-to-member move is a no-op via the
+     * `SharePoint_Folder_ID__c` guard (zero callouts, zero DML, zero enqueues).
+     *
+     * 🔴 **EACH ENTRY IS HERE FOR A DIFFERENT REASON. DO NOT "TIDY" THIS SET BACK DOWN** — three of
+     * the four are the only thing closing a specific, previously-measured hole, and removing one
+     * re-opens it silently, with no test failing and no error anywhere:
+     *   • `'Under Review'`     — THE ORDINARY ROUTE. `StageAdvanceService.advance()` from `'New'`,
+     *                           i.e. the **Begin Review** action. On a normal deal this is the only
+     *                           entry that ever does work; the other three never fire.
+     *   • `'Underwriting'`     — catches the `Opportunity_Initiate_Underwriting` BEFORE-SAVE jump,
+     *                           which assigns `StageName = 'Underwriting'` from **ANY** stage the
+     *                           checkbox is ticked on, skipping `'Under Review'` entirely. That
+     *                           flow (and `No_Backward_Stage_Movement` CARVE-OUT 2, which exists to
+     *                           let it through) is deliberately NOT being modified — this entry is
+     *                           what makes leaving it alone safe.
+     *   • `'About to Close'`   — catches `StageAdvanceService.advanceTo`, which validates ONLY that
+     *                           the TARGET is in `ALLOWED_EXPLICIT_TARGETS` and **never checks the
+     *                           current stage**. A deal can therefore jump to `'About to Close'`
+     *                           from anywhere, including `'New'`. Removing this entry re-opens that
+     *                           hole; tightening `advanceTo` instead was considered and rejected,
+     *                           because its contract is relied on elsewhere.
+     *   • `'Closed Won'`       — THE FINAL BACKSTOP, and the `Transaction_Complete_Close` flow's
+     *                           route. It is no longer the ordinary claim point; it exists so that
+     *                           a deal which somehow reached close with no folder still gets one.
+     *
+     * ⚠ `'LOI'` AND `'Under Contract (PSA)'` ARE DELIBERATELY ABSENT, AND THAT IS NOT AN OVERSIGHT.
+     * Neither is reachable except from a stage that has already claimed (`NEXT_STAGE` reaches `LOI`
+     * only from the Underwriting approval, and `Under Contract (PSA)` only from `LOI`), so adding
+     * them would buy nothing but two more no-op SOQL reads. The ONE case they would cover is a
+     * record **created directly** at one of them — a data load, where `prior == null` and the stage
+     * is not in the set, so nothing claims. Such a deal claims on its next forward move and reaches
+     * `'Closed Won'` either way: **the folder is DEFERRED, never LOST.**
+     *
+     * ⚠ It no longer matches `PropertyAssetService.CLOSED_WON`, and that is CORRECT rather than
+     * drift: that service keys on ONE stage because a `Property_Asset__c` is created when a deal is
+     * actually won; this one keys on FOUR because a document home is wanted from the first day
+     * anyone works the deal. The two now OVERLAP at `'Closed Won'` without being identical.
+     */
+    @TestVisible private static final Set<String> CLAIM_STAGES = new Set<String>{
+        'Under Review',
+        'Underwriting',
+        'About to Close',
+        'Closed Won'
+    };
 
     // ── `Property__c.SharePoint_Folder_Status__c` — a RESTRICTED picklist ────────────────────────
     // Public because `PropertySelector.queryFolderSweep` builds its work queue from two of them;
@@ -284,37 +430,64 @@ public with sharing class DealFolderService {
      * ('Pending','Failed')` (`PropertySelector.folderSweepLocator`), so `Skipped` and NULL are both
      * permanently OUTSIDE it — clearing the status moves the row from one excluded state to another
      * and hides it forever. And re-saving the deal is dead too: the trigger keys on stage ENTRY, so
-     * a deal already at `Closed Won` never enters it again (residual R5, above). Setting the status
-     * to `Pending` is the one action that puts the row back in the queue.
+     * a deal already sitting in a claim stage never enters one again (residual R5, above).
+     * ⚠ AMENDED 2026-08-27 — the copy below used to say "re-saving the CLOSED deal", which was
+     * accurate when `Closed Won` was the only key and is now misleading in the ordinary case: a
+     * property is far more likely to reach this text from a deal at `Under Review`, which is not
+     * closed and may be years from closing. The recovery ACTION is unchanged; only its description
+     * of the deal's state moved. ⚠ Note the one thing that IS newly true: a deal that skips here at
+     * `Under Review` will re-enter the claim path when it later moves to `Underwriting`, so an
+     * unnamable property CAN get a second bite without any human action — but only if it is renamed
+     * first, and only on a stage MOVE, never on a re-save. Setting the status to `Pending` remains
+     * the one action that works regardless.
      */
     @TestVisible private static final String REASON_UNNAMABLE =
         'SKIPPED: this property\'s Name contains nothing SharePoint accepts as a folder name '
         + '(after removing " * : < > ? / \\ | and control characters, trimming, and rejecting '
         + 'reserved names, nothing usable remained). TO RECOVER: rename the property, then set '
         + 'SharePoint_Folder_Status__c to Pending on this record — that is the ONLY action that '
-        + 'returns it to the daily sweep. Re-saving the closed deal will NOT retry it (the trigger '
-        + 'fires on stage entry only), and CLEARING this status hides the record from the sweep '
-        + 'permanently.';
+        + 'returns it to the daily sweep. Re-saving the deal will NOT retry it (the trigger fires '
+        + 'on entry to a claim stage only), and CLEARING this status hides the record from the '
+        + 'sweep permanently.';
 
     /**
      * 🔴 THE CREDENTIAL-GRANT HINT, APPENDED TO EVERY AUTHENTICATION-SHAPED FAILURE.
      *
-     * This is not generic helpfulness — it names a KNOWN, PRESENT gap. External Credential
-     * Principal Access is evaluated against the ENQUEUING user (measured live: a Queueable reports
+     * This is not generic helpfulness — it names KNOWN, PRESENT gaps. External Credential Principal
+     * Access is evaluated against the ENQUEUING user (measured live: a Queueable reports
      * `RAN AS USERNAME: usman.khan.dpeg@...`, not Automated Process), and
-     * `SharePoint_Integration_Access` has been granted to `DPEG_Junior_Analyst_PSG` ONLY. The
-     * `Transaction_Complete_Close` flow writes `StageName = 'Closed Won'` with no `<runInMode>`,
-     * i.e. as the TRANSACTIONS persona — so every deal closed by that route runs this job as a user
-     * with no grant, and every callout is refused. Those deals are SUPPOSED to land here, visibly,
-     * and be recovered by the sweep running as a granted principal.
+     * `SharePoint_Integration_Access` has been granted to `DPEG_Junior_Analyst_PSG` ONLY.
+     *
+     * 🔴 **REWRITTEN 2026-08-27 — THE DOMINANT FAILURE ROUTE THIS HINT USED TO NAME HAS
+     * DISAPPEARED, AND KEEPING THE OLD TEXT WOULD HAVE SENT EVERY OPERATOR TO THE WRONG PLACE.**
+     * The old hint said, flatly, that the likely cause was the `Transaction_Complete_Close` flow
+     * running as the TRANSACTIONS persona. That was correct while `Closed Won` was the only claim
+     * key. Under `CLAIM_STAGES` the claim happens at `Under Review`, where the claimer is **the
+     * human clicking Begin Review — a deal driver on `DPEG_Junior_Analyst_PSG`, which HOLDS the
+     * grant.** So the ordinary path is now a granted path, and the whole-persona outage the sweep
+     * was built to absorb no longer occurs on it.
+     *
+     * TWO refusal routes survive, and the hint names both because they are diagnosed differently:
+     *   (i)  🔴 **the `LOI_Approval` FINAL-REJECTION field update** (`LOI ⇒ Underwriting`, a
+     *        claim-stage entry). It runs INSIDE the approval transaction as the **read-only
+     *        APPROVER**, who is very unlikely to hold `SharePoint_Integration_Access`. This is the
+     *        likeliest remaining refusal and is invisible from the deal record — the person who
+     *        "caused" it never touched the deal.
+     *   (ii) **`Transaction_Complete_Close`**, which survives only as a **BACKSTOP** claim at
+     *        `Closed Won`, for a deal that somehow reached close with no folder. Rare by
+     *        construction now: reaching `Closed Won` normally means passing through `Under Review`
+     *        first and claiming there.
+     * Both are EXPECTED and RECOVERABLE by the sweep running as a granted scheduling principal.
      */
     @TestVisible private static final String HINT_CREDENTIAL =
-        ' | LIKELY CAUSE: the user whose save closed this deal has no access to the SharePoint '
+        ' | LIKELY CAUSE: the user whose save advanced this deal has no access to the SharePoint '
         + 'external credential. SharePoint_Integration_Access is granted to '
-        + 'DPEG_Junior_Analyst_PSG only, and a deal closed through the Transaction_Complete_Close '
-        + 'flow runs as the Transactions persona. This is EXPECTED and RECOVERABLE: the scheduled '
-        + 'DealFolderSweepBatch retries this row as its own (granted) scheduling principal. If the '
-        + 'sweep is not scheduled, nothing will retry it.';
+        + 'DPEG_Junior_Analyst_PSG only. The two routes that reach a claim stage as an ungranted '
+        + 'user are (1) an LOI approval REJECTION, whose field update moves LOI to Underwriting as '
+        + 'the read-only approver, and (2) the Transaction_Complete_Close flow, which runs as the '
+        + 'Transactions persona and now only ever claims as a backstop at Closed Won. This is '
+        + 'EXPECTED and RECOVERABLE: the scheduled DealFolderSweepBatch retries this row as its '
+        + 'own (granted) scheduling principal. If the sweep is not scheduled, nothing will retry it.';
 
     /** Header line on the durable failure text, so a human reading `Property__c` knows what failed
      *  without opening a log. */
@@ -332,8 +505,8 @@ public with sharing class DealFolderService {
     // They record MEASURED limit consumption (`Limits` deltas) rather than a hand-maintained tally
     // of the statements written here: a hand tally asserts the code back to itself and cannot see a
     // query added inside a selector. Cumulative across every invocation in the transaction, so a
-    // 251-record bulk close — TWO trigger chunks — is expected to read `runInvocations = 2`,
-    // `runQueryCount = 2`, `runEnqueueCount = 2`.
+    // 251-record bulk claim-stage entry — TWO trigger chunks — is expected to read
+    // `runInvocations = 2`, `runQueryCount = 2`, `runEnqueueCount = 2`.
     //
     // ⚠ `runCalloutCount` is incremented INSIDE the async transaction on purpose. Asserting callout
     // counts on `Limits.*` after `Test.stopTest()` is silently vacuous — stopTest restores the
@@ -350,7 +523,7 @@ public with sharing class DealFolderService {
     @TestVisible private static Integer runEnqueueCount = 0;
     /** HTTP callouts made. 🔴 The duplicate-folder falsifier asserts this is ZERO on a re-run. */
     @TestVisible private static Integer runCalloutCount = 0;
-    /** Deals that entered Closed Won carrying no `Property__c` (residual R1). */
+    /** Deals that entered a CLAIM STAGE carrying no `Property__c` (residual R1). */
     @TestVisible private static Integer runSkippedNoProperty = 0;
     /** Properties whose Name could not yield a usable folder name. */
     @TestVisible private static Integer runSkippedUnnamable = 0;
@@ -391,14 +564,21 @@ public with sharing class DealFolderService {
     // ═════════════════════════════════════════════════════════════════════════════════════════════
 
     /**
-     * Claim a SharePoint deal folder for every deal that just ENTERED `Closed Won`, and enqueue the
-     * ONE job that creates them.
+     * Claim a SharePoint deal folder for every deal that just ENTERED a CLAIM STAGE
+     * (`CLAIM_STAGES`), and enqueue the ONE job that creates them.
      *
-     * Stage-ENTRY, not stage-IS: a deal already at Closed Won that is re-saved for any other reason
-     * does nothing. On insert (`oldMap == null`) a record created directly at Closed Won counts as
-     * entering — the same reading `PropertyAssetService.ensureOnClosedWon` and
-     * `ContractExecutionService.openTransactionsOnAboutToClose` use, and the shape data loads and
-     * migrations arrive in.
+     * Stage-ENTRY, not stage-IS: a deal already IN a claim stage that is re-saved for any other
+     * reason does nothing, and — because BOTH halves of the entry test use the set — neither does
+     * an ordinary move BETWEEN two claim stages ('Under Review' -> 'Underwriting'). On insert
+     * (`oldMap == null`) a record created directly at a claim stage counts as entering — the same
+     * reading `PropertyAssetService.ensureOnClosedWon` and
+     * `ContractExecutionService.openTransactionsOnAboutToClose` use for their own single stages,
+     * and the shape data loads and migrations arrive in.
+     *
+     * ⚠ RENAMED 2026-08-27 from `ensureOnClosedWon`. NOT `ensureOnUnderReview` and NOT
+     * `ensureOnReviewEntry`: the set runs to `Closed Won`, which is not a review stage, and the
+     * repo's stage-in-the-method-name convention cannot express four stages. The name points at
+     * `CLAIM_STAGES`, which is the authoritative statement of which stages claim.
      *
      * 🔴 IT CANNOT THROW A CATCHABLE EXCEPTION. Every path is inside the catch below; the ONE
      * uncatchable path — `System.enqueueJob`'s `LimitException` — is bounded by an explicit limit
@@ -410,18 +590,22 @@ public with sharing class DealFolderService {
      * @param newOpps Trigger.new.
      * @param oldMap  Trigger.oldMap on update; null on insert.
      * @example
-     * DealFolderService.ensureOnClosedWon(opps, priorById);
+     * DealFolderService.ensureOnClaimStageEntry(opps, priorById);
      */
-    public static void ensureOnClosedWon(List<Opportunity> newOpps, Map<Id, Opportunity> oldMap) {
+    public static void ensureOnClaimStageEntry(
+        List<Opportunity> newOpps,
+        Map<Id, Opportunity> oldMap
+    ) {
         Integer queriesBefore = Limits.getQueries();
         Integer dmlBefore = Limits.getDmlStatements();
         runInvocations++;
         try {
             claimFolders(newOpps, oldMap);
         } catch (Exception e) {
-            // 🔴 The whole point of this class. A SharePoint problem must never cost a deal close.
+            // 🔴 The whole point of this class. A SharePoint problem must never cost a deal its
+            // stage advance — which, since 2026-08-27, is a deal's FIRST forward step, not its last.
             System.debug(LoggingLevel.ERROR,
-                'DealFolderService.ensureOnClosedWon: swallowed ' + e.getTypeName() + ' | '
+                'DealFolderService.ensureOnClaimStageEntry: swallowed ' + e.getTypeName() + ' | '
                 + e.getMessage() + ' | any claimed property stays Pending for DealFolderSweepBatch.');
         }
         runQueryCount += Limits.getQueries() - queriesBefore;
@@ -434,7 +618,8 @@ public with sharing class DealFolderService {
      *
      * 🔴 A DEAL WITH A NULL `Property__c` IS SKIPPED (residual R1). Only `LeadConvertService`
      * creates a `Property__c`, so a manually built deal has none. Throwing would make such a deal
-     * unclosable — an existing legitimate workflow made impossible, which is worse than a missing
+     * UNADVANCEABLE — since 2026-08-27 it could not even leave 'New' — an existing legitimate
+     * workflow made impossible, which is worse than a missing
      * folder — and there is nowhere to record the result, because all four result fields live on
      * `Property__c`.
      *
@@ -485,14 +670,15 @@ public with sharing class DealFolderService {
             return; // nothing owed -> no job. The duplicate-folder falsifier lands here.
         }
         // ONE enqueue per trigger chunk. NEVER one per deal: a 200-deal chunk enqueuing per record
-        // would throw at the 50-job limit and roll back the close.
+        // would throw at the 50-job limit and roll back the user's save.
         //
         // 🔴 THE GUARD IS LOAD-BEARING, NOT DEFENSIVE BOILERPLATE — it is the ONLY thing standing
-        // between this feature and a rolled-back deal close. `System.enqueueJob` raises
+        // between this feature and a rolled-back STAGE ADVANCE, which since 2026-08-27 is typically
+        // a Begin Review click rather than a close. `System.enqueueJob` raises
         // `System.LimitException` at the 50-per-transaction cap, and SP-R1 measured that an Apex
         // limit exception of that family is NOT caught by `catch (Exception)` — so the try/catch in
-        // `ensureOnClosedWon` above does NOT cover this statement, and an unconditional enqueue
-        // would take the whole Closed Won transaction down with it. This chunk contributes only one
+        // `ensureOnClaimStageEntry` above does NOT cover this statement, and an unconditional
+        // enqueue would take that whole transaction down with it. This chunk contributes only one
         // enqueue, but nothing guarantees it is the first: unrelated automation on the same
         // transaction (Broker Protection, the EAC pipeline, a future stage-entry service) may have
         // consumed the slots before this line is reached.
@@ -511,7 +697,8 @@ public with sharing class DealFolderService {
     }
 
     /**
-     * The distinct Property Ids of every deal in this chunk that JUST ENTERED `Closed Won`.
+     * The distinct Property Ids of every deal in this chunk that JUST ENTERED a CLAIM STAGE —
+     * i.e. whose new stage IS in `CLAIM_STAGES` and whose prior stage was NOT (or did not exist).
      *
      * Keying on distinct properties DEDUPES for free: two Opportunities closing against one property
      * yield one Id, which is what makes "two deals on one property share one folder" fall out of the
@@ -528,8 +715,12 @@ public with sharing class DealFolderService {
         Set<Id> propertyIds = new Set<Id>();
         for (Opportunity o : newOpps) {
             Opportunity prior = (oldMap == null) ? null : oldMap.get(o.Id);
-            Boolean justEntered = CLOSED_WON.equals(o.StageName)
-                && (prior == null || !CLOSED_WON.equals(prior.StageName));
+            // 🔴 BOTH HALVES USE THE SET. A prior test against a single stage would read an
+            // ordinary 'Under Review' -> 'Underwriting' move as a FRESH entry and spend a
+            // needless SOQL on every deal in the org. Pinned by
+            // DealFolderServiceTest.moveBetweenTwoClaimStages_isNotAFreshEntry_costsZeroSoql.
+            Boolean justEntered = CLAIM_STAGES.contains(o.StageName)
+                && (prior == null || !CLAIM_STAGES.contains(prior.StageName));
             if (!justEntered) {
                 continue;
             }
@@ -647,7 +838,7 @@ public with sharing class DealFolderService {
             }
         }
 
-        // DML 1 of 1. SYSTEM_MODE because no persona reaching Closed Won necessarily holds Edit on
+        // DML 1 of 1. SYSTEM_MODE because no persona reaching a CLAIM STAGE necessarily holds Edit on
         // Property__c and the four fields have no FLS for anyone; allOrNone = false because a
         // failed stamp must never take down the stamps of properties whose folders DID get created.
         stampAll(stamps);
@@ -999,8 +1190,10 @@ public with sharing class DealFolderService {
     }
 
     /**
-     * The one stamp statement. `AccessLevel.SYSTEM_MODE` because the personas that reach Closed Won
-     * may hold no Edit on `Property__c` and the four fields have no FLS for anyone;
+     * The one stamp statement. `AccessLevel.SYSTEM_MODE` because the personas that reach a CLAIM
+     * STAGE may hold no Edit on `Property__c` and the four fields have no FLS for anyone;
+     * ⚠ the argument got STRONGER on 2026-08-27, not weaker: the claim now fires at `Under Review`,
+     * so the writing principal is any deal driver in the org rather than the closing desk.
      * `allOrNone = false` because a failed stamp must never take anything else down.
      *
      * A no-op when nothing changed, which is what keeps the re-save path at zero DML.
@@ -1013,7 +1206,8 @@ public with sharing class DealFolderService {
      * available. Without this loop there is no trace of it anywhere.
      *
      * ⚠ It logs and does not throw, and does not tighten `allOrNone`: both would trade a diagnosable
-     * duplicate for a rolled-back Closed Won, which the never-throw rule in the class header forbids.
+     * duplicate for a rolled-back STAGE ADVANCE, which the never-throw rule in the class header
+     * forbids — and which now blocks a deal at its first forward step rather than its last.
      * Diagnostics only.
      *
      * @param stamps The records to write; null/empty-safe.

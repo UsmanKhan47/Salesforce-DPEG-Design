@@ -2,18 +2,20 @@
  * The ASYNC VENUE for SharePoint deal-folder creation — Gate-1 decision (i), D1 **Option A**
  * (a Queueable chained from the trigger) rather than the design's recommended Option B.
  *
- * Chained from `DealFolderService.ensureOnClosedWon`, ONCE per trigger chunk, carrying the Ids of
+ * Chained from `DealFolderService.ensureOnClaimStageEntry`, ONCE per trigger chunk, carrying the
+ * Ids of
  * the properties that chunk claimed. It walks at most `MAX_PROPERTIES_PER_TRANSACTION` of them and
  * RE-ENQUEUES ITSELF for the remainder.
  *
  * ═══ 🔴 WHY IT MUST BE ASYNC, AND WHY IT MUST SELF-CHAIN ═══
  * Two separate reasons, and neither substitutes for the other:
  *   1. **Callouts cannot be made with uncommitted DML pending.** The trigger transaction has just
- *      written the deal close; a synchronous callout would throw
+ *      written a claim-stage entry — typically a Begin Review save, not a close; a synchronous
+ *      callout would throw
  *      `You have uncommitted work pending`. This alone forces async.
  *   2. **The lifecycle-subfolder decision costs 7 callouts per deal against a hard limit of 100 per
- *      transaction.** One job can therefore serve about ten deals, and a 251-deal bulk close cannot
- *      be done in one job at any batch size. The full arithmetic — including why the CUMULATIVE
+ *      transaction.** One job can therefore serve about ten deals, and a 251-deal bulk claim-stage
+ *      entry cannot be done in one job at any batch size. The full arithmetic — including why the CUMULATIVE
  *      CALLOUT TIME limit binds before the count limit, and why N is 10 rather than the arithmetic
  *      maximum of 14 — is in `DealFolderService`'s header and is not repeated here so it cannot
  *      drift into two versions.
@@ -47,8 +49,15 @@
  *
  * ⚠ THE RUNNING PRINCIPAL IS THE ENQUEUING USER. Measured live: a Queueable reports
  * `RAN AS USERNAME: usman.khan.dpeg@...`, not Automated Process — so per-user External Credential
- * Principal Access applies to this job, and a deal closed by a persona without
- * `SharePoint_Integration_Access` will fail here every time, by design, visibly.
+ * Principal Access applies to this job. Any claim-stage entry made by a principal without
+ * `SharePoint_Integration_Access` therefore fails here, by design, visibly.
+ * 🔴 AMENDED 2026-08-27 — DO NOT READ THAT AS THE OLD WHOLE-PERSONA STORY. This class used to say
+ * a deal CLOSED by an ungranted persona "will fail here every time", which described an entire
+ * ordinary closing route (`Transaction_Complete_Close`, running as the Transactions persona).
+ * `DealFolderService` now claims on entry to any of `CLAIM_STAGES`, so the ordinary claimer is a
+ * deal driver on `DPEG_Junior_Analyst_PSG` — who HOLDS the grant. Two narrow routes remain:
+ * the `LOI_Approval` final-rejection field update (running as the READ-ONLY APPROVER inside the
+ * approval transaction) and `Transaction_Complete_Close` as a backstop claim at `Closed Won`.
  *
  * LAYER — Queueable. No SOQL, no DML, no callouts of its own: it is the venue and the chain, and
  * `DealFolderService` is the work. `Database.AllowsCallouts` because the service it calls makes

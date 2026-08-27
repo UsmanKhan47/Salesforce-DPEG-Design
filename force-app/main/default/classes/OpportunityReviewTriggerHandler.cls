@@ -8,7 +8,8 @@
  *   - OpportunityReviewService.ensureNda opens the deal's NDA on creation.
  *   - ContractExecutionService.openTransactionsOnAboutToClose  ('About to Close')
  *   - PropertyAssetService.ensureOnClosedWon                   ('Closed Won')
- *   - DealFolderService.ensureOnClosedWon                      ('Closed Won')
+ *   - DealFolderService.ensureOnClaimStageEntry                (ANY of 'Under Review',
+ *     'Underwriting', 'About to Close', 'Closed Won' — see that class's CLAIM_STAGES)
  *
  * ⚠ The last three are NOT review children and deliberately do not live in
  * OpportunityReviewService. They are here because the TRIGGER POINT is the deal's stage:
@@ -16,21 +17,35 @@
  * Property Management, then document storage). Each service's own header carries the full
  * argument.
  *
- * 🔴 THE LAST TWO SHARE A TRIGGER POINT AND HAVE OPPOSITE FAILURE CONTRACTS. DO NOT
- * HARMONISE THEM. PropertyAssetService is allOrNone = true and THROWS on failure by design —
- * its silent absence was the bug being fixed. DealFolderService MUST NEVER THROW, because a
- * SharePoint outage rolling back a Closed Won is strictly worse than a missing folder.
+ * 🔴 THE LAST TWO HAVE OPPOSITE FAILURE CONTRACTS. DO NOT HARMONISE THEM.
+ * PropertyAssetService is allOrNone = true and THROWS on failure by design — its silent
+ * absence was the bug being fixed. DealFolderService MUST NEVER THROW, because a SharePoint
+ * outage rolling back a user's STAGE ADVANCE is strictly worse than a missing folder.
  * ⚠ Ordering does NOT deliver that: a throw anywhere in a trigger rolls back the whole
  * transaction regardless of statement order. Only the absence of throwing paths inside
  * DealFolderService achieves it. It is placed last for readability, not for safety.
+ *
+ * ⚠ AMENDED 2026-08-27 — THEY NO LONGER "SHARE A TRIGGER POINT", AND THAT WAS THE PREMISE OF
+ * THE PARAGRAPH ABOVE RATHER THAN DECORATION. PropertyAssetService keys on ONE stage
+ * ('Closed Won'); DealFolderService keys on FOUR. The relationship is now an OVERLAP — neither
+ * an identity nor a separation, which is a subtler thing than either and is why it is spelled
+ * out. On a deal entering 'Closed Won' BOTH still run in the SAME transaction, so the
+ * opposite-contract warning above is still live and still load-bearing. On the far more common
+ * 'New' -> 'Under Review' save only the folder service does any work, and PropertyAssetService's
+ * throwing contract is not in the picture at all.
+ * 🔴 THE CONTRACT FACT SURVIVES ITS OLD PREMISE, RE-FOUNDED: the hazard is two services with
+ * OPPOSITE failure contracts sharing ANY transaction, and they still share the 'Closed Won' one.
+ * Do not "simplify" this into "they are unrelated now".
  *
  * Behaviour preservation note: the previous trigger passed the old-map only on
  * update (null on insert) to BOTH service calls. That is reproduced here by
  * routing after-insert with a null prior-map and after-update with the real
  * oldMap. The service methods themselves decide what each context means.
  *
- * All business logic lives in OpportunityReviewService; this handler only wires
- * the trigger contexts to that service.
+ * All business logic lives in the FOUR services listed at the top of this header; this handler
+ * holds none of its own and only wires the trigger contexts to them. (It said "OpportunityReviewService"
+ * alone until 2026-08-27 — accurate when this handler was extracted, and wrong ever since
+ * ContractExecutionService, PropertyAssetService and DealFolderService joined `route()`.)
  */
 public with sharing class OpportunityReviewTriggerHandler extends TriggerHandler {
 
@@ -68,17 +83,26 @@ public with sharing class OpportunityReviewTriggerHandler extends TriggerHandler
         // 'Closed Won', so a deal driver can close a deal with no Transaction__c at all;
         // building it in that flow would have missed half the closes, invisibly.
         PropertyAssetService.ensureOnClosedWon(opps, priorById);
-        // Entering 'Closed Won' also claims the deal's SharePoint folder tree.
-        // It lives HERE for the same reason PropertyAssetService does — StageAdvanceService
-        // .NEXT_STAGE maps BOTH 'Under Contract (PSA)' and 'About to Close' to 'Closed Won', so a
-        // deal driver can
-        // close a deal with no Transaction__c at all and the Transaction_Complete_Close flow would
-        // have missed half the closes.
+        // Entering ANY CLAIM STAGE claims the deal's SharePoint folder tree — moved 2026-08-27
+        // from 'Closed Won' alone to the four-stage CLAIM_STAGES set.
+        // 🔴 IT NO LONGER LIVES HERE FOR PropertyAssetService's REASON. That argument (NEXT_STAGE
+        // maps BOTH 'Under Contract (PSA)' and 'About to Close' to 'Closed Won', so a flow keyed on
+        // the Transaction would miss half the closes) is MOOT for this service: it now claims at
+        // 'Under Review', long before either key matters. What keeps it in Apex is the callout
+        // arithmetic (a per-record Flow interview would attempt 251 x 7 = 1,757 HTTP Callout
+        // actions against a limit of 100), Flow's absent HttpCalloutMock seam, and the fact that
+        // "entered any member of a SET from any non-member" is one contains() pair here and a
+        // Decision-per-stage-per-route in Flow. Full argument in that service's header.
         // 🔴 THE SYNCHRONOUS SIDE MAKES ZERO CALLOUTS. It stamps Pending and enqueues exactly ONE
-        // DealFolderQueueable per trigger chunk (never one per deal — 200 enqueues would breach the
-        // 50-job limit and roll back the close). A chunk that closes nothing costs zero SOQL, zero
-        // DML and zero enqueues. See that service's header for the 7-callouts-per-deal arithmetic
-        // and the never-throw contract noted above.
-        DealFolderService.ensureOnClosedWon(opps, priorById);
+        // DealFolderQueueable per trigger chunk (never one per deal — 200 enqueues would breach
+        // the 50-job limit and roll back the save). A chunk entering no claim stage costs zero
+        // SOQL, zero DML and zero enqueues — and so does an ordinary move BETWEEN two claim
+        // stages, because both halves of the entry test use the set.
+        // 🔴 THE NEVER-THROW CONTRACT IS NOW EXERCISED ON ESSENTIALLY EVERY DEAL, at up to four
+        // entry points, one of which is inside an approval transaction as a READ-ONLY APPROVER
+        // (the LOI_Approval final-rejection field update, 'LOI' -> 'Underwriting'). A throw here
+        // surfaces through StageAdvanceService.setStage's catch(DmlException), which rethrows
+        // getDmlMessage(0) VERBATIM into the toast of whoever clicked Begin Review.
+        DealFolderService.ensureOnClaimStageEntry(opps, priorById);
     }
 }

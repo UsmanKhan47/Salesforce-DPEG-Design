@@ -12,11 +12,30 @@
  * fully deterministic (no enqueue/chain timing to reason about). Both styles are legitimate; each
  * test's own name says which one it is.
  *
+ * ═══ 🔴 THE CLAIM STAGE MOVED ON 2026-08-27, AND SO DID THE 251-RECORD FIXTURE ═══
+ * `DealFolderService` used to key on entry to `Closed Won` alone; it now keys on entry to any
+ * member of `CLAIM_STAGES` = { 'Under Review', 'Underwriting', 'About to Close', 'Closed Won' }.
+ * 🔴 **BOTH 251-RECORD BULK TESTS WERE MOVED, NOT RENAMED.** Per `.claude/rules/bulk-test-rule.md`
+ * the 251 mandate applies to the SYNCHRONOUS claim path (it is a trigger), and it must be met AT
+ * THE STAGE THE CODE NOW KEYS ON. A fixture that still bulk-updated to `Closed Won` would still go
+ * green while proving nothing about the path production actually takes — the exact vacuous-test
+ * shape this suite has been bitten by before. They now drive `New` -> `Under Review`, the ordinary
+ * route (the **Begin Review** action), which needs no signed NDA and no executed contract.
+ * ⚠ The ASYNC path keeps its existing volume shape deliberately: 251 properties would demand
+ * 1,757 callouts and would measure a state the job can never be in.
+ *
  * ═══ 🔴 THE DUPLICATE-FOLDER FALSIFIER (§7 of the design doc) IS THE MOST IMPORTANT TEST HERE ═══
- * `duplicateFolderFalsifier_...` proves that closing 251 deals whose properties ALREADY carry a
- * `SharePoint_Folder_ID__c` costs ZERO callouts and ZERO enqueues — the guard that stops
- * `conflictBehavior: rename` from quietly minting a second folder for every re-close, sweep pass or
- * concurrent second close.
+ * TWO tests carry that name now, and the SECOND one is new and is the more important of the pair:
+ *   • `duplicateFolderFalsifier_bulk251...` — 251 deals whose properties ALREADY carry a
+ *     `SharePoint_Folder_ID__c` enter a claim stage: ZERO callouts, ZERO enqueues. The guard that
+ *     stops `conflictBehavior: rename` from quietly minting a second folder for every re-save,
+ *     sweep pass or concurrent claim.
+ *   • `walkedThroughAllFourClaimStages_claimsExactlyOnce_...` — 🔴 **the falsifier for the FOUR-
+ *     STAGE SET ITSELF.** One deal walked through all four claim stages must claim EXACTLY ONCE:
+ *     one enqueue, one idempotency read, one folder tree of seven callouts. If either half of the
+ *     entry test in `enteringPropertyIds` were ever changed to compare a single stage, this test
+ *     goes red with four enqueues and four reads instead of one. Nothing else in the suite can
+ *     see that regression.
  *
  * ═══ ⚠ Test.startTest()/Test.stopTest() MAY BE CALLED ONLY ONCE PER TEST METHOD ═══
  * (measured elsewhere in this repo — a second call throws). Any scenario needing "attempt once,
@@ -48,6 +67,16 @@ private class DealFolderServiceTest {
     /** .claude/rules/bulk-test-rule.md — 251 forces a SECOND Opportunity trigger chunk. */
     private static final Integer BULK_N = 251;
     private static final String CLOSED_WON = 'Closed Won';
+    /** The ORDINARY claim stage — `StageAdvanceService.advance()` from 'New', i.e. Begin Review.
+     *  It has no NDA gate and no contract gate, which is why the bulk fixture uses it. */
+    private static final String UNDER_REVIEW = 'Under Review';
+    private static final String UNDERWRITING = 'Underwriting';
+    private static final String ABOUT_TO_CLOSE = 'About to Close';
+    /** 🔴 A NON-claim stage that is reachable from 'New' in one save with no gates, used to prove a
+     *  stage move that must cost NOTHING. 'Development Review' / 'Construction Review' would not
+     *  do: they are record-type-restricted branches, and this repo has MEASURED that a restricted
+     *  picklist IS enforced by DML, so writing one on the wrong record type throws. */
+    private static final String DEAD_PASS = 'Dead/Pass';
     private static final String SITE_ID = 'contoso-site';
 
     // ═════════════════════════════════════════════════════════════════════════════════════
@@ -80,12 +109,48 @@ private class DealFolderServiceTest {
         return opps;
     }
 
-    /** Moves already-prepared deals to Closed Won in one bulk DML. */
-    private static void close(List<Opportunity> opps) {
+    /**
+     * Inserts `count` properties and `count` Opportunities, one per property, left at 'New' with
+     * NO stage-gate preparation at all.
+     *
+     * 🔴 THIS IS THE FIXTURE THE BULK TESTS USE, AND ITS CHEAPNESS IS THE POINT. Entering
+     * 'Under Review' passes `NDA_Signed_Before_Deal_Progression` (whose OR list starts at
+     * 'Underwriting') and `No_Backward_Stage_Movement` (rank 1 -> rank 2 is forward) with no
+     * preparation, so 251 deals need no NDA signing and no contract signing — unlike
+     * `dealsReadyToClose`, which exists for the tests that genuinely must reach `Closed Won`.
+     *
+     * @param count      How many pairs.
+     * @param properties Out-parameter: the inserted properties, index-aligned to the result.
+     * @return The inserted Opportunities, at 'New'.
+     */
+    private static List<Opportunity> dealsAtNew(Integer count, List<Property__c> properties) {
+        properties.addAll(TestDataFactory.createProperties(count, false));
+        insert properties;
+
+        List<Opportunity> opps = TestDataFactory.createOpportunities(count, false);
+        for (Integer i = 0; i < count; i++) {
+            opps[i].Property__c = properties[i].Id;
+        }
+        insert opps;
+        return opps;
+    }
+
+    /** Moves already-prepared deals to `stage` in ONE bulk DML. */
+    private static void moveTo(List<Opportunity> opps, String stage) {
         for (Opportunity o : opps) {
-            o.StageName = CLOSED_WON;
+            o.StageName = stage;
         }
         update opps;
+    }
+
+    /** Moves already-prepared deals to Closed Won in one bulk DML. */
+    private static void close(List<Opportunity> opps) {
+        moveTo(opps, CLOSED_WON);
+    }
+
+    /** The org's converted Lead status — never hardcoded; it differs per org. */
+    private static String convertedStatus() {
+        return [SELECT MasterLabel FROM LeadStatus WHERE IsConverted = true LIMIT 1].MasterLabel;
     }
 
     /** Inserts the org-default `SharePoint_Config__c` row, enabled, with the given site id. */
@@ -233,19 +298,24 @@ private class DealFolderServiceTest {
     // ═════════════════════════════════════════════════════════════════════════════════════
 
     /**
-     * 251 deals close against 251 properties that ALREADY carry a SharePoint folder — simulating
-     * a re-close, a concurrent second close, or a sweep pass arriving after a prior success. The
-     * idempotency guard must find them all already foldered and do NOTHING external.
+     * 251 deals ENTER A CLAIM STAGE against 251 properties that ALREADY carry a SharePoint folder —
+     * simulating a re-marketed property, a concurrent second deal on the same property, or a sweep
+     * pass arriving after a prior success. The idempotency guard must find them all already
+     * foldered and do NOTHING external.
+     *
+     * ⚠ MOVED 2026-08-27 from a bulk `Closed Won` update to a bulk `Under Review` update. The
+     * record count (251, two trigger chunks) and every assertion below are unchanged — only the
+     * stage moved, because that is the stage the code now keys on.
      */
     @isTest
-    static void duplicateFolderFalsifier_bulk251CloseAgainstAlreadyFolderedProperties_zeroCalloutsZeroEnqueues() {
+    static void duplicateFolderFalsifier_bulk251ClaimStageEntryAgainstAlreadyFolderedProperties_zeroCalloutsZeroEnqueues() {
         SharePointCalloutMock mock = new SharePointCalloutMock(201,
             SharePointCalloutMock.successBody('should-never-be-used', null));
         Test.setMock(HttpCalloutMock.class, mock);
         enableSharePoint(SITE_ID);
 
         List<Property__c> properties = new List<Property__c>();
-        List<Opportunity> opps = dealsReadyToClose(BULK_N, properties);
+        List<Opportunity> opps = dealsAtNew(BULK_N, properties);
 
         List<Property__c> alreadyFoldered = new List<Property__c>();
         for (Integer i = 0; i < properties.size(); i++) {
@@ -260,7 +330,8 @@ private class DealFolderServiceTest {
 
         DealFolderService.resetRunCounters();
         Test.startTest();
-        close(opps); // 251-record Closed Won update — TWO trigger chunks (200 + 51)
+        // 251-record CLAIM-STAGE entry ('New' -> 'Under Review') — TWO trigger chunks (200 + 51)
+        moveTo(opps, UNDER_REVIEW);
         Test.stopTest();
 
         Assert.areEqual(0, DealFolderService.runCalloutCount,
@@ -291,11 +362,16 @@ private class DealFolderServiceTest {
     // ═════════════════════════════════════════════════════════════════════════════════════
 
     /**
-     * 251 FRESH deals (no pre-existing folders) close in one transaction. Proves three things at
-     * once: (1) exactly ONE enqueue per trigger chunk — 2 total, never 251; (2) the sync path's
+     * 251 FRESH deals (no pre-existing folders) ENTER A CLAIM STAGE in one transaction. Proves
+     * three things at once: (1) exactly ONE enqueue per trigger chunk — 2 total, never 251; (2) the sync path's
      * SOQL/DML is CONSTANT per invocation; (3) each of the two chained-off async jobs is bounded
      * to `MAX_PROPERTIES_PER_TRANSACTION` (10) properties (70 callouts), deferring the remainder
      * rather than attempting all of them and risking an uncatchable LimitException.
+     *
+     * ⚠ MOVED 2026-08-27 from a bulk `Closed Won` update to a bulk `New` -> `Under Review` update,
+     * per `.claude/rules/bulk-test-rule.md`: the 251 mandate binds on the SYNCHRONOUS trigger path,
+     * so it has to be met at the stage that path now keys on. Every number below is unchanged —
+     * the arithmetic is a function of the record count and the callout budget, not of the stage.
      *
      * The arithmetic, so a future reader does not have to re-derive it:
      *   251 records -> 2 trigger chunks (200 + 51) -> 2 sync invocations, 2 enqueues
@@ -307,18 +383,18 @@ private class DealFolderServiceTest {
      * Do not shrink the record count and do not relax the budget to make this pass.
      */
     @isTest
-    static void bulk251EnteringClosedWon_enqueuesExactlyTwoChunksOnAConstantBudget() {
+    static void bulk251EnteringAClaimStage_enqueuesExactlyTwoChunksOnAConstantBudget() {
         SharePointCalloutMock mock = new SharePointCalloutMock(201,
             SharePointCalloutMock.successBody('created-item', 'https://contoso.sharepoint.com/x/created'));
         Test.setMock(HttpCalloutMock.class, mock);
         enableSharePoint(SITE_ID);
 
         List<Property__c> properties = new List<Property__c>();
-        List<Opportunity> opps = dealsReadyToClose(BULK_N, properties);
+        List<Opportunity> opps = dealsAtNew(BULK_N, properties);
 
         DealFolderService.resetRunCounters();
         Test.startTest();
-        close(opps);
+        moveTo(opps, UNDER_REVIEW);
         Test.stopTest();
 
         Assert.areEqual(2, DealFolderService.runEnqueueCount,
@@ -592,20 +668,249 @@ private class DealFolderServiceTest {
             + 'second job would double this count');
     }
 
+    /**
+     * ⚠ REWRITTEN 2026-08-27, AND THE OLD VERSION WOULD NOW BE ACTIVELY WRONG. It moved a deal to
+     * 'Under Review' and asserted that cost NOTHING. 'Under Review' is now the ORDINARY claim
+     * stage, so that assertion would fail — and had it merely been deleted, the suite would have
+     * lost its only proof that a stage move OUTSIDE the set is free. It moves to 'Dead/Pass'
+     * instead: a real stage, reachable from 'New' in one save with no gates, and deliberately not a
+     * claim stage.
+     */
     @isTest
-    static void aStageMoveThatIsNotClosedWon_costsNothing() {
+    static void aStageMoveThatIsNotAClaimStage_costsNothing() {
         List<Property__c> properties = new List<Property__c>();
-        List<Opportunity> opps = dealsReadyToClose(1, properties);
+        List<Opportunity> opps = dealsAtNew(1, properties);
 
         DealFolderService.resetRunCounters();
         Test.startTest();
-        opps[0].StageName = 'Under Review';
-        update opps;
+        moveTo(opps, DEAD_PASS);
         Test.stopTest();
 
-        Assert.areEqual(0, DealFolderService.runQueryCount, '');
+        Assert.areEqual(1, DealFolderService.runInvocations,
+            'The trigger still routed the save here — it is the SET MEMBERSHIP TEST that declines');
+        Assert.areEqual(0, DealFolderService.runQueryCount,
+            'Dead/Pass is not in CLAIM_STAGES, so no idempotency read is worth paying for');
         Assert.areEqual(0, DealFolderService.runDmlCount, '');
         Assert.areEqual(0, DealFolderService.runEnqueueCount, '');
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════════════════
+    // 🔴 THE FOUR-STAGE SET ITSELF — the two tests that falsify a one-stage prior check
+    // ═════════════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * 🔴 THE PRIOR-STAGE SET-MEMBERSHIP FALSIFIER. `enteringPropertyIds` tests BOTH halves against
+     * `CLAIM_STAGES`:
+     *
+     *     CLAIM_STAGES.contains(o.StageName)
+     *       && (prior == null || !CLAIM_STAGES.contains(prior.StageName))
+     *
+     * If the PRIOR half were ever written against a single stage — the obvious-looking
+     * `!CLOSED_WON.equals(prior.StageName)`, or `'Under Review'.equals(...)` — then an ordinary
+     * 'Under Review' -> 'Underwriting' move would register as a FRESH ENTRY and spend one SOQL on
+     * EVERY deal in the org, forever, for nothing. Nothing else in this suite sees that: the folder
+     * would still be correct, the callout count would still be zero (the id guard catches it one
+     * layer later), and only the query counter moves. That is why this test asserts the QUERY
+     * COUNT rather than an outcome.
+     *
+     * ⚠ SharePoint is deliberately left UNCONFIGURED. That makes the first entry stamp `Skipped`
+     * and enqueue NOTHING, so there is no pending Queueable to settle at `Test.stopTest()` and
+     * contaminate the counters — the trap `reSavingAnAlreadyClosedDeal_costsNothing` had to work
+     * around with local snapshots. The set-membership question is unaffected by config: a fresh
+     * entry costs its SOQL whether the integration is on or off.
+     */
+    @isTest
+    static void moveBetweenTwoClaimStages_isNotAFreshEntry_costsZeroSoql() {
+        // Deliberately NO SharePoint_Config__c row — see the header note above.
+        List<Property__c> properties = new List<Property__c>();
+        List<Opportunity> opps = dealsAtNew(1, properties);
+        TestDataFactory.signPrimaryNda(opps); // 'Underwriting' is behind the NDA gate
+
+        moveTo(opps, UNDER_REVIEW); // the REAL claim-stage entry — outside the measurement
+        Assert.areEqual('Skipped',
+            propertiesFor(properties)[0].SharePoint_Folder_Status__c,
+            'Precondition: the first entry really did reach the service (config off -> Skipped). '
+            + 'If this is null the deal never entered a claim stage and the test below is vacuous.');
+
+        DealFolderService.resetRunCounters();
+        Test.startTest();
+        moveTo(opps, UNDERWRITING); // member -> member: NOT an entry
+        Test.stopTest();
+
+        // 🔴 TWO, NOT ONE — MEASURED 2026-08-27, AND THE REASON MAKES THIS TEST STRONGER.
+        // One update statement routes here TWICE: entering 'Underwriting' makes
+        // OpportunityReviewService insert an Underwriting__c and then `update uwStamps` to stamp
+        // Primary_Underwriting__c back onto the Opportunity, which RE-FIRES the after-update
+        // trigger in the same transaction. On that second routing the prior stage and the new
+        // stage are BOTH 'Underwriting' — a member -> member pair, so it must be a no-op too.
+        // That is a second, free falsifier for the same bug: a prior test written against a single
+        // stage would treat the stamp-back re-fire as a fresh entry as well.
+        Assert.areEqual(2, DealFolderService.runInvocations,
+            'The trigger routed this ONE update statement here twice — the save itself, plus '
+            + 'OpportunityReviewService stamping Primary_Underwriting__c back onto the deal');
+        Assert.areEqual(0, DealFolderService.runQueryCount,
+            'THE FALSIFIER: Under Review -> Underwriting is a move BETWEEN two members of '
+            + 'CLAIM_STAGES and must register NO fresh entry. A non-zero count here means the '
+            + 'PRIOR-stage half of the entry test stopped using the set, and every deal in the org '
+            + 'is now paying a needless SOQL on an ordinary forward move.');
+        Assert.areEqual(0, DealFolderService.runDmlCount, 'and no stamp');
+        Assert.areEqual(0, DealFolderService.runEnqueueCount, 'and no job');
+    }
+
+    /**
+     * 🔴 THE FOUR-STAGE DUPLICATE-FOLDER FALSIFIER — the most important test in this class.
+     *
+     * One deal is walked through ALL FOUR claim stages in four separate saves:
+     *   'New' -> 'Under Review' -> 'Underwriting' -> 'About to Close' -> 'Closed Won'
+     * and must claim EXACTLY ONCE. Entries 2, 3 and 4 must cost ZERO extra enqueues, ZERO extra
+     * idempotency reads and ZERO extra callouts.
+     *
+     * ═══ WHY THIS IS THE TEST THAT PROTECTS THE DESIGN DECISION ═══
+     * `CLAIM_STAGES` has four members precisely so that three skip routes (the
+     * `Opportunity_Initiate_Underwriting` before-save jump, `advanceTo`'s unvalidated target, and
+     * the `Transaction_Complete_Close` flow) cannot leave a deal without a folder — WITHOUT paying
+     * for four folders on every ordinary deal. That trade is only safe because entries 2-4 are
+     * free. If they were not, widening the set would have quadrupled Graph traffic and, under
+     * `conflictBehavior: rename`, produced 'Magnolia Crossing 1', ' 2' and ' 3' beside the real
+     * folder — the outcome this whole feature treats as the worst available.
+     *
+     * ⚠ THE SYNC COUNTERS ARE SNAPSHOTTED BEFORE `Test.stopTest()`, on purpose: stopTest drains the
+     * one enqueued Queueable, whose own invocation legitimately increments the same statics. Same
+     * trap, and same fix, as `reSavingAnAlreadyClosedDeal_costsNothing`.
+     */
+    @isTest
+    static void walkedThroughAllFourClaimStages_claimsExactlyOnce_zeroExtraCalloutsAndEnqueues() {
+        enableSharePoint(SITE_ID);
+        SharePointCalloutMock mock = new SharePointCalloutMock(201,
+            SharePointCalloutMock.successBody('walk-item', 'https://contoso.sharepoint.com/x/walk'));
+        Test.setMock(HttpCalloutMock.class, mock);
+
+        List<Property__c> properties = new List<Property__c>();
+        List<Opportunity> opps = dealsAtNew(1, properties);
+        TestDataFactory.signPrimaryNda(opps); // gates Underwriting, About to Close AND Closed Won
+        TestDataFactory.signContract(opps);   // gates Closed Won
+
+        DealFolderService.resetRunCounters();
+        Test.startTest();
+        moveTo(opps, UNDER_REVIEW);    // entry 1 — the ONLY one that may do work
+        moveTo(opps, UNDERWRITING);    // entry 2 — member -> member, not an entry
+        moveTo(opps, ABOUT_TO_CLOSE);  // entry 3 — member -> member, not an entry
+        moveTo(opps, CLOSED_WON);      // entry 4 — member -> member, not an entry
+
+        // Snapshot the SYNCHRONOUS contribution before stopTest() drains the one enqueued job.
+        Integer syncEnqueues = DealFolderService.runEnqueueCount;
+        Integer syncQueries = DealFolderService.runQueryCount;
+        Integer syncDml = DealFolderService.runDmlCount;
+        Integer syncInvocations = DealFolderService.runInvocations;
+        Test.stopTest();
+
+        // 🔴 FIVE, NOT FOUR — MEASURED 2026-08-27. Four stage saves, plus ONE re-entrant routing:
+        // entering 'Underwriting' makes OpportunityReviewService insert an Underwriting__c and
+        // then `update` the Opportunity to stamp Primary_Underwriting__c, re-firing the
+        // after-update trigger with the stage unchanged. The service is therefore ASKED five
+        // times and must still claim exactly once — which is the whole point of the assertions
+        // below, and is a stricter bar than the four-save story alone.
+        Assert.areEqual(5, syncInvocations,
+            'Four stage saves plus ONE re-entrant routing from the Primary_Underwriting__c '
+            + 'stamp-back. If this number changes, some OTHER automation started re-saving the '
+            + 'deal — re-read the assertions below before adjusting it, because the claim count '
+            + 'is what this test actually protects.');
+        Assert.areEqual(1, syncEnqueues,
+            'THE FALSIFIER: exactly ONE folder job for four claim-stage saves. Four enqueues here '
+            + 'would mean the prior-stage test stopped using CLAIM_STAGES, and every deal in the '
+            + 'org would build (and, under conflictBehavior: rename, KEEP) four folder trees.');
+        Assert.areEqual(1, syncQueries,
+            'and exactly ONE idempotency read — only the first save registered an entry');
+        Assert.areEqual(1, syncDml, 'and exactly ONE Pending stamp');
+
+        Assert.areEqual(DealFolderService.CALLOUTS_PER_PROPERTY, mock.requestCount,
+            'EXACTLY ONE folder tree (1 parent + 6 subfolders) was ever built for this property, '
+            + 'across all four claim stages');
+        Assert.areEqual(1, DealFolderService.runFoldersCreated, '');
+        Assert.areEqual(6, DealFolderService.runSubfoldersCreated, '');
+
+        Opportunity after = [SELECT StageName FROM Opportunity WHERE Id = :opps[0].Id];
+        Assert.areEqual(CLOSED_WON, after.StageName,
+            'and the deal really did walk the whole pipeline — if it stopped early, the stages '
+            + 'above were never actually entered and every assertion here is vacuous');
+        Property__c p = propertiesFor(properties)[0];
+        Assert.areEqual('Created', p.SharePoint_Folder_Status__c, '');
+        Assert.areEqual('walk-item', p.SharePoint_Folder_ID__c, 'ONE folder id, never a second');
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════════════════
+    // 🔴 OQ-2 — WHERE Database.convertLead LANDS. A NAMED MEASUREMENT, NOT AN INFERENCE.
+    // ═════════════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * 🔴 THE DESIGN ESTABLISHED THIS BY INFERENCE AND EXPLICITLY REFUSED TO SHIP ON IT.
+     * `Opportunity.StageName` has no default on either active record type (the ui-api
+     * picklist-values payload returns an empty `defaultValue` for both Land and Retail) and 'New'
+     * is first in every business process — from which the design INFERRED that
+     * `Database.convertLead` lands a converted deal on 'New'. Picklist ORDER is not a measurement,
+     * so this test performs a real conversion and asserts the landing stage.
+     *
+     * ═══ 🔴 WHY THE ANSWER DECIDES SOMETHING, RATHER THAN BEING TRIVIA ═══
+     * 'New' is NOT in `CLAIM_STAGES`, so a converted deal claims nothing during conversion and
+     * claims later, on its first Begin Review click — a single-record UI save by a deal driver who
+     * holds `SharePoint_Integration_Access`.
+     * **If conversion landed on 'Under Review' instead, every converted deal would claim its folder
+     * INSIDE the `Database.convertLead` transaction** — i.e. inside the already governor-tight
+     * Broker Protection pipeline, as the PIPELINE principal rather than a deal driver. That is a
+     * different governor picture (convertLead already caps at 200 per call and the pipeline runs
+     * inside a Queueable) and a different CREDENTIAL picture, and the Item 1 design covers neither.
+     * 🔴 IF THIS TEST EVER GOES RED WITH 'Under Review', DO NOT PATCH IT BY UPDATING THE EXPECTED
+     * VALUE. Stop and re-open the design.
+     */
+    @isTest
+    static void oq2_convertedLeadLandsOnNew_soNoFolderIsClaimedInsideConvertLead() {
+        enableSharePoint(SITE_ID);
+        SharePointCalloutMock mock = new SharePointCalloutMock(201,
+            SharePointCalloutMock.successBody('should-never-be-used', null));
+        Test.setMock(HttpCalloutMock.class, mock);
+
+        Lead l = TestDataFactory.createLead(false);
+        l.LastName = 'Tester';
+        l.Company = 'Convert Landing LLC';
+        l.Deal_Type__c = 'Retail';
+        insert l;
+
+        Database.LeadConvert lc = new Database.LeadConvert();
+        lc.setLeadId(l.Id);
+        lc.setConvertedStatus(convertedStatus());
+
+        DealFolderService.resetRunCounters();
+        Test.startTest();
+        Database.LeadConvertResult res = Database.convertLead(lc);
+        Test.stopTest();
+
+        Assert.isTrue(res.isSuccess(), 'Precondition: the conversion itself must succeed');
+        Opportunity converted = [
+            SELECT Id, StageName, Property__c FROM Opportunity WHERE Id = :res.getOpportunityId()
+        ];
+        Assert.areEqual('New', converted.StageName,
+            'OQ-2, MEASURED: Database.convertLead must land the Opportunity on New. If this reads '
+            + '"Under Review" the deal now claims its SharePoint folder INSIDE the convertLead '
+            + 'transaction, as the Broker Protection pipeline principal — a governor and '
+            + 'credential picture the Item 1 design does not cover. STOP and re-open the design; '
+            + 'do not update this expected value.');
+
+        Assert.areEqual(0, DealFolderService.runQueryCount,
+            'and therefore NO claim happened during conversion — not one idempotency read');
+        Assert.areEqual(0, DealFolderService.runEnqueueCount, 'and no folder job was enqueued');
+        Assert.areEqual(0, mock.requestCount, 'and SharePoint was never contacted');
+
+        Assert.isNotNull(converted.Property__c,
+            'Precondition for the assertion below: LeadConvertService really did create a Property');
+        Property__c p = [
+            SELECT SharePoint_Folder_Status__c, SharePoint_Folder_ID__c
+            FROM Property__c WHERE Id = :converted.Property__c
+        ];
+        Assert.isNull(p.SharePoint_Folder_Status__c,
+            'A NULL status is the correct resting state for a just-converted deal — and note it is '
+            + 'INVISIBLE to PropertySelector.queryFolderSweep, so the folder is owed to the first '
+            + 'Begin Review click and to nothing else.');
+        Assert.isNull(p.SharePoint_Folder_ID__c, '');
     }
 
     /** A record INSERTED directly at Closed Won (data load / migration) counts as ENTERING. */
@@ -673,7 +978,7 @@ private class DealFolderServiceTest {
      * this class's own header, and reproduced by `EmailMessageTriggerHandlerTest`'s identical
      * guard) measured that an Apex limit exception of that family is NOT intercepted by
      * `catch (Exception)` — which is exactly the shape wrapping this call one level up in
-     * `ensureOnClosedWon`. So an unconditional enqueue here would throw straight through that catch
+     * `ensureOnClaimStageEntry`. So an unconditional enqueue here would throw straight through that catch
      * and take the whole `update opps` below down with it. Concretely: if a future change deletes
      * the `if` guard, `close(opps)` on the line below THROWS instead of returning, this test method
      * itself goes red (an uncaught exception fails the test), and none of the assertions after it

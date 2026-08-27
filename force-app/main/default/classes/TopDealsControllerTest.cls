@@ -59,8 +59,12 @@ private class TopDealsControllerTest {
      * row — a large fixture for a test that only needs a row to EXIST at a closed stage.
      *
      * ⚠ Inserting at `Closed Won` is also safe from the heavyweight close automation:
-     * `PropertyAssetService.ensureOnClosedWon` and `DealFolderService.ensureOnClosedWon` both
-     * skip a deal with a null `Property__c` (their shared residual R1), and the factory sets none.
+     * `PropertyAssetService.ensureOnClosedWon` and `DealFolderService.ensureOnClaimStageEntry`
+     * both skip a deal with a null `Property__c` (their shared residual R1), and the factory sets
+     * none. ⚠ Still true after the 2026-08-27 claim-stage move, and for a second reason worth
+     * knowing: these rows are INSERTED at their stage rather than updated into it, and an insert
+     * AT a claim stage IS an entry — so the folder service really does run here. It is the null
+     * `Property__c`, not the stage, that makes it a no-op.
      */
     @TestSetup
     static void setup() {
