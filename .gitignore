@@ -39,3 +39,15 @@ Thumbs.db
 
 # Agent-local memory written into package dirs by subagents — never deploy, never commit
 force-app/**/.claude/
+
+# Client documentation — FSDs, MoMs, checklists and generated build docs.
+# Added 2026-08-27 at the user's request: this folder holds DPEG-confidential
+# material and must not travel to the remote.
+#
+# ⚠ .gitignore only prevents FUTURE tracking. The 17 client documents under
+# docs/ have been in this repository since the initial commit (7d1a561) and
+# REMAIN IN GIT HISTORY on the remote after this change. Removing them from
+# HEAD is not the same as purging them — that needs a history rewrite
+# (git filter-repo / BFG) plus a force push, and a request to GitHub Support
+# to drop cached unreachable objects. Any existing clone or fork keeps them.
+docs/
