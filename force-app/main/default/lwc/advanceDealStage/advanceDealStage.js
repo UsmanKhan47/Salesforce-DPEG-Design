@@ -7,9 +7,30 @@ import advance from '@salesforce/apex/StageAdvanceController.advance';
 /**
  * The confirmation wording. Deliberately GENERIC — it cannot name the target stage.
  *
- * This one bundle backs FIVE quick actions (Begin Review, Initiate Underwriting, Initiate LOI,
- * Advance to PSA, Close Deal) and the target is derived SERVER-SIDE from the deal's current stage
- * inside StageAdvanceService.NEXT_STAGE. The client genuinely does not know where the deal is going.
+ * ── 🔴 WHY THE LABEL IS NOT THE BUTTON'S LABEL (2026-08-27) ──────────────────
+ * It used to read 'Advance Deal', which matched no button at all. All FIVE quick actions that invoke
+ * this bundle are named for what they DO — "Begin Review", "Initiate Underwriting", "Initiate LOI",
+ * "Advance to Under Contract (PSA)", "Close Deal" — so a user who clicked "Initiate LOI" was handed
+ * a dialog headed "Advance Deal". The header is now a neutral statement of what the dialog is FOR,
+ * chosen to read correctly underneath ANY of those five labels. Same string as the sibling
+ * c/advanceRecordStage, which retired 'Advance Stage' for this exact reason on the same day — one
+ * confirmation header across both bundles, deliberately.
+ *
+ * ⚠ IT CANNOT ECHO THE DESTINATION, AND THE REASON IS ORDERING, NOT LAZINESS. The dialog is opened
+ * by `guardDealAction` BEFORE `advance()` is called, and `advance(recordId)` is the only thing that
+ * resolves the target — it computes `NEXT_STAGE.get(StageName)` server-side and commits the DML in
+ * the same call. There is no @AuraEnabled method that returns the target WITHOUT advancing (the only
+ * other one, `advanceTo`, takes the target as an ARGUMENT — it is told, it does not tell). So at the
+ * moment this label is needed, the destination does not exist anywhere on the client.
+ *
+ * ⚠ AND THE MESSAGE SAID SOMETHING FALSE. It read 'Advance this deal to the next stage?', but on the
+ * Underwriting hop — the one behind "Initiate LOI" — StageAdvanceService.advance does NOT write a
+ * stage at all: `StageName == 'Underwriting'` is absent from NEXT_STAGE and routes to
+ * OpportunityApprovalService.submitForApproval. The deal reaches LOI only if a principal approves.
+ * Promising a stage change there was wrong, not merely vague. 'next step' is the union of both
+ * outcomes and is the service's OWN vocabulary for it ("There is no next step available from the
+ * <X> stage."). This is the ONE wording difference from c/advanceRecordStage, whose bundle has no
+ * approval hop and whose message was correct as written.
  *
  * The two alternatives were considered and rejected:
  *   - @wire getRecord for StageName and compute the label here: this duplicates the NEXT_STAGE map
@@ -20,8 +41,8 @@ import advance from '@salesforce/apex/StageAdvanceController.advance';
  * Won?") later needs specific wording, split THAT ONE action out rather than duplicating the map.
  */
 const CONFIRM = {
-    message: 'Advance this deal to the next stage?',
-    label: 'Advance Deal',
+    message: 'Move this deal to its next step?',
+    label: 'Confirm Stage Change',
     theme: 'info'
 };
 

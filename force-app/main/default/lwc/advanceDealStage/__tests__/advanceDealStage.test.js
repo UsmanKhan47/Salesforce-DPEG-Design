@@ -150,9 +150,20 @@ describe('c-advance-deal-stage', () => {
         // Pins the deliberately generic wording. This bundle backs FIVE actions and the target stage
         // is derived server-side in StageAdvanceService.NEXT_STAGE, so the prompt cannot name it.
         // If someone "improves" this to name a stage, they have duplicated the Apex map in JS.
+        //
+        // BOTH STRINGS CHANGED ON 2026-08-27 and this exact-object match pins the ABSENCE of the
+        // retired pair as well as the presence of the new one — restoring either reds this test.
+        //   label:   'Advance Deal' matched NO button. All five actions are named for what they do
+        //            ("Initiate LOI", "Close Deal" …), so a fixed 'Advance Deal' header contradicted
+        //            whichever one the user clicked. Now neutral, and identical to the header
+        //            c/advanceRecordStage adopted the same day.
+        //   message: 'Advance this deal to the next stage?' was FALSE on the Underwriting hop behind
+        //            "Initiate LOI" — StageAdvanceService.advance submits that one into the
+        //            principal approval instead of writing a stage ('Underwriting' is absent from
+        //            NEXT_STAGE). 'next step' covers both outcomes and is the service's own wording.
         expect(LightningConfirm.open).toHaveBeenCalledWith({
-            message: 'Advance this deal to the next stage?',
-            label: 'Advance Deal',
+            message: 'Move this deal to its next step?',
+            label: 'Confirm Stage Change',
             theme: 'info',
             variant: 'header'
         });
