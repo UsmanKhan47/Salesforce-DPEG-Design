@@ -1,5 +1,32 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <FlexiPage xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!-- THIS NOTE LIVES IN A COMMENT INSIDE THE ROOT ELEMENT - a comment placed ABOVE
+         <FlexiPage> breaks `sf` deploy at source conversion with a misleading "unable to find
+         matching parent xml file" error.
+
+         =====================================================================
+         🔴 2026-08-27 - "ADVANCE STAGE" REPLACED BY NAMED PER-HOP BUTTONS. USER DECISION: "we
+         don't need a quick action named 'Advance Stage'; instead we need the NEXT STAGE NAME."
+         Finishes the wave a939e97 (2026-08-26) started on the disposition NDA/LOI/PSA pages;
+         Development_Feasibility_Review__c carries no record types, so this page has a single
+         sequence, not a disposition/acquisition split.
+         =====================================================================
+
+         Development_Feasibility_Review__c.Advance_Stage (single entry, criterion Stage__c NE
+         'Completed') is REMOVED and replaced by four entries below, one per hop of
+         Requested -> Feasibility analysis -> Vendor proposals -> Share Opinion -> Completed.
+         'Completed' is terminal — no button follows the last hop, no hint text (user decision
+         #2), which is a real narrowing from the removed catch-all (that rule rendered SOME
+         button — the same generic one — at every non-terminal stage; this page now renders the
+         CORRECT next-stage name at each one instead).
+
+         ⚠ "Feasibility analysis" and "Vendor proposals" are lower-cased on their second word in
+         the org's picklist metadata — the criteria below and the corresponding QuickAction
+         <label> files both match verbatim. Developer names stay Title_Case per repo convention;
+         do not "correct" either label's casing, it would break the match.
+
+         ⚠ STILL NOT PROVEN, AND NOT PROVABLE FROM A REPO: RENDERER BEHAVIOUR. See
+         agent-output/design-requirements.md §7.2. -->
     <flexiPageRegions>
         <itemInstances>
             <componentInstance>
@@ -7,7 +34,7 @@
                     <name>actionNames</name>
                     <valueList>
                         <valueListItems>
-                            <value>Development_Feasibility_Review__c.Advance_Stage</value>
+                            <value>Development_Feasibility_Review__c.Move_to_Feasibility_Analysis</value>
                             <visibilityRule>
                                 <booleanFilter>1 AND 2</booleanFilter>
                                 <criteria>
@@ -17,8 +44,56 @@
                                 </criteria>
                                 <criteria>
                                     <leftValue>{!Record.Stage__c}</leftValue>
-                                    <operator>NE</operator>
-                                    <rightValue>Completed</rightValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>Requested</rightValue>
+                                </criteria>
+                            </visibilityRule>
+                        </valueListItems>
+                        <valueListItems>
+                            <value>Development_Feasibility_Review__c.Move_to_Vendor_Proposals</value>
+                            <visibilityRule>
+                                <booleanFilter>1 AND 2</booleanFilter>
+                                <criteria>
+                                    <leftValue>{!$Permission.CustomPermission.Acquisition_Deal_Actions}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>true</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.Stage__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>Feasibility analysis</rightValue>
+                                </criteria>
+                            </visibilityRule>
+                        </valueListItems>
+                        <valueListItems>
+                            <value>Development_Feasibility_Review__c.Move_to_Share_Opinion</value>
+                            <visibilityRule>
+                                <booleanFilter>1 AND 2</booleanFilter>
+                                <criteria>
+                                    <leftValue>{!$Permission.CustomPermission.Acquisition_Deal_Actions}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>true</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.Stage__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>Vendor proposals</rightValue>
+                                </criteria>
+                            </visibilityRule>
+                        </valueListItems>
+                        <valueListItems>
+                            <value>Development_Feasibility_Review__c.Move_to_Completed</value>
+                            <visibilityRule>
+                                <booleanFilter>1 AND 2</booleanFilter>
+                                <criteria>
+                                    <leftValue>{!$Permission.CustomPermission.Acquisition_Deal_Actions}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>true</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.Stage__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>Share Opinion</rightValue>
                                 </criteria>
                             </visibilityRule>
                         </valueListItems>

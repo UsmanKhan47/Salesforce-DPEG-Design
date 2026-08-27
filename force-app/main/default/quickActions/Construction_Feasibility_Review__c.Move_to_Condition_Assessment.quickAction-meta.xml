@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<QuickAction xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!-- THIS NOTE LIVES IN A COMMENT INSIDE THE ROOT ELEMENT - a comment placed ABOVE
+         <QuickAction> breaks `sf` deploy at source conversion. See
+         Construction_Feasibility_Review__c.Move_to_Site_Visit.quickAction-meta.xml for the full
+         rationale behind this set of actions and for why there is no <description> element.
+
+         THE HOP: Construction_Feasibility_Review__c.Stage__c sequence is
+         Requested -> Site Visit -> Condition Assessment -> Cost Estimate -> Share Opinion ->
+         Completed. This action serves Site Visit -> Condition Assessment, gated on
+         Construction_Feasibility_Review_Record_Page by
+         {!Record.Stage__c} EQUAL 'Site Visit'. -->
+    <actionSubtype>Action</actionSubtype>
+    <label>Condition Assessment</label>
+    <lightningWebComponent>advanceRecordStage</lightningWebComponent>
+    <optionsCreateFeedItem>false</optionsCreateFeedItem>
+    <type>LightningWebComponent</type>
+</QuickAction>

@@ -1,5 +1,29 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <FlexiPage xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!-- THIS NOTE LIVES IN A COMMENT INSIDE THE ROOT ELEMENT - a comment placed ABOVE
+         <FlexiPage> breaks `sf` deploy at source conversion with a misleading "unable to find
+         matching parent xml file" error.
+
+         =====================================================================
+         🔴 2026-08-27 - "ADVANCE STAGE" REPLACED BY NAMED PER-HOP BUTTONS. USER DECISION: "we
+         don't need a quick action named 'Advance Stage'; instead we need the NEXT STAGE NAME."
+         Finishes the wave a939e97 (2026-08-26) started on the disposition NDA/LOI/PSA pages;
+         Underwriting__c carries no record types, so this page has a single sequence, not a
+         disposition/acquisition split.
+         =====================================================================
+
+         Underwriting__c.Advance_Stage is REMOVED (not amended) and replaced by two pure-AND
+         entries: Move_to_In_Progress (Requested -> In Progress) and Move_to_Completed
+         (Approved -> Completed). See each entry's own comment below for why this ALSO fixes a
+         live latent defect (the removed entry's booleanFilter '1 AND (2 OR 3)' is measured to be
+         ignored by the renderer) and why In Progress -> Approved deliberately gets no button
+         (owned by Underwriting__c.Submit_for_Approval / the approval process).
+
+         ⚠ STILL NOT PROVEN, AND NOT PROVABLE FROM A REPO: RENDERER BEHAVIOUR. After deploying, a
+         human must open an Underwriting record at 'In Progress' and confirm ONLY
+         'Submit for Approval' shows — no stage button, no hint text — because that is the check
+         that distinguishes this fix from the OR-defect it replaces. See
+         agent-output/design-requirements.md §7.2. -->
     <flexiPageRegions>
         <itemInstances>
             <componentInstance>
@@ -22,10 +46,24 @@
                                 </criteria>
                             </visibilityRule>
                         </valueListItems>
+                        <!-- 2026-08-27 — Underwriting__c.Advance_Stage (booleanFilter
+                             '1 AND (2 OR 3)') is REMOVED, not amended. This repo has MEASURED that
+                             a parenthesised OR deploys, survives a retrieve, and is then IGNORED BY
+                             THE RENDERER (see NDA_Record_Page / LOI_Record_Page headers) — so the
+                             old button very likely rendered at EVERY stage, including 'In Progress'
+                             and the terminal 'Completed', not only at 'Requested'/'Approved' as
+                             intended. Replaced by two pure-AND entries below, each keyed on one
+                             exact stage: Move_to_In_Progress (Requested -> In Progress) and
+                             Move_to_Completed (Approved -> Completed). 🔴 DO NOT recreate the OR
+                             "to preserve current behaviour" — the current behaviour is itself the
+                             bug this split fixes. No button exists for In Progress -> Approved, on
+                             purpose: that hop is owned by the principal approval process:
+                             Underwriting__c.Submit_for_Approval already renders at exactly
+                             Stage__c = 'In Progress' and stays untouched. -->
                         <valueListItems>
-                            <value>Underwriting__c.Advance_Stage</value>
+                            <value>Underwriting__c.Move_to_In_Progress</value>
                             <visibilityRule>
-                                <booleanFilter>1 AND (2 OR 3)</booleanFilter>
+                                <booleanFilter>1 AND 2</booleanFilter>
                                 <criteria>
                                     <leftValue>{!$Permission.CustomPermission.Acquisition_Deal_Actions}</leftValue>
                                     <operator>EQUAL</operator>
@@ -36,6 +74,17 @@
                                     <operator>EQUAL</operator>
                                     <rightValue>Requested</rightValue>
                                 </criteria>
+                            </visibilityRule>
+                        </valueListItems>
+                        <valueListItems>
+                            <value>Underwriting__c.Move_to_Completed</value>
+                            <visibilityRule>
+                                <booleanFilter>1 AND 2</booleanFilter>
+                                <criteria>
+                                    <leftValue>{!$Permission.CustomPermission.Acquisition_Deal_Actions}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>true</rightValue>
+                                </criteria>
                                 <criteria>
                                     <leftValue>{!Record.Stage__c}</leftValue>
                                     <operator>EQUAL</operator>
@@ -43,6 +92,7 @@
                                 </criteria>
                             </visibilityRule>
                         </valueListItems>
+                        <!-- 'Completed' is terminal — no button, per user decision #2. -->
                     </valueList>
                 </componentInstanceProperties>
                 <componentInstanceProperties>

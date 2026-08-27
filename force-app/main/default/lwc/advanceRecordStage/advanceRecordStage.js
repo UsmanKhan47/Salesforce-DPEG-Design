@@ -7,6 +7,23 @@ import advance from '@salesforce/apex/RecordStageAdvanceController.advance';
 /**
  * The confirmation wording. Deliberately GENERIC — it cannot name the target stage.
  *
+ * ── 🔴 WHY THE LABEL IS NOT THE BUTTON'S LABEL (2026-08-27) ──────────────────
+ * It used to read 'Advance Stage', which matched the ONE generic quick action that used to invoke
+ * this bundle. That action is being replaced by ~18 per-stage actions labelled with their
+ * DESTINATION ('Signed', 'Negotiation', 'Approved' …), so a fixed 'Advance Stage' header would now
+ * CONTRADICT the button the user just clicked — and would be the last place that retired string
+ * survived. The header is therefore a neutral statement of what the dialog is for, chosen so that it
+ * reads correctly underneath ANY of those button labels.
+ *
+ * ⚠ IT CANNOT ECHO THE DESTINATION, AND THE REASON IS ORDERING, NOT LAZINESS. The dialog is opened
+ * by `guardStageAction` BEFORE `advance()` is called, and `advance(recordId)` is the only thing that
+ * resolves the target — it computes `nextStage.get(currentStage)` server-side and commits the DML in
+ * the same call. There is no @AuraEnabled method that returns the target WITHOUT advancing (the only
+ * other one, `advanceTo`, takes the target as an ARGUMENT — it is told, it does not tell). So at the
+ * moment this label is needed, the destination does not exist anywhere on the client, and the only
+ * ways to get it would be to add a server round-trip before every confirm or to copy the stage
+ * sequences into JS — the second being exactly what the paragraph below refuses.
+ *
  * This ONE bundle backs the advance action on all SEVEN stage-controlled objects, across THREE
  * modules: acquisitions (LOI__c, Underwriting__c, Construction_Feasibility_Review__c,
  * Development_Feasibility_Review__c), acquisitions/disposition shared (NDA__c,
@@ -33,7 +50,7 @@ import advance from '@salesforce/apex/RecordStageAdvanceController.advance';
  */
 const CONFIRM = {
     message: 'Advance this record to the next stage?',
-    label: 'Advance Stage',
+    label: 'Confirm Stage Change',
     theme: 'info'
 };
 

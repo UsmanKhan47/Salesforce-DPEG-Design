@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<QuickAction xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!-- THIS NOTE LIVES IN A COMMENT INSIDE THE ROOT ELEMENT - a comment placed ABOVE
+         <QuickAction> breaks `sf` deploy at source conversion. See
+         NDA__c.Move_to_Received.quickAction-meta.xml for the full rationale behind finishing the
+         acquisition side of this change (2026-08-27, completes a939e97) and for why there is no
+         <description> element.
+
+         THE HOP: LOI acquisition sequence is Draft -> Under Review -> Submitted -> Negotiation ->
+         Signed (branches at Submitted). This action serves Under Review -> Submitted, gated on
+         LOI_Record_Page by {!Record.Stage__c} EQUAL 'Under Review'.
+
+         🔴 {!Record.Is_Advance_Allowed__c} EQUAL true IS A REQUIRED CRITERION ON THIS ENTRY AND
+         IS NOT REDUNDANT PADDING. Its formula is:
+           AND(Stage <> Signed, Stage <> Executed, Stage <> Submitted,
+               OR(RecordType <> Acquisition_LOI, Stage <> "Under Review", LOI_Status = Approved),
+               TEXT(LOI_Status__c) <> "Pending Approval")
+         The page's Stage__c EQUAL 'Under Review' test subsumes the first three clauses but NOT
+         the last two. On an acquisition LOI at 'Under Review' the fourth clause reduces to
+         LOI_Status__c = 'Approved' - i.e. THE LOI APPROVAL GATE. Drop it from the page's
+         visibility rule and a deal driver can walk an LOI past Under Review while its approval is
+         still pending or was rejected. It cannot be written as a direct criterion on
+         LOI_Status__c: a visibility rule reading a field the running user cannot read evaluates
+         FALSE. Is_Advance_Allowed__c is a formula field, evaluated server-side, with no such
+         dependency - the same reasoning LOI__c.Advance_Stage's page entry already relies on.
+
+         RECORD-TYPE POLARITY - NE 'Disposition_LOI', not EQUAL 'Acquisition_LOI', fails OPEN on
+         a Master-typed row to match RecordStageAdvanceService's defaultTypeKey. See
+         NDA__c.Move_to_Received.quickAction-meta.xml for the full polarity argument.
+
+         🔴 DO NOT MISTAKE THIS FOR THE Submitted -> Negotiation HOP. That hop needs NO new
+         action: it is already served by LOI__c.Mark_Countered (label "Negotiation") and its
+         branch partner LOI__c.Mark_Completed (label "Signed"), both already rendered at
+         Stage__c = 'Submitted'. Adding a fourth acquisition entry here would double-render
+         "Negotiation" beside Mark_Countered. LOI acquisition gets three new entries total
+         (this one, Move_to_Signed at 'Negotiation', and a reused Move_to_Under_Review at
+         'Draft'), not four. -->
+    <actionSubtype>Action</actionSubtype>
+    <label>Submitted</label>
+    <lightningWebComponent>advanceRecordStage</lightningWebComponent>
+    <optionsCreateFeedItem>false</optionsCreateFeedItem>
+    <type>LightningWebComponent</type>
+</QuickAction>

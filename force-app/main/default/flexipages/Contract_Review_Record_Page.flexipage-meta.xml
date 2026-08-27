@@ -6,6 +6,18 @@
         xml file" error.
 
         =====================================================================
+        🔴 2026-08-27 - ACQUISITION SIDE NOW ALSO CONVERTED, FINISHING THIS PAGE. Both
+        Contract_Review__c.Advance_Stage entries described below (2026-08-26 edit) are REMOVED.
+        Replaced by three acquisition entries: reused page entries on Move_to_Negotiation
+        (Draft -> Negotiation) and Move_to_Signed (Negotiation -> Signed), and a new
+        Move_to_Executed (Signed -> Executed). The Move_to_Executed record-type pin is the
+        highest-consequence single criterion in this whole change — see its own comment below.
+        RENDERER BEHAVIOUR ON THE ACQUISITION SIDE IS NOT PROVEN FROM THIS REPO — see
+        design-requirements.md §7.2, in particular the negative check that a disposition PSA at
+        its 'Signed' terminal shows NO 'Executed' button.
+        =====================================================================
+
+        =====================================================================
         🔴 2026-08-26 - "ADVANCE STAGE" IS REPLACED BY NAMED PER-HOP BUTTONS ON THE DISPOSITION
         SIDE ONLY. USER DECISION: "we don't need a quick action named 'Advance Stage'; instead we
         need the NEXT STAGE NAME."
@@ -81,8 +93,20 @@
                 <componentInstanceProperties>
                     <name>actionNames</name>
                     <valueList>
+                        <!-- 2026-08-27 — both Contract_Review__c.Advance_Stage entries that stood
+                             here are REMOVED, finishing the "separate, deliberate step" the
+                             disposition-side edits below called for (the disposition-gated entry
+                             was already self-contradictory after the record-type criterion was
+                             added — Disposition_Deal_Actions + NE 'Disposition_PSA' can never both
+                             be true). Replaced by three acquisition entries: reused page entries on
+                             Move_to_Negotiation (Draft -> Negotiation) and Move_to_Signed
+                             (Negotiation -> Signed), and a new Move_to_Executed
+                             (Signed -> Executed). All three carry
+                             {!Record.RecordType.DeveloperName} NE 'Disposition_PSA' (NE, not EQUAL
+                             'Acquisition_PSA' — fails OPEN on Master, matching
+                             RecordStageAdvanceService's defaultTypeKey). -->
                         <valueListItems>
-                            <value>Contract_Review__c.Advance_Stage</value>
+                            <value>Contract_Review__c.Move_to_Negotiation</value>
                             <visibilityRule>
                                 <booleanFilter>1 AND 2 AND 3</booleanFilter>
                                 <criteria>
@@ -91,38 +115,75 @@
                                     <rightValue>true</rightValue>
                                 </criteria>
                                 <criteria>
-                                    <leftValue>{!Record.Negotiation_Status__c}</leftValue>
-                                    <operator>NE</operator>
-                                    <rightValue>Executed</rightValue>
-                                </criteria>
-                                <criteria>
                                     <leftValue>{!Record.RecordType.DeveloperName}</leftValue>
                                     <operator>NE</operator>
                                     <rightValue>Disposition_PSA</rightValue>
                                 </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.Negotiation_Status__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>Draft</rightValue>
+                                </criteria>
                             </visibilityRule>
                         </valueListItems>
+                        <!-- REUSED ACTION: Contract_Review__c.Move_to_Signed already exists below
+                             (disposition terminal button, Negotiation -> Signed). This is a second
+                             page entry pointing at the same file for the acquisition hop
+                             Negotiation -> Signed — SAME STAGE VALUE as the disposition entry,
+                             separated ONLY by the inverted record-type operator. -->
                         <valueListItems>
-                            <value>Contract_Review__c.Advance_Stage</value>
+                            <value>Contract_Review__c.Move_to_Signed</value>
                             <visibilityRule>
                                 <booleanFilter>1 AND 2 AND 3</booleanFilter>
                                 <criteria>
-                                    <leftValue>{!$Permission.CustomPermission.Disposition_Deal_Actions}</leftValue>
+                                    <leftValue>{!$Permission.CustomPermission.Acquisition_Deal_Actions}</leftValue>
                                     <operator>EQUAL</operator>
                                     <rightValue>true</rightValue>
                                 </criteria>
                                 <criteria>
-                                    <leftValue>{!Record.Negotiation_Status__c}</leftValue>
+                                    <leftValue>{!Record.RecordType.DeveloperName}</leftValue>
                                     <operator>NE</operator>
-                                    <rightValue>Signed</rightValue>
+                                    <rightValue>Disposition_PSA</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.Negotiation_Status__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>Negotiation</rightValue>
+                                </criteria>
+                            </visibilityRule>
+                        </valueListItems>
+                        <!-- 🔴 THE RT PIN ON THIS ENTRY IS THE HIGHEST-CONSEQUENCE SINGLE CRITERION
+                             IN THIS WHOLE CHANGE. 'Signed' is mid-sequence on Acquisition_PSA but
+                             TERMINAL on Disposition_PSA, and 'Executed' is not even a value on the
+                             Disposition_PSA record type. Negotiation_Status__c is a RESTRICTED
+                             picklist whose record-type subset Apex DML enforces (measured
+                             2026-08-21) — without this pin, a click on a completed sell-side PSA
+                             would fail with an opaque INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST
+                             instead of never rendering the button at all. -->
+                        <valueListItems>
+                            <value>Contract_Review__c.Move_to_Executed</value>
+                            <visibilityRule>
+                                <booleanFilter>1 AND 2 AND 3</booleanFilter>
+                                <criteria>
+                                    <leftValue>{!$Permission.CustomPermission.Acquisition_Deal_Actions}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>true</rightValue>
                                 </criteria>
                                 <criteria>
                                     <leftValue>{!Record.RecordType.DeveloperName}</leftValue>
                                     <operator>NE</operator>
                                     <rightValue>Disposition_PSA</rightValue>
                                 </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.Negotiation_Status__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>Signed</rightValue>
+                                </criteria>
                             </visibilityRule>
                         </valueListItems>
+                        <!-- 'Executed' is the acquisition PSA's TERMINAL status — no button
+                             follows it, per user decision #2 (no-next-step stages render nothing,
+                             no hint text). -->
                         <valueListItems>
                             <value>Contract_Review__c.Move_to_Negotiation</value>
                             <visibilityRule>

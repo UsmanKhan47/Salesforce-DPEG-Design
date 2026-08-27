@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<QuickAction xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!-- THIS NOTE LIVES IN A COMMENT INSIDE THE ROOT ELEMENT - a comment placed ABOVE
+         <QuickAction> breaks `sf` deploy at source conversion with a misleading "unable to find
+         matching parent xml file" error. It is also why there is no <description>: no quick
+         action in this repo carries one (0 of 80 measured), QuickAction.Description is capped at
+         255 characters, and a comment is repo-only and never sent to the Metadata API.
+
+         ADDED 2026-08-27 (finishes commit a939e97, 2026-08-26, which did this job for the
+         DISPOSITION side of NDA__c/LOI__c/Contract_Review__c and deliberately left the
+         ACQUISITION side on the generic Advance Stage button). User decision, restated for the
+         acquisition side: "we don't need a quick action named 'Advance Stage'; instead we need
+         the NEXT STAGE NAME." One headless action per acquisition hop of NDA__c.Status__c,
+         labelled with the stage the click lands on.
+
+         THE HOP: NDA acquisition sequence is Pending -> Received -> Signed -> Sent ('Sent' is
+         terminal). This action serves Pending -> Received, gated on
+         {!Record.Status__c} EQUAL 'Pending' on NDA_Record_Page.
+
+         🔴 THE LABEL IS THE ONLY THING THAT DIFFERS BETWEEN THESE ACTIONS. This action points at
+         the SAME c/advanceRecordStage bundle as NDA__c.Advance_Stage, NDA__c.Move_to_Signed and
+         NDA__c.Move_to_Sent; that component names no object and holds no stage map -
+         RecordStageAdvanceService derives the target from the record's CURRENT stage via
+         CONFIG_BY_TYPE, keyed per RECORD TYPE, and advance() takes only a recordId. The label is
+         therefore a promise the page's visibility rule keeps, not anything the client sends, and
+         the two must be kept in step by hand.
+
+         🔴 RECORD-TYPE POLARITY - NDA_Record_Page gates this entry with
+         {!Record.RecordType.DeveloperName} NE 'Disposition_NDA' (NOT EQUAL 'Acquisition_NDA').
+         NE fails OPEN on a Master/blank-typed row (blank NE 'Disposition_NDA' is TRUE), which
+         MATCHES RecordStageAdvanceService - its defaultTypeKey routes a Master row to the
+         ACQUISITION map. EQUAL 'Acquisition_NDA' would fail CLOSED and strand every Master-typed
+         row with no button while the server would happily have advanced it. Same polarity
+         NDA_Record_Page's header already documents for the disposition side, applied here in the
+         opposite direction.
+
+         ACQUISITION_NDA'S OWN Advance_Stage ENTRY IS REMOVED, NOT LEFT ALONE, in this same
+         change - unlike a939e97's disposition-side edit, which added criteria to Advance_Stage
+         and left it in place. This wave replaces both acquisition Advance_Stage entries
+         (live-gated and the already-dead disposition-gated one a939e97 explicitly left for "a
+         separate, deliberate step") with named per-hop buttons on both sides of this object. -->
+    <actionSubtype>Action</actionSubtype>
+    <label>Received</label>
+    <lightningWebComponent>advanceRecordStage</lightningWebComponent>
+    <optionsCreateFeedItem>false</optionsCreateFeedItem>
+    <type>LightningWebComponent</type>
+</QuickAction>

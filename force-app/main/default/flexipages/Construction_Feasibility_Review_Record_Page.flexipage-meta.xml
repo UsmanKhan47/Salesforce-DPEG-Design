@@ -1,5 +1,31 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <FlexiPage xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!-- THIS NOTE LIVES IN A COMMENT INSIDE THE ROOT ELEMENT - a comment placed ABOVE
+         <FlexiPage> breaks `sf` deploy at source conversion with a misleading "unable to find
+         matching parent xml file" error.
+
+         =====================================================================
+         🔴 2026-08-27 - "ADVANCE STAGE" REPLACED BY NAMED PER-HOP BUTTONS. USER DECISION: "we
+         don't need a quick action named 'Advance Stage'; instead we need the NEXT STAGE NAME."
+         Finishes the wave a939e97 (2026-08-26) started on the disposition NDA/LOI/PSA pages;
+         Construction_Feasibility_Review__c carries no record types, so this page has a single
+         sequence, not a disposition/acquisition split.
+         =====================================================================
+
+         Construction_Feasibility_Review__c.Advance_Stage (single entry, criterion Stage__c NE
+         'Completed') is REMOVED and replaced by five entries below, one per hop of
+         Requested -> Site Visit -> Condition Assessment -> Cost Estimate -> Share Opinion ->
+         Completed. 'Completed' is terminal — no button follows the last hop, no hint text (user
+         decision #2), which is a real narrowing from the removed catch-all (that rule rendered
+         SOME button — the same generic one — at every non-terminal stage; this page now renders
+         the CORRECT next-stage name at each one instead).
+
+         ⚠ Move_to_Share_Opinion and Move_to_Completed exist as SEPARATE QuickAction files on both
+         this object and Development_Feasibility_Review__c (quick actions are object-scoped) —
+         same label, deliberately duplicated files, not an error.
+
+         ⚠ STILL NOT PROVEN, AND NOT PROVABLE FROM A REPO: RENDERER BEHAVIOUR. See
+         agent-output/design-requirements.md §7.2. -->
     <flexiPageRegions>
         <itemInstances>
             <componentInstance>
@@ -7,7 +33,7 @@
                     <name>actionNames</name>
                     <valueList>
                         <valueListItems>
-                            <value>Construction_Feasibility_Review__c.Advance_Stage</value>
+                            <value>Construction_Feasibility_Review__c.Move_to_Site_Visit</value>
                             <visibilityRule>
                                 <booleanFilter>1 AND 2</booleanFilter>
                                 <criteria>
@@ -17,8 +43,72 @@
                                 </criteria>
                                 <criteria>
                                     <leftValue>{!Record.Stage__c}</leftValue>
-                                    <operator>NE</operator>
-                                    <rightValue>Completed</rightValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>Requested</rightValue>
+                                </criteria>
+                            </visibilityRule>
+                        </valueListItems>
+                        <valueListItems>
+                            <value>Construction_Feasibility_Review__c.Move_to_Condition_Assessment</value>
+                            <visibilityRule>
+                                <booleanFilter>1 AND 2</booleanFilter>
+                                <criteria>
+                                    <leftValue>{!$Permission.CustomPermission.Acquisition_Deal_Actions}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>true</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.Stage__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>Site Visit</rightValue>
+                                </criteria>
+                            </visibilityRule>
+                        </valueListItems>
+                        <valueListItems>
+                            <value>Construction_Feasibility_Review__c.Move_to_Cost_Estimate</value>
+                            <visibilityRule>
+                                <booleanFilter>1 AND 2</booleanFilter>
+                                <criteria>
+                                    <leftValue>{!$Permission.CustomPermission.Acquisition_Deal_Actions}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>true</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.Stage__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>Condition Assessment</rightValue>
+                                </criteria>
+                            </visibilityRule>
+                        </valueListItems>
+                        <valueListItems>
+                            <value>Construction_Feasibility_Review__c.Move_to_Share_Opinion</value>
+                            <visibilityRule>
+                                <booleanFilter>1 AND 2</booleanFilter>
+                                <criteria>
+                                    <leftValue>{!$Permission.CustomPermission.Acquisition_Deal_Actions}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>true</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.Stage__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>Cost Estimate</rightValue>
+                                </criteria>
+                            </visibilityRule>
+                        </valueListItems>
+                        <valueListItems>
+                            <value>Construction_Feasibility_Review__c.Move_to_Completed</value>
+                            <visibilityRule>
+                                <booleanFilter>1 AND 2</booleanFilter>
+                                <criteria>
+                                    <leftValue>{!$Permission.CustomPermission.Acquisition_Deal_Actions}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>true</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.Stage__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>Share Opinion</rightValue>
                                 </criteria>
                             </visibilityRule>
                         </valueListItems>

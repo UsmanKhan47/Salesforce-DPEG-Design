@@ -164,9 +164,16 @@ describe('c-advance-record-stage', () => {
         // name a stage, they have copied the Apex sequences into JS — where there is no compile
         // link to them, so the dialog starts announcing a destination the button does not go to the
         // first time a stage is inserted.
+        //
+        // The label was 'Advance Stage' until 2026-08-27. It is now neutral BECAUSE the generic
+        // "Advance Stage" quick action is being replaced by ~18 per-stage actions named for their
+        // destination ('Signed', 'Negotiation', 'Approved' …): a fixed 'Advance Stage' header would
+        // contradict the button that opened it. This is an exact-object match, so it pins the
+        // ABSENCE of the retired string as well as the presence of the new one — restoring
+        // 'Advance Stage' reds this test.
         expect(LightningConfirm.open).toHaveBeenCalledWith({
             message: 'Advance this record to the next stage?',
-            label: 'Advance Stage',
+            label: 'Confirm Stage Change',
             theme: 'info',
             variant: 'header'
         });

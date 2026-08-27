@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<QuickAction xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!-- THIS NOTE LIVES IN A COMMENT INSIDE THE ROOT ELEMENT - a comment placed ABOVE
+         <QuickAction> breaks `sf` deploy at source conversion. See
+         Underwriting__c.Move_to_In_Progress.quickAction-meta.xml for the full rationale behind
+         this pair of actions, including the F-3 latent-OR-defect fix, and for why there is no
+         <description> element.
+
+         THE TERMINAL HOP. Underwriting__c.Stage__c sequence is
+         Requested -> In Progress -> [approval] -> Approved -> Completed. This action serves
+         Approved -> Completed, gated on Underwriting_Record_Page by
+         {!Record.Stage__c} EQUAL 'Approved'. 'Completed' is terminal - no button follows this
+         one. -->
+    <actionSubtype>Action</actionSubtype>
+    <label>Completed</label>
+    <lightningWebComponent>advanceRecordStage</lightningWebComponent>
+    <optionsCreateFeedItem>false</optionsCreateFeedItem>
+    <type>LightningWebComponent</type>
+</QuickAction>

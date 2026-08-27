@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<QuickAction xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!-- THIS NOTE LIVES IN A COMMENT INSIDE THE ROOT ELEMENT - a comment placed ABOVE
+         <QuickAction> breaks `sf` deploy at source conversion. See
+         Development_Feasibility_Review__c.Move_to_Feasibility_Analysis.quickAction-meta.xml for
+         the full rationale behind this set of actions and for why there is no <description>
+         element.
+
+         THE HOP: Development_Feasibility_Review__c.Stage__c sequence is
+         Requested -> Feasibility analysis -> Vendor proposals -> Share Opinion -> Completed. This
+         action serves Vendor proposals -> Share Opinion, gated on
+         Development_Feasibility_Review_Record_Page by
+         {!Record.Stage__c} EQUAL 'Vendor proposals'.
+
+         ⚠ THIS FILE'S BODY IS IDENTICAL TO
+         Construction_Feasibility_Review__c.Move_to_Share_Opinion.quickAction-meta.xml. Quick
+         actions are object-scoped, so these are deliberately separate files sharing a label -
+         not duplication to eliminate. -->
+    <actionSubtype>Action</actionSubtype>
+    <label>Share Opinion</label>
+    <lightningWebComponent>advanceRecordStage</lightningWebComponent>
+    <optionsCreateFeedItem>false</optionsCreateFeedItem>
+    <type>LightningWebComponent</type>
+</QuickAction>

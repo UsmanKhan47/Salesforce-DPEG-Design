@@ -5,6 +5,20 @@
          matching parent xml file" error.
 
          =====================================================================
+         🔴 2026-08-27 - ACQUISITION SIDE NOW ALSO CONVERTED, FINISHING THIS PAGE. Both
+         NDA__c.Advance_Stage entries described below (2026-08-26 edit) are REMOVED — this is the
+         "separate, deliberate step" that edit's own comment called for. Replaced with three
+         per-hop acquisition buttons: NDA__c.Move_to_Received (new file), and reused entries on
+         NDA__c.Move_to_Signed / NDA__c.Move_to_Sent (both files already existed for the
+         disposition side; only new page entries were added here). 'Sent' is the acquisition
+         terminal — no button, no hint, per user decision #2. RENDERER BEHAVIOUR ON THE
+         ACQUISITION SIDE IS NOT PROVEN FROM THIS REPO; see design-requirements.md §7.2 for the
+         required human UI checks (NDA at Pending/Received/Signed/Sent, plus the disposition
+         negative-direction checks proving the Move_to_Sent and Move_to_Signed record-type pins
+         actually exclude each other).
+         =====================================================================
+
+         =====================================================================
          🔴 2026-08-26 - "ADVANCE STAGE" IS REPLACED BY NAMED PER-HOP BUTTONS ON THE DISPOSITION
          SIDE ONLY. USER DECISION: "we don't need a quick action named 'Advance Stage'; instead we
          need the NEXT STAGE NAME."
@@ -149,8 +163,22 @@
                 <componentInstanceProperties>
                     <name>actionNames</name>
                     <valueList>
+                        <!-- 2026-08-27 — the two NDA__c.Advance_Stage entries that stood here (one
+                             live acquisition-gated, one disposition-gated and already
+                             self-contradictory since the 2026-08-26 edit above) are REMOVED, not
+                             amended, finishing the "separate, deliberate step" that edit's own
+                             comment called for. Replaced by three per-hop acquisition buttons
+                             below: Move_to_Received (new file) and reused entries on
+                             Move_to_Signed / Move_to_Sent (files already exist for the disposition
+                             side; only the page entry is new here). All three carry
+                             {!Record.RecordType.DeveloperName} NE 'Disposition_NDA' — NE, not
+                             EQUAL 'Acquisition_NDA' — so a Master-typed row fails OPEN and keeps
+                             its button, matching RecordStageAdvanceService's defaultTypeKey, which
+                             routes Master to the acquisition map. Status__c NE 'Declined' from the
+                             old entry is subsumed: an EQUAL Pending|Received|Signed test can never
+                             be true at 'Declined'. -->
                         <valueListItems>
-                            <value>NDA__c.Advance_Stage</value>
+                            <value>NDA__c.Move_to_Received</value>
                             <visibilityRule>
                                 <booleanFilter>1 AND 2 AND 3</booleanFilter>
                                 <criteria>
@@ -159,43 +187,78 @@
                                     <rightValue>true</rightValue>
                                 </criteria>
                                 <criteria>
-                                    <leftValue>{!Record.Status__c}</leftValue>
+                                    <leftValue>{!Record.RecordType.DeveloperName}</leftValue>
                                     <operator>NE</operator>
-                                    <rightValue>Declined</rightValue>
+                                    <rightValue>Disposition_NDA</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.Status__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>Pending</rightValue>
+                                </criteria>
+                            </visibilityRule>
+                        </valueListItems>
+                        <!-- REUSED ACTION: NDA__c.Move_to_Signed already exists (disposition
+                             terminal button, Sent -> Signed). This is a second page entry pointing
+                             at the same file for the acquisition hop Received -> Signed. See
+                             constraint #4 in the acquisition wave's design note (collision check):
+                             this entry and the disposition one are disjoint on BOTH Status__c value
+                             AND the record-type operator. -->
+                        <valueListItems>
+                            <value>NDA__c.Move_to_Signed</value>
+                            <visibilityRule>
+                                <booleanFilter>1 AND 2 AND 3</booleanFilter>
+                                <criteria>
+                                    <leftValue>{!$Permission.CustomPermission.Acquisition_Deal_Actions}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>true</rightValue>
                                 </criteria>
                                 <criteria>
                                     <leftValue>{!Record.RecordType.DeveloperName}</leftValue>
                                     <operator>NE</operator>
                                     <rightValue>Disposition_NDA</rightValue>
                                 </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.Status__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>Received</rightValue>
+                                </criteria>
                             </visibilityRule>
                         </valueListItems>
+                        <!-- REUSED ACTION: NDA__c.Move_to_Sent already exists (disposition button,
+                             rendered twice above for Approved/Not Sent -> Sent). This is a THIRD
+                             page entry pointing at the same file, for the acquisition terminal hop
+                             Signed -> Sent. 🔴 WITHOUT THE RECORD-TYPE PIN HERE, a disposition NDA
+                             sitting on its own terminal 'Signed' would be offered this "Sent"
+                             button and move BACKWARDS relative to its own sequence — the pin is
+                             load-bearing, not decoration. All three Move_to_Sent entries
+                             (disposition@Approved, disposition@Not Sent, this one@Signed) are
+                             mutually exclusive: Status__c holds one value, and this one additionally
+                             inverts the record-type operator. -->
                         <valueListItems>
-                            <value>NDA__c.Advance_Stage</value>
+                            <value>NDA__c.Move_to_Sent</value>
                             <visibilityRule>
-                                <booleanFilter>1 AND 2 AND 3 AND 4</booleanFilter>
+                                <booleanFilter>1 AND 2 AND 3</booleanFilter>
                                 <criteria>
-                                    <leftValue>{!$Permission.CustomPermission.Disposition_Deal_Actions}</leftValue>
+                                    <leftValue>{!$Permission.CustomPermission.Acquisition_Deal_Actions}</leftValue>
                                     <operator>EQUAL</operator>
                                     <rightValue>true</rightValue>
                                 </criteria>
                                 <criteria>
-                                    <leftValue>{!Record.Is_Decline_Allowed__c}</leftValue>
-                                    <operator>EQUAL</operator>
-                                    <rightValue>true</rightValue>
+                                    <leftValue>{!Record.RecordType.DeveloperName}</leftValue>
+                                    <operator>NE</operator>
+                                    <rightValue>Disposition_NDA</rightValue>
                                 </criteria>
                                 <criteria>
                                     <leftValue>{!Record.Status__c}</leftValue>
-                                    <operator>NE</operator>
+                                    <operator>EQUAL</operator>
                                     <rightValue>Signed</rightValue>
                                 </criteria>
-                                <criteria>
-                                    <leftValue>{!Record.RecordType.DeveloperName}</leftValue>
-                                    <operator>NE</operator>
-                                    <rightValue>Disposition_NDA</rightValue>
-                                </criteria>
                             </visibilityRule>
                         </valueListItems>
+                        <!-- 'Sent' is the acquisition NDA's TERMINAL stage — no button follows it,
+                             per user decision #2 (no-next-step stages render nothing, no hint
+                             text). -->
                         <valueListItems>
                             <value>NDA__c.Move_to_Approved</value>
                             <visibilityRule>

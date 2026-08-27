@@ -5,6 +5,21 @@
          matching parent xml file" error.
 
          =====================================================================
+         🔴 2026-08-27 - ACQUISITION SIDE NOW ALSO CONVERTED, FINISHING THIS PAGE. Both
+         LOI__c.Advance_Stage entries described below (2026-08-26 edit) are REMOVED. Replaced by
+         THREE entries, not four: a reused Move_to_Under_Review page entry (Draft -> Under
+         Review), a new Move_to_Submitted (Under Review -> Submitted), and a reused Move_to_Signed
+         page entry (Negotiation -> Signed). The Submitted -> Negotiation hop is deliberately left
+         alone — LOI__c.Mark_Countered / Mark_Completed already serve it and adding a fourth entry
+         would double-render "Negotiation". {!Record.Is_Advance_Allowed__c} EQUAL true is carried
+         forward on all three new entries — it is the LOI approval gate on an acquisition row at
+         'Under Review', not redundant padding; dropping it would let an LOI advance past a
+         pending/rejected approval. RENDERER BEHAVIOUR ON THE ACQUISITION SIDE IS NOT PROVEN FROM
+         THIS REPO — see design-requirements.md §7.2, in particular the negative check that an LOI
+         at 'Under Review' with LOI_Status__c = 'Pending Approval' shows NO Submitted button.
+         =====================================================================
+
+         =====================================================================
          🔴 2026-08-26 - "ADVANCE STAGE" IS REPLACED BY NAMED PER-HOP BUTTONS ON THE DISPOSITION
          SIDE ONLY. USER DECISION: "we don't need a quick action named 'Advance Stage'; instead we
          need the NEXT STAGE NAME."
@@ -488,38 +503,59 @@
                                 </criteria>
                             </visibilityRule>
                         </valueListItems>
+                        <!-- 2026-08-27 — both LOI__c.Advance_Stage entries that stood here are
+                             REMOVED, finishing the "separate, deliberate step" the disposition-side
+                             edits below called for (the second entry, Disposition_Deal_Actions-
+                             gated, was already self-contradictory — Is_Advance_Allowed__c is TRUE
+                             on an acquisition row here and the RT criterion excluded disposition,
+                             so it never rendered). Replaced by three acquisition entries: a reused
+                             page entry on Move_to_Under_Review (Draft -> Under Review), a new
+                             Move_to_Submitted (Under Review -> Submitted), and a reused page entry
+                             on Move_to_Signed (Negotiation -> Signed). The Submitted -> Negotiation
+                             hop deliberately gets NO new entry — LOI__c.Mark_Countered (label
+                             "Negotiation") and LOI__c.Mark_Completed (label "Signed") already serve
+                             it at Stage__c = 'Submitted'; adding a fourth entry would double-render
+                             "Negotiation". All three new entries carry
+                             {!Record.RecordType.DeveloperName} NE 'Disposition_LOI' (NE, not EQUAL
+                             'Acquisition_LOI' — fails OPEN on Master, matching
+                             RecordStageAdvanceService's defaultTypeKey) AND
+                             {!Record.Is_Advance_Allowed__c} EQUAL true, carried forward unchanged
+                             from the removed Advance_Stage entries — on an acquisition LOI at
+                             'Under Review' that formula reduces to LOI_Status__c = 'Approved', i.e.
+                             it IS the LOI approval gate; dropping it would let a deal driver walk
+                             an LOI past a pending or rejected approval. -->
                         <valueListItems>
-                            <value>LOI__c.Advance_Stage</value>
+                            <value>LOI__c.Move_to_Under_Review</value>
                             <visibilityRule>
-                                <booleanFilter>1 AND 2 AND 3</booleanFilter>
+                                <booleanFilter>1 AND 2 AND 3 AND 4</booleanFilter>
                                 <criteria>
                                     <leftValue>{!$Permission.CustomPermission.Acquisition_Deal_Actions}</leftValue>
                                     <operator>EQUAL</operator>
                                     <rightValue>true</rightValue>
                                 </criteria>
                                 <criteria>
-                                    <leftValue>{!Record.Is_Advance_Allowed__c}</leftValue>
-                                    <operator>EQUAL</operator>
-                                    <rightValue>true</rightValue>
-                                </criteria>
-                                <criteria>
                                     <leftValue>{!Record.RecordType.DeveloperName}</leftValue>
                                     <operator>NE</operator>
                                     <rightValue>Disposition_LOI</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.Stage__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>Draft</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.Is_Advance_Allowed__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>true</rightValue>
                                 </criteria>
                             </visibilityRule>
                         </valueListItems>
                         <valueListItems>
-                            <value>LOI__c.Advance_Stage</value>
+                            <value>LOI__c.Move_to_Submitted</value>
                             <visibilityRule>
-                                <booleanFilter>1 AND 2 AND 3</booleanFilter>
+                                <booleanFilter>1 AND 2 AND 3 AND 4</booleanFilter>
                                 <criteria>
-                                    <leftValue>{!$Permission.CustomPermission.Disposition_Deal_Actions}</leftValue>
-                                    <operator>EQUAL</operator>
-                                    <rightValue>true</rightValue>
-                                </criteria>
-                                <criteria>
-                                    <leftValue>{!Record.Is_Advance_Allowed__c}</leftValue>
+                                    <leftValue>{!$Permission.CustomPermission.Acquisition_Deal_Actions}</leftValue>
                                     <operator>EQUAL</operator>
                                     <rightValue>true</rightValue>
                                 </criteria>
@@ -528,8 +564,55 @@
                                     <operator>NE</operator>
                                     <rightValue>Disposition_LOI</rightValue>
                                 </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.Stage__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>Under Review</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.Is_Advance_Allowed__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>true</rightValue>
+                                </criteria>
                             </visibilityRule>
                         </valueListItems>
+                        <!-- REUSED ACTION: LOI__c.Move_to_Signed already exists below (disposition
+                             terminal button, Negotiation -> Signed). This is a second page entry
+                             pointing at the same file for the acquisition hop Negotiation -> Signed
+                             — SAME STAGE VALUE as the disposition entry, separated ONLY by the
+                             inverted record-type operator. This is the one place in the whole
+                             change where the record-type criterion does 100% of the exclusion
+                             work; see the disposition entry's own comment below. -->
+                        <valueListItems>
+                            <value>LOI__c.Move_to_Signed</value>
+                            <visibilityRule>
+                                <booleanFilter>1 AND 2 AND 3 AND 4</booleanFilter>
+                                <criteria>
+                                    <leftValue>{!$Permission.CustomPermission.Acquisition_Deal_Actions}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>true</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.RecordType.DeveloperName}</leftValue>
+                                    <operator>NE</operator>
+                                    <rightValue>Disposition_LOI</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.Stage__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>Negotiation</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.Is_Advance_Allowed__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>true</rightValue>
+                                </criteria>
+                            </visibilityRule>
+                        </valueListItems>
+                        <!-- 'Signed' is the LOI's TERMINAL stage on both record types — no button
+                             follows it, per user decision #2 (no-next-step stages render nothing,
+                             no hint text). Mark_Countered / Mark_Completed / Submit_for_Approval are
+                             NOT touched by this change. -->
                         <valueListItems>
                             <value>LOI__c.Move_to_Under_Review</value>
                             <visibilityRule>

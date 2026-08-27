@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<QuickAction xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!-- THIS NOTE LIVES IN A COMMENT INSIDE THE ROOT ELEMENT - a comment placed ABOVE
+         <QuickAction> breaks `sf` deploy at source conversion. See
+         NDA__c.Move_to_Received.quickAction-meta.xml for the full rationale behind finishing the
+         acquisition side of this change (2026-08-27, completes a939e97) and for why there is no
+         <description> element.
+
+         THE HOP: Contract_Review__c acquisition sequence (Acquisition_PSA) is
+         Draft -> Negotiation -> Signed -> Executed ('Executed' is terminal). This action serves
+         Signed -> Executed, gated on Contract_Review_Record_Page by
+         {!Record.Negotiation_Status__c} EQUAL 'Signed'.
+
+         🔴 THE FIELD IS Negotiation_Status__c, NOT Stage__c - Stage__c on this object is DERIVED
+         and unwritable, exactly as Contract_Review__c.Move_to_Negotiation's own comment records
+         for the disposition side. A rule written against Stage__c here would look right and
+         never fire.
+
+         🔴 THIS IS THE HIGHEST-CONSEQUENCE RECORD-TYPE PIN IN THE WHOLE CHANGE.
+         'Signed' is MID-SEQUENCE on Acquisition_PSA but TERMINAL on Disposition_PSA (the sell
+         side's sequence was harmonised by the user on 2026-08-21 to
+         Initial Draft -> Negotiation -> Signed). A stage-only rule would offer "Executed" on a
+         COMPLETED sell-side PSA. And because Negotiation_Status__c is a RESTRICTED picklist whose
+         record-type subset IS enforced by Apex DML (measured 2026-08-21,
+         INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST), and 'Executed' is NOT on the Disposition_PSA
+         record type at all, the click would fail with an opaque platform error rather than the
+         service's user-safe message.
+
+         RECORD-TYPE POLARITY - the page criterion is
+         {!Record.RecordType.DeveloperName} NE 'Disposition_PSA' (fails OPEN on Master, matching
+         RecordStageAdvanceService's defaultTypeKey routing a Master row to the acquisition map).
+         See NDA__c.Move_to_Received.quickAction-meta.xml for the full polarity argument. -->
+    <actionSubtype>Action</actionSubtype>
+    <label>Executed</label>
+    <lightningWebComponent>advanceRecordStage</lightningWebComponent>
+    <optionsCreateFeedItem>false</optionsCreateFeedItem>
+    <type>LightningWebComponent</type>
+</QuickAction>

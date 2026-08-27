@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<QuickAction xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!-- THIS NOTE LIVES IN A COMMENT INSIDE THE ROOT ELEMENT - a comment placed ABOVE
+         <QuickAction> breaks `sf` deploy at source conversion. See
+         NDA__c.Move_to_Received.quickAction-meta.xml for the full rationale behind finishing this
+         change on the review objects (2026-08-27) and for why there is no <description> element.
+         Development_Feasibility_Review__c carries no record types, so none of these four actions
+         needs a record-type criterion.
+
+         THE HOP: Development_Feasibility_Review__c.Stage__c sequence is
+         Requested -> Feasibility analysis -> Vendor proposals -> Share Opinion -> Completed. This
+         action serves Requested -> Feasibility analysis, gated on
+         Development_Feasibility_Review_Record_Page by
+         {!Record.Stage__c} EQUAL 'Requested'.
+
+         🔴 THE LABEL "Feasibility analysis" IS LOWER-CASED ON ITS SECOND WORD IN THE ORG'S
+         PICKLIST METADATA - matched verbatim here in both the <label> and the page's rightValue.
+         The DEVELOPER NAME stays Title_Case per this repo's naming convention
+         (Move_to_Feasibility_Analysis) - that is a deliberate divergence between developer name
+         and label, not a typo; do not "correct" the label casing, it would make the page's
+         Stage__c EQUAL rule never match a live record. -->
+    <actionSubtype>Action</actionSubtype>
+    <label>Feasibility analysis</label>
+    <lightningWebComponent>advanceRecordStage</lightningWebComponent>
+    <optionsCreateFeedItem>false</optionsCreateFeedItem>
+    <type>LightningWebComponent</type>
+</QuickAction>

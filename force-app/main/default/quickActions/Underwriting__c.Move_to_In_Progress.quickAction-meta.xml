@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<QuickAction xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!-- THIS NOTE LIVES IN A COMMENT INSIDE THE ROOT ELEMENT - a comment placed ABOVE
+         <QuickAction> breaks `sf` deploy at source conversion. See
+         NDA__c.Move_to_Received.quickAction-meta.xml for the full rationale behind finishing this
+         change on the review/underwriting objects (2026-08-27) and for why there is no
+         <description> element. Underwriting__c carries no record types, so none of these actions
+         needs a record-type criterion.
+
+         THE HOP: Underwriting__c.Stage__c sequence is
+         Requested -> In Progress -> [approval] -> Approved -> Completed. This action serves
+         Requested -> In Progress, gated on Underwriting_Record_Page by
+         {!Record.Stage__c} EQUAL 'Requested'.
+
+         🔴 THIS EDIT FIXES A LIVE LATENT DEFECT AS A SIDE EFFECT. The Advance_Stage entry it
+         replaces used booleanFilter '1 AND (2 OR 3)' - this repo has MEASURED that a
+         parenthesised OR deploys, survives a retrieve, and is then IGNORED BY THE RENDERER (see
+         NDA_Record_Page / LOI_Record_Page headers). So the old button very likely rendered at
+         EVERY stage including 'In Progress' and the terminal 'Completed', not only at
+         'Requested'/'Approved' as intended. This action and Move_to_Completed are pure AND
+         chains, each keyed on one exact stage - do not try to "preserve current behaviour" by
+         recreating the OR; the current behaviour is itself the bug.
+
+         🔴 NO BUTTON EXISTS FOR In Progress -> Approved, ON PURPOSE. That hop is owned by the
+         principal approval process: Underwriting__c.Submit_for_Approval already renders at
+         exactly Stage__c = 'In Progress' and is untouched by this change. Adding a stage-advance
+         button there would put a principal-approved underwriting one click away from a deal
+         driver, bypassing the approval. This also leaves the
+         RecordStageAdvanceService.NO_NEXT_STEP_HINTS entry for 'Underwriting|In Progress'
+         reachable only through non-UI callers of RecordStageAdvanceController.advance -
+         recommended to leave as-is; retiring it is a separate Apex change this admin task does
+         not make. -->
+    <actionSubtype>Action</actionSubtype>
+    <label>In Progress</label>
+    <lightningWebComponent>advanceRecordStage</lightningWebComponent>
+    <optionsCreateFeedItem>false</optionsCreateFeedItem>
+    <type>LightningWebComponent</type>
+</QuickAction>
