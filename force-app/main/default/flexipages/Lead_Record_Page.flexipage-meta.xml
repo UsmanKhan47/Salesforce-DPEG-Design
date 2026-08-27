@@ -186,6 +186,16 @@
                     <name>uiBehavior</name>
                     <value>none</value>
                 </fieldInstanceProperties>
+                <fieldItem>Record.Listing_Status__c</fieldItem>
+                <identifier>RecordListing_Status_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>none</value>
+                </fieldInstanceProperties>
                 <fieldItem>Record.Parse_Confidence__c</fieldItem>
                 <identifier>RecordParse_Confidence_cField</identifier>
             </fieldInstance>
@@ -335,16 +345,6 @@
                 </fieldInstanceProperties>
                 <fieldItem>Record.Year_Built__c</fieldItem>
                 <identifier>RecordYear_Built_cField</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <itemInstances>
-            <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.Asset_Type__c</fieldItem>
-                <identifier>RecordAsset_Type_cField</identifier>
             </fieldInstance>
         </itemInstances>
         <itemInstances>
