@@ -932,18 +932,6 @@
                 </visibilityRule>
             </componentInstance>
         </itemInstances>
-        <itemInstances>
-            <!-- 2026-08-26 - RE-ADDED on user instruction ("the analyst needs to see the child-object
-                 approvals here as well"). The standard Approval History in the header lists only
-                 ProcessInstances whose target IS this Disposition; Broker Selection (BOV) runs on
-                 the selected BOV_Submission__c and Offer Selection on the selected
-                 Disposition_Offer__c, so this card is the only surface that shows all five. Placed
-                 in the Components tab (wide column) rather than the sidebar it was removed from. -->
-            <componentInstance>
-                <componentName>dispositionApprovalHistory</componentName>
-                <identifier>dispositionApprovalHistory</identifier>
-            </componentInstance>
-        </itemInstances>
         <name>Facet-7e2c9a41-3f6b-4c8d-9a2e-1b5d8f3c6a90</name>
         <type>Facet</type>
     </flexiPageRegions>
