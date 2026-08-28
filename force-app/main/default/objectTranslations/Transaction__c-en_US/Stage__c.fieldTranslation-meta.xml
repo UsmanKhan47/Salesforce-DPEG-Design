@@ -3,8 +3,8 @@
     <label><!-- Stage --></label>
     <name>Stage__c</name>
     <picklistValues>
-        <masterLabel>Closed Won</masterLabel>
-        <translation><!-- Closed Won --></translation>
+        <masterLabel>Closed</masterLabel>
+        <translation><!-- Closed --></translation>
     </picklistValues>
     <picklistValues>
         <masterLabel>Closing Prep</masterLabel>

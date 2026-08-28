@@ -44,7 +44,7 @@
 |---|---|
 | `LeadConversionService.cls` | Conversion 1 (broker) and Conversion 7 (investor) — dedup, Account/Contact match-or-create, Investor__c + Investing_Entity_Contact__c creation |
 | `ContractHandoffService.cls` | Conversions 2 & 3 — create Transaction__c and Offering__c simultaneously when `Contract_Signed__c = TRUE` |
-| `ClosingService.cls` | Conversion 4 — promote Property__c → Property_Asset__c on Transaction close |
+| `PropertyAssetService.cls` | Conversion 4 — promote Property__c → Property_Asset__c when `Opportunity.StageName` reaches Closed Won (NOT on Transaction close). Entry point `ensureOnClosedWon`, fired by `OpportunityReviewTrigger`. There is no `ClosingService` class — that name appears only in superseded planning notes. |
 | `PlaidContributionService.cls` | Conversion 8 — reconcile Contribution__c, create Investment__c when Plaid confirms full wire |
 | `ShareTransferService.cls` | Conversion 9 — reduce Transferor Investment__c, create Transferee Investment__c, calculate pro-rata cost basis |
 | `DistributionBatchService.cls` | Build distribution batch payload, call ASB endpoint via `PlaidCalloutService`, store transfer IDs on Distribution__c |
@@ -61,7 +61,7 @@
 | 1: Lead → Opp + Account + Contact | Manual (Junior clicks Convert) + Flow | `LeadConversionService` |
 | 2: Opp → Transaction__c | Record-Triggered Flow | `ContractHandoffService` (called by Flow via Invocable) |
 | 3: Opp → Offering__c | Same Flow as #2 | `ContractHandoffService` |
-| 4: Transaction__c → Property_Asset__c | Record-Triggered Flow on stage = Closed Won | `ClosingService` (Invocable) |
+| 4: Opportunity → Property_Asset__c | Apex trigger `OpportunityReviewTrigger` on `Opportunity.StageName` = Closed Won | `PropertyAssetService.ensureOnClosedWon` |
 | 7: Lead → Account + Contact + Investor__c | Record-Triggered Flow (IR Web-to-Lead) | `LeadConversionService` (Invocable) |
 | 8: Commitment__c → Investment__c | Apex trigger on Contribution__c | `PlaidContributionService` (called by trigger) |
 | 9: Investment__c → Updated + New | Apex (on Approval Process approval) | `ShareTransferService` (Invocable from Process) |

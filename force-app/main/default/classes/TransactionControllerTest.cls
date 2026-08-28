@@ -113,9 +113,13 @@ private class TransactionControllerTest {
     @isTest
     static void testTaskSummary() {
         // A Closed txn with large rollups must NOT leak into the Active-only summary.
+        // ⚠ `Status__c` and `Stage__c` below BOTH read 'Closed' and they are DIFFERENT FIELDS
+        // carrying coincidentally identical values: Status__c has always had Draft|Active|Closed,
+        // and Stage__c's terminal value was renamed 'Closed Won' -> 'Closed' on 2026-08-28.
+        // Only Status__c drives the Active-only filter under test here.
         Transaction__c bigClosed = TestDataFactory.createTransaction(null, null, false);
         TestDataFactory.applyOverrides(bigClosed, new Map<String, Object>{
-            'Status__c' => 'Closed', 'Stage__c' => 'Closed Won', 'Contract_Executed_Date__c' => null,
+            'Status__c' => 'Closed', 'Stage__c' => 'Closed', 'Contract_Executed_Date__c' => null,
             'Tasks_Total__c' => 999, 'Tasks_Complete__c' => 0, 'Tasks_Overdue__c' => 500, 'Wire_Open_Risks__c' => 99
         });
         insert bigClosed;
@@ -153,11 +157,14 @@ private class TransactionControllerTest {
         TestDataFactory.applyOverrides(postClosing, new Map<String, Object>{
             'Status__c' => 'Active', 'Stage__c' => 'Post-Closing', 'Contract_Executed_Date__c' => null
         });
-        Transaction__c closedWon = TestDataFactory.createTransaction(null, null, false);
-        TestDataFactory.applyOverrides(closedWon, new Map<String, Object>{
-            'Status__c' => 'Closed', 'Stage__c' => 'Closed Won', 'Contract_Executed_Date__c' => null
+        // ⚠ Status__c 'Closed' and Stage__c 'Closed' are DIFFERENT FIELDS that happen to share a
+        // value name since the 2026-08-28 'Closed Won' -> 'Closed' stage rename. The breakdown is
+        // filtered on Status__c; the Stage__c key is what the absence assertion below looks for.
+        Transaction__c closedTxn = TestDataFactory.createTransaction(null, null, false);
+        TestDataFactory.applyOverrides(closedTxn, new Map<String, Object>{
+            'Status__c' => 'Closed', 'Stage__c' => 'Closed', 'Contract_Executed_Date__c' => null
         });
-        postClosing.add(closedWon);
+        postClosing.add(closedTxn);
         insert postClosing;
 
         Integer activeTotal = [SELECT COUNT() FROM Transaction__c WHERE Status__c = 'Active'];
@@ -174,7 +181,7 @@ private class TransactionControllerTest {
         }
 
         System.assertEquals(3, byStage.get('Post-Closing'), 'Exactly the three Active Post-Closing txns');
-        System.assert(!byStage.containsKey('Closed Won'), 'Closed txn excluded from the Active breakdown');
+        System.assert(!byStage.containsKey('Closed'), 'Closed txn excluded from the Active breakdown');
         System.assertEquals(activeTotal, gotTotal, 'Every Active transaction counted exactly once');
     }
 

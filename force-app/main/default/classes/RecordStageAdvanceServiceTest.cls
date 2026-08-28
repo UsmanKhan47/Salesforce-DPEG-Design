@@ -5,7 +5,7 @@
  * Transaction__c.
  *
  * ── ✅ Transaction__c COVERAGE ADDED (2026-08-12, live UI testing fix set) ────
- * transactionWalksOpenContractThroughToClosedWon pins the user-confirmed sequence (picklist order,
+ * transactionWalksOpenContractThroughToClosed pins the user-confirmed sequence (picklist order,
  * NOT the Path step-text's implied order — see TRANSACTION_NEXT_STAGE's own header for why those
  * two readings disagree). transactionAdvanceToIsStructurallyUnreachable is the falsifier for the
  * EMPTY explicit-target allow-list: Transaction__c's path is a straight line with no branch, off-
@@ -1581,11 +1581,17 @@ private class RecordStageAdvanceServiceTest {
     // ═════════════════════════════════════════════════════════════════════════
 
     @isTest
-    static void transactionWalksOpenContractThroughToClosedWon() {
+    static void transactionWalksOpenContractThroughToClosed() {
         // 🔴 THE ORDER IS A USER DECISION, CONFIRMED AT GATE 1 ON 2026-08-12 AGAINST THE ORG'S
         // LIVE PICKLIST — do not "correct" it from the Path's step text, which argues the other
         // way (see TRANSACTION_NEXT_STAGE's own header). This walk is where a reversion to the
-        // step-text reading (…Closing Prep -> Closed Won -> Post-Closing) would surface.
+        // step-text reading (…Closing Prep -> Closed -> Post-Closing) would surface.
+        //
+        // ⚠ THE TERMINAL VALUE WAS RENAMED IN SETUP ON 2026-08-28: 'Closed Won' -> 'Closed', both
+        // label AND API name. Only the NAME changed; the ORDER above is untouched. The expected
+        // strings below are equality assertions over service-DERIVED text
+        // (`config.label + ' moved to ' + target + '.'`), so they follow the picklist value
+        // automatically and must be kept in step with it by hand here.
         Id txnId = insertTransaction().Id;
 
         Test.startTest();
@@ -1597,15 +1603,15 @@ private class RecordStageAdvanceServiceTest {
                 'Transaction moved to Due Diligence.',
                 'Transaction moved to Closing Prep.',
                 'Transaction moved to Post-Closing.',
-                'Transaction moved to Closed Won.',
-                'BLOCKED: There is no next step available from the Closed Won stage.'
+                'Transaction moved to Closed.',
+                'BLOCKED: There is no next step available from the Closed stage.'
             },
             messages,
             'The Transaction__c map must be exactly Open Contract -> Due Diligence -> Closing Prep '
-            + '-> Post-Closing -> Closed Won, with Closed Won terminal. This object supplies no '
+            + '-> Post-Closing -> Closed, with Closed terminal. This object supplies no '
             + 'NO_NEXT_STEP_HINTS entry, so the generic terminal wording is expected, unlike '
             + 'Underwriting\'s approval-owned gap');
-        Assert.areEqual('Closed Won', [SELECT Stage__c FROM Transaction__c WHERE Id = :txnId].Stage__c,
+        Assert.areEqual('Closed', [SELECT Stage__c FROM Transaction__c WHERE Id = :txnId].Stage__c,
             'The walk must leave the Transaction at its terminal stage');
     }
 
@@ -1614,7 +1620,7 @@ private class RecordStageAdvanceServiceTest {
      * line — no branch, no off-ramp, no loop — so TRANSACTION_NEXT_STAGE's owning StageTypeConfig is
      * built through the two-argument (linear) constructor, which supplies an EMPTY explicitTargets
      * set. Every derivable forward hop belongs to advance(); listing any of them here would let a
-     * direct Apex call skip Due Diligence and land a deal on 'Closed Won' in one call. Tries a value
+     * direct Apex call skip Due Diligence and land a deal on 'Closed' in one call. Tries a value
      * that IS a real, valid stage on this object ('Post-Closing') specifically because that is the
      * sharper failure mode than a nonsense string — the refusal must be about the ALLOW-LIST being
      * empty, not about the target being unrecognised.

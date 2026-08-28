@@ -4,8 +4,29 @@
 //   Earnest at risk: 0.9M (Magnolia) + 1.5M (Cypress) = $2.4M
 //   Wire approvals due: Magnolia + Beltway = 2 ; Missed feasibility YTD = 0
 //   EM Wired Date = Contract Executed + 4d (drives the EM Wired highlights tile)
-// Destructive on Transaction__c demo data (scratch org) — clears then reseeds.
+// Destructive on Transaction__c demo data — clears then reseeds. SCRATCH ORG / SANDBOX ONLY; enforced by the guard below.
 Date toughDay = Date.today();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 🔴 REFUSE-TO-RUN GUARD (added 2026-08-28). The `delete` below is UNGUARDED and
+// UNFILTERED — it removes EVERY Transaction__c row in the org, not just seeded
+// demo rows. Line 7 calls this file "(scratch org)" but nothing enforced it, and
+// `usman-dpeg` is a real non-sandbox Enterprise Edition org holding live data.
+//
+// ⚠ DO NOT "SIMPLIFY" THIS TO `TrialExpirationDate != null`, THE USUAL SCRATCH-ORG
+// HEURISTIC. MEASURED on usman-dpeg 2026-08-28: IsSandbox=false,
+// TrialExpirationDate=2027-07-16 (NON-NULL), OrganizationType='Enterprise Edition'.
+// It is a TRIAL EE org, so that heuristic evaluates true here and would wave the
+// delete straight through. `IsSandbox` is the only field that discriminates:
+// scratch orgs and sandboxes report true, this org reports false.
+Organization seedOrgCheck = [SELECT Name, IsSandbox, OrganizationType FROM Organization LIMIT 1];
+System.assert(
+    seedOrgCheck.IsSandbox == true,
+    'REFUSED: seed-transactions.apex deletes EVERY Transaction__c row and only runs on a scratch '
+    + 'org or sandbox. This org is "' + seedOrgCheck.Name + '" (' + seedOrgCheck.OrganizationType
+    + ', IsSandbox=false). Nothing was deleted. If you really mean to reseed here, delete the '
+    + 'specific rows by hand first.');
+// ─────────────────────────────────────────────────────────────────────────────
 
 delete [SELECT Id FROM Transaction__c];
 
@@ -45,7 +66,7 @@ List<Transaction__c> txns = new List<Transaction__c>{
         Earnest_Money__c = 600000, Is_Earnest_At_Risk__c =false, Is_Wire_Approval_Due__c =false,
         Feasibility_Deadline__c = toughDay.addDays(30), Feasibility_Missed__c = false),
     new Transaction__c(Status__c = 'Active', Property_Name__c = 'Pasadena Industrial',
-        Stage__c = 'Closed Won', Risk__c = 'Closed', Owner_Name__c = 'Danish',
+        Stage__c = 'Closed', Risk__c = 'Closed', Owner_Name__c = 'Danish',
         Contract_Value__c = 14400000, Tasks_Complete__c = 75,
         Target_Close_Date__c = dPasadena, Contract_Executed_Date__c = dPasadena.addDays(-60),
         EM_Wired_Date__c = dPasadena.addDays(-56),

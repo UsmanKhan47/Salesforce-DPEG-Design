@@ -2,16 +2,22 @@ import { LightningElement, wire } from 'lwc';
 import getStageBreakdown from '@salesforce/apex/TransactionController.getStageBreakdown';
 
 // Colors mirror the stage dots used on the Active Transactions list.
+// ⚠ Keys are Transaction__c.Stage__c API names, and STAGES below is the canonical ORDER. The
+// terminal value was renamed in Setup on 2026-08-28 ('Closed Won' -> 'Closed', label AND API
+// name). While these were stale the failure was silent, not loud: `allStages` kept a permanently
+// zero 'Closed Won' row AND appended the real 'Closed' bucket as an out-of-order SIXTH row, and
+// both the arc and the legend swatch fell back to the grey 'Unspecified' colour. Keep the two
+// lists in step — a key here without an entry in STAGES loses only the colour.
 const STAGE_COLOR = {
     'Open Contract': '#4b7fd6',
     'Due Diligence': '#7e3fc0',
     'Closing Prep':  '#c98a33',
     'Post-Closing':  '#5b6bb0',
-    'Closed Won':    '#3fae5e',
+    'Closed':        '#3fae5e',
     'Unspecified':   '#94a3b8'
 };
 // The full set of picklist stages — always shown, even at zero.
-const STAGES = ['Open Contract', 'Due Diligence', 'Closing Prep', 'Post-Closing', 'Closed Won'];
+const STAGES = ['Open Contract', 'Due Diligence', 'Closing Prep', 'Post-Closing', 'Closed'];
 
 const R = 64;            // ring radius
 const CX = 90;           // center (viewBox is 180×180)

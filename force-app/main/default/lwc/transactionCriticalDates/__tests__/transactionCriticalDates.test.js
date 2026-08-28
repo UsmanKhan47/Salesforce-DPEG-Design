@@ -102,6 +102,35 @@ describe('c-transaction-critical-dates', () => {
         expect(amount.textContent).toBe('$500k');
     });
 
+    /**
+     * FALSIFIER FOR THE STAGE HALF OF THE `closed` OR.
+     *
+     * `closed = f(STATUS) === 'Closed' || f(STAGE) === 'Closed'` reads TWO DIFFERENT FIELDS that
+     * coincidentally share a value name since the 2026-08-28 Stage__c rename ('Closed Won' ->
+     * 'Closed', label AND API name). The shared fixture sets Status__c = 'Closed', so it satisfies
+     * the FIRST half and can never prove the second. This one flips Status__c to 'Active' and
+     * leaves Stage__c terminal: Target_Close_Date__c is 2020-03-01 (long past), so if the STAGE
+     * comparison were wrong the Closing pill would read 'Overdue' instead of 'Closed'.
+     */
+    it('DATA BRANCH: the Stage__c half of the closed check stands on its own', async () => {
+        const element = createComponent();
+
+        getRecord.emit({
+            ...MOCK_RECORD,
+            fields: {
+                ...MOCK_RECORD.fields,
+                Status__c: { value: 'Active' },
+                Stage__c: { value: 'Closed' }
+            }
+        });
+        await Promise.resolve();
+
+        const pills = [
+            ...element.shadowRoot.querySelectorAll('.cd-pill')
+        ].map((el) => el.textContent);
+        expect(pills[3]).toBe('Closed');
+    });
+
     it('ERROR BRANCH: surfaces a distinct error message when the record wire errors', async () => {
         const element = createComponent();
 

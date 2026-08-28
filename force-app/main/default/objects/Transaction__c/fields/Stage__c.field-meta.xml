@@ -31,9 +31,9 @@
                 <label>Post-Closing</label>
             </value>
             <value>
-                <fullName>Closed Won</fullName>
+                <fullName>Closed</fullName>
                 <default>false</default>
-                <label>Closed Won</label>
+                <label>Closed</label>
             </value>
         </valueSetDefinition>
     </valueSet>

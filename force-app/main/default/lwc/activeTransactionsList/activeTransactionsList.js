@@ -28,12 +28,16 @@ const EMPTY = '—';
 // ⚠ 'Closed Lost' is a DEAD ENTRY: Transaction__c.Stage__c is a restricted picklist with five
 // values and no such value (verified 2026-08-12). Harmless (unmatched stages fall through to
 // FALLBACK) and left in place because removing it is unrelated to any reported issue.
+// ⚠ RENAMED 2026-08-28 in Setup: the terminal Stage__c value was 'Closed Won' and is now
+// 'Closed' (label AND API name). The stale key matched nothing, so the badge fell through to
+// FALLBACK grey. Note the RISK map below ALSO has a 'Closed' key — that one is Risk__c, a
+// DIFFERENT field; the two maps are never keyed off each other.
 const STAGE = {
     'Open Contract': ['#e9f1fb', '#4b7fd6'],
     'Due Diligence': ['#f2ecfb', '#7e3fc0'],
     'Closing Prep':  ['#fdf0e1', '#c98a33'],
     'Post-Closing':  ['#eef0f7', '#5b6bb0'],
-    'Closed Won':    ['#e9f5ec', '#3fae5e'],
+    'Closed':        ['#e9f5ec', '#3fae5e'],
     'Closed Lost':   ['#fdeaea', '#e0556b']
 };
 const RISK = {

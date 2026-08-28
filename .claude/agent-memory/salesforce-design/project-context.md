@@ -52,7 +52,7 @@ Lead (Broker deal)
   → Conversion 1: Opportunity + Account (Broker Firm) + Contact (Broker Person)  [Junior converts]
       → Conversion 2: Transaction__c  [Contract_Signed__c = TRUE — auto Flow]
       → Conversion 3: Offering__c  [simultaneous with #2 — auto Flow]
-          → Conversion 4: Property_Asset__c (AUM)  [Transaction stage = Closed Won]
+          → Conversion 4: Property_Asset__c (AUM)  [Opportunity.StageName = Closed Won — NOT Transaction stage]
               → Conversion 5: Disposition__c  [Principal sell decision]
                   → Conversion 6: Property_Asset__c.Status = Disposed  [sale close]
 

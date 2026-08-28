@@ -194,6 +194,49 @@ describe('c-active-transactions-list', () => {
         expect(rows[1].tasksBar).toContain('#2e7d32');
     });
 
+    /**
+     * FALSIFIER FOR THE TERMINAL STAGE KEY IN THE `STAGE` COLOUR MAP.
+     *
+     * The shared TXNS fixture seeds only Due Diligence / Closing Prep / Open Contract, so the
+     * terminal key was never exercised. While it was stale ('Closed Won', before the 2026-08-28
+     * rename) every row still mapped, the badge simply fell through to FALLBACK grey, and this
+     * whole suite stayed green — the same silent shape found in c-transaction-critical-dates.
+     *
+     * Row 2 is a deliberately unmapped stage so FALLBACK is proven DISTINGUISHABLE rather than
+     * assumed; without it, "resolves to green" could not be told apart from "everything is green".
+     *
+     * 🔴 The last block is the non-crossing proof. `STAGE` and `RISK` BOTH have a 'Closed' key
+     * against two DIFFERENT fields (Stage__c and Risk__c) with two DIFFERENT colour pairs, so a
+     * future "dedupe these maps" refactor has an assertion standing in its way.
+     */
+    it('TERMINAL STAGE: the Closed key resolves to its own colours, not FALLBACK and not Risk__c', async () => {
+        const element = createComponent();
+
+        getActiveTransactions.emit([
+            { ...TXNS[0], id: 'a0T5g00000Txn04AAB', name: 'TXN-0004', stage: 'Closed', risk: 'Closed' },
+            { ...TXNS[0], id: 'a0T5g00000Txn05AAB', name: 'TXN-0005', stage: 'Not A Stage', risk: 'Low' }
+        ]);
+        await Promise.resolve();
+
+        const [closed, unmapped] = datatable(element).data;
+
+        // STAGE['Closed'] = ['#e9f5ec', '#3fae5e'] — the green pair.
+        expect(closed.stageWrap).toContain('#e9f5ec');
+        expect(closed.stageDot).toContain('#3fae5e');
+
+        // FALLBACK = ['#eef1f4', '#94a3b8'] — what an unknown (or stale) key produces.
+        expect(closed.stageWrap).not.toContain('#eef1f4');
+        expect(unmapped.stageWrap).toContain('#eef1f4');
+        expect(unmapped.stageDot).toContain('#94a3b8');
+
+        // RISK['Closed'] = ['#edf0f4', '#3b5a8c'] — same key string, different field, different
+        // colours. The two pills must resolve independently.
+        expect(closed.riskWrap).toContain('#edf0f4');
+        expect(closed.riskDot).toContain('#3b5a8c');
+        expect(closed.stageDot).not.toContain('#3b5a8c');
+        expect(closed.riskDot).not.toContain('#3fae5e');
+    });
+
     it('NULL DENOMINATOR: an un-fanned-out checklist renders an em-dash and an empty bar, never NaN', async () => {
         const element = createComponent();
 

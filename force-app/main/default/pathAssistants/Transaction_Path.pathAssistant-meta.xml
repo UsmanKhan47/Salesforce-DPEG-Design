@@ -6,7 +6,7 @@
     <masterLabel>Transaction Path</masterLabel>
     <pathAssistantSteps>
         <info>Transaction closed and funded.</info>
-        <picklistValueName>Closed Won</picklistValueName>
+        <picklistValueName>Closed</picklistValueName>
     </pathAssistantSteps>
     <pathAssistantSteps>
         <fieldNames>Target_Close_Date__c</fieldNames>

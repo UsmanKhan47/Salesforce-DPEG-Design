@@ -23,7 +23,7 @@
  *   Development_Feasibility_Review__c   (Stage__c)   Requested -> Feasibility analysis
  *                                                    -> Vendor proposals -> Share Opinion -> Completed
  *   Transaction__c                      (Stage__c)   Open Contract -> Due Diligence -> Closing Prep
- *                                                    -> Post-Closing -> Closed Won
+ *                                                    -> Post-Closing -> Closed
  *                                                    ADDED 2026-08-12. The FIRST object here from
  *                                                    the TRANSACTIONS module rather than
  *                                                    acquisitions/disposition. ⚠ This line used to
@@ -1425,13 +1425,23 @@ public with sharing class RecordStageAdvanceService {
 
     /**
      * Transaction__c.Stage__c —
-     * Open Contract -> Due Diligence -> Closing Prep -> Post-Closing -> Closed Won.
-     * 'Closed Won' is terminal and therefore has NO entry.
+     * Open Contract -> Due Diligence -> Closing Prep -> Post-Closing -> Closed.
+     * 'Closed' is terminal and therefore has NO entry.
+     *
+     * ⚠ RENAMED 2026-08-28 (USER, IN SETUP): the terminal value was 'Closed Won' and is now
+     * 'Closed' — BOTH the label AND the API name changed, and Salesforce migrated the existing
+     * rows. `Stage__c` is a RESTRICTED picklist and restriction on this project is a MEASURED
+     * DML-enforced fact, so the stale literal was not cosmetic: the Transaction record page still
+     * renders the Advance Stage button at 'Post-Closing' (its visibility keys on that unchanged
+     * value) and the write it produced was rejected with
+     * INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST. Every REMAINING 'Closed Won' in this class (see the
+     * NDA gate narration around lines 802 and 815) belongs to `Opportunity.StageName` — a
+     * DIFFERENT field on a DIFFERENT object — and must stay exactly as it is.
      *
      * 🔴 THE ORDER IS A USER DECISION, NOT A DERIVATION, AND IT IS THE ONE THING HERE THAT CANNOT
      * BE WRONG QUIETLY. The picklist's element order and the Transaction Path's step order both
-     * read `… Closing Prep -> Post-Closing -> Closed Won`, but the Path's own step TEXT argues the
-     * other way — 'Closed Won' says "Transaction closed and funded" while 'Post-Closing' says
+     * read `… Closing Prep -> Post-Closing -> Closed`, but the Path's own step TEXT argues the
+     * other way — 'Closed' says "Transaction closed and funded" while 'Post-Closing' says
      * "Complete the post-closing checklist and file recorded documents", and funding precedes
      * post-closing work in a real deal. Whichever order is configured becomes the ONLY order the
      * button offers, with nothing to signal a mistake. The sequence above was CONFIRMED BY THE
@@ -1442,7 +1452,7 @@ public with sharing class RecordStageAdvanceService {
      * straight line — no branch, no off-ramp, no loop — so every hop is derivable and advance()
      * reaches all of them. An empty allow-list makes advanceTo() STRUCTURALLY UNREACHABLE here,
      * which is the strongest available guarantee that a hand-crafted call cannot skip Due
-     * Diligence and land a deal on 'Closed Won'. Adding a target is a real widening: do it only
+     * Diligence and land a deal on 'Closed'. Adding a target is a real widening: do it only
      * when a named quick action needs a stage advance() cannot derive.
      *
      * ⚠ `Transaction__c` HAS NO RECORD TYPES, so this is a SINGLE-SEQUENCE config (see
@@ -1458,7 +1468,7 @@ public with sharing class RecordStageAdvanceService {
         'Open Contract' => 'Due Diligence',
         'Due Diligence' => 'Closing Prep',
         'Closing Prep' => 'Post-Closing',
-        'Post-Closing' => 'Closed Won'
+        'Post-Closing' => 'Closed'
     };
 
     /**
@@ -1975,7 +1985,7 @@ public with sharing class RecordStageAdvanceService {
             // ⚠ The label 'Transaction' is what the success toast reads ("Transaction moved to
             // Due Diligence.") and is also the NO_NEXT_STEP_HINTS key prefix. This object supplies
             // no hint: every stage without a hop is genuinely terminal, so the default "There is
-            // no next step available from the Closed Won stage." is correct wording, unlike
+            // no next step available from the Closed stage." is correct wording, unlike
             // Underwriting's approval-owned gap.
             Transaction__c.SObjectType => new StageConfig(
                 'Transaction', 'Stage__c',

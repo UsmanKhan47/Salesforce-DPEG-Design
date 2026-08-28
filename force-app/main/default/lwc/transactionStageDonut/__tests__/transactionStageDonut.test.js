@@ -24,7 +24,7 @@ jest.mock(
 const BREAKDOWN = [
     { stage: 'Due Diligence', count: 3 },
     { stage: 'Open Contract', count: 2 },
-    { stage: 'Closed Won', count: 1 }
+    { stage: 'Closed', count: 1 }
 ];
 
 describe('c-transaction-stage-donut', () => {
@@ -89,7 +89,7 @@ describe('c-transaction-stage-donut', () => {
             'Due Diligence',
             'Closing Prep',
             'Post-Closing',
-            'Closed Won'
+            'Closed'
         ]);
 
         const counts = [

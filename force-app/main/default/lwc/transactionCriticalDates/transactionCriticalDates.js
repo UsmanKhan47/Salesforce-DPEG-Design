@@ -51,7 +51,12 @@ export default class TransactionCriticalDates extends LightningElement {
         const emDate = f(EMD);
         const feas = f(FEAS);
         const close = f(CLOSE);
-        const closed = f(STATUS) === 'Closed' || f(STAGE) === 'Closed Won';
+        // ⚠ BOTH SIDES READ 'Closed' AND THAT IS CORRECT — THEY ARE TWO DIFFERENT FIELDS.
+        // Status__c has always carried Draft | Active | Closed. Stage__c's terminal value was
+        // renamed in Setup on 2026-08-28 from 'Closed Won' to 'Closed' (label AND API name), so
+        // the two now coincidentally share a value NAME. Do not collapse this into one comparison
+        // and do not blanket find-and-replace either literal: they are independent conditions.
+        const closed = f(STATUS) === 'Closed' || f(STAGE) === 'Closed';
 
         return [
             this.buildRow({

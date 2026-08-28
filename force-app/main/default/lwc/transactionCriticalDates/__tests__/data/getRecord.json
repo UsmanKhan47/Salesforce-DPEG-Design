@@ -10,6 +10,6 @@
         "Feasibility_Missed__c": { "value": true },
         "Target_Close_Date__c": { "value": "2020-03-01" },
         "Status__c": { "value": "Closed" },
-        "Stage__c": { "value": "Closed Won" }
+        "Stage__c": { "value": "Closed" }
     }
 }
