@@ -98,17 +98,37 @@ private class UnderwritingGateTest {
         System.assertEquals('LOI', o.StageName, 'Approval advances the deal to LOI');
         System.assert(o.UW_Approved__c, 'Approved checkbox set by the final-approval action');
         System.assertEquals('Approved by Principals', o.Underwriting_Status__c, 'Status stamped');
-        System.assertEquals(UserInfo.getUserId(), o.UW_Approved_By__c,
-            'ApprovalAuditService stamps the actual approver from approval history');
-        System.assertNotEquals(null, o.UW_Approval_Date__c, 'Approval date stamped');
 
-        Underwriting__c uw = [
-            SELECT Stage__c, Status__c FROM Underwriting__c WHERE Opportunity__c = :o.Id LIMIT 1
-        ];
-        System.assertEquals('Approved', uw.Stage__c,
-            'Approval advances the underwriting record to the Approved stage');
-        System.assertEquals('Approved by Principals', uw.Status__c,
-            'Approval stamps the underwriting record status');
+        // ── 🔴 FOUR ASSERTIONS REMOVED HERE 2026-08-28. READ THIS BEFORE RE-ADDING THEM. ────────
+        // They were:
+        //     System.assertEquals(UserInfo.getUserId(), o.UW_Approved_By__c,
+        //         'ApprovalAuditService stamps the actual approver from approval history');
+        //     System.assertNotEquals(null, o.UW_Approval_Date__c, 'Approval date stamped');
+        //     Underwriting__c uw = [SELECT Stage__c, Status__c FROM Underwriting__c
+        //                           WHERE Opportunity__c = :o.Id LIMIT 1];
+        //     System.assertEquals('Approved', uw.Stage__c, '…advances the underwriting record…');
+        //     System.assertEquals('Approved by Principals', uw.Status__c, '…stamps the status');
+        //
+        // All four described work that THIS approval (the one on the Opportunity) no longer does:
+        //   - UW_Approved_By__c / UW_Approval_Date__c: ApprovalAuditService was repointed to read
+        //     the UNDERWRITING record's approval history, so an approval taken on the OPPORTUNITY
+        //     — which is what this test performs — correctly stamps nothing.
+        //   - uw.Stage__c / uw.Status__c: the block in ApprovalAuditService that wrote them was
+        //     deleted; the writer is now the new Underwriting_Approval process's own
+        //     finalApprovalActions, on the record itself.
+        //
+        // They are NOT replaced in place because an Apex test cannot perform the new approval
+        // until the declarative stream deploys Underwriting__c.Underwriting_Approval. Their
+        // replacements are:
+        //   - the deal-mapping and stamp mechanics -> ApprovalAuditServiceTest;
+        //   - the real end-to-end (approver identity, timestamp, child stage/status)
+        //     -> post-deploy checks P-3 and P-4 in agent-output/design-requirements.md §8.
+        //
+        // ⚠ THIS WHOLE TEST CLASS IS SCHEDULED FOR REWRITE. Every approval test here submits the
+        // OPPORTUNITY, which stops working the moment Opportunity.Underwriting_Approval is
+        // deactivated (execution-order step 9). That rewrite is step 12 and belongs with the
+        // declarative deploy — not to this Apex-only change, which would otherwise leave the suite
+        // red for the entire window between the two.
     }
 
     @isTest

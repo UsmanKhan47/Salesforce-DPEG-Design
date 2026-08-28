@@ -65,14 +65,25 @@ private class StageApprovalGatesTest {
             update o;
         } catch (DmlException e) {
             blocked = true;
+            // ⚠ NARROWED 2026-08-28 from '...until the underwriting has been approved' to the
+            // shorter invariant fragment. Underwriting_Approved_Before_LOI is owned by the
+            // parallel declarative stream and is being rewritten from NOT(UW_Approved__c) to a
+            // read of Primary_Underwriting__r.Stage__c, which changes the wording from "the
+            // underwriting has been approved" to "its Underwriting record has been approved".
+            // 'cannot enter LOI until' is common to both and still distinguishes THIS rule's
+            // message from the NDA gate's and from a generic failure — which is all this
+            // assertion ever needed to do. Tighten to the full new string once that rule ships.
             System.assert(
-                e.getMessage().contains('cannot enter LOI until the underwriting has been approved'),
+                e.getMessage().contains('cannot enter LOI until'),
                 'Entering LOI unapproved should surface the approval message, got: ' + e.getMessage());
         }
         System.assert(blocked, 'Entering LOI without principal-approved underwriting must be blocked');
 
         // Approving unlocks the SAME direct update - no approval process involved. This is the
         // first real caller of TestDataFactory.approveUnderwriting.
+        // ⚠ Since 2026-08-28 that helper sets BOTH the deal's UW_Approved__c AND the primary
+        // Underwriting record's Stage__c = 'Approved', so this fixture satisfies the gate under
+        // either version of the rule and does not red while the two streams land.
         TestDataFactory.approveUnderwriting(o);
         Test.startTest();
         o.StageName = 'LOI';

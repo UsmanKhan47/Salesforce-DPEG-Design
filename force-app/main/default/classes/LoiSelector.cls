@@ -5,7 +5,7 @@
  * P4 Module A1 (Acquisitions — Deal Core). Consumers:
  *   - OpportunityDocStatusController — Deal Summary card's LOI row
  *     (primary-else-latest, read-for-display, null-on-empty).
- *   - OpportunityApprovalController.resolveDealId — resolves the parent deal Id
+ *   - OpportunityApprovalService.resolveApprovalTargetId — resolves the parent deal Id
  *     from a clicked LOI record (fetch-for-use, throws on miss).
  *   - RecordStageAdvanceService — selectStageRequiredById, the stage-advance quick action.
  *   - CounterOfferService — selectNegotiationContextById, added Tranche 3B (2026-08-09).
@@ -106,7 +106,7 @@ public with sharing class LoiSelector {
 
     /**
      * Loads an LOI for parent-deal resolution — backs
-     * OpportunityApprovalController.resolveDealId.
+     * OpportunityApprovalService.resolveApprovalTargetId.
      *
      * FETCH-FOR-USE: the caller dereferenced `.Opportunity__c` off a single-row
      * assignment, so a miss is an error. Preserved via a single-row SOQL

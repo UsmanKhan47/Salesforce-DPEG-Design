@@ -1357,19 +1357,39 @@ public with sharing class RecordStageAdvanceService {
      * copy would put Approved one button-click away and bypass the approval entirely — the deal
      * would show a principal-approved underwriting that no principal ever saw. The already-deployed
      * `Underwriting__c.Submit_for_Approval` quick action (OpportunityApprovalController ->
-     * OpportunityApprovalService) is the route from 'In Progress', and ApprovalAuditService stamps
-     * Stage__c = 'Approved' on principal sign-off.
+     * OpportunityApprovalService) is the route from 'In Progress'.
+     *
+     * 🔴 THIS MAP AND ITS NO_NEXT_STEP_HINTS ENTRY ARE CORRECT AS-IS AND WERE DELIBERATELY NOT
+     * TOUCHED on 2026-08-28 when the principal approval moved onto Underwriting__c. Both key on
+     * Underwriting__c.Stage__c (via `config.label + '|' + currentStage`), NOT on
+     * Opportunity.StageName, so the Opportunity-side change cannot reach them. The 'In Progress'
+     * gap and the hint's "Use Submit for Approval" wording became MORE accurate, not less: that
+     * action now submits THIS record rather than its parent deal.
      *
      * From 'In Progress' this service therefore refuses, with wording that NAMES the real route
      * (see NO_NEXT_STEP_HINTS) so the omission reads as a rule rather than a bug.
      *
-     * Exactly the same shape as StageAdvanceService.NEXT_STAGE deliberately omitting 'Underwriting'
-     * for exactly the same reason.
+     * ⚠ RETRACTED 2026-08-28 — TWO CLAIMS ABOVE WENT STALE, kept verbatim so they are not
+     * re-derived from the code:
      *
-     * ⚠ ApprovalAuditService's stamp is Apex DML inside a try/catch that SWALLOWS the DmlException,
-     * so any future validation rule on Underwriting__c.Stage__c MUST explicitly permit the
-     * transition into 'Approved' — a rule that blocks it fails silently and the Path simply never
-     * reaches Approved (design doc §7.3).
+     *   1. "…and ApprovalAuditService stamps Stage__c = 'Approved' on principal sign-off."
+     *      NO LONGER TRUE. That block was DELETED from ApprovalAuditService; the writer is now the
+     *      Underwriting_Approval process's own finalApprovalActions on this very record.
+     *      ApprovalAuditService still runs, but only to stamp the APPROVER and TIMESTAMP onto the
+     *      parent deal. 'Approved' is still not reachable from this map — only the writer changed.
+     *
+     *   2. "Exactly the same shape as StageAdvanceService.NEXT_STAGE deliberately omitting
+     *      'Underwriting' for exactly the same reason."
+     *      NO LONGER TRUE. StageAdvanceService.NEXT_STAGE now CONTAINS 'Underwriting' => 'LOI':
+     *      Initiate LOI became a plain stage write, gated by a validation rule instead of by an
+     *      approval submission. The two maps no longer mirror each other and must not be
+     *      "reconciled" — the omission HERE is still deliberate and is unrelated to that change.
+     *
+     * ⚠ The stamp warning below still applies, to the approval's field update rather than to Apex:
+     * any future validation rule on Underwriting__c.Stage__c MUST explicitly permit the transition
+     * into 'Approved', or the Path simply never reaches Approved (design doc §7.3). It now fails
+     * inside an approval-process field update rather than inside a DmlException-swallowing
+     * try/catch — still silent from the user's point of view.
      */
     private static final Map<String, String> UNDERWRITING_NEXT_STAGE = new Map<String, String>{
         'Requested' => 'In Progress',

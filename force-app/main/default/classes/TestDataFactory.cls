@@ -887,7 +887,8 @@ public with sharing class TestDataFactory {
     //
     //   signPrimaryNda      -> a signed primary NDA        (Underwriting / LOI / PSA /
     //                                                       About to Close / Closed Won)
-    //   approveUnderwriting -> UW_Approved__c              (LOI)
+    //   approveUnderwriting -> primary Underwriting Stage__c = 'Approved'
+    //                          + UW_Approved__c            (LOI)   ⚠ both, since 2026-08-28
     //   placeApprovedLoi    -> Primary_LOI__c + LOI_Approved__c (PSA)
     //   signContract        -> Contract_Signed__c          (Closed Won)
     //
@@ -1017,25 +1018,86 @@ public with sharing class TestDataFactory {
     }
 
     /**
-     * Marks each deal's underwriting as principal-approved (UW_Approved__c), satisfying the
-     * "underwriting approved before LOI" gate.
+     * Marks each deal's underwriting as principal-approved, satisfying the "underwriting approved
+     * before LOI" gate.
      *
-     * This writes ONLY the flag the gate reads. It deliberately does not fake Underwriting_Status__c
-     * or the UW_Approved_By__c / UW_Approval_Date__c audit stamps: those are written by
-     * ApprovalAuditService from real approval history, and inventing them here would let a test
-     * assert an audit trail that no approver ever created.
+     * ── ⚠ REPOINTED 2026-08-28 — IT NOW WRITES THE CHILD RECORD TOO ──────────────────────────
+     * It used to write ONLY Opportunity.UW_Approved__c, because that was the single field the
+     * gate read. The gate moved: Underwriting_Approved_Before_LOI now reads
+     * Primary_Underwriting__r.Stage__c, so the flag alone no longer unlocks anything.
+     *
+     * 🔴 IT WRITES BOTH, AND THAT IS THE POINT — NOT BELT-AND-BRACES. The validation rule is
+     * owned by the declarative stream and is being rewritten in parallel with this change. A
+     * helper that set only the NEW field would red every caller until that rule ships; a helper
+     * that set only the OLD one reds the moment it ships. Setting both means every fixture built
+     * through this helper satisfies the gate under EITHER version of the rule, so the two streams
+     * can land in either order without a red window. Once the rewritten rule is deployed and
+     * verified, UW_Approved__c here is redundant to the gate but is still required by D4 (the
+     * deal-level mirror fields are retained and must stay truthful), so do not drop it.
+     *
+     * Still deliberately does NOT fake UW_Approved_By__c / UW_Approval_Date__c: those are written
+     * by ApprovalAuditService from real approval history, and inventing them here would let a test
+     * assert an audit trail that no approver ever created. Underwriting_Status__c is likewise left
+     * alone — writing it would fire the market-data freeze from a test fixture.
+     *
+     * ⚠ Contract preserved: no SOQL and no DML inside a loop (the 251-record bulk tests call
+     * this). One read, at most two updates and one insert, regardless of batch size.
+     *
+     * A deal with no Primary_Underwriting__c gets an approved Underwriting created and stamped,
+     * so the postcondition is the same either way — the same shape signPrimaryNda uses.
      *
      * @param opportunities Inserted Opportunities to prepare (required, non-empty).
      * @return The same Opportunities, with the flag mirrored onto the in-memory records.
      */
     public static List<Opportunity> approveUnderwriting(List<Opportunity> opportunities) {
         List<Opportunity> deals = requireSavedOpportunities(opportunities, 'approveUnderwriting');
-        Map<Id, Opportunity> updates = new Map<Id, Opportunity>();
+
+        Map<Id, Opportunity> byId = new Map<Id, Opportunity>(deals);
+        Map<Id, Id> primaryByDeal = new Map<Id, Id>();
+        for (Opportunity saved : [
+            SELECT Id, Primary_Underwriting__c FROM Opportunity WHERE Id IN :byId.keySet()
+        ]) {
+            primaryByDeal.put(saved.Id, saved.Primary_Underwriting__c);
+        }
+
+        List<Underwriting__c> approvals = new List<Underwriting__c>();
+        List<Opportunity> withoutPrimary = new List<Opportunity>();
+        Map<Id, Opportunity> dealUpdates = new Map<Id, Opportunity>();
         for (Opportunity deal : deals) {
             deal.UW_Approved__c = true;
-            updates.put(deal.Id, new Opportunity(Id = deal.Id, UW_Approved__c = true));
+            dealUpdates.put(deal.Id, new Opportunity(Id = deal.Id, UW_Approved__c = true));
+
+            Id primaryUnderwritingId = primaryByDeal.get(deal.Id);
+            if (primaryUnderwritingId == null) {
+                withoutPrimary.add(deal);
+                continue;
+            }
+            approvals.add(new Underwriting__c(Id = primaryUnderwritingId, Stage__c = 'Approved'));
         }
-        update updates.values();
+
+        if (!withoutPrimary.isEmpty()) {
+            List<Underwriting__c> created = new List<Underwriting__c>();
+            for (Opportunity deal : withoutPrimary) {
+                // Build only — no DML in the loop.
+                created.add(new Underwriting__c(
+                    Opportunity__c = deal.Id, Stage__c = 'Approved', Status__c = 'In Progress'));
+            }
+            insert created;
+            for (Integer i = 0; i < withoutPrimary.size(); i++) {
+                Id dealId = withoutPrimary[i].Id;
+                withoutPrimary[i].Primary_Underwriting__c = created[i].Id;
+                dealUpdates.put(dealId, new Opportunity(
+                    Id = dealId,
+                    UW_Approved__c = true,
+                    Primary_Underwriting__c = created[i].Id
+                ));
+            }
+        }
+
+        if (!approvals.isEmpty()) {
+            update approvals;
+        }
+        update dealUpdates.values();
         return deals;
     }
 

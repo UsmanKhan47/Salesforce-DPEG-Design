@@ -4,32 +4,82 @@
         THIS NOTE LIVES IN A COMMENT, NOT IN <description>, AND IT MUST STAY THAT WAY.
         ValidationRule.Description is capped at 255 characters. The full rationale below is
         operationally important, so it was moved here rather than trimmed; a comment is
-        repo-only and is never sent to the Metadata API, so it can be as long as it needs to
-        be. Do not paste this back into <description>.
+        repo-only and is never sent to the Metadata API. Do not paste this back into
+        <description>.
 
-        Stage gate (a): a deal cannot enter LOI until the underwriting has been approved by
-        the principals (UW_Approved__c).
+        REWRITTEN 2026-08-28, replacing the version that gated on Opportunity.UW_Approved__c.
+        User request: principal approval moved off the Opportunity and onto the deal's
+        Underwriting__c child record (approvalProcesses/Underwriting__c.Underwriting_Approval).
+        This rule now gates on the CHILD RECORD'S OWN Stage__c instead.
 
-        Safe against the legitimate route by construction: Underwriting_Approval's
-        finalApprovalActions sets StageName = 'LOI' and UW_Approved__c = true in the same
-        action set / same record save, so the flag is already true when this rule evaluates,
-        true whether or not approval-process field updates run validation rules in this org.
+        🔴 THE PREVIOUS VERSION'S "SAFE BY CONSTRUCTION" CLAIM IS RETRACTED, IN PLACE, NOT
+        DELETED. It used to read:
+            "Safe against the legitimate route by construction: Underwriting_Approval's
+            finalApprovalActions sets StageName = 'LOI' and UW_Approved__c = true in the same
+            action set / same record save, so the flag is already true when this rule
+            evaluates..."
+        That argument is now FALSE. The new Underwriting__c approval cannot write StageName on
+        the Opportunity at all (Opportunity__c is a Lookup on Underwriting__c, not a
+        Master-Detail - an approval process can only field-update its own record or a
+        Master-Detail parent). Initiate LOI is now a plain StageAdvanceService.advance() stage
+        write, gated ONLY by this rule reading the child's Stage__c across the lookup.
+        The previous version's "Known, accepted: UW_Approved__c is never cleared" paragraph is
+        ALSO retracted - that field is no longer what this rule reads.
 
-        Gate applies to the stage transition only (ISCHANGED); existing records already at
-        LOI are unaffected.
+        🔴 WHY THE FORMULA NAMES BOTH 'Approved' AND 'Completed' - THIS IS THE LOAD-BEARING
+        PART, NOT COSMETIC. LOI_Approval's finalRejectionActions fires Set_Stage_Underwriting
+        (workflows/Opportunity.workflow-meta.xml), returning a rejected deal from LOI back to
+        StageName = 'Underwriting'. By the time that happens, the deal's Underwriting record has
+        USUALLY ALREADY been walked forward to its terminal Stage__c = 'Completed'
+        (Underwriting__c.Move_to_Completed, gated at Stage__c = 'Approved',
+        flexipages/Underwriting_Record_Page.flexipage-meta.xml). If this formula tested ONLY
+        <> 'Approved', the deal would be PERMANENTLY STRANDED the second time the driver clicks
+        Initiate LOI: 'Completed' is the terminal of RecordStageAdvanceService.
+        UNDERWRITING_NEXT_STAGE, nothing targets 'Approved' from there, and Stage__c is
+        <restricted>true</restricted> so a manual DML repoint is the only way out. Naming both
+        terminal-side values closes that hole. Same list-both-then-accept shape
+        Completed_LOI_Before_PSA already uses in this folder (see that file's own header for the
+        precedent in more detail) - here there is no "then-drop" phase, both values are
+        permanent terminals of the SAME object's SAME field, not a migration in flight.
 
-        Known, accepted: UW_Approved__c is never cleared, so a once-approved deal can be
-        moved back into LOI manually forever, acceptable, since a deal that has been
-        principal-approved once has passed the gate this rule exists to enforce.
+        🔴 NO NOT(ISBLANK(Primary_Underwriting__c)) GUARD - DELIBERATE, UNLIKE
+        Completed_LOI_Before_PSA'S BLANK-LOOKUP EXEMPTION. That sibling rule exempts a blank
+        lookup because a DIFFERENT sibling rule (Approved_LOI_Before_PSA) already owns the
+        blank-lookup case for that transition, and two error messages for one problem is worse
+        than one. NO SUCH SIBLING RULE EXISTS HERE for the Underwriting -> LOI transition. A
+        deal with no linked Underwriting record (Primary_Underwriting__c blank) must therefore
+        stay FAIL-CLOSED: TEXT(Primary_Underwriting__r.Stage__c) evaluates to '' when the lookup
+        is blank, and '' is neither 'Approved' nor 'Completed', so this rule correctly BLOCKS
+        that case on its own. Do NOT add a blank-lookup exemption here by copying the sibling
+        pattern - there is nothing else in this rule pack that would catch a blank lookup if
+        this rule stopped doing it.
+
+        WHY TEXT(...) NOT ISPICKVAL(...). Repo standing rule for every cross-object stage
+        compare of this shape (see Completed_LOI_Before_PSA / RecordStageAdvanceService class
+        header): ISPICKVAL resolves its literal against the picklist's value set at DEPLOY TIME,
+        which is fragile for a cross-object reference and inconsistent elsewhere in this org's
+        picklist metadata. TEXT() is a plain string compare and carries no such risk.
+
+        WHICH WRITER THIS RULE ACTUALLY MEETS. StageName = 'LOI' from 'Underwriting' is reached
+        by StageAdvanceService.advance() via NEXT_STAGE's 'Underwriting' => 'LOI' mapping
+        (Opportunity.Initiate_LOI quick action), now a PLAIN stage write with no approval
+        submission branch - the old "if (o.StageName == 'Underwriting') { submit for approval }"
+        branch was deleted in the same change that deactivated Opportunity.Underwriting_Approval.
+        advance()'s setStage() catches DmlException and rethrows getDmlMessage(0), so this rule's
+        errorMessage surfaces verbatim in the user's toast with no Apex change required.
+
+        GRANDFATHERING. This rule is ISCHANGED(StageName)-scoped like its siblings: it fires
+        only on the transition into LOI, never on a deal already sitting there.
     -->
     <fullName>Underwriting_Approved_Before_LOI</fullName>
     <active>true</active>
-    <description>Blocks stage entry to LOI unless the underwriting has been approved by the principals (UW_Approved__c). See the XML comment in this file for full rationale.</description>
+    <description>Blocks stage entry to LOI unless the primary Underwriting record has reached Approved or Completed. Fails closed if Primary_Underwriting__c is blank. See the XML comment in this file for full rationale.</description>
     <errorConditionFormula>AND(
     ISCHANGED(StageName),
     ISPICKVAL(StageName, &apos;LOI&apos;),
-    NOT(UW_Approved__c)
+    TEXT(Primary_Underwriting__r.Stage__c) &lt;&gt; &apos;Approved&apos;,
+    TEXT(Primary_Underwriting__r.Stage__c) &lt;&gt; &apos;Completed&apos;
 )</errorConditionFormula>
     <errorDisplayField>StageName</errorDisplayField>
-    <errorMessage>This deal cannot enter LOI until the underwriting has been approved by the principals. Submit it for approval from the Underwriting stage.</errorMessage>
+    <errorMessage>This deal cannot enter LOI until its Underwriting record has been approved by the principals. Open the deal&apos;s Underwriting record and use Submit for Approval.</errorMessage>
 </ValidationRule>

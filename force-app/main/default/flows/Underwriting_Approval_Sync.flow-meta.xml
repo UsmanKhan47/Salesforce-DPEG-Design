@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Flow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        NEW FILE, 2026-08-28. Mirrors a principal's approval of an Underwriting__c record back
+        onto its parent Opportunity, replacing the three-hop chain that used to run through
+        Opportunity.Underwriting_Approval -> Opportunity_UW_Approved_Notify ->
+        ApprovalAuditService(gate='Underwriting'). That old chain is now dead:
+        Opportunity.Underwriting_Approval is deactivated (see that file's header) and no
+        Opportunity ProcessInstance for this gate will ever exist again.
+
+        🔴 SEPARATE FLOW - flows/Underwriting_Opp_Sync IS NOT EXTENDED. Four independent
+        reasons, all still true at time of writing:
+          1. ENTRY SEMANTICS. Underwriting_Opp_Sync has no entry filter and no
+             doesRequireRecordChangedToMeetCriteria - it fires on every save. This mirror stamp
+             MUST be transition-scoped: Opportunity_UW_Approved_Notify (the market-data freeze)
+             is itself entry-scoped on Opportunity.Underwriting_Status__c transitioning TO
+             'Approved by Principals', and only fires once per genuine transition.
+          2. Underwriting_Opp_Sync's own <description> states "Underwriting_Status__c is
+             deliberately NOT synced - the approval process owns it." Under this design the
+             approval (via this flow) still owns it - extending that flow would force retracting
+             a decision that is still true.
+          3. A flow has ONE <start>; the approved path needs a different entry filter than an
+             ordinary save, so it needs its own trigger.
+          4. BLAST RADIUS. Underwriting_Opp_Sync pushes the deal's headline numbers and is live
+             and working. This flow can be deactivated for diagnosis without taking that down.
+
+        🔴 THIS CONTRACT IS PINNED - the developer stream is building UnderwritingApprovalStampService
+        to it; do not vary the action name or input variable name:
+            Apex action:     UnderwritingApprovalStampService
+                              (label 'Stamp Underwriting Approval To Deal')
+            input variable:  underwritingId (Id)
+
+        ENTRY: Stage__c CHANGED TO 'Approved' - doesRequireRecordChangedToMeetCriteria = true,
+        so this fires on the transition only, never on the initial submission save (which would
+        wrongly re-stamp/clear the parent) and never on an unrelated edit while already Approved.
+
+        🔴 NO REJECTED BRANCH. Per user decision D2, Stage__c never changes on rejection (it
+        stays 'In Progress'), so there is nothing for a Stage__c-keyed flow to see. This is not
+        an oversight - see approvalProcesses/Underwriting__c.Underwriting_Approval's own header
+        for the accepted, documented loss (Opportunity.Underwriting_Complete__c is no longer
+        auto-cleared on reject).
+
+        🔴 runInMode = SystemModeWithoutSharing IS MANDATORY, MATCHING Underwriting_Opp_Sync AND
+        LOI_Approval_Stamp. This flow runs as the APPROVER, and the approving principals are
+        deliberately read-only on Opportunity (measured, see MarketDataSnapshotService.cls /
+        ApprovalAuditService.cls headers). Without SystemModeWithoutSharing the downstream write
+        silently does nothing.
+
+        🔴 THE PARENT WRITE IS DONE IN APEX (UnderwritingApprovalStampService), NOT IN A FLOW
+        recordUpdate. This repo has measured that SystemModeWithoutSharing on the FLOW does not,
+        by itself, lift the access mode far enough for a read-only approver's write to stick -
+        AccessLevel.SYSTEM_MODE must be stated at the DML itself (see ApprovalAuditService.cls
+        header). Routing through the proven Apex path also lets one class own the "ONE DML for
+        all four mirror fields" contract that Opportunity_UW_Approved_Notify's own
+        entry-scoping depends on - see that flow's <description> and
+        UnderwritingApprovalStampService's own header for why a second, later write would arrive
+        on a save the freeze flow's entry filter can no longer see.
+
+        ⚠ DO NOT ADD ANY OTHER PARENT WRITE TO THIS FLOW OR CALL A SECOND ACTION AFTER THIS ONE
+        THAT ALSO TOUCHES THE OPPORTUNITY. Opportunity_UW_Approved_Notify's
+        doesRequireRecordChangedToMeetCriteria = true depends on the mirror stamp landing in
+        exactly one Opportunity DML; a second write consumes the transition before the freeze
+        flow's entry filter can see it.
+
+        DEPLOY ORDER. This flow depends on UnderwritingApprovalStampService (Apex, developer
+        stream) already being deployed - the actionCalls below resolve the Apex action by name
+        at deploy/activation time.
+    -->
+    <actionCalls>
+        <name>Stamp_Underwriting_Approval</name>
+        <label>Stamp Underwriting Approval To Deal</label>
+        <locationX>176</locationX>
+        <locationY>134</locationY>
+        <actionName>UnderwritingApprovalStampService</actionName>
+        <actionType>apex</actionType>
+        <flowTransactionModel>CurrentTransaction</flowTransactionModel>
+        <inputParameters>
+            <name>underwritingId</name>
+            <value>
+                <elementReference>$Record.Id</elementReference>
+            </value>
+        </inputParameters>
+        <nameSegment>UnderwritingApprovalStampService</nameSegment>
+    </actionCalls>
+    <apiVersion>67.0</apiVersion>
+    <environments>Default</environments>
+    <interviewLabel>Underwriting Approval Sync {!$Flow.CurrentDateTime}</interviewLabel>
+    <label>Underwriting Approval Sync</label>
+    <processType>AutoLaunchedFlow</processType>
+    <runInMode>SystemModeWithoutSharing</runInMode>
+    <start>
+        <locationX>50</locationX>
+        <locationY>0</locationY>
+        <connector>
+            <targetReference>Stamp_Underwriting_Approval</targetReference>
+        </connector>
+        <doesRequireRecordChangedToMeetCriteria>true</doesRequireRecordChangedToMeetCriteria>
+        <filterLogic>and</filterLogic>
+        <filters>
+            <field>Stage__c</field>
+            <operator>EqualTo</operator>
+            <value>
+                <stringValue>Approved</stringValue>
+            </value>
+        </filters>
+        <object>Underwriting__c</object>
+        <recordTriggerType>CreateAndUpdate</recordTriggerType>
+        <triggerType>RecordAfterSave</triggerType>
+    </start>
+    <status>Active</status>
+</Flow>

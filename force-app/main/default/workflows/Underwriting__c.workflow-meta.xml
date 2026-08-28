@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Workflow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY. A comment placed ABOVE
+        <Workflow> breaks `sf` deploy at source conversion with a misleading "unable to find
+        matching parent xml file" error.
+
+        NEW FILE, 2026-08-28. Underwriting__c had no workflow metadata before this change.
+
+        🔴 TWO FIELD UPDATES, NO WORKFLOW RULE, NO REJECTION FIELD UPDATE. Both updates below
+        are fired ONLY by approvalProcesses/Underwriting__c.Underwriting_Approval as its
+        finalApprovalActions. Do not add a <rules> element: an active rule writing Stage__c /
+        Status__c on an ordinary edit would fake an approval.
+
+        🔴 THERE IS NO REJECTION FIELD UPDATE HERE, BY DESIGN (user decision D2). Stage__c never
+        changes on rejection - the entry criterion is Stage__c = 'In Progress' and nothing moves
+        it during the pending window - so a rejection field update keyed on Stage__c would be a
+        same-value no-op even if one were added. On rejection the record simply stays at
+        Stage__c = 'In Progress' and only the approval history shows the decision.
+        Opportunity.Underwriting_Complete__c is NOT cleared on reject any more (accepted,
+        documented regression from the now-inert Opportunity.UW_Reopen_For_Revision) - see the
+        approval process file's own header for the full rationale.
+
+        THE CHILD-OBJECT HALF of moving the approval onto Underwriting__c. Both field updates
+        write only this record's own fields - required, because Underwriting__c.Opportunity__c
+        is a Lookup, not a Master-Detail, so an approval process on this object cannot
+        field-update the parent Opportunity at all. The parent mirror
+        (UW_Approved__c / Underwriting_Status__c / UW_Approved_By__c / UW_Approval_Date__c) is
+        written separately by flows/Underwriting_Approval_Sync.flow-meta.xml, entry-scoped on
+        Stage__c transitioning to 'Approved', calling UnderwritingApprovalStampService.
+
+        DEPLOY ORDER - LOAD-BEARING. This file must land BEFORE
+        approvalProcesses/Underwriting__c.Underwriting_Approval.approvalProcess-meta.xml, which
+        references both field updates by name.
+    -->
+    <fieldUpdates>
+        <fullName>UW_Stage_Approved</fullName>
+        <description>Final approval action of Underwriting__c.Underwriting_Approval. Sets Stage to Approved on this Underwriting record.</description>
+        <field>Stage__c</field>
+        <literalValue>Approved</literalValue>
+        <name>UW Stage Approved</name>
+        <notifyAssignee>false</notifyAssignee>
+        <operation>Literal</operation>
+        <protected>false</protected>
+        <reevaluateOnChange>false</reevaluateOnChange>
+    </fieldUpdates>
+    <fieldUpdates>
+        <fullName>UW_Status_Approved</fullName>
+        <description>Final approval action of Underwriting__c.Underwriting_Approval. Sets Status to Approved by Principals on this Underwriting record.</description>
+        <field>Status__c</field>
+        <literalValue>Approved by Principals</literalValue>
+        <name>UW Status Approved</name>
+        <notifyAssignee>false</notifyAssignee>
+        <operation>Literal</operation>
+        <protected>false</protected>
+        <reevaluateOnChange>false</reevaluateOnChange>
+    </fieldUpdates>
+</Workflow>

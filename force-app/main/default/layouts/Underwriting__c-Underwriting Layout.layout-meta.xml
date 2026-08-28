@@ -118,6 +118,36 @@
             <sortOrder>6</sortOrder>
         </platformActionListItems>
     </platformActionList>
+    <!-- APPROVAL HISTORY, ADDED 2026-08-28. RelatedProcessHistoryList IS the Approval History
+         list (verified live: usman-dpeg's describeLayout returns this list as name
+         "ProcessSteps", label "Approval History"; twenty three+ layouts in this repo already
+         carry the token, e.g. layouts/Opportunity-Opportunity Layout.layout-meta.xml and
+         layouts/Disposition__c-Disposition Layout.layout-meta.xml).
+         🔴 THIS BLOCK IS ONE HALF OF A TWO-FILE FIX AND IS USELESS ALONE. Underwriting__c
+         renders through flexipages/Underwriting_Record_Page.flexipage-meta.xml, which gains a
+         force:relatedListContainer in the same change; that component is what surfaces this
+         list in Lightning. Adding the list here without the component shows nothing, and
+         adding the component without this list shows nothing either -
+         force:relatedListSingleContainer (used elsewhere on this same page for
+         CombinedAttachments) returns INVALID_TYPE for approval history - deploys green, renders
+         nothing - so relatedListContainer is the only supported route, and it renders exactly
+         what this layout declares.
+         WHY IT IS NEEDED AT ALL: approvalProcesses/Underwriting__c.Underwriting_Approval sets
+         allowRecall=true and recordEditability=AdminOnly. Recall Approval Request exists ONLY
+         on this list. Without it, a submitted Underwriting record locks with no visible pending
+         approval and no recall route - see that approval process file's header for the
+         mandatory pre-deploy recall of the OLD Opportunity-side pending instance, which is the
+         exact trap this fixes going forward.
+         The five columns are the standard Approval History set, copied from
+         layouts/Opportunity-Opportunity Layout.layout-meta.xml rather than invented. -->
+    <relatedLists>
+        <fields>CreatedDate</fields>
+        <fields>StepStatus</fields>
+        <fields>OriginalActor</fields>
+        <fields>Actor</fields>
+        <fields>Comments</fields>
+        <relatedList>RelatedProcessHistoryList</relatedList>
+    </relatedLists>
     <showEmailCheckbox>false</showEmailCheckbox>
     <showHighlightsPanel>false</showHighlightsPanel>
     <showInteractionLogPanel>false</showInteractionLogPanel>

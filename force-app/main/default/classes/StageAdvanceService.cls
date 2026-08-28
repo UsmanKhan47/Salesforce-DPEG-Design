@@ -2,8 +2,8 @@
  * Service for the per-stage "advance" quick actions on the Opportunity.
  *
  * Owns the business logic and DML behind StageAdvanceController (P6 controller thinning):
- * the current-stage -> next-stage routing map, the stage write, and the Underwriting-step
- * hand-off into the principal LOI approval. Per .claude/rules/apex-layering-rule.md and
+ * the current-stage -> next-stage routing map and the stage write. Per
+ * .claude/rules/apex-layering-rule.md and
  * ARCHITECTURE.md §2 this routing + DML is Service work, not Controller work — the
  * controller now only marshals input, delegates here, and maps failures to an
  * AuraHandledException at the LWC boundary (ARCHITECTURE.md §5).
@@ -13,19 +13,34 @@
  * GATES PRESERVED (behaviour-preserving): Under Review -> Underwriting still hits the
  * signed-NDA validation rule, and the rule's message is surfaced to the submitter — the
  * DmlException is caught here and rethrown as a StageAdvanceException carrying
- * getDmlMessage(0), which the controller re-throws verbatim. Underwriting -> LOI still
- * goes through the approval process rather than a direct write.
+ * getDmlMessage(0), which the controller re-throws verbatim.
  *
- * APPROVAL HAND-OFF: the Underwriting branch delegates to
- * OpportunityApprovalService.submitForApproval — the approval-submission service extracted
- * from OpportunityApprovalController in the code-review W3 controller-thinning fix. This
- * replaces the former service->controller call (StageAdvanceService -> the *Controller),
- * restoring correct layering (ARCHITECTURE.md §2). The service raises a typed
- * OpportunityApprovalService.ApprovalException for user-actionable reasons; this service
- * re-wraps it as a StageAdvanceException so its user-safe message is surfaced verbatim
- * through the controller's existing boundary (behaviour-preserving — the user sees the same
- * message). An unexpected raw failure is left to propagate to the controller's fixed generic
- * (masked) catch, so no raw platform text is leaked (code-review W2).
+ * ⚠ RETRACTED 2026-08-28 — the clause that used to close the paragraph above,
+ * "Underwriting -> LOI still goes through the approval process rather than a direct write",
+ * IS NO LONGER TRUE and is preserved here verbatim so nobody re-derives it. Initiate LOI is
+ * now a PLAIN STAGE ADVANCE ('Underwriting' => 'LOI' in NEXT_STAGE). The gate did not
+ * disappear — it MOVED from "this service submits an approval" to "the platform refuses the
+ * stage write": Opportunity.Underwriting_Approved_Before_LOI now reads the child
+ * Underwriting record's own Stage__c, and setStage's existing DmlException ->
+ * StageAdvanceException conversion surfaces that rule's errorMessage verbatim in the user's
+ * toast. NO extra code here implements the gate; the catch below IS the whole gate.
+ *
+ * ⚠ RETRACTED 2026-08-28 — THE ENTIRE "APPROVAL HAND-OFF" BLOCK IS GONE. It read:
+ *   "APPROVAL HAND-OFF: the Underwriting branch delegates to
+ *    OpportunityApprovalService.submitForApproval — the approval-submission service extracted
+ *    from OpportunityApprovalController in the code-review W3 controller-thinning fix. This
+ *    replaces the former service->controller call (StageAdvanceService -> the *Controller),
+ *    restoring correct layering (ARCHITECTURE.md §2). The service raises a typed
+ *    OpportunityApprovalService.ApprovalException for user-actionable reasons; this service
+ *    re-wraps it as a StageAdvanceException so its user-safe message is surfaced verbatim
+ *    through the controller's existing boundary (behaviour-preserving — the user sees the same
+ *    message). An unexpected raw failure is left to propagate to the controller's fixed generic
+ *    (masked) catch, so no raw platform text is leaked (code-review W2)."
+ * Kept verbatim because the LAYERING argument it makes is still correct and still worth not
+ * re-litigating — it is only the Underwriting BRANCH that is gone, not the principle. This
+ * service no longer references OpportunityApprovalService at all; the principal approval now
+ * runs ON the Underwriting__c record and is submitted from that record's own Submit for
+ * Approval action (OpportunityApprovalService.resolveApprovalTargetId).
  *
  * EXPLICIT-TARGET ALLOW-LIST: `advanceTo` accepts only the branch/off-ramp stages listed in
  * ALLOWED_EXPLICIT_TARGETS. See that constant for the full rationale — in short, it used to write
@@ -39,7 +54,8 @@
  * one guarded at its public entry points.
  *
  * @see force-app/main/default/classes/StageAdvanceController.cls (thin caller + permission assert)
- * @see force-app/main/default/classes/OpportunityApprovalService.cls (approval submission)
+ * @see force-app/main/default/classes/OpportunityApprovalService.cls (approval submission — no
+ *      longer called from here; it now targets the Underwriting__c record itself)
  * @see force-app/main/default/classes/OpportunitySelector.cls (all SOQL)
  * @see force-app/main/default/classes/OpportunityActionPermissionService.cls (the gate)
  */
@@ -94,8 +110,21 @@ public with sharing class StageAdvanceService {
         'Dead/Pass'
     };
 
-    // Current stage -> the single primary next stage. Underwriting is absent because
-    // that step is an approval submission, not a stage write.
+    // Current stage -> the single primary next stage.
+    //
+    // ⚠ RETRACTED 2026-08-28. This comment used to open: "Underwriting is absent because that
+    // step is an approval submission, not a stage write." THAT IS NO LONGER TRUE — 'Underwriting'
+    // => 'LOI' is now an ordinary entry below, and Initiate LOI is an ordinary stage write. The
+    // principal approval moved onto the Underwriting__c record itself, so the Opportunity hop it
+    // used to intercept no longer exists. The gate that used to be "we submit an approval instead
+    // of writing" is now the validation rule Underwriting_Approved_Before_LOI, which reads
+    // Primary_Underwriting__r.Stage__c and blocks the write; setStage surfaces its message.
+    //
+    // 🔴 THE HOP IS GATED BY METADATA THIS CLASS DOES NOT OWN. Adding this entry is only HALF the
+    // change — without the rewritten Underwriting_Approved_Before_LOI validation rule (owned by the
+    // declarative stream), this map lets ANY deal at Underwriting walk into LOI unapproved. There
+    // is no Apex-side guard here on purpose (a second, code-side gate would produce two different
+    // refusal messages for one rule). Do not "harden" this map; fix the rule.
     //
     // ⚠ 'Under Contract (PSA)' is the DECODED runtime StageName (renamed from 'PSA',
     // Acquisition Observations phase 2). It contains spaces and parentheses but no '/',
@@ -126,36 +155,32 @@ public with sharing class StageAdvanceService {
         'Under Review' => 'Underwriting',
         'Development Review' => 'Underwriting',
         'Construction Review' => 'Underwriting',
+        'Underwriting' => 'LOI',
         'LOI' => 'Under Contract (PSA)',
         'Under Contract (PSA)' => 'Closed Won',
         'About to Close' => 'Closed Won'
     };
 
     /**
-     * Moves the deal to the single primary next stage for its current stage, or — from
-     * Underwriting — submits it into the principal LOI approval.
+     * Moves the deal to the single primary next stage for its current stage.
+     *
+     * ⚠ CHANGED 2026-08-28: this method no longer has an Underwriting special case. It used to
+     * read "…or — from Underwriting — submits it into the principal LOI approval", and the
+     * Underwriting branch caught OpportunityApprovalService.ApprovalException and re-wrapped it.
+     * Both are gone: Underwriting -> LOI is now an ordinary NEXT_STAGE write, refused by the
+     * Underwriting_Approved_Before_LOI validation rule when the child Underwriting record has not
+     * been approved. That refusal reaches the user through setStage's DmlException catch, i.e.
+     * through the SAME @throws clause the signed-NDA gate already used — no new failure mode.
      *
      * @param recordId the Opportunity to advance (required)
      * @return a user-facing confirmation message
-     * @throws StageAdvanceException when recordId is null, there is no next step, the stage
-     *         write is blocked (the block's message is surfaced), or the approval submission
-     *         hits a user-actionable rule violation (its message is surfaced)
+     * @throws StageAdvanceException when recordId is null, there is no next step, or the stage
+     *         write is blocked (the block's message is surfaced verbatim — this now includes the
+     *         underwriting-approved gate on the Underwriting -> LOI hop)
      * @throws System.QueryException when recordId matches no Opportunity
      */
     public static String advance(Id recordId) {
         Opportunity o = load(recordId);
-        if (o.StageName == 'Underwriting') {
-            // Gated by principal approval - submit into the approval process. The service
-            // raises a typed ApprovalException for user-actionable reasons; re-wrap it as a
-            // StageAdvanceException so its user-safe message is surfaced verbatim through the
-            // controller boundary (behaviour-preserving). An unexpected raw failure propagates
-            // to the controller's fixed generic (masked) catch.
-            try {
-                return OpportunityApprovalService.submitForApproval(recordId);
-            } catch (OpportunityApprovalService.ApprovalException e) {
-                throw new StageAdvanceException(e.getMessage());
-            }
-        }
         String target = NEXT_STAGE.get(o.StageName);
         if (target == null) {
             throw new StageAdvanceException(
@@ -211,8 +236,12 @@ public with sharing class StageAdvanceService {
             update o;
             return 'Deal moved to ' + target + '.';
         } catch (DmlException e) {
-            // e.g. the signed-NDA gate, or a stage not valid for the deal's record type.
-            // Surface the platform validation message to the submitter (behaviour-preserving).
+            // e.g. the signed-NDA gate, the underwriting-approved gate on the Underwriting -> LOI
+            // hop (added 2026-08-28 — see NEXT_STAGE), or a stage not valid for the deal's record
+            // type. Surface the platform validation message to the submitter
+            // (behaviour-preserving). 🔴 THIS CATCH IS THE ENTIRE INITIATE-LOI GATE. Swallowing it,
+            // or replacing getDmlMessage(0) with a fixed generic string, silently turns the gate
+            // into an unexplained refusal.
             throw new StageAdvanceException(e.getDmlMessage(0));
         }
     }

@@ -1,5 +1,20 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Workflow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        🔴 2026-08-28 - THE FOUR UW_* FIELD UPDATES BELOW (UW_Reopen_For_Revision,
+        UW_Set_Approved_Flag, UW_Set_Stage_Initiate_LOI, UW_Set_Status_Approved) ARE NOW INERT.
+        Opportunity.Underwriting_Approval, the only process that ever fired them, is
+        deactivated (see that approval process file's own comment) and replaced by
+        approvalProcesses/Underwriting__c.Underwriting_Approval, which runs on the Underwriting
+        child record and cannot reference these Opportunity-scoped field updates at all
+        (Underwriting__c.Opportunity__c is a Lookup, not a Master-Detail).
+
+        LEFT IN PLACE, NOT DELETED - the retired (but still-present) Opportunity approval
+        process file still references all four by name in its finalApprovalActions /
+        finalRejectionActions, and deleting them would break those references even though the
+        process itself can never run again. No live path can produce a new Opportunity
+        ProcessInstance for Underwriting_Approval going forward.
+    -->
     <fieldUpdates>
         <fullName>Set_LOI_Approved_Flag</fullName>
         <field>LOI_Approved__c</field>

@@ -23,7 +23,22 @@
          human must open an Underwriting record at 'In Progress' and confirm ONLY
          'Submit for Approval' shows — no stage button, no hint text — because that is the check
          that distinguishes this fix from the OR-defect it replaces. See
-         agent-output/design-requirements.md §7.2. -->
+         agent-output/design-requirements.md §7.2.
+
+         =====================================================================
+         🔴 2026-08-28 — force:relatedListContainer ADDED TO THE header REGION (identifier
+         relatedLists, alongside highlightsPanel). HALF OF A TWO-FILE APPROVAL-HISTORY FIX; see
+         layouts/Underwriting__c-Underwriting Layout.layout-meta.xml's own comment for the other
+         half and why NEITHER WORKS ALONE. Needed because
+         approvalProcesses/Underwriting__c.Underwriting_Approval (new) locks this record
+         (recordEditability = AdminOnly) while pending — without a visible Recall route a
+         mis-submitted record is stuck. Placed in header, next to highlightsPanel, so it is
+         visible without a tab click, matching the Disposition_Record_Page precedent.
+         🔴 BEFORE EDITING THIS FILE AGAIN: this page was deployed today (2026-08-28,
+         retrieve-diffed against the org via a target metadata dir retrieve before this edit —
+         zero structural drift found). Repeat that check, not a plain `sf project retrieve`,
+         which strips this whole comment block on every prior page it has touched.
+         ===================================================================== -->
     <flexiPageRegions>
         <itemInstances>
             <componentInstance>
@@ -113,6 +128,24 @@
                 </componentInstanceProperties>
                 <componentName>force:highlightsPanel</componentName>
                 <identifier>highlightsPanel</identifier>
+            </componentInstance>
+        </itemInstances>
+        <itemInstances>
+            <componentInstance>
+                <componentInstanceProperties>
+                    <name>relatedListComponentOverride</name>
+                    <value>NONE</value>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>rowsToDisplay</name>
+                    <value>10</value>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>showActionBar</name>
+                    <value>true</value>
+                </componentInstanceProperties>
+                <componentName>force:relatedListContainer</componentName>
+                <identifier>relatedLists</identifier>
             </componentInstance>
         </itemInstances>
         <name>header</name>

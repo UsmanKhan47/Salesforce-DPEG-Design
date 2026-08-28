@@ -1,6 +1,57 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ApprovalProcess xmlns="http://soap.sforce.com/2006/04/metadata">
-    <active>true</active>
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY. A comment placed ABOVE
+        <ApprovalProcess> breaks `sf` deploy at source conversion with a misleading
+        "unable to find matching parent xml file" error.
+
+        🔴 RETIRED 2026-08-28. <active> set to false. DO NOT REACTIVATE.
+        Replaced by approvalProcesses/Underwriting__c.Underwriting_Approval - principal
+        sign-off now runs on the deal's Underwriting__c child record, not on the Opportunity
+        itself. User request: "We need the approval on Underwriting, not on Opportunity."
+        Full plan: agent-output/design-requirements.md.
+
+        🔴 "RETIRE" MEANS DEACTIVATE, NOT DELETE. A destructiveChanges delete of an
+        ApprovalProcess requires no ProcessInstance history to exist; this process HAS history,
+        so a delete would fail. The file is kept, inactive, forever.
+
+        🔴🔴 PRE-DEPLOY MANUAL STEP - DO NOT SKIP, NOT ACTIONED BY THIS AGENT. Exactly ONE
+        pending ProcessInstance exists on THIS process right now, verified live 2026-08-28:
+            ProcessInstance.Id = 04giw0000003C9VAAU
+            ProcessInstance.TargetObjectId = 006iw000000c3OHAAY  (an Opportunity)
+            ProcessInstance.Status = 'Pending'
+        Deactivating an ApprovalProcess with a live pending ProcessInstance MAY BE REFUSED by
+        the platform, and a stranded instance left behind by a forced deactivation cannot be
+        actioned or recalled normally. A HUMAN (the record owner, or a user with Modify All
+        Data - allowedSubmitters is 'owner') MUST recall it in Setup BEFORE this file deploys:
+        open the Opportunity (006iw000000c3OHAAY) -> Approval History related list -> Recall
+        Approval Request. Verify both of these read 0 afterward:
+            SELECT COUNT() FROM ProcessInstance
+             WHERE ProcessDefinition.DeveloperName='Underwriting_Approval' AND Status='Pending'
+            SELECT COUNT() FROM ProcessInstanceWorkitem
+             WHERE ProcessInstance.ProcessDefinition.DeveloperName='Underwriting_Approval'
+        The recalled deal must then be RE-SUBMITTED from its Underwriting record once the new
+        approval process (Underwriting__c.Underwriting_Approval) is active.
+
+        CONSEQUENTLY, THE FOUR UW_* FIELD UPDATES IN workflows/Opportunity.workflow-meta.xml
+        (UW_Set_Approved_Flag, UW_Set_Stage_Initiate_LOI, UW_Set_Status_Approved,
+        UW_Reopen_For_Revision) ARE LEFT IN PLACE, UNCHANGED. This (now-inactive) process still
+        references them by name in finalApprovalActions / finalRejectionActions below, and
+        deleting them would break those references. They are permanently INERT after this
+        deactivation - no live path can ever again produce an Opportunity ProcessInstance for
+        this DeveloperName. See that workflow file's own comment for the same note.
+
+        ALSO NOW INERT: flows/Opportunity_UW_Approved_Notify's Stamp_Approval_Audit action call
+        (ApprovalAuditService(gate='Underwriting')) - it reads Opportunity ProcessInstanceStep
+        history that will never again be created. Left STRUCTURALLY UNTOUCHED deliberately:
+        that flow also carries the market-data freeze (Snapshot_Market_Data), which fires on
+        Opportunity.Underwriting_Status__c transitioning to 'Approved by Principals' and is
+        still very much alive - the new mirror write
+        (UnderwritingApprovalStampService, called from flows/Underwriting_Approval_Sync) writes
+        that same field, in ONE Opportunity DML, precisely so this transition still fires. See
+        that flow's own header for the full chain.
+    -->
+    <active>false</active>
     <allowRecall>true</allowRecall>
     <allowedSubmitters>
         <type>owner</type>

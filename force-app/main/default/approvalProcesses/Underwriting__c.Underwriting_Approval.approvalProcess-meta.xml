@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ApprovalProcess xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY. A comment placed ABOVE
+        <ApprovalProcess> breaks `sf` deploy at source conversion with a misleading
+        "unable to find matching parent xml file" error.
+
+        NEW 2026-08-28. Moves principal sign-off OFF Opportunity.Underwriting_Approval (now
+        deactivated, see that file's own comment) and ONTO the Underwriting__c child record
+        itself. User request: "We need the approval on Underwriting, not on Opportunity... if
+        the underwriting is not approved, [Initiate LOI] will not move on to LOI." Full plan:
+        agent-output/design-requirements.md.
+
+        USER DECISIONS THIS FILE IS BUILT TO (do not re-open):
+          D1 Approvers UNCHANGED - nikhil.dhanani@usmandpeg.uat + aftab.ali.dpeg.usman@
+             avanzasolutions.com, whenMultipleApprovers = FirstResponse, allowDelegate false,
+             allowRecall true.
+          D2 REJECT HANDLING IS DROPPED. finalRejectionActions is intentionally ABSENT below -
+             not an oversight. Stage__c never changes on rejection (entry criterion is
+             Stage__c = 'In Progress' and nothing moves it during the pending window, so a
+             Stage__c-keyed automation could not see a rejection even if one were added). On
+             rejection the record simply stays at Stage__c = 'In Progress' / Status__c =
+             'In Progress' and ONLY the approval history records the decision.
+             🔴 ACCEPTED, DOCUMENTED REGRESSION: Opportunity.Underwriting_Complete__c is no
+             longer cleared on reject the way today's (now-inert) UW_Reopen_For_Revision field
+             update did. Nothing on this object replaces that behaviour. If the analyst needs
+             to rework a rejected underwriting, they edit the record directly (it unlocks on
+             rejection under recordEditability = AdminOnly) - there is no automated re-open.
+          D3 recordEditability = AdminOnly - the Underwriting record LOCKS while pending.
+          D4 Opportunity.UW_Approved__c / Underwriting_Status__c / Underwriting_Complete__c
+             mirror fields are KEPT and must keep working - done by
+             flows/Underwriting_Approval_Sync.flow-meta.xml calling
+             UnderwritingApprovalStampService in ONE parent DML (see that flow's own header).
+
+        🔴 finalApprovalActions WRITE ONLY THIS RECORD'S OWN FIELDS (Stage__c, Status__c). An
+        approval process can field-update ONLY its own record or a MASTER-DETAIL parent, and
+        Underwriting__c.Opportunity__c is a LOOKUP (fields/Opportunity__c.field-meta.xml,
+        deleteConstraint SetNull) - so this process structurally CANNOT touch the Opportunity.
+        The parent mirror write is therefore a separate, decoupled step: the after-save flow
+        named above, entry-scoped on Stage__c changing TO 'Approved', calling
+        UnderwritingApprovalStampService(underwritingId). That flow is a SEPARATE deploy unit
+        from this one; nothing in this file depends on it existing for THIS record's own
+        Stage__c / Status__c to update correctly.
+
+        approvalPageFields DROP Asking_Price__c and Underwriting_Notes__c (Opportunity fields;
+        Underwriting__c has no counterpart for either - confirmed against
+        objects/Underwriting__c/fields/, 18 fields, no notes field, no asking price). Approvers
+        who need deal-level context (asking price, underwriting notes) open the parent deal via
+        the Opportunity__c lookup shown on the approval page. User-decision GATE B in the design
+        doc; not invented here.
+
+        entryCriteria is Stage__c = 'In Progress' ONLY - matching
+        Underwriting__c.Submit_for_Approval's own visibility rule on
+        flexipages/Underwriting_Record_Page.flexipage-meta.xml (pure "1 AND 2": custom
+        permission AND Stage__c = 'In Progress'), so the quick action and the approval's entry
+        criterion agree by construction.
+
+        recordEditability = AdminOnly LOCKS THIS UNDERWRITING RECORD, NOT THE PARENT DEAL. The
+        Opportunity is correctly editable throughout - Amount / Asking_Price__c etc. are NOT
+        locked by this approval (verify: N-5 in the design doc's post-deploy checklist).
+
+        🔴 RECALL ROUTE IS A SEPARATE, MANDATORY DEPLOY. With recordEditability = AdminOnly, a
+        submitted record with no Recall route is a trap. See
+        layouts/Underwriting__c-Underwriting Layout.layout-meta.xml (RelatedProcessHistoryList)
+        AND flexipages/Underwriting_Record_Page.flexipage-meta.xml (force:relatedListContainer)
+        - TWO FILES, NEITHER WORKS ALONE (measured on Disposition_Record_Page /
+        Disposition__c-Disposition Layout: force:relatedListSingleContainer returns INVALID_TYPE
+        for approval history; only force:relatedListContainer renders it). Both ship in the same
+        change as this file.
+
+        DEPLOY ORDER - LOAD-BEARING. workflows/Underwriting__c.workflow-meta.xml (the two field
+        updates referenced below) must land BEFORE this file, same requirement as
+        Disposition_Offer__c.Offer_Selection_Approval / workflows/Disposition_Offer__c.
+        Sequencing against the Opportunity-side retirement (deactivate old approval -> rewrite
+        Underwriting_Approved_Before_LOI -> activate this process) is a devops/deployment-order
+        decision, not encoded in this file's <active> value; see
+        agent-output/design-requirements.md section 3 for the reasoning if deployed in separate
+        passes rather than one atomic deploy.
+
+        🔴 ONE PENDING ProcessInstance EXISTS TODAY ON THE OLD Opportunity.Underwriting_Approval
+        (verified live 2026-08-28: ProcessInstance Id 04giw0000003C9VAAU, TargetObjectId
+        006iw000000c3OHAAY, Status = Pending). It must be RECALLED IN SETUP before this change
+        deploys - see approvalProcesses/Opportunity.Underwriting_Approval.approvalProcess-
+        meta.xml for the full flag. Not actioned by this agent.
+
+        NAMING - agent-output/design-requirements.md section 10 left these open; chosen here:
+        process label "Underwriting Approval" (fullName Underwriting__c.Underwriting_Approval -
+        distinct from the retired Opportunity.Underwriting_Approval, different object, no
+        collision), step label "Principal approves underwriting" (not the shared "Principal
+        Review" every other approval used before the 2026-08-26 disposition rename - approvers
+        must be able to tell which request they are looking at), own-record field updates
+        UW_Stage_Approved / UW_Status_Approved.
+    -->
+    <active>true</active>
+    <allowRecall>true</allowRecall>
+    <allowedSubmitters>
+        <type>owner</type>
+    </allowedSubmitters>
+    <approvalPageFields>
+        <field>Name</field>
+        <field>Owner</field>
+        <field>Opportunity__c</field>
+        <field>My_Price__c</field>
+        <field>My_Cap_Rate__c</field>
+        <field>Market_Cap_Rate__c</field>
+        <field>Underwritten_NOI__c</field>
+        <field>Target_Return__c</field>
+        <field>Principal_Price_Decision__c</field>
+        <field>Stage__c</field>
+    </approvalPageFields>
+    <approvalStep>
+        <allowDelegate>false</allowDelegate>
+        <assignedApprover>
+            <approver>
+                <name>nikhil.dhanani@usmandpeg.uat</name>
+                <type>user</type>
+            </approver>
+            <approver>
+                <name>aftab.ali.dpeg.usman@avanzasolutions.com</name>
+                <type>user</type>
+            </approver>
+            <whenMultipleApprovers>FirstResponse</whenMultipleApprovers>
+        </assignedApprover>
+        <label>Principal approves underwriting</label>
+        <name>Principal_Review_Step</name>
+    </approvalStep>
+    <description>Principal decision to approve this deal underwriting. Entry: Stage equals In Progress. Approval sets Stage to Approved and Status to Approved by Principals; a flow mirrors approval onto the Opportunity. Rejection returns to In Progress for rework.</description>
+    <enableMobileDeviceAccess>false</enableMobileDeviceAccess>
+    <entryCriteria>
+        <criteriaItems>
+            <field>Underwriting__c.Stage__c</field>
+            <operation>equals</operation>
+            <value>In Progress</value>
+        </criteriaItems>
+    </entryCriteria>
+    <finalApprovalActions>
+        <action>
+            <name>UW_Stage_Approved</name>
+            <type>FieldUpdate</type>
+        </action>
+        <action>
+            <name>UW_Status_Approved</name>
+            <type>FieldUpdate</type>
+        </action>
+    </finalApprovalActions>
+    <finalApprovalRecordLock>false</finalApprovalRecordLock>
+    <finalRejectionRecordLock>false</finalRejectionRecordLock>
+    <label>Underwriting Approval</label>
+    <processOrder>1</processOrder>
+    <recordEditability>AdminOnly</recordEditability>
+    <showApprovalHistory>true</showApprovalHistory>
+</ApprovalProcess>

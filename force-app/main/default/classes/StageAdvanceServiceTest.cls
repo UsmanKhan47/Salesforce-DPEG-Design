@@ -1,10 +1,17 @@
 /**
  * @description Tests StageAdvanceService — the Opportunity stage-routing + stage-write
- * workflow (and the Underwriting -> approval hand-off) extracted from StageAdvanceController
- * in P6 controller thinning.
+ * workflow extracted from StageAdvanceController in P6 controller thinning.
  *
- * Covers every routed transition, the explicit-target advanceTo branch, the approval
- * hand-off from Underwriting, and every StageAdvanceException branch: no record, no target,
+ * ⚠ CHANGED 2026-08-28: this header used to advertise "(and the Underwriting -> approval
+ * hand-off)" and "the approval hand-off from Underwriting". THAT HAND-OFF NO LONGER EXISTS —
+ * the principal approval moved onto the Underwriting__c record and Initiate LOI became a plain
+ * NEXT_STAGE write, gated by the Underwriting_Approved_Before_LOI validation rule. The two tests
+ * that covered the hand-off were replaced (not repaired) by
+ * advanceFromUnderwritingWritesTheLoiStage and
+ * advanceFromUnderwritingIsRefusedWhenUnderwritingNotApproved.
+ *
+ * Covers every routed transition, the explicit-target advanceTo branch, the underwriting-approved
+ * gate on the Underwriting -> LOI hop, and every StageAdvanceException branch: no record, no target,
  * no next step, and the signed-NDA validation gate (a DmlException converted to a
  * StageAdvanceException carrying the surfaced platform message). The service does a single
  * update per call with no Savepoint and no collection DML, so there is no rollback catch to
@@ -102,42 +109,78 @@ private class StageAdvanceServiceTest {
             [SELECT StageName FROM Opportunity WHERE Id = :psaDeal.Id].StageName, 'PSA -> Closed Won');
     }
 
+    /**
+     * ⚠ REPLACES `advanceFromUnderwritingSubmitsForApproval` (2026-08-28), which asserted that
+     * Initiate LOI created a ProcessInstance on the deal. That is no longer what the button does:
+     * the principal approval moved onto the Underwriting__c record, and Initiate LOI became an
+     * ordinary NEXT_STAGE write. The old assertion is not repaired, it is replaced — a
+     * ProcessInstance count of 1 would now be a DEFECT, so it is asserted at 0.
+     */
     @isTest
-    static void advanceFromUnderwritingSubmitsForApproval() {
+    static void advanceFromUnderwritingWritesTheLoiStage() {
         Opportunity o = newOpp('Underwriting');
-        o.Underwriting_Complete__c = true;
-        update o;
+        linkSignedNda(o);                          // isolate: LOI entry is ALSO NDA-gated
+        update o;                                  // ⚠ linkSignedNda only sets the field in memory
+        TestDataFactory.approveUnderwriting(o);    // satisfies the underwriting-approved gate
 
         Test.startTest();
         StageAdvanceService.advance(o.Id);
         Test.stopTest();
 
-        Assert.areEqual(1,
+        Assert.areEqual('LOI', [SELECT StageName FROM Opportunity WHERE Id = :o.Id].StageName,
+            'Initiate LOI is now a plain stage write: Underwriting -> LOI');
+        Assert.areEqual(0,
             [SELECT COUNT() FROM ProcessInstance WHERE TargetObjectId = :o.Id],
-            'Initiate LOI submits the deal into the principal approval process');
+            'Initiate LOI must NOT submit the deal into any approval process any more');
     }
 
+    /**
+     * 🔴 THE GATE ITSELF — requirement (i). An unapproved underwriting must refuse Initiate LOI,
+     * and the VALIDATION RULE'S OWN MESSAGE must reach the user verbatim.
+     *
+     * ⚠ REPLACES `advanceFromUnderwritingWrapsApprovalRuleViolation`, which exercised the
+     * ApprovalException -> StageAdvanceException re-wrap. That branch was deleted with the
+     * Underwriting hand-off; the surviving wrap is DmlException -> StageAdvanceException in
+     * setStage, and it is now the entire Initiate-LOI gate.
+     *
+     * ⚠ THE MESSAGE ASSERTION IS ON A SUBSTRING COMMON TO BOTH VERSIONS OF THE RULE, ON PURPOSE.
+     * Opportunity.Underwriting_Approved_Before_LOI is owned by the parallel declarative stream and
+     * is being rewritten from `NOT(UW_Approved__c)` to a read of Primary_Underwriting__r.Stage__c:
+     *     current : "This deal cannot enter LOI until the underwriting has been approved by the
+     *                principals. Submit it for approval from the Underwriting stage."
+     *     incoming: "This deal cannot enter LOI until its Underwriting record has been approved by
+     *                the principals. Open the deal's Underwriting record and use Submit for
+     *                Approval."
+     * Pinning either full string would red this test on the other side of that deploy for no good
+     * reason. 'cannot enter LOI until' is invariant across both and still falsifies everything
+     * that matters here: that the platform refused the write, and that setStage surfaced the
+     * RULE'S text rather than a generic "could not be advanced". Once the rewritten rule is
+     * deployed and verified, tighten this to the full incoming string.
+     *
+     * The fixture fails BOTH versions of the rule simultaneously (UW_Approved__c is false AND the
+     * auto-created underwriting is at 'Requested', neither 'Approved' nor 'Completed'), so the
+     * test is sensitive whichever one is live.
+     */
     @isTest
-    static void advanceFromUnderwritingWrapsApprovalRuleViolation() {
-        // The approval hand-off now calls OpportunityApprovalService, which raises a typed
-        // ApprovalException for a user-actionable reason (here: an already-pending deal). The
-        // service re-wraps it as a StageAdvanceException so the controller surfaces the same
-        // user-safe message (behaviour-preserving). Deterministic: the first submit creates the
-        // pending ProcessInstance the second submit detects in the same transaction.
+    static void advanceFromUnderwritingIsRefusedWhenUnderwritingNotApproved() {
         Opportunity o = newOpp('Underwriting');
-        o.Underwriting_Complete__c = true;
+        linkSignedNda(o); // isolate: leave the underwriting gate as the ONLY unmet gate
         update o;
-        StageAdvanceService.advance(o.Id); // first submit -> now pending
 
         Test.startTest();
         try {
-            StageAdvanceService.advance(o.Id); // second submit -> already pending
-            Assert.fail('A second submit while pending should throw');
+            StageAdvanceService.advance(o.Id);
+            Assert.fail('Initiate LOI must be refused while the underwriting is unapproved');
         } catch (StageAdvanceService.StageAdvanceException e) {
-            Assert.isNotNull(e.getMessage(),
-                'the approval rule violation is surfaced as a StageAdvanceException');
+            Assert.isTrue(e.getMessage().contains('cannot enter LOI until'),
+                'The validation rule\'s own message must be surfaced verbatim, got: '
+                    + e.getMessage());
         }
         Test.stopTest();
+
+        Assert.areEqual('Underwriting',
+            [SELECT StageName FROM Opportunity WHERE Id = :o.Id].StageName,
+            'A refused Initiate LOI must leave the deal where it was');
     }
 
     @isTest

@@ -1,10 +1,14 @@
 /**
  * Tests StageAdvanceController (thinned in P6). The happy paths prove the delegated
  * behaviour is preserved end-to-end: each per-stage "advance" quick action moves the deal
- * to the next stage, the signed-NDA gate blocks Underwriting entry, and the
- * Underwriting -> LOI step routes through the principal approval process.
+ * to the next stage, and the signed-NDA gate blocks Underwriting entry.
  *
- * P6 controller thinning: the stage-routing map, stage write, and approval hand-off now
+ * ⚠ RETRACTED 2026-08-28: this header used to end "…and the Underwriting -> LOI step routes
+ * through the principal approval process." It does not any more — that step is now a plain stage
+ * write, refused by the Underwriting_Approved_Before_LOI validation rule when the deal's
+ * Underwriting record has not been approved. See initiateLoiWritesTheLoiStage.
+ *
+ * P6 controller thinning: the stage-routing map and stage write now
  * live in StageAdvanceService, and each @AuraEnabled method wraps its work in a try/catch
  * that maps failures to an AuraHandledException at the LWC boundary (ARCHITECTURE.md §5).
  * The negative tests below therefore now expect an AuraHandledException.
@@ -63,19 +67,29 @@ private class StageAdvanceControllerTest {
             'A signed NDA lets the deal advance to Underwriting');
     }
 
+    /**
+     * ⚠ REPLACES `initiateLoiSubmitsForApproval` (2026-08-28). Initiate LOI no longer submits an
+     * approval — the principal approval moved onto the Underwriting__c record and this hop became
+     * an ordinary stage write. The old assertion (ProcessInstance count == 1) is inverted to 0,
+     * because a ProcessInstance here would now be the defect.
+     */
     @isTest
-    static void initiateLoiSubmitsForApproval() {
+    static void initiateLoiWritesTheLoiStage() {
         Opportunity o = newOpp('Underwriting');
-        o.Underwriting_Complete__c = true;
+        linkSignedNda(o);                       // isolate: LOI entry is ALSO NDA-gated
         update o;
+        TestDataFactory.approveUnderwriting(o); // satisfies the underwriting-approved gate
 
         Test.startTest();
         StageAdvanceController.advance(o.Id);
         Test.stopTest();
 
-        System.assertEquals(1,
+        System.assertEquals('LOI',
+            [SELECT StageName FROM Opportunity WHERE Id = :o.Id].StageName,
+            'Initiate LOI writes the LOI stage through the controller');
+        System.assertEquals(0,
             [SELECT COUNT() FROM ProcessInstance WHERE TargetObjectId = :o.Id],
-            'Initiate LOI submits the deal into the principal approval process');
+            'Initiate LOI must no longer submit the deal into any approval process');
     }
 
     @isTest
@@ -290,25 +304,37 @@ private class StageAdvanceControllerTest {
         );
     }
 
-    // Proves an already-pending approval surfaces its message through advance: the second
-    // submit makes OpportunityApprovalService throw a typed ApprovalException, which
-    // StageAdvanceService re-wraps as a StageAdvanceException, which advance maps to an
-    // AuraHandledException. Deterministic: the first submit creates the pending ProcessInstance
-    // the second submit detects in the same transaction.
+    /**
+     * ⚠ REWRITTEN 2026-08-28 — same purpose, different (and now the only possible) trigger.
+     *
+     * It used to read: "Proves an already-pending approval surfaces its message through advance:
+     * the second submit makes OpportunityApprovalService throw a typed ApprovalException, which
+     * StageAdvanceService re-wraps as a StageAdvanceException, which advance maps to an
+     * AuraHandledException." That chain is gone — advance() no longer calls
+     * OpportunityApprovalService at all, so an already-pending approval is unreachable from here.
+     *
+     * The PROPERTY under test is unchanged and still worth pinning: a user-actionable refusal
+     * inside the service must reach the LWC as an AuraHandledException, not as a raw platform
+     * error and not as a silent success. The refusal now comes from the underwriting-approved
+     * validation rule via setStage's DmlException -> StageAdvanceException conversion.
+     */
     @isTest
-    static void advanceRethrowsAlreadyPendingApproval() {
+    static void advanceRethrowsBlockedStageWriteAsAuraHandled() {
         Opportunity o = newOpp('Underwriting');
-        o.Underwriting_Complete__c = true;
+        linkSignedNda(o); // isolate: leave the underwriting gate as the only unmet gate
         update o;
 
         Test.startTest();
-        StageAdvanceController.advance(o.Id); // first submit -> now pending
         try {
-            StageAdvanceController.advance(o.Id); // second submit -> already pending -> throws
-            Assert.fail('A second submit while pending should throw an AuraHandledException');
+            StageAdvanceController.advance(o.Id); // underwriting unapproved -> refused
+            Assert.fail('A blocked stage write should throw an AuraHandledException');
         } catch (AuraHandledException e) {
-            Assert.isNotNull(e, 'the already-pending approval message propagates as AuraHandledException');
+            Assert.isNotNull(e, 'the blocked-stage message propagates as AuraHandledException');
         }
         Test.stopTest();
+
+        Assert.areEqual('Underwriting',
+            [SELECT StageName FROM Opportunity WHERE Id = :o.Id].StageName,
+            'The refused advance leaves the deal where it was');
     }
 }

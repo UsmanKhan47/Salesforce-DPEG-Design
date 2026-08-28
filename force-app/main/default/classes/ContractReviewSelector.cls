@@ -5,7 +5,7 @@
  * P4 Module A1 (Acquisitions — Deal Core). Consumers:
  *   - OpportunityDocStatusController — Deal Summary card's Contract Review row
  *     (latest-related only; the card has no primary-contract-review lookup).
- *   - OpportunityApprovalController.resolveDealId — resolves the parent deal Id
+ *   - OpportunityApprovalService.resolveApprovalTargetId — resolves the parent deal Id
  *     from a clicked Contract Review record (fetch-for-use, throws on miss).
  *   - OpportunityReviewService — selectByOpportunityIds, the PSA-stage idempotency read.
  *   - RecordStageAdvanceService — selectStageRequiredById, the stage-advance quick action.
@@ -43,7 +43,7 @@
  * `for (Contract_Review__c cr : ...)` loop is preserved byte-for-byte — the
  * original inline query was consumed by a for-loop, not a single assignment.
  * selectOpportunityIdRequiredById uses a single-row assignment that throws native
- * System.QueryException on a miss, matching the original resolveDealId query.
+ * System.QueryException on a miss, matching the original resolveDealId (now resolveApprovalTargetId) query.
  *
  * @see agent-output/p4-selector-design.md (§3 #11, §5)
  */
@@ -72,7 +72,7 @@ public with sharing class ContractReviewSelector {
 
     /**
      * Loads a Contract Review for parent-deal resolution — backs
-     * OpportunityApprovalController.resolveDealId.
+     * OpportunityApprovalService.resolveApprovalTargetId.
      *
      * FETCH-FOR-USE: the caller dereferenced `.Opportunity__c` off a single-row
      * assignment, so a miss is an error. Preserved via a single-row SOQL

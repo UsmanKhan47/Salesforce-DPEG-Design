@@ -64,7 +64,7 @@ private class ContractReviewSelectorTest {
         Contract_Review__c result = ContractReviewSelector.selectOpportunityIdRequiredById(cr.Id);
         Test.stopTest();
 
-        Assert.areEqual(opp.Id, result.Opportunity__c, 'Should expose the parent Opportunity Id for resolveDealId');
+        Assert.areEqual(opp.Id, result.Opportunity__c, 'Should expose the parent Opportunity Id for resolveApprovalTargetId');
     }
 
     @isTest

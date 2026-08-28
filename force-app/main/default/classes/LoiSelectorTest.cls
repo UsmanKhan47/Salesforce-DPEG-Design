@@ -94,7 +94,7 @@ private class LoiSelectorTest {
         LOI__c result = LoiSelector.selectOpportunityIdRequiredById(loi.Id);
         Test.stopTest();
 
-        Assert.areEqual(opp.Id, result.Opportunity__c, 'Should expose the parent Opportunity Id for resolveDealId');
+        Assert.areEqual(opp.Id, result.Opportunity__c, 'Should expose the parent Opportunity Id for resolveApprovalTargetId');
     }
 
     @isTest

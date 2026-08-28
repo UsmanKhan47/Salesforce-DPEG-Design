@@ -69,22 +69,39 @@ private class OpportunityApprovalControllerTest {
         System.assert(threw, 'Submitting a deal that meets no entry criteria should throw');
     }
 
+    /**
+     * ⚠ INVERTED 2026-08-28, mirroring
+     * OpportunityApprovalServiceTest.submitsFromUnderwritingRecordTargetsTheUnderwritingItself.
+     * It asserted that submitting from an Underwriting record put the PARENT DEAL into approval;
+     * that is the behaviour this change removes, so the assertion is reversed rather than fixed.
+     *
+     * Controller-level angle: a refusal must arrive as an AuraHandledException (the LWC boundary
+     * contract), never as a raw platform error, and the parent must be untouched either way.
+     */
     @isTest
-    static void submitsFromUnderwritingRecord() {
+    static void submitsFromUnderwritingRecordNeverSubmitsTheParent() {
         Opportunity o = TestDataFactory.createOpportunity(null, false);
         o.StageName = 'Underwriting';
         o.Underwriting_Complete__c = true;
         insert o; // stage entry auto-creates the Underwriting record
         Underwriting__c uw = [SELECT Id FROM Underwriting__c WHERE Opportunity__c = :o.Id];
 
+        // The auto-created underwriting is at Stage__c = 'Requested', so the submission is refused
+        // by the "submit from In Progress" guard. Once the declarative stream deploys
+        // Underwriting__c.Underwriting_Approval and the record is walked to 'In Progress', this
+        // becomes a success — the ProcessInstance assertion below holds in BOTH cases.
         Test.startTest();
-        String msg = OpportunityApprovalController.submitForApproval(uw.Id);
+        try {
+            OpportunityApprovalController.submitForApproval(uw.Id);
+        } catch (AuraHandledException e) {
+            System.assertNotEquals(null, e.getMessage(),
+                'A refusal must reach the LWC as an AuraHandledException with a message');
+        }
         Test.stopTest();
 
-        System.assertNotEquals(null, msg, 'A success message should be returned');
-        System.assertEquals(1,
-            [SELECT COUNT() FROM ProcessInstance WHERE TargetObjectId = :o.Id AND Status = 'Pending'],
-            'Submitting from the Underwriting record routes the PARENT deal into approval');
+        System.assertEquals(0,
+            [SELECT COUNT() FROM ProcessInstance WHERE TargetObjectId = :o.Id],
+            'Submitting from the Underwriting record must NEVER submit the parent deal');
     }
 
     @isTest
@@ -147,7 +164,7 @@ private class OpportunityApprovalControllerTest {
         }
         Test.stopTest();
 
-        // Proves resolveDealId routes a Contract Review submission to its PARENT deal:
+        // Proves resolveApprovalTargetId routes a Contract Review submission to its PARENT deal:
         // PSA meets neither approval process's entry criteria, so the no-applicable-process
         // branch throws (not the "not linked to a deal" error), proving the parent
         // Opportunity was resolved correctly before Approval.process ever ran.
