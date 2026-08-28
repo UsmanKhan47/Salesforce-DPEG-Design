@@ -341,6 +341,167 @@ private class TaskRollupServiceTest {
         System.assertEquals(251, totalTasks, 'All 251 Tasks are present and were re-touched in a single bulk DML');
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // 🔴 CRUD regression pin (2026-08-28) — THE FAILURE THE TWO TESTS ABOVE COULD NOT SEE.
+    //
+    // The Day-0 checklist was completely broken in usman-dpeg: ZERO Tasks org-wide.
+    // AsyncApexJob 707iw000003HEdIAAW (2026-08-28T09:56:23Z, Failed):
+    //   CANNOT_INSERT_UPDATE_ACTIVATE_ENTITY, TaskRollupTrigger: execution of AfterInsert
+    //   caused by: System.TypeException: DML operation UPDATE not allowed on Transaction__c
+    //
+    // ⚠ WHY THE EXISTING COVERAGE WAS BLIND TO IT — this is the whole point of the tests below.
+    // Both `noFlsUser` tests above assign `DPEG_Transaction_Edit`, which is one of only TWO
+    // grants of Edit on Transaction__c in this org:
+    //     SELECT Parent.Name, PermissionsEdit FROM ObjectPermissions
+    //     WHERE SobjectType = 'Transaction__c'
+    //       -> DPEG_Transaction_Edit = true, DPEG_Transaction_Team = true,
+    //          DPEG_Transaction_View / DPEG_Junior_Analyst_PSG / DPEG_Principal_PSG / sfdc_slack
+    //          = false, and NO profile except System Administrator.
+    // Those tests therefore hand the persona the exact permission the production principal does
+    // NOT have, and the bare `update updates;` passed under them for the same reason it passed
+    // under an admin. A test that grants away the condition under test proves nothing — that is
+    // precisely how this shipped, and it is the same trap the WITH SYSTEM_MODE section above
+    // documents for FLS. Those two are kept as they are (they pin the SELECTOR's FLS behaviour,
+    // a different property); these pin the DML's CRUD behaviour and must never be given a
+    // permission set that grants Transaction__c Edit.
+    //
+    // THE PERSONA IS MODELLED ON THE REAL FAILING USER, not invented. The failed job's CreatedBy
+    // holds Acquisition_Deal_Driver + DPEG_Junior_Analyst_PSG + DPEG_Base_Access (among others),
+    // none of which grant Transaction__c Edit — but DPEG_Junior_Analyst_PSG DOES grant Read. So
+    // the shape to reproduce is READ-BUT-NOT-EDIT, not no-access, and `DPEG_Transaction_View`
+    // (Read = true, Edit = false, ViewAllRecords = true — measured 2026-08-28) reproduces it
+    // exactly while granting none of the withheld Task FLS: it is absent from the FieldPermissions
+    // list for Task.Transaction_Deal__c, so it does not weaken the sibling pins' discrimination.
+    //
+    // SHARING IS DELIBERATELY SATISFIED HERE, so that a red result can only mean CRUD. The
+    // persona OWNS the Transaction — production-faithful, not a convenience: ContractExecutionService
+    // inserts Transaction__c without setting OwnerId, so the owner defaults to the deal driver who
+    // triggered the chain (verified in-org: TXN-0267's owner is the same user whose fan-out job
+    // failed). The fix under test is SYSTEM_MODE, which lifts CRUD/FLS and NEVER sharing;
+    // entangling a sharing denial here would make a failure ambiguous between the two.
+    //
+    // Deliberately no try/catch: on the old code the trigger's TypeException surfaces at the
+    // persona's own DML as a DmlException and fails the method outright. That failure IS the pin.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * 🔴 REGRESSION PIN — the rollup must complete for a principal who can READ but not EDIT
+     * Transaction__c. Restore `update updates;` in TaskRollupService.recalc and this goes red
+     * with `System.TypeException: DML operation UPDATE not allowed on Transaction__c`, the exact
+     * production error that left the org with zero checklist Tasks.
+     */
+    @isTest
+    static void testRecalc_userWithoutTransactionEdit_rollupSucceeds_pinsTheZeroTasksIncident() {
+        User noEditUser = buildTaskCapableNoFlsUser('rollupCrudA');
+        System.runAs(new User(Id = UserInfo.getUserId())) {
+            insert noEditUser;
+            // READ-ONLY on Transaction__c. Never DPEG_Transaction_Edit / DPEG_Transaction_Team.
+            assignPermissionSets(noEditUser.Id, new Set<String>{ 'DPEG_Transaction_View' });
+        }
+
+        // Fixture built in the default full-access context (writing Transaction_Deal__c needs the
+        // edit FLS the persona must not have), but OWNED BY the persona — Activity is Private
+        // here, so an admin-owned Task would be invisible to the recompute and it would count
+        // zero; and owning the Transaction keeps sharing out of the result (see the note above).
+        Transaction__c t = newSuppressedTransaction();
+        t.OwnerId = noEditUser.Id;
+        insert t;
+        Id txnId = t.Id;
+
+        List<Task> checklist = new List<Task>{
+            new Task(Transaction_Deal__c = txnId, Subject = 'Sign PSA', Status = 'Completed',
+                Task_Group__c = 'A. Contract Execution & Title Opening', Task_Sequence__c = 1,
+                OwnerId = noEditUser.Id),
+            new Task(Transaction_Deal__c = txnId, Subject = 'Open Escrow', Status = 'Not Started',
+                Task_Group__c = 'A. Contract Execution & Title Opening', Task_Sequence__c = 2,
+                ActivityDate = Date.today().addDays(-1), OwnerId = noEditUser.Id),
+            new Task(Transaction_Deal__c = txnId,
+                Subject = 'Verify wiring instructions by phone (anti-fraud)', Status = 'Not Started',
+                Verbal_Verification_Completed__c = false, OwnerId = noEditUser.Id)
+        };
+        insert checklist;
+
+        Test.startTest();
+        System.runAs(noEditUser) {
+            // The persona touches a STANDARD field on its own checklist Task. That re-fires
+            // TaskRollupTrigger -> TaskRollupService.recalc under THEIR identity, and the rollup's
+            // Database.update(..., AccessLevel.SYSTEM_MODE) must succeed despite their having no
+            // Edit on Transaction__c. Under the old bare `update updates;` this throws.
+            update new List<Task>{ new Task(Id = checklist[1].Id, Status = 'In Progress') };
+        }
+        Test.stopTest();
+
+        Transaction__c reloaded = [
+            SELECT Tasks_Complete__c, Tasks_Overdue__c, Wire_Open_Risks__c
+            FROM Transaction__c WHERE Id = :txnId
+        ];
+        System.assertEquals(1, reloaded.Tasks_Complete__c,
+            'The trigger-fired rollup completed its Transaction__c write for a principal with NO '
+            + 'Edit on Transaction__c, and counted the one completed checklist Task');
+        System.assertEquals(1, reloaded.Tasks_Overdue__c,
+            'The open, past-due checklist Task is counted — proving the rollup arithmetic ran to '
+            + 'completion under this persona, not merely that the DML did not throw');
+        System.assertEquals(1, reloaded.Wire_Open_Risks__c,
+            'The open, unverified anti-fraud Task is counted, so all three counters this statement '
+            + 'writes were persisted by the SYSTEM_MODE update');
+    }
+
+    /**
+     * Bulk companion (.claude/rules/bulk-test-rule.md — 251+ for a real trigger with no
+     * exemption). The production incident fired at 82 Tasks in ONE trigger batch chunk; 251
+     * forces a SECOND chunk, so the CRUD fix is proven to hold on every firing rather than only
+     * the first. Each chunk re-enters TaskRollupService.recalc and re-runs the same
+     * Transaction__c update under a principal with no Edit on it.
+     */
+    @isTest
+    static void testRecalc_userWithoutTransactionEdit_bulk251_succeedsAcrossSecondChunk() {
+        User noEditUser = buildTaskCapableNoFlsUser('rollupCrudB');
+        System.runAs(new User(Id = UserInfo.getUserId())) {
+            insert noEditUser;
+            assignPermissionSets(noEditUser.Id, new Set<String>{ 'DPEG_Transaction_View' });
+        }
+
+        Transaction__c t = newSuppressedTransaction();
+        t.OwnerId = noEditUser.Id;
+        insert t;
+        Id txnId = t.Id;
+
+        List<Task> checklist = new List<Task>();
+        for (Integer i = 0; i < 251; i++) {
+            checklist.add(new Task(
+                Transaction_Deal__c = txnId,
+                Subject = 'Checklist item ' + i,
+                Status = (i < 150) ? 'Completed' : 'Not Started',
+                ActivityDate = Date.today().addDays(10),
+                OwnerId = noEditUser.Id
+            ));
+        }
+        insert checklist;
+
+        List<Task> retouch = new List<Task>();
+        for (Task c : checklist) {
+            retouch.add(new Task(Id = c.Id, Status = c.Status));
+        }
+
+        Test.startTest();
+        System.runAs(noEditUser) {
+            update retouch; // 251 rows -> 2 trigger batch chunks -> 2 recalc/DML passes
+        }
+        Test.stopTest();
+
+        Transaction__c reloaded = [
+            SELECT Tasks_Complete__c, Tasks_Overdue__c FROM Transaction__c WHERE Id = :txnId
+        ];
+        System.assertEquals(150, reloaded.Tasks_Complete__c,
+            'All 150 completed Tasks counted, so the SYSTEM_MODE Transaction__c write survived '
+            + 'BOTH trigger batch chunks under a principal with no Edit on Transaction__c');
+        System.assertEquals(0, reloaded.Tasks_Overdue__c,
+            'The 101 open Tasks have a future ActivityDate, so none are overdue');
+
+        Integer totalTasks = [SELECT COUNT() FROM Task WHERE Transaction_Deal__c = :txnId];
+        System.assertEquals(251, totalTasks, 'All 251 Tasks present and re-touched in a single bulk DML');
+    }
+
     /**
      * Builds (but does not insert) a user on the `Standard User` profile — the LEAST-privileged
      * profile in this org that can create a Task at all (`PermissionsEditTask = true`, measured;
