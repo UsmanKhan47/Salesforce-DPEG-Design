@@ -200,6 +200,76 @@ public with sharing class ContractExecutionService {
     @TestVisible private static final String DISPOSITION_CLOSING = 'Closing';
 
     /**
+     * The standing owner of every Transaction__c this class opens (user decision, 2026-08-28:
+     * "we have to assign all transactions to Danish on creation of transaction object").
+     *
+     * ⚠ A USERNAME, NOT AN ID, AND THAT IS THE WHOLE POINT. This repo has been through org
+     * rebuilds; a hardcoded 18-character Id survives one of those as a SILENT MIS-ASSIGNMENT —
+     * it still looks like a valid Id, the insert still succeeds, and the Transaction lands on
+     * whatever user happens to hold that Id in the new org (or fails with a cross-reference
+     * error on a good day). Resolution goes through `UserSelector` so that a rebuild produces
+     * "no match -> fall back" rather than "wrong owner".
+     *
+     * Not `final`, and `@TestVisible`, so a test can point it at a username it controls — the
+     * fallback path (missing / inactive user) is otherwise untestable without deleting Danish.
+     */
+    @TestVisible
+    private static String transactionOwnerUsername = 'danish.rehman@usmandpeg.uat';
+
+    /**
+     * Resolves the owner to stamp on newly opened Transactions. ONE query per trigger context.
+     *
+     * ── 🔴 THIS METHOD IS THE ENTIRE SWAP SURFACE FOR THE TRANSACTIONS QUEUE ──
+     * The user's stated direction is that Transactions will eventually be owned by a
+     * TRANSACTIONS QUEUE with Danish as a member ("we can build that later on"). Neither the
+     * queue nor its membership exists yet — verified 2026-08-28, the org has only `Acquisition`
+     * and `Broker_Portal_Leads`, neither of which supports `Transaction__c`, and both are empty.
+     * `Transaction__c.OwnerId` accepts a Queue (Group) Id exactly as it accepts a User Id, so
+     * when that queue is built the swap is confined to this method: resolve the `Group` whose
+     * `DeveloperName` is the queue's, with `Type = 'Queue'`, via a `GroupSelector`. Nothing
+     * else in this class — and nothing downstream — needs to change, because everything below
+     * only ever sees "an Id or null".
+     *
+     * ── 🔴 IT MUST NOT THROW, AND THE FALLBACK IS THE CURRENT BEHAVIOUR ──
+     * This runs inside the Opportunity after-update trigger. An exception here does not lose a
+     * Transaction, it ROLLS BACK THE USER'S OWN STAGE ADVANCE — the same contract
+     * `DealFolderService` documents for this trigger. So a missing, renamed, deactivated or
+     * unresolvable owner returns `null`, the caller simply leaves `OwnerId` unset, and the
+     * Transaction defaults to the running user exactly as it did before this change. The
+     * `catch` is deliberately broad for that reason: there is no failure mode here worth
+     * trading a user's save for.
+     *
+     * @return The owner Id to stamp, or `null` to mean "leave OwnerId unset / keep the old
+     *         behaviour".
+     *
+     * 🔴 CALLERS MUST NULL-CHECK RATHER THAN ASSIGNING BLIND — an explicit `OwnerId = null` is
+     * NOT the same as omitting the field, and the difference is the whole no-throw contract.
+     * MEASURED on usman-dpeg 2026-08-28 by removing the caller's guard: the insert fails with
+     * `INVALID_CROSS_REFERENCE_KEY, Owner ID: owner cannot be blank: [OwnerId]`, which surfaces
+     * to the user as `CANNOT_INSERT_UPDATE_ACTIVATE_ENTITY, OpportunityReviewTrigger: execution
+     * of AfterUpdate` and ROLLS BACK THEIR STAGE ADVANCE. So the guard at the call site is
+     * load-bearing production behaviour, not defensive style — deleting it converts every
+     * unresolvable-owner org into an org where no deal can reach 'About to Close'.
+     */
+    private static Id resolveTransactionOwnerId() {
+        try {
+            // Selector-owned SOQL (.claude/rules/apex-layering-rule.md). selectActiveByUsernames
+            // already filters IsActive = TRUE and lowercases its keys, so an INACTIVE Danish is
+            // simply absent from the map — indistinguishable from missing, and handled the same.
+            Map<String, Id> byUsername = UserSelector.selectActiveByUsernames(
+                new Set<String>{ transactionOwnerUsername }
+            );
+            return byUsername.get(
+                transactionOwnerUsername == null ? null : transactionOwnerUsername.toLowerCase()
+            );
+        } catch (Exception e) {
+            // Swallowed ON PURPOSE — see the header above. Losing the owner stamp is a cosmetic
+            // regression; throwing out of an after-update trigger rolls back the user's save.
+            return null;
+        }
+    }
+
+    /**
      * Opens the Transaction__c (and, through it, the Day-0 task checklist) when a deal ENTERS the
      * 'About to Close' stage. Called from OpportunityReviewTriggerHandler, after insert/update.
      *
@@ -275,6 +345,20 @@ public with sharing class ContractExecutionService {
             ));
         }
         if (!transToInsert.isEmpty()) {
+            // ── OWNERSHIP (2026-08-28) ──
+            // ONE resolution for the whole trigger context, outside every loop, and only when
+            // there is actually something to insert — so a re-entry that is a pure no-op still
+            // costs zero queries. `null` means "unresolvable": leave OwnerId alone and let it
+            // default to the running user, which is precisely the pre-change behaviour.
+            // See resolveTransactionOwnerId for the queue-swap note and the no-throw contract.
+            Id transactionOwnerId = resolveTransactionOwnerId();
+            if (transactionOwnerId != null) {
+                for (Transaction__c t : transToInsert) {
+                    // ⚠ CASCADES: TaskFanoutService does `tk.OwnerId = t.OwnerId`, so the whole
+                    // ~75-row Day-0 checklist is now owned by this user too. That is intended.
+                    t.OwnerId = transactionOwnerId;
+                }
+            }
             Database.insert(transToInsert, true, AccessLevel.SYSTEM_MODE);
         }
     }

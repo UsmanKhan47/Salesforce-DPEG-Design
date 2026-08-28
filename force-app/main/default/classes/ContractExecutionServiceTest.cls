@@ -1281,4 +1281,241 @@ private class ContractExecutionServiceTest {
             'and the legal state survives — asserted so a failure can be localised to the parent '
             + 'write rather than to the execution itself.');
     }
+
+    // ═══════════════════════════════════════════════════════════════════════════════════════════
+    // 🔴 TRANSACTION OWNERSHIP (2026-08-28, user: "we have to assign all transactions to Danish
+    //    on creation of transaction object")
+    // ═══════════════════════════════════════════════════════════════════════════════════════════
+    // Before this change the Transaction defaulted to WHOEVER RAN THE CHAIN — the deal driver who
+    // advanced the Opportunity to 'About to Close' (measured live: TXN-0267 owned by Junior
+    // Dhanani), so Danish saw nothing. The service now resolves an owner BY USERNAME through
+    // UserSelector and stamps it on the insert.
+    //
+    // ⚠ THE FALLBACK TEST BELOW IS THE ONE THAT MATTERS. openTransactionsOnAboutToClose runs
+    // inside the Opportunity after-update trigger, so an exception raised while resolving the
+    // owner does not lose a Transaction — IT ROLLS BACK THE USER'S OWN STAGE ADVANCE. A missing,
+    // renamed or deactivated owner must therefore degrade to the pre-change behaviour silently.
+    // Everything else here is a bonus; that is the production failure mode.
+
+    /**
+     * An active user this test controls, holding DPEG_Transaction_View.
+     *
+     * ⚠ THE PERMISSION SET IS NOT DECORATION. Salesforce refuses ownership of a custom object
+     * record to a user with no Read on that object — the insert fails with
+     * `INVALID_CROSS_REFERENCE_KEY` — and `AccessLevel.SYSTEM_MODE` does NOT lift that check,
+     * because it governs the RUNNING user's CRUD/FLS, not the incoming owner's. Danish satisfies
+     * this in production through DPEG_Transaction_Team; this fixture satisfies it directly.
+     */
+    private static User transactionsOwnerFixture(String aliasSeed, Boolean isActive) {
+        Profile minimumAccess = [
+            SELECT Id FROM Profile WHERE Name = 'Minimum Access - Salesforce' LIMIT 1
+        ];
+        List<PermissionSet> sets = [
+            SELECT Id FROM PermissionSet WHERE Name IN ('DPEG_Base_Access', 'DPEG_Transaction_View')
+        ];
+        Assert.areEqual(2, sets.size(),
+            'FIXTURE PRECONDITION FAILED: DPEG_Base_Access and DPEG_Transaction_View must both '
+            + 'exist in this org. Without Transaction__c Read the platform refuses to make this '
+            + 'user an owner and the test fails on INVALID_CROSS_REFERENCE_KEY, which looks '
+            + 'nothing like the missing permission set that caused it.');
+        String unique = aliasSeed + String.valueOf(DateTime.now().getTime())
+            + String.valueOf(Math.abs(Crypto.getRandomInteger()));
+        User owner = new User(
+            FirstName = 'Txn',
+            LastName = 'Owner',
+            Alias = aliasSeed,
+            Email = 'dpeg.txnowner@example.invalid',
+            Username = unique + '@example.invalid.dpeg',
+            ProfileId = minimumAccess.Id,
+            TimeZoneSidKey = 'America/Chicago',
+            LocaleSidKey = 'en_US',
+            EmailEncodingKey = 'UTF-8',
+            LanguageLocaleKey = 'en_US'
+        );
+        System.runAs(new User(Id = UserInfo.getUserId())) {
+            insert owner;
+            List<PermissionSetAssignment> assignments = new List<PermissionSetAssignment>();
+            for (PermissionSet ps : sets) {
+                assignments.add(new PermissionSetAssignment(AssigneeId = owner.Id, PermissionSetId = ps.Id));
+            }
+            insert assignments;
+            if (!isActive) {
+                // Deactivated AFTER assignment: PermissionSetAssignment cannot be inserted for an
+                // inactive user, so the order here is load-bearing, not stylistic.
+                update new User(Id = owner.Id, IsActive = false);
+            }
+        }
+        return owner;
+    }
+
+    /**
+     * (i) THE POSITIVE. A Transaction opened by the real trigger chain is owned by the CONFIGURED
+     * transactions owner, not by the deal driver who advanced the stage.
+     *
+     * Driven through the @TestVisible username seam rather than against the live Danish so the
+     * MECHANISM is proved deterministically in any org. `theConfiguredTransactionsOwnerIsDanish`
+     * below pins the value that seam defaults to, and
+     * `theLiveConfiguredTransactionsOwnerResolvesToAnActiveUser` proves that value actually
+     * resolves in THIS org. The three together are the requested proof.
+     */
+    @isTest
+    static void anOpenedTransactionIsOwnedByTheConfiguredTransactionsOwner() {
+        User danishStandIn = transactionsOwnerFixture('txno', true);
+        ContractExecutionService.transactionOwnerUsername = danishStandIn.Username;
+        Contract_Review__c cr = dealAtPsa();
+
+        Test.startTest();
+        update new Opportunity(Id = cr.Opportunity__c, StageName = 'About to Close');
+        Test.stopTest();
+
+        List<Transaction__c> txns = [
+            SELECT Id, OwnerId FROM Transaction__c WHERE Opportunity__c = :cr.Opportunity__c
+        ];
+        Assert.areEqual(1, txns.size(), 'Entering About to Close still opens exactly one Transaction');
+        Assert.areEqual(danishStandIn.Id, txns[0].OwnerId,
+            'The Transaction must be owned by the CONFIGURED transactions owner. Reading the '
+            + 'running user Id instead means the OwnerId stamp was dropped and the pre-change '
+            + 'behaviour (owner = whoever advanced the stage) is back.');
+        Assert.areNotEqual(UserInfo.getUserId(), txns[0].OwnerId,
+            'and it is specifically NOT the deal driver who ran the chain — the exact defect '
+            + 'this change exists to fix (TXN-0267, owned by Junior Dhanani).');
+
+        // ── CONSEQUENCE (a): the Day-0 checklist follows the Transaction owner ──
+        // TaskFanoutService line ~117 does `tk.OwnerId = t.OwnerId`, so the ~75-row checklist the
+        // Transaction_Task_Fanout flow builds is now owned by the transactions owner too. Asserted
+        // rather than assumed, and the count is asserted non-zero so this cannot pass vacuously if
+        // the fan-out ever stops firing.
+        // ⚠ `Transaction_Deal__c`, NOT `WhatId`. TaskFanoutService relates the checklist through
+        // the custom lookup on purpose ("so checklist tasks stay out of the Activity timeline"),
+        // so a WhatId query returns ZERO ROWS and this whole cascade assertion silently becomes
+        // unreachable — measured, it fails the precondition rather than passing vacuously only
+        // because the precondition is asserted.
+        List<Task> checklist = [SELECT OwnerId FROM Task WHERE Transaction_Deal__c = :txns[0].Id];
+        Assert.isTrue(checklist.size() > 0,
+            'PRECONDITION: the Day-0 fan-out must have produced tasks, otherwise the ownership '
+            + 'assertion below is vacuous.');
+        Set<Id> taskOwners = new Set<Id>();
+        for (Task t : checklist) {
+            taskOwners.add(t.OwnerId);
+        }
+        Assert.areEqual(new Set<Id>{ danishStandIn.Id }, taskOwners,
+            'INTENDED CASCADE: every fanned-out checklist Task inherits the Transaction owner, so '
+            + 'the whole ~75-row checklist now lands on the transactions owner rather than on the '
+            + 'deal driver. If this ever needs to differ, route in TaskFanoutService — not here.');
+    }
+
+    /**
+     * Pins the CONFIGURED username. This is the only place the "Danish" half of the requirement
+     * is written down, and it is deliberately a value assertion rather than a comment: a silent
+     * edit to that literal is the whole failure mode a hardcoded Id would have had.
+     */
+    @isTest
+    static void theConfiguredTransactionsOwnerIsDanish() {
+        Assert.areEqual('danish.rehman@usmandpeg.uat',
+            ContractExecutionService.transactionOwnerUsername,
+            'Transactions are assigned to Danish on creation (user requirement, 2026-08-28). '
+            + 'Changing this literal reassigns every future Transaction AND its ~75-task '
+            + 'checklist, so it is pinned here on purpose.');
+    }
+
+    /**
+     * (ii) 🔴 THE ONE THAT MATTERS. A missing / unresolvable owner must NOT throw: the stage
+     * advance is the user's own save, and an exception out of the after-update trigger rolls it
+     * back. Falls back to the pre-change behaviour — OwnerId unset, so the running user owns it.
+     */
+    @isTest
+    static void aMissingTransactionsOwnerFallsBackWithoutThrowingAndTheSaveSucceeds() {
+        // A username no org can hold. Same shape the org would present the day Danish is renamed,
+        // or the day this repo is deployed into a rebuilt org where his username differs.
+        ContractExecutionService.transactionOwnerUsername = 'nobody.at.all@example.invalid.dpeg';
+        Contract_Review__c cr = dealAtPsa();
+
+        Test.startTest();
+        try {
+            update new Opportunity(Id = cr.Opportunity__c, StageName = 'About to Close');
+        } catch (Exception e) {
+            Assert.fail('THE STAGE ADVANCE WAS ROLLED BACK BY THE OWNER LOOKUP. This is the '
+                + 'production failure mode this fallback exists to prevent — an unresolvable '
+                + 'owner must degrade, never throw. Got: ' + e.getTypeName() + ': ' + e.getMessage());
+        }
+        Test.stopTest();
+
+        Assert.areEqual('About to Close',
+            [SELECT StageName FROM Opportunity WHERE Id = :cr.Opportunity__c].StageName,
+            'and the save actually COMMITTED — a swallowed exception that still rolled the '
+            + 'transaction back would leave the deal at its old stage.');
+        List<Transaction__c> txns = [
+            SELECT OwnerId FROM Transaction__c WHERE Opportunity__c = :cr.Opportunity__c
+        ];
+        Assert.areEqual(1, txns.size(),
+            'The Transaction still opens — the handoff is not gated on the owner being resolvable.');
+        Assert.areEqual(UserInfo.getUserId(), txns[0].OwnerId,
+            'FALLBACK = THE OLD BEHAVIOUR: OwnerId is left unset, so it defaults to the running '
+            + 'user exactly as it did before this change. Anything else means an explicit null '
+            + 'was written, or a guessed owner was substituted.');
+    }
+
+    /**
+     * Same contract for an INACTIVE owner, which is a different org state reaching the same code
+     * path: UserSelector.selectActiveByUsernames filters IsActive = TRUE, so a deactivated Danish
+     * is simply absent from the map. Separated from the missing-user test because "deactivated"
+     * is the far likelier real event and a future selector change could break one without the
+     * other.
+     */
+    @isTest
+    static void anInactiveTransactionsOwnerFallsBackWithoutThrowing() {
+        User deactivated = transactionsOwnerFixture('txni', false);
+        ContractExecutionService.transactionOwnerUsername = deactivated.Username;
+        Contract_Review__c cr = dealAtPsa();
+
+        Test.startTest();
+        try {
+            update new Opportunity(Id = cr.Opportunity__c, StageName = 'About to Close');
+        } catch (Exception e) {
+            Assert.fail('A DEACTIVATED OWNER ROLLED BACK THE STAGE ADVANCE. Got: '
+                + e.getTypeName() + ': ' + e.getMessage());
+        }
+        Test.stopTest();
+
+        List<Transaction__c> txns = [
+            SELECT OwnerId FROM Transaction__c WHERE Opportunity__c = :cr.Opportunity__c
+        ];
+        Assert.areEqual(1, txns.size(), 'The Transaction still opens for a deactivated owner');
+        Assert.areEqual(UserInfo.getUserId(), txns[0].OwnerId,
+            'An inactive user is never stamped as owner — the insert would fail outright — so the '
+            + 'fallback must return the running user, not the inactive Id.');
+    }
+
+    /**
+     * Proves the CONFIGURED username actually resolves IN THIS ORG. The two fallback tests above
+     * are org independent by design; this one is deliberately not, because "Danish exists, is
+     * active, and can own a Transaction" is a live-org fact the requirement depends on and
+     * nothing else here would notice if it stopped being true.
+     *
+     * ⚠ If this fails in a rebuilt org, the FIX IS THE USERNAME LITERAL in
+     * ContractExecutionService, not this test. Note that production does NOT fail in that
+     * situation — it falls back — which is exactly why the fact needs asserting somewhere.
+     */
+    @isTest
+    static void theLiveConfiguredTransactionsOwnerResolvesToAnActiveUser() {
+        String configured = ContractExecutionService.transactionOwnerUsername;
+        List<User> found = [
+            SELECT Id, IsActive FROM User WHERE Username = :configured AND IsActive = TRUE
+        ];
+        Assert.areEqual(1, found.size(),
+            'The configured transactions owner (' + configured + ') must exist and be ACTIVE in '
+            + 'this org. Zero rows means every Transaction is silently falling back to the deal '
+            + 'driver and Danish still sees nothing — a SILENT regression, since the code by '
+            + 'design does not throw.');
+
+        Contract_Review__c cr = dealAtPsa();
+        Test.startTest();
+        update new Opportunity(Id = cr.Opportunity__c, StageName = 'About to Close');
+        Test.stopTest();
+
+        Assert.areEqual(found[0].Id,
+            [SELECT OwnerId FROM Transaction__c WHERE Opportunity__c = :cr.Opportunity__c].OwnerId,
+            'End to end, against the REAL configured user: the trigger chain hands the Transaction '
+            + 'to Danish.');
+    }
 }
