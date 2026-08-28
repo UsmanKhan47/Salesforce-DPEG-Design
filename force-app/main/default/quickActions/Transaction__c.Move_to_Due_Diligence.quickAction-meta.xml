@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<QuickAction xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!-- THIS NOTE LIVES IN A COMMENT INSIDE THE ROOT ELEMENT - a comment placed ABOVE
+         <QuickAction> breaks `sf` deploy at source conversion with a misleading "unable to find
+         matching parent xml file" error. It is also why there is no <description>: no quick
+         action in this repo carries one (measured across NDA__c / Underwriting__c's per-hop
+         actions), QuickAction.Description is capped at 255 characters, and a comment is repo-only
+         and never sent to the Metadata API.
+
+         ADDED 2026-08-28, FINISHING commit 95557f5 (2026-08-27), which replaced the generic
+         Advance Stage button with named per-hop quick actions on six other stage-controlled
+         objects and explicitly DEFERRED Transaction__c because it had no Dynamic Actions enabled
+         on its record page. The user has since enabled Dynamic Actions in App Builder on
+         Transaction_Record_Page (enableActionsConfiguration/enableActionsInNative -> true), which
+         is the prerequisite this file was waiting on. See that page's own header for the
+         known-defect this triggered (enabling Dynamic Actions with an empty actionNames property
+         discards every inherited action, including Edit/Clone/Delete/Log a Call/New Event/New
+         Task) and how it was restored.
+
+         THE HOP: Transaction__c.Stage__c sequence is
+         Open Contract -> Due Diligence -> Closing Prep -> Post-Closing -> Closed Won
+         (RecordStageAdvanceService.TRANSACTION_NEXT_STAGE). This action serves
+         Open Contract -> Due Diligence, gated on Transaction_Record_Page by
+         {!Record.Stage__c} EQUAL 'Open Contract'.
+
+         🔴 THE LABEL IS THE ONLY THING THAT DIFFERS BETWEEN THESE FOUR ACTIONS. All four point at
+         the SAME c/advanceRecordStage bundle as the retired Transaction__c.Advance_Stage; that
+         component names no object and holds no stage map - RecordStageAdvanceService derives the
+         target from the record's CURRENT stage via TRANSACTION_NEXT_STAGE, keyed by the
+         single-type sentinel (Transaction__c carries no record types), and advance() takes only a
+         recordId. The label is therefore a promise the page's visibility rule keeps, not anything
+         the client sends, and the two must be kept in step by hand.
+
+         Transaction__c carries NO record types (verified against
+         objects/Transaction__c/Transaction__c.object-meta.xml - no <recordTypes> element and no
+         recordTypes/ folder), so unlike NDA__c/LOI__c/Contract_Review__c this action needs no
+         record-type criterion - matching Underwriting__c's shape, not NDA__c's.
+
+         Transaction__c.Advance_Stage ITSELF IS NOT DELETED, matching the retirement convention
+         used for every other object in this wave (NDA__c.Advance_Stage, LOI__c.Advance_Stage,
+         Underwriting__c.Advance_Stage, etc. are all still present in quickActions/, just no longer
+         referenced by any page's actionNames or by the layout's platformActionList). -->
+    <actionSubtype>Action</actionSubtype>
+    <label>Due Diligence</label>
+    <lightningWebComponent>advanceRecordStage</lightningWebComponent>
+    <optionsCreateFeedItem>false</optionsCreateFeedItem>
+    <type>LightningWebComponent</type>
+</QuickAction>

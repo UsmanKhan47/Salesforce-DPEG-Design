@@ -48,6 +48,19 @@
         <layoutColumns/>
         <style>CustomLinks</style>
     </layoutSections>
+    <!-- 2026-08-28 — Transaction__c.Advance_Stage REMOVED from this platformActionList (the
+         quickAction file itself is NOT deleted, matching the retirement convention used for every
+         other object retired from Advance Stage in this wave). Record pages are assigned
+         per-app in this org, so a Transaction opened outside the Transaction app falls back to
+         THIS layout — leaving the entry here would keep surfacing the generic button the user
+         asked to retire in the one context (non-Transaction-app record view) that bypasses
+         Transaction_Record_Page's Dynamic Actions bar. The four named per-hop replacements
+         (Transaction__c.Move_to_Due_Diligence / Move_to_Closing_Prep / Move_to_Post_Closing /
+         Move_to_Closed_Won) are NOT added here — this platformActionList has no stage-based
+         visibility mechanism the way a FlexiPage's actionNames valueList does, so adding all four
+         unconditionally would show every hop's button on every record regardless of its current
+         stage. The other six entries (Edit, Clone, Delete, LogACall, NewEvent, NewTask) are
+         untouched; sortOrder is renumbered to close the gap left by the removed entry. -->
     <platformActionList>
         <actionListContext>Record</actionListContext>
         <platformActionListItems>
@@ -56,34 +69,29 @@
             <sortOrder>0</sortOrder>
         </platformActionListItems>
         <platformActionListItems>
-            <actionName>Transaction__c.Advance_Stage</actionName>
-            <actionType>QuickAction</actionType>
-            <sortOrder>1</sortOrder>
-        </platformActionListItems>
-        <platformActionListItems>
             <actionName>Clone</actionName>
             <actionType>StandardButton</actionType>
-            <sortOrder>2</sortOrder>
+            <sortOrder>1</sortOrder>
         </platformActionListItems>
         <platformActionListItems>
             <actionName>Delete</actionName>
             <actionType>StandardButton</actionType>
-            <sortOrder>3</sortOrder>
+            <sortOrder>2</sortOrder>
         </platformActionListItems>
         <platformActionListItems>
             <actionName>LogACall</actionName>
             <actionType>QuickAction</actionType>
-            <sortOrder>4</sortOrder>
+            <sortOrder>3</sortOrder>
         </platformActionListItems>
         <platformActionListItems>
             <actionName>NewEvent</actionName>
             <actionType>QuickAction</actionType>
-            <sortOrder>5</sortOrder>
+            <sortOrder>4</sortOrder>
         </platformActionListItems>
         <platformActionListItems>
             <actionName>NewTask</actionName>
             <actionType>QuickAction</actionType>
-            <sortOrder>6</sortOrder>
+            <sortOrder>5</sortOrder>
         </platformActionListItems>
     </platformActionList>
     <showEmailCheckbox>false</showEmailCheckbox>

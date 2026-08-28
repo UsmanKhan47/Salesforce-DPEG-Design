@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<QuickAction xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!-- THIS NOTE LIVES IN A COMMENT INSIDE THE ROOT ELEMENT - a comment placed ABOVE
+         <QuickAction> breaks `sf` deploy at source conversion. See
+         Transaction__c.Move_to_Due_Diligence.quickAction-meta.xml for the full rationale behind
+         finishing this wave on Transaction__c (2026-08-28) and for why there is no
+         <description>. Transaction__c carries no record types, so none of these four actions
+         needs a record-type criterion.
+
+         THE HOP: Transaction__c.Stage__c sequence is
+         Open Contract -> Due Diligence -> Closing Prep -> Post-Closing -> Closed Won. This action
+         serves Post-Closing -> Closed Won, gated on Transaction_Record_Page by
+         {!Record.Stage__c} EQUAL 'Post-Closing'. 'Closed Won' is the terminal stage - no button
+         follows it, per the same no-next-step convention used on every other object in this wave
+         (see RecordStageAdvanceService.TRANSACTION_NEXT_STAGE's own header: the object supplies no
+         NO_NEXT_STEP_HINTS entry because every stage without a hop here is genuinely terminal, not
+         approval-owned).
+
+         🔴 Transaction_Complete_Close.flow-meta.xml is UNRELATED to this button and is not a gate
+         on this transition - it fires off Transaction__c.Status__c EQUAL 'Closed' (a DIFFERENT
+         field from Stage__c) and closes the parent Opportunity. Nothing in this repo gates the
+         Stage__c write to 'Closed Won' beyond RecordStageAdvanceService's own
+         Transaction_Stage_Actions permission gate - no validation rule exists on Transaction__c
+         (confirmed: objects/Transaction__c has no validationRules/ folder) and no other flow
+         listens on Stage__c. -->
+    <actionSubtype>Action</actionSubtype>
+    <label>Closed Won</label>
+    <lightningWebComponent>advanceRecordStage</lightningWebComponent>
+    <optionsCreateFeedItem>false</optionsCreateFeedItem>
+    <type>LightningWebComponent</type>
+</QuickAction>
