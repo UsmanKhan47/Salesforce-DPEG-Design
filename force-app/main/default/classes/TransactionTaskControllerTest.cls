@@ -244,6 +244,78 @@ private class TransactionTaskControllerTest {
      * the write-failure catch. Kept apart from the bare-user read test so the setup-object
      * User insert and this record DML never share a transaction (MIXED_DML_OPERATION).
      */
+    /**
+     * REGRESSION — reported from the UI 2026-08-28. A completed checklist row read
+     * "Danish · Aug 28, 2026" when the ADMIN, not Danish, had completed it: the row's meta
+     * line was built from Task_Owner_Label__c, which is STATIC TEXT seeded from
+     * Transaction_Task_Def__mdt naming the intended ROLE. It never changes, is not the record
+     * owner, and next to a completion date it asserted something false.
+     *
+     * The honest fixture is one where the completer DIFFERS from the role label — exactly the
+     * reported case. Here the task is labelled 'Danish' and the test-running user (standing in
+     * for the admin) closes it, so completedByName and ownerLabel MUST diverge. A fixture where
+     * they coincide would pass under the defective code too and prove nothing.
+     *
+     * ⚠ completedByName is LastModifiedBy — who last TOUCHED the record. Task has no dedicated
+     * completed-by field, so a later edit to a closed task reassigns the name. That imprecision
+     * is accepted and documented at the assignment site in TransactionTaskController; it is
+     * still strictly better than a role label that is wrong for everyone but one person.
+     */
+    @isTest
+    static void getTaskGroups_completedRowNamesTheCompleter_notTheStaticRoleLabel() {
+        Transaction__c t = newSuppressedTransaction();
+        insert t;
+
+        insert new List<Task>{
+            new Task(Transaction_Deal__c = t.Id, Subject = 'A1',
+                Task_Group__c = 'A. Contract Execution & Title Opening',
+                Task_Sequence__c = 1, Task_Owner_Label__c = 'Danish', Status = 'Completed'),
+            new Task(Transaction_Deal__c = t.Id, Subject = 'A2',
+                Task_Group__c = 'A. Contract Execution & Title Opening',
+                Task_Sequence__c = 2, Task_Owner_Label__c = 'Danish', Status = 'Not Started')
+        };
+
+        Test.startTest();
+        List<TransactionTaskController.GroupRow> groups = TransactionTaskController.getTaskGroups(t.Id);
+        Test.stopTest();
+
+        TransactionTaskController.GroupRow groupA = null;
+        for (TransactionTaskController.GroupRow g : groups) {
+            if (g.letter == 'A') { groupA = g; }
+        }
+        Assert.isNotNull(groupA, 'Group A must be returned');
+
+        TransactionTaskController.TaskRow done = groupA.tasks[0];
+        TransactionTaskController.TaskRow open = groupA.tasks[1];
+        Assert.areEqual(true, done.done, 'Sequence 1 is the completed task');
+        Assert.areEqual(false, open.done, 'Sequence 2 is still open');
+
+        // FIXTURE INTEGRITY — without this the two assertions below could both pass on the
+        // same string and the test would be vacuous.
+        Assert.areEqual('Danish', done.ownerLabel,
+            'The row still carries the static ROLE label from Transaction_Task_Def__mdt');
+        Assert.areNotEqual('Danish', UserInfo.getName(),
+            'The completing user must not BE the role label, or this test proves nothing');
+
+        // THE FIX: the completed row names the person who actually closed it.
+        Assert.areEqual(UserInfo.getName(), done.completedByName,
+            'A completed row reports WHO COMPLETED it (LastModifiedBy.Name), not the role label');
+        Assert.areNotEqual(done.ownerLabel, done.completedByName,
+            'completedByName must not be the static role label — that was the reported defect');
+        Assert.isNotNull(done.completedDate, 'A completed row still carries its completion date');
+
+        // Gated on IsClosed, exactly like completedDate: an open task has no completer.
+        Assert.isNull(open.completedByName,
+            'An OPEN task reports no completer — completedByName is IsClosed-gated like completedDate');
+        Assert.isNull(open.completedDate,
+            'An OPEN task reports no completion date (the pre-existing gate, pinned alongside)');
+
+        // The GROUP header pill is a DIFFERENT field (Task_Group_Def__mdt.Owner_Label__c) and is
+        // CORRECT — it is the group's owning role, not a claim about who did anything.
+        Assert.isNotNull(groupA.ownerLabel,
+            'The group header keeps its owning-role label; only the per-ROW meta line was wrong');
+    }
+
     @isTest
     static void writeCatchesThrowAuraHandledException() {
         Transaction__c t = newSuppressedTransaction();

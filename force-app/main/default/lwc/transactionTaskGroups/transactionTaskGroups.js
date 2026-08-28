@@ -182,8 +182,14 @@ export default class TransactionTaskGroups extends LightningElement {
                     showCritical: critical && !verified,
                     verified,
                     verifiedLabel: t.verifiedBy ? `Verified · ${t.verifiedBy}` : 'Verified',
-                    // Owner name + completion date (with year) only surface once the task is done.
-                    meta: t.done ? [t.ownerLabel, this.dateLabelYear(t.completedDate)].filter(Boolean).join(' · ') : '',
+                    // Who completed it + the completion date (with year), only once the task is
+                    // done. Must be completedByName, NOT ownerLabel: ownerLabel is the static
+                    // ROLE the task is owed by (from Transaction_Task_Def__mdt), so pairing it
+                    // with a completion date claimed the role holder closed every task in their
+                    // group. Either part may be blank; filter(Boolean) drops the separator then.
+                    meta: t.done
+                        ? [t.completedByName, this.dateLabelYear(t.completedDate)].filter(Boolean).join(' · ')
+                        : '',
                     done: t.done,
                     notes,
                     hasNotes,

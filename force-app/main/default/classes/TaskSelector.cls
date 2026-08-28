@@ -116,6 +116,28 @@ public with sharing class TaskSelector {
      * so the query is inlined and `WITH USER_MODE` sits after the WHERE and BEFORE
      * ORDER BY — the clause order the pilot flagged as a compile-breaker.
      *
+     * SPANNING READ — `LastModifiedById, LastModifiedBy.Name` (added 2026-08-28).
+     * The checklist row's completion line used to render Task_Owner_Label__c (the STATIC
+     * ROLE seeded from Transaction_Task_Def__mdt: 'Danish', 'CFO', 'Legal'...) next to the
+     * completion date, which read as "completed by <role>" and was FALSE for everyone
+     * except the one person that role names. The row now names the actual last modifier.
+     * ⚠ Task has NO dedicated completed-by field; LastModifiedBy is "who last touched the
+     * record", so a later edit to a closed task reassigns the name. See
+     * TransactionTaskController.getTaskGroups for the trade-off note at the assignment site.
+     *
+     * WHY THIS IS SAFE UNDER `WITH USER_MODE` (MEASURED in usman-dpeg 2026-08-28, not
+     * assumed — USER_MODE THROWS "No such column" on an FLS denial, it does not degrade):
+     *   - `Task.LastModifiedById.getDescribe().isPermissionable()` = FALSE, and
+     *     `SELECT COUNT() FROM FieldPermissions WHERE Field = 'Task.LastModifiedById'` = 0.
+     *     No permission set can grant OR deny it — it is readable whenever Task is.
+     *   - `User.Name.getDescribe().isPermissionable()` = FALSE — same story.
+     *   - `EntityDefinition.InternalSharingModel` for User = 'Read' (Public Read Only), so
+     *     the traversal resolves for every internal persona on this page (DPEG_Transaction_Edit
+     *     / DPEG_Transaction_View holders and the read-only acquisitions PSGs).
+     * A tightened User OWD, or an Experience Cloud (external) reader, would return a null
+     * `LastModifiedBy` — which the controller tolerates: the name drops off the row rather
+     * than throwing. Re-measure the three facts above if User OWD is ever tightened.
+     *
      * @param transactionDealIds Transaction__c Ids whose checklist Tasks to load.
      * @return Matching Tasks ordered by Task_Sequence__c; an empty list when the
      *         input is null/empty or no checklist Tasks exist (never null).
@@ -129,7 +151,8 @@ public with sharing class TaskSelector {
         return [
             SELECT Id, Subject, Task_Group__c, Task_Owner_Label__c, Status, IsClosed,
                    ActivityDate, Task_Sequence__c, Verbal_Verification_Completed__c,
-                   Verified_By__c, Verified_At__c, Verification_Phone__c, Description, LastModifiedDate
+                   Verified_By__c, Verified_At__c, Verification_Phone__c, Description,
+                   LastModifiedDate, LastModifiedById, LastModifiedBy.Name
             FROM Task
             WHERE Transaction_Deal__c IN :transactionDealIds AND Task_Group__c != null
             WITH USER_MODE

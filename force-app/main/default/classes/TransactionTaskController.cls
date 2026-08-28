@@ -46,6 +46,9 @@ public with sharing class TransactionTaskController {
         @AuraEnabled public String phone;
         @AuraEnabled public String notes;
         @AuraEnabled public Datetime completedDate;
+        // Who actually completed the task. Populated only when done (IsClosed), exactly like
+        // completedDate above. NOT the same thing as ownerLabel — see getTaskGroups.
+        @AuraEnabled public String completedByName;
     }
 
     public class GroupRow {
@@ -79,6 +82,15 @@ public with sharing class TransactionTaskController {
                 TaskRow r = new TaskRow();
                 r.id = t.Id;
                 r.subject = t.Subject;
+                // ⚠ ROLE, NOT PERSON. Task_Owner_Label__c is static text seeded from
+                // Transaction_Task_Def__mdt ('Danish', 'Accounting', 'Legal', 'CFO', 'FES',
+                // 'Prop. Mgmt.') — the role the task is OWED BY. It never changes and is not the
+                // record owner. Do NOT render it next to a completion date: that reads as
+                // "completed by X" and is false for everyone but the one role it names (the
+                // 2026-08-28 defect — Usman completed a task and the row said "Danish").
+                // Use completedByName below for that. As of 2026-08-28 this member has no LWC
+                // consumer; the group header's role pill is fed by GroupRow.ownerLabel, which is
+                // a DIFFERENT field (Task_Group_Def__mdt.Owner_Label__c) and is correct.
                 r.ownerLabel = t.Task_Owner_Label__c;
                 r.status = t.Status;
                 r.done = t.IsClosed;
@@ -90,6 +102,16 @@ public with sharing class TransactionTaskController {
                 r.phone = t.Verification_Phone__c;
                 r.notes = t.Description;
                 r.completedDate = t.IsClosed ? t.LastModifiedDate : null;
+                // ⚠ HONEST NAMING CAVEAT — THIS IS NOT EXACT. Task has no dedicated
+                // "completed by" field, so this is LastModifiedBy: who last TOUCHED the record,
+                // not who closed it. Edit a completed task and the name becomes the editor's.
+                // It is still strictly better than what this line pairs with in the UI used to
+                // be (ownerLabel — a static role, wrong for everyone except that one role).
+                // If exactness ever matters here, the fix is a real Completed_By__c lookup
+                // stamped by TransactionTaskService at close time, not a smarter read.
+                // Gated on IsClosed to mirror completedDate; null-guarded because a
+                // sharing-restricted or external reader gets a null LastModifiedBy back.
+                r.completedByName = (t.IsClosed && t.LastModifiedBy != null) ? t.LastModifiedBy.Name : null;
                 if (!tasksByGroup.containsKey(t.Task_Group__c)) {
                     tasksByGroup.put(t.Task_Group__c, new List<TaskRow>());
                 }

@@ -13,7 +13,16 @@
  *
  * The wire returns task GROUPS: { key, letter, name, total, complete, pct,
  * conditional, ownerLabel, tasks: [{ id, subject, done, verifyComplete, verifiedBy,
- * notes, ownerLabel, completedDate, phone, verifiedAt }] }. Letters map to the four
+ * notes, ownerLabel, completedByName, completedDate, phone, verifiedAt }] }.
+ *
+ * ⚠ TWO DIFFERENT ownerLabels, and the row-level one is a TRAP. GROUP.ownerLabel is the
+ * group's owning ROLE (Task_Group_Def__mdt.Owner_Label__c) and is correct — it renders in
+ * the .tg-owner pill. TASK.ownerLabel is the per-task static ROLE from
+ * Transaction_Task_Def__mdt; it is NOT a person and NOT the completer. Rendering it next to
+ * completedDate was the 2026-08-28 defect. The done-task fixture below therefore gives t1 a
+ * completedByName ('Usman Khan') DELIBERATELY DIFFERENT from its ownerLabel ('Alice Adams'),
+ * so a regression that reverts to ownerLabel goes red instead of passing on identical strings.
+ * Letters map to the four
  * phases (A/B -> Open Contract, C..H2 -> Due Diligence, I -> Closing, J -> Post).
  * Subjects ending "(anti-fraud)" are wire-verification tasks (WIRE_RE) that open the
  * anti-fraud dialog instead of the plain confirm dialog.
@@ -75,7 +84,10 @@ const GROUPS = [
                 verifyComplete: false,
                 verifiedBy: null,
                 notes: 'Executed via DocuSign',
+                // ROLE the task is owed by — must NOT appear on the completion meta line.
                 ownerLabel: 'Alice Adams',
+                // The person who actually closed it. Deliberately != ownerLabel.
+                completedByName: 'Usman Khan',
                 completedDate: '2026-05-08',
                 phone: null,
                 verifiedAt: null
@@ -87,6 +99,7 @@ const GROUPS = [
                 verifyComplete: false,
                 verifiedBy: null,
                 notes: '',
+                completedByName: null,
                 ownerLabel: 'Alice Adams',
                 completedDate: null,
                 phone: null,
@@ -99,6 +112,7 @@ const GROUPS = [
                 verifyComplete: false,
                 verifiedBy: null,
                 notes: '',
+                completedByName: null,
                 ownerLabel: 'Bob Brown',
                 completedDate: null,
                 phone: null,
@@ -123,6 +137,7 @@ const GROUPS = [
                 verifyComplete: false,
                 verifiedBy: null,
                 notes: '',
+                completedByName: null,
                 ownerLabel: 'Legal',
                 completedDate: null,
                 phone: null,
@@ -135,6 +150,7 @@ const GROUPS = [
                 verifyComplete: false,
                 verifiedBy: null,
                 notes: '',
+                completedByName: null,
                 ownerLabel: 'Legal',
                 completedDate: null,
                 phone: null,
@@ -372,6 +388,48 @@ describe('c-transaction-task-groups', () => {
         expect(
             element.shadowRoot.querySelector('input.tg-check[data-id="t2"]').checked
         ).toBe(false);
+    });
+
+    /**
+     * REGRESSION — reported from the UI 2026-08-28: a completed row read "Danish · Aug 28,
+     * 2026" when the admin, not Danish, had completed it. The row meta was built from the
+     * task's static ROLE label (Transaction_Task_Def__mdt) rather than the completer.
+     *
+     * The date half runs `new Date()` math and drifts by timezone, so only the NAME half is
+     * asserted — that is the half that was wrong. The negative assertion is the load-bearing
+     * one: it is what fails if anyone repoints this back at ownerLabel.
+     */
+    it('DATA BRANCH: a completed row names WHO COMPLETED it, not the task role label', async () => {
+        const element = createComponent();
+
+        getTaskGroups.emit(GROUPS);
+        await Promise.resolve();
+
+        const metas = textList(element, '.tg-meta');
+        // Group A renders three rows; only the first (t1) is done.
+        expect(metas.length).toBe(3);
+        expect(metas[0]).toContain('Usman Khan');
+        expect(metas[0].startsWith('Usman Khan · ')).toBe(true);
+        expect(metas[0]).not.toContain('Alice Adams');
+        // Open tasks carry no completion meta at all.
+        expect(metas[1]).toBe('');
+        expect(metas[2]).toBe('');
+    });
+
+    /**
+     * The GROUP header pill is a DIFFERENT field (Task_Group_Def__mdt.Owner_Label__c) and is
+     * correct — it is the group's owning role, not a claim about who did anything. Pinned so
+     * the row-level fix above is never "tidied" into removing the role from the header too.
+     */
+    it('DATA BRANCH: the group header still shows the owning ROLE pill', async () => {
+        const element = createComponent();
+
+        getTaskGroups.emit(GROUPS);
+        await Promise.resolve();
+
+        expect(
+            element.shadowRoot.querySelector('.tg-owner').textContent
+        ).toBe('Acquisitions');
     });
 
     it('is accessible (empty state)', async () => {

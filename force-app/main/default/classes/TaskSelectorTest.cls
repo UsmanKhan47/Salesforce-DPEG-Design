@@ -4,7 +4,9 @@
  * Covers all three relocated/contract queries:
  *   - selectChecklistByTransactionDealIds : field population, ORDER BY
  *     Task_Sequence__c, the `Task_Group__c != null` filter, the null/empty-input
- *     guard, and a 251-record bulk read on the Set<Id> method (bulk-test-rule).
+ *     guard, a 251-record bulk read on the Set<Id> method (bulk-test-rule), AND the
+ *     LastModifiedBy.Name spanning traversal that feeds the checklist row's
+ *     "completed by" line (added 2026-08-28).
  *   - selectOpenByWhatIdsAndSubjectPrefix  : open-only + subject-prefix filtering,
  *     null/empty/blank guards, a 251-record bulk read across 251 distinct WhatIds,
  *     AND the standard-object USER_MODE proof (a Standard User reads rows under
@@ -83,6 +85,49 @@ private class TaskSelectorTest {
         Assert.areEqual(verifiedAt, rows[0].Verified_At__c, 'Verified_At__c is selected');
         Assert.areEqual('first note', rows[0].Description, 'Description is selected');
         Assert.areEqual(2, rows[1].Task_Sequence__c, 'The sequence-2 Task sorts after sequence-1');
+    }
+
+    /**
+     * The checklist row's completion line must name a PERSON, so the query has to traverse
+     * LastModifiedBy. Pins BOTH halves of the spanning read: that the parent object is
+     * traversed at all (a plain LastModifiedById would leave `LastModifiedBy` null and the
+     * controller would render no name), and that `.Name` is populated.
+     *
+     * The completing user is DELIBERATELY someone other than the Task_Owner_Label__c role —
+     * that is the reported 2026-08-28 scenario (admin completes a task labelled 'Danish'), and
+     * a fixture where the two coincide would pass even under the defective code.
+     */
+    @isTest
+    static void selectChecklistByTransactionDealIds_traversesLastModifiedByName() {
+        Id txnId = transactionId();
+
+        // Reproduces the reported scenario EXACTLY: the task is labelled with the 'Danish'
+        // ROLE, and somebody else (here the test-running user, standing in for the admin)
+        // closes it. No runAs: a Standard User closing this Task would fire
+        // TaskRollupTrigger's after-update rollup onto a Transaction__c they neither own nor
+        // have CRUD on, so the test would fail on sharing/CRUD rather than on the read under
+        // test. The fixture-integrity assertion below is what keeps this honest instead.
+        Task closing = new Task(
+            Transaction_Deal__c = txnId, Subject = 'Sign PSA', Task_Group__c = GROUP_A,
+            Task_Owner_Label__c = 'Danish', Status = 'Completed', Task_Sequence__c = 1
+        );
+        insert closing;
+
+        Test.startTest();
+        List<Task> rows = TaskSelector.selectChecklistByTransactionDealIds(new Set<Id>{ txnId });
+        Test.stopTest();
+
+        Assert.areEqual(1, rows.size(), 'The single checklist Task is returned');
+        Assert.areEqual(UserInfo.getUserId(), rows[0].LastModifiedById,
+            'LastModifiedById is selected and reflects the user who last touched the Task');
+        Assert.isNotNull(rows[0].LastModifiedBy,
+            'LastModifiedBy must be TRAVERSED, not just the Id selected — without the parent the '
+            + 'controller has no name to render and the row silently loses its completer');
+        Assert.areEqual(UserInfo.getName(), rows[0].LastModifiedBy.Name,
+            'LastModifiedBy.Name carries the completing user name');
+        Assert.areNotEqual(rows[0].Task_Owner_Label__c, rows[0].LastModifiedBy.Name,
+            'FIXTURE INTEGRITY: the completer must differ from the static role label, or this '
+            + 'test would pass even if the UI went back to rendering the role label');
     }
 
     @isTest
