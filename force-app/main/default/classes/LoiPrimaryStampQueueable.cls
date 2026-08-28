@@ -7,6 +7,20 @@
  * (Underwriting_Approval declares recordEditability=AdminOnly), so ANY write back to the deal from
  * inside that transaction fails with ENTITY_IS_LOCKED — regardless of who the running user is and
  * regardless of AccessLevel. SYSTEM_MODE bypasses CRUD and FLS; it does NOT bypass an approval lock.
+ *
+ * ⚠ RETRACTED 2026-08-28 — THE CAUSE DESCRIBED ABOVE NO LONGER EXISTS. THE CLASS IS KEPT ANYWAY.
+ * "The LOI stage is the only stage entered by the APPROVAL PROCESS's own field update" was true
+ * only while `Opportunity.Underwriting_Approval` existed and wrote StageName = 'LOI' on final
+ * approval. That process is RETIRED (active = false). LOI is now entered by the deal driver
+ * clicking Initiate LOI — an ordinary stage write with NO approval running on the Opportunity —
+ * so the deal is NOT locked when this back-stamp is needed.
+ *
+ * 🔴 DO NOT DELETE THIS QUEUEABLE ON THE STRENGTH OF THAT PARAGRAPH. It is now belt-and-braces
+ * rather than strictly required, and collapsing it back to an inline update is a separate change
+ * needing its own analysis: `LOI_Approval` still runs on the Opportunity with
+ * recordEditability = AdminOnly, so a deal can still be locked while sitting AT the LOI stage,
+ * and the async hop costs nothing. Reverting it would re-open a defect that took two attempts to
+ * close, to save one enqueue.
  * That is the distinction that produced the second failure on this path:
  *
  *   attempt 1  bare DML in the flow's Apex   -> System.TypeException (approver has no Edit)

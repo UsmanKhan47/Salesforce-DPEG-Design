@@ -45,6 +45,16 @@
  *   - `ApprovalAuditService` ALREADY performs an Opportunity `update` from inside THIS
  *     EXACT FLOW and works today.
  *
+ * ⚠ RETRACTED 2026-08-28 — THE SECOND AND THIRD BULLETS ABOVE ARE NOW WRONG ABOUT THE VENUE,
+ * THOUGH THE CONCLUSION IS UNCHANGED AND STRONGER. `Opportunity.Underwriting_Approval` is
+ * RETIRED (active = false), so no approval runs on the Opportunity at underwriting time at all
+ * and there is no `finalApprovalRecordLock` question to answer. This flow is now fired by an
+ * ordinary Apex `Database.update` from `UnderwritingApprovalStampService`, triggered in turn by
+ * the approval on the UNDERWRITING record. The deal is therefore not locked at all during the
+ * underwriting decision — a weaker precondition than the one argued above, so the freeze's
+ * placement remains valid. `ApprovalAuditService` still performs its Opportunity update from
+ * inside this same flow, so the third bullet holds as written.
+ *
  * 🔴 CONTRAST `LoiPrimaryStampQueueable` AND `DispositionNdaStampQueueable`, WHICH EXIST
  * ONLY BECAUSE THEIR RECORDS *ARE* LOCKED. Do not copy them here — a queueable would add
  * an async hop, a second transaction and a failure surface to solve a lock that this

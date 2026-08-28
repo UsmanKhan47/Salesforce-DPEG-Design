@@ -2,29 +2,31 @@
  * Tests ApprovalAuditService, focused on the UNDERWRITING gate that was repointed on 2026-08-28
  * to read the approval history of the deal's UNDERWRITING CHILD instead of the deal's own.
  *
- * ── 🔴 WHAT THIS CLASS CAN AND CANNOT PROVE, AND WHY IT IS SHAPED THIS WAY ────────────────────
- * The stamp's inputs are ProcessInstanceStep rows, which are created only by a real approval. The
- * new Underwriting__c.Underwriting_Approval process is owned by the parallel declarative stream
- * and is not deployed yet, and ProcessInstanceStep cannot be inserted, mocked or backdated from
- * Apex. So NO test in this file can assert "the approver's Id landed in UW_Approved_By__c" — that
- * is post-deploy check P-4 in agent-output/design-requirements.md §8, and it must not be skipped
- * on the strength of a green suite here.
+ * ── WHAT THIS CLASS PINS ──────────────────────────────────────────────────────────────────────
  *
- * The tests below therefore pin the two things that ARE decidable in Apex and that carry the
- * actual regression risk:
- *
- *   1. THE REPOINT ITSELF, asserted as a NEGATIVE. An approval taken on the OPPORTUNITY must no
- *      longer stamp anything. That is exactly the state the repoint creates, it is sensitive
- *      TODAY (Opportunity.Underwriting_Approval is still active, so the fixture can really be
- *      built), and reverting the repoint turns it red immediately. It is also the single most
- *      dangerous behaviour in this change, because the class swallows every failure by design:
- *      before the repoint this stamp read the deal's history and worked; after the old process is
- *      deactivated it would find nothing and stamp nothing, with no error anywhere.
+ *   1. THE REPOINT ITSELF, as a POSITIVE: a real approval granted on the UNDERWRITING record
+ *      stamps the DEAL's UW_Approved_By__c / UW_Approval_Date__c, with preconditions proving the
+ *      approved step exists on the child and NOT on the deal. This is the single most dangerous
+ *      behaviour in the change, because the class swallows every failure by design AND because
+ *      "no approved step found" is not a failure at all — it is the ordinary pending state. Had
+ *      the repoint been forgotten, retiring the Opportunity approval would have killed the stamp
+ *      with nothing thrown and nothing logged.
  *
  *   2. GRACEFUL DEGRADATION. Every no-history and degenerate path must complete silently without
  *      touching the deal and without throwing — because this runs inside the approval's own
  *      transaction, and a throw here would roll the approval back. That contract is why the class
  *      catches Exception rather than DmlException (see its own header, incident 2026-08-05).
+ *
+ * ⚠ SUPERSEDED NOTE, kept because it explains a deleted test. While the declarative half was
+ * undeployed this header read "WHAT THIS CLASS CAN AND CANNOT PROVE" and stated that no test here
+ * could assert the approver's Id reaching UW_Approved_By__c, since ProcessInstanceStep cannot be
+ * inserted, mocked or backdated from Apex. Item 1 was therefore written as a NEGATIVE against an
+ * Opportunity-side approval. That fixture is now unbuildable (the old process is inactive), which
+ * is precisely why it was written to fail loudly rather than pass vacuously.
+ *
+ * ⚠ Post-deploy check P-4 (agent-output/design-requirements.md §8) is STILL REQUIRED and is not
+ * made redundant by item 1: it verifies the stamp against a real principal approving in the UI,
+ * whereas this test's approver is the test-running user.
  *
  * ⚠ THE LOI GATE IS DELIBERATELY NOT RE-TESTED HERE. It is unchanged — LOI_Approval still runs on
  * the Opportunity and still reads the Opportunity's history — and its coverage lives in
@@ -52,28 +54,44 @@ private class ApprovalAuditServiceTest {
     }
 
     /**
-     * 🔴 THE REPOINT, asserted as the negative it creates.
+     * 🔴 THE REPOINT, now asserted as the POSITIVE it produces.
      *
-     * A real, granted approval on the OPPORTUNITY (still possible today — the old process is
-     * active until the declarative stream deactivates it) must produce NO audit stamp, because
-     * the underwriting gate no longer looks at the deal's approval history.
+     * ⚠ REPLACES `anApprovalOnTheOpportunityNoLongerStampsTheAudit` (2026-08-28). That test built
+     * a real granted approval ON THE OPPORTUNITY and asserted nothing was stamped — the only
+     * assertion available while Underwriting__c.Underwriting_Approval was undeployed. Its fixture
+     * is now UNBUILDABLE: Opportunity.Underwriting_Approval is inactive, so `Approval.process` on
+     * a deal at StageName = 'Underwriting' throws NO_APPLICABLE_PROCESS and the test could never
+     * reach its assertions. It was a deliberate tripwire for exactly this moment, and this is the
+     * test that supersedes it.
      *
-     * ⚠ This is not "asserting a bug". It is asserting that the read moved: the deal's own history
-     * is now the wrong place to look for an underwriting decision, and stamping from it would mean
-     * the repoint never happened. Revert ApprovalAuditService's mapping and this reds.
+     * This asserts the thing that actually matters and that nothing else in the suite covers:
+     * C-3's fix. Retiring the Opportunity approval would have silently killed the
+     * UW_Approved_By__c / UW_Approval_Date__c stamp — silently, because this class swallows every
+     * failure by design AND because "no approved step found" is not a failure at all, it is the
+     * ordinary not-yet-approved state. Nothing would have thrown and nothing would have logged.
+     *
+     * ⚠ THE TWO PRECONDITIONS ARE LOAD-BEARING, NOT CEREMONY. They establish that the approved
+     * step exists on the CHILD and does NOT exist on the DEAL, which is the entire content of the
+     * word "repoint". Without them a passing stamp assertion would be equally consistent with the
+     * old, unrepointed read.
      */
     @isTest
-    static void anApprovalOnTheOpportunityNoLongerStampsTheAudit() {
+    static void anApprovalOnTheUnderwritingRecordStampsTheDealsAuditFields() {
         Opportunity deal = dealWithUnderwriting();
+        Underwriting__c uw = [
+            SELECT Id, Stage__c FROM Underwriting__c WHERE Opportunity__c = :deal.Id LIMIT 1
+        ];
+        uw.Stage__c = 'In Progress'; // Underwriting_Approval's entry criterion
+        update uw;
 
         Approval.ProcessSubmitRequest submit = new Approval.ProcessSubmitRequest();
-        submit.setObjectId(deal.Id);
+        submit.setObjectId(uw.Id);
         Approval.process(submit);
 
         Test.startTest();
         ProcessInstanceWorkitem item = [
             SELECT Id FROM ProcessInstanceWorkitem
-            WHERE ProcessInstance.TargetObjectId = :deal.Id LIMIT 1
+            WHERE ProcessInstance.TargetObjectId = :uw.Id LIMIT 1
         ];
         Approval.ProcessWorkitemRequest decide = new Approval.ProcessWorkitemRequest();
         decide.setWorkitemId(item.Id);
@@ -81,20 +99,22 @@ private class ApprovalAuditServiceTest {
         Approval.process(decide);
         Test.stopTest();
 
-        // Precondition — if this ever returns 0, the fixture stopped building a real approval and
-        // the assertion below would be vacuously green.
         Assert.areEqual(1, [
             SELECT COUNT() FROM ProcessInstanceStep
+            WHERE ProcessInstance.TargetObjectId = :uw.Id AND StepStatus = 'Approved'
+        ], 'Precondition: the approved step must exist on the UNDERWRITING record');
+        Assert.areEqual(0, [
+            SELECT COUNT() FROM ProcessInstanceStep
             WHERE ProcessInstance.TargetObjectId = :deal.Id AND StepStatus = 'Approved'
-        ], 'Fixture precondition: a genuine approved step must exist ON THE OPPORTUNITY');
+        ], 'Precondition: the DEAL must have no approval history — that is what "repointed" means');
 
         Opportunity after = [
             SELECT UW_Approved_By__c, UW_Approval_Date__c FROM Opportunity WHERE Id = :deal.Id
         ];
-        Assert.isNull(after.UW_Approved_By__c,
-            'The underwriting gate must read the UNDERWRITING record\'s history, not the deal\'s');
-        Assert.isNull(after.UW_Approval_Date__c,
-            'No approval date may be stamped from an Opportunity-side approval any more');
+        Assert.areEqual(UserInfo.getUserId(), after.UW_Approved_By__c,
+            'The approver is read from the CHILD approval history and stamped on the deal (C-3)');
+        Assert.isNotNull(after.UW_Approval_Date__c,
+            'The approval timestamp is stamped on the deal from the same step');
     }
 
     /**

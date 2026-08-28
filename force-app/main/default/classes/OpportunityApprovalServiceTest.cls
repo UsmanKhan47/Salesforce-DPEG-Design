@@ -14,22 +14,19 @@
  * Per the task, ApprovalException-path tests assert the TYPED exception, never
  * AuraHandledException.getMessage().
  *
- * ── ⚠ WHAT THESE TESTS CAN AND CANNOT PROVE TODAY (2026-08-28) ───────────────────────────────
- * The principal approval moved onto Underwriting__c, but the Underwriting__c.Underwriting_Approval
- * PROCESS is owned by the parallel declarative stream and is not deployed yet. An Apex test cannot
- * conjure an approval process, so nothing here can assert a ProcessInstance whose TargetObjectId
- * is an underwriting record.
+ * ── ⚠ SUPERSEDED NOTE (kept: it explains why three tests are shaped the way they are) ─────────
+ * While the declarative half of this change was still undeployed, this header read "WHAT THESE
+ * TESTS CAN AND CANNOT PROVE TODAY" and recorded that no test here could assert a ProcessInstance
+ * targeting an underwriting record, because Apex cannot conjure an approval process. Three tests
+ * were therefore written to assert only the parent-side NEGATIVE (zero instances on the deal),
+ * which is true and sensitive in BOTH worlds, plus the routing table directly via the
+ * @TestVisible resolveApprovalTargetId.
  *
- * That is a narrower limitation than it sounds, and it is deliberately NOT worked around with a
- * conditional assertion (which would go vacuously green the moment the process lands). Every test
- * below asserts something that is TRUE AND SENSITIVE IN BOTH STATES:
- *   - the routing table itself, asserted directly against resolveApprovalTargetId (@TestVisible),
- *     which needs no approval process at all and is the actual unit under change;
- *   - the NEGATIVE that matters most — that submitting an underwriting NEVER creates a
- *     ProcessInstance against its PARENT. That count is 0 today because resolution goes to the
- *     child, and it stays 0 forever after. It was 1 before this change.
- * The positive end-to-end (a pending instance targeting the underwriting record) is post-deploy
- * check P-1 in agent-output/design-requirements.md §8, not an Apex test.
+ * Underwriting__c.Underwriting_Approval now exists, so the positives ARE assertable and have been
+ * added alongside the negatives rather than replacing them — the negative is the half that
+ * falsifies the original defect, and it stays. The @TestVisible routing assertion also stays: it
+ * is the only assertion here that holds regardless of which approval processes are active, which
+ * is what makes it the right place to pin the routing table itself.
  *
  * @see force-app/main/default/classes/OpportunityApprovalService.cls
  */
@@ -68,10 +65,13 @@ private class OpportunityApprovalServiceTest {
      * ⚠ INVERTED AND RENAMED 2026-08-28. Was `submitsFromUnderwritingRecordResolvesParent`, and
      * it asserted THE EXACT OPPOSITE of the required behaviour: that submitting from an
      * Underwriting record put the PARENT DEAL into approval. That is precisely what this change
-     * exists to stop, so the old test is not repaired, it is reversed.
+     * exists to stop, so the old test was not repaired, it was reversed.
      *
-     * The assertion is the parent-side NEGATIVE (see the class header): zero ProcessInstance
-     * against the Opportunity. Under the old resolver this count was 1.
+     * ⚠ UPGRADED once Underwriting__c.Underwriting_Approval existed. While that process was
+     * undeployed this test could only assert the NEGATIVE (no instance on the parent), because no
+     * Apex can conjure an approval process. It now asserts BOTH halves — the instance exists AND
+     * it targets the child — which is the positive proof the design pack had deferred to
+     * post-deploy check P-1.
      */
     @isTest
     static void submitsFromUnderwritingRecordTargetsTheUnderwritingItself() {
@@ -79,27 +79,27 @@ private class OpportunityApprovalServiceTest {
         o.StageName = 'Underwriting';
         o.Underwriting_Complete__c = true;
         insert o; // stage entry auto-creates the Underwriting record
-        Underwriting__c uw = [SELECT Id FROM Underwriting__c WHERE Opportunity__c = :o.Id];
+        Underwriting__c uw = [SELECT Id, Stage__c FROM Underwriting__c WHERE Opportunity__c = :o.Id];
 
         Assert.areEqual(uw.Id, OpportunityApprovalService.resolveApprovalTargetId(uw.Id),
             'An Underwriting record is its OWN approval target — not its parent deal');
 
-        // The submission itself cannot complete until the declarative stream deploys
-        // Underwriting__c.Underwriting_Approval, so it raises. What matters is WHICH raise, and
-        // above all that the parent was never submitted anywhere.
+        // The approval's entry criterion is Stage__c = 'In Progress'; the auto-created record
+        // arrives at 'Requested'.
+        uw.Stage__c = 'In Progress';
+        update uw;
+
         Test.startTest();
-        try {
-            OpportunityApprovalService.submitForApproval(uw.Id);
-        } catch (Exception e) {
-            // Intentionally tolerant of the exception TYPE only. The auto-created underwriting is
-            // at Stage__c = 'Requested', so today this is the typed "submit from In Progress"
-            // guard; once the approval process is live and the record is walked to 'In Progress'
-            // it becomes a successful submission. Neither outcome may create the instance below.
-        }
+        String msg = OpportunityApprovalService.submitForApproval(uw.Id);
         Test.stopTest();
 
-        Assert.areEqual(0,
-            [SELECT COUNT() FROM ProcessInstance WHERE TargetObjectId = :o.Id],
+        Assert.areEqual('The record has been submitted for approval.', msg,
+            'A neutral confirmation — this submission is not "the deal"');
+        Assert.areEqual(1, [
+            SELECT COUNT() FROM ProcessInstance
+            WHERE TargetObjectId = :uw.Id AND Status = 'Pending'
+        ], 'The pending approval must target the UNDERWRITING record');
+        Assert.areEqual(0, [SELECT COUNT() FROM ProcessInstance WHERE TargetObjectId = :o.Id],
             'Submitting from the Underwriting record must NEVER submit the parent deal');
     }
 
@@ -112,34 +112,41 @@ private class OpportunityApprovalServiceTest {
      * and no warning. It was reachable in production because the Underwriting page's visibility
      * rule keys on the CHILD's Stage__c and never inspects the parent's stage.
      *
-     * ⚠ THIS TEST IS SENSITIVE TODAY AND STAYS SENSITIVE. It does NOT depend on the new
-     * Underwriting approval process existing: LOI_Approval is live NOW, the parent genuinely
-     * satisfies its entry criteria, and reverting resolveApprovalTargetId's Underwriting branch
-     * turns this red immediately.
+     * ⚠ THE FIXTURE IS BUILT SO THAT LOI_Approval WOULD GENUINELY ACCEPT THE PARENT. The deal
+     * really is at StageName = 'LOI', which really is that process's entry criterion, and
+     * LOI_Approval really is still active — it is deliberately NOT part of this change. So the
+     * wrong process is a live, reachable destination, and only the routing keeps the submission
+     * away from it. Reverting resolveApprovalTargetId's Underwriting branch reds this immediately.
      */
     @isTest
     static void underwritingWithParentAtLoiNeverEntersLoiApproval() {
         Opportunity o = TestDataFactory.createOpportunity(null, false);
         o.StageName = 'Underwriting';
         insert o; // stage entry auto-creates the Underwriting record
-        Underwriting__c uw = [SELECT Id FROM Underwriting__c WHERE Opportunity__c = :o.Id];
+        Underwriting__c uw = [SELECT Id, Stage__c FROM Underwriting__c WHERE Opportunity__c = :o.Id];
 
         // Move the PARENT to LOI — the stage at which LOI_Approval's entry criteria are met.
         TestDataFactory.signPrimaryNda(o);
-        TestDataFactory.approveUnderwriting(o);
+        TestDataFactory.approveUnderwriting(o); // also satisfies Underwriting_Approved_Before_LOI
         o.StageName = 'LOI';
         update o;
         Assert.areEqual('LOI', [SELECT StageName FROM Opportunity WHERE Id = :o.Id].StageName,
             'Fixture precondition: the parent must really be at LOI, or this test proves nothing');
 
+        // Put the child back at the stage its OWN approval accepts, so the submission genuinely
+        // succeeds — this test must prove the submission went to the RIGHT process, not merely
+        // that it failed to go anywhere.
+        uw.Stage__c = 'In Progress';
+        update uw;
+
         Test.startTest();
-        try {
-            OpportunityApprovalService.submitForApproval(uw.Id);
-        } catch (Exception e) {
-            // See sibling test — the type is not the point here.
-        }
+        OpportunityApprovalService.submitForApproval(uw.Id);
         Test.stopTest();
 
+        Assert.areEqual(1, [
+            SELECT COUNT() FROM ProcessInstance
+            WHERE TargetObjectId = :uw.Id AND Status = 'Pending'
+        ], 'The submission lands on the underwriting record\'s own approval');
         Assert.areEqual(0,
             [SELECT COUNT() FROM ProcessInstance WHERE TargetObjectId = :o.Id],
             'An underwriting whose parent sits at LOI must NOT submit the deal into LOI_Approval');
@@ -171,65 +178,42 @@ private class OpportunityApprovalServiceTest {
     }
 
     /**
-     * ── 🔴 DELIBERATE TRIPWIRE. THIS TEST IS WRITTEN TO GO RED, ON PURPOSE, LATER. ─────────────
+     * Open item (b): the Opportunity at StageName = 'Underwriting' must be refused with a message
+     * NAMING THE REAL ROUTE, instead of falling through to the controller's generic mask.
      *
-     * Open item (b) — an Opportunity submitted at StageName = 'Underwriting' must be refused with
-     * a message NAMING THE REAL ROUTE (UNDERWRITING_MOVED_MESSAGE), instead of falling through to
-     * the controller's useless generic mask.
+     * ⚠ REPLACES A TRIPWIRE (2026-08-28). Until Opportunity.Underwriting_Approval was deactivated
+     * this branch was UNREACHABLE — that process's entry criterion was exactly
+     * StageName = 'Underwriting', so the submission SUCCEEDED and no refusal could be observed. A
+     * placeholder test (opportunityAtUnderwritingStillUsesTheLegacyProcess_TRIPWIRE) asserted the
+     * legacy behaviour instead, specifically so it would go red the moment the deactivation landed
+     * rather than pass vacuously forever. It has done its job and is deleted; this is the test it
+     * named as its replacement.
      *
-     * THAT BRANCH IS UNREACHABLE TODAY AND CANNOT BE TESTED YET. The refusal only happens when
-     * Approval.process FAILS, and Opportunity.Underwriting_Approval is STILL ACTIVE in the org —
-     * its entry criterion is exactly StageName = 'Underwriting', so the submission SUCCEEDS. The
-     * new branch begins working the instant the declarative stream runs execution-order step 9
-     * (deactivate that process). Nothing in Apex can simulate that.
-     *
-     * A conditional "if the process is gone, assert the message; otherwise pass" would go
-     * VACUOUSLY GREEN forever and quietly retire the requirement. So this asserts the CURRENT
-     * reality instead, with a precondition that inverts the moment the world changes:
-     *
-     *   🔴 WHEN THIS TEST FAILS WITH "Expected: 1, Actual: 0", NOTHING IS BROKEN. It means
-     *      Opportunity.Underwriting_Approval has been deactivated as planned. DELETE this method
-     *      and paste in the real one, which is written out below and is ready to use verbatim:
-     *
-     *      @isTest
-     *      static void submittingTheOpportunityAtUnderwritingNamesTheRealRoute() {
-     *          Opportunity o = makeOpp('Underwriting');
-     *          Test.startTest();
-     *          try {
-     *              OpportunityApprovalService.submitForApproval(o.Id);
-     *              Assert.fail('An Opportunity at Underwriting meets no approval entry criteria');
-     *          } catch (OpportunityApprovalService.ApprovalException e) {
-     *              Assert.isTrue(e.getMessage().contains('Underwriting record'),
-     *                  'The refusal must point the submitter at the Underwriting record, got: '
-     *                      + e.getMessage());
-     *              Assert.isTrue(e.getMessage().contains('Submit for Approval'),
-     *                  'The refusal must name the action to use, got: ' + e.getMessage());
-     *          }
-     *          Test.stopTest();
-     *          Assert.areEqual(0,
-     *              [SELECT COUNT() FROM ProcessInstance WHERE TargetObjectId = :o.Id],
-     *              'No approval instance may be created — it must not land in LOI_Approval');
-     *      }
-     *
-     *   ⚠ Note what that replacement asserts: THE MESSAGE, not merely "it threw". Before this
-     *     change the same call also threw (it fell through to `throw e` and the controller masked
-     *     it as "The deal could not be submitted for approval. Refresh the page or contact your
-     *     administrator."). A test asserting only that an exception occurred would pass against
-     *     exactly the useless behaviour this whole change exists to remove.
+     * ⚠ ASSERTS THE MESSAGE, NOT MERELY "IT THREW". Before this change the same call ALSO threw —
+     * it fell through to `throw e` and the controller masked it as "The deal could not be
+     * submitted for approval. Refresh the page or contact your administrator." A test asserting
+     * only that an exception occurred would pass against exactly the useless behaviour this whole
+     * change exists to remove.
      */
     @isTest
-    static void opportunityAtUnderwritingStillUsesTheLegacyProcess_TRIPWIRE() {
+    static void submittingTheOpportunityAtUnderwritingNamesTheRealRoute() {
         Opportunity o = makeOpp('Underwriting');
 
         Test.startTest();
-        OpportunityApprovalService.submitForApproval(o.Id);
+        try {
+            OpportunityApprovalService.submitForApproval(o.Id);
+            Assert.fail('An Opportunity at Underwriting meets no approval entry criteria');
+        } catch (OpportunityApprovalService.ApprovalException e) {
+            Assert.isTrue(e.getMessage().contains('Underwriting record'),
+                'The refusal must point the submitter at the Underwriting record, got: '
+                    + e.getMessage());
+            Assert.isTrue(e.getMessage().contains('Submit for Approval'),
+                'The refusal must name the action to use, got: ' + e.getMessage());
+        }
         Test.stopTest();
 
-        Assert.areEqual(1, [SELECT COUNT() FROM ProcessInstance WHERE TargetObjectId = :o.Id],
-            'TRIPWIRE (not a defect): this asserts the LEGACY Opportunity.Underwriting_Approval '
-                + 'is still active. A count of 0 means it has been deactivated — replace this '
-                + 'method with submittingTheOpportunityAtUnderwritingNamesTheRealRoute, written '
-                + 'out verbatim in this method\'s doc comment.');
+        Assert.areEqual(0, [SELECT COUNT() FROM ProcessInstance WHERE TargetObjectId = :o.Id],
+            'No approval instance may be created — it must not land in LOI_Approval');
     }
 
     @isTest

@@ -22,6 +22,11 @@
  * A new service is the only placement that breaks none of the three.
  *
  * ═══ 🔴 `allOrNone = false` IS MANDATORY. THE DEAL MAY BE LOCKED BY ITS OWN APPROVAL. ═══
+ * ⚠ AMENDED 2026-08-28: `Underwriting_Approval` NOW MEANS THE ONE ON `Underwriting__c`, which
+ * locks THAT record and not the deal. `Opportunity.Underwriting_Approval` is retired, so at the
+ * Underwriting stage the DEAL is no longer locked by an approval. `LOI_Approval` is unchanged and
+ * still locks the deal at LOI, so `allOrNone = false` remains MANDATORY — the input is rarer than
+ * argued below, not absent.
  * `Underwriting_Approval` and `LOI_Approval` both carry `recordEditability = AdminOnly`, and
  * a deal sitting at Underwriting or LOI is precisely the kind of live deal a broker blasts a
  * call for offers about. `AccessLevel.SYSTEM_MODE` **does not lift an approval lock** —

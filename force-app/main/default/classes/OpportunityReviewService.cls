@@ -581,6 +581,11 @@ public with sharing class OpportunityReviewService {
             // .SYSTEM_MODE does NOT lift an approval lock — it only lifts CRUD/FLS. Both approval
             // processes set finalApprovalRecordLock=false, so the deal unlocks at commit, which is
             // when the Queueable runs. Do not "simplify" this back to an inline update.
+            // ⚠ RETRACTED 2026-08-28: the deal is NO LONGER locked here. Its own underwriting
+            // approval is retired, and LOI is now entered by a plain stage write, so
+            // ENTITY_IS_LOCKED is no longer reachable on THIS path. The Queueable is retained
+            // deliberately — see LoiPrimaryStampQueueable's header for why removing it is a
+            // separate decision and not a tidy-up.
             Map<Id, Id> loiByOpp = new Map<Id, Id>();
             for (LOI__c loi : loiToInsert) {
                 loiByOpp.put(loi.Opportunity__c, loi.Id);
