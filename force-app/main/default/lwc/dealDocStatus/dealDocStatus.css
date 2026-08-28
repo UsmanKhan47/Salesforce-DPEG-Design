@@ -37,8 +37,14 @@
 .doc-icon--con {
     background: rgba(194, 65, 12, 0.13);
 }
+/* 2026-08-28: contract chip moved OFF --slds-g-color-palette-purple-50 on purpose.
+   That token is a mid-tone SOLID colour, not a tint, so this chip rendered as a heavy
+   filled block while its five siblings are 13% washes. The rgba() in that declaration
+   was only a fallback and never applied. Kept as a hardcoded tint to match the other
+   five rows; do not "restore" the token. Migrating all six to SLDS 2 tokens is a
+   separate change -- do it for the whole palette or not at all. */
 .doc-icon--contract {
-    background: var(--slds-g-color-palette-purple-50, rgba(126,87,194,0.13));
+    background: rgba(30, 127, 79, 0.13);
 }
 
 .doc {
