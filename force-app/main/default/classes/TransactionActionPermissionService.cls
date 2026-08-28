@@ -122,6 +122,25 @@
  * LeadActionPermissionService, OpportunityActionPermissionService and
  * DispositionActionPermissionService.
  *
+ * ── 🔴 2026-08-28: A SECOND, INDEPENDENT GATE LIVES HERE NOW (TASK) ──────────
+ * This class answers TWO questions, not one:
+ *   • hasTransactionActionAccess / assertTransactionActionAccess → `Transaction_Stage_Actions`
+ *     (may the user drive the stage quick action?) — unchanged by the 2026-08-28 work.
+ *   • hasTaskActionAccess / assertTaskActionAccess → `Transaction_Task_Actions`
+ *     (may the user complete/update a checklist Task?) — NEW.
+ *
+ * They are SEPARATE PERMISSIONS BY USER DECISION: stage advancement and checklist completion
+ * are to be independently grantable. They also have separate caches, so one gate can never
+ * answer the other's question mid-transaction (see cachedHasTaskActionAccess).
+ *
+ * 🔴 THE TASK GATE CARRIES MORE WEIGHT THAN THE STAGE ONE. The stage gate sits in front of a
+ * write the platform would also refuse on its own. The task gate does not: Task object Edit
+ * cannot be granted by ANY permission set on this platform (ObjectPermissions.SobjectType is a
+ * restricted picklist that excludes Task/Event/Activity), so TransactionTaskService writes in
+ * SYSTEM_MODE and THIS CHECK IS THE ONLY AUTHORIZATION on that path. Read
+ * TransactionTaskService's header before changing anything named *TaskAction* here.
+ *
+ * @see force-app/main/default/classes/TransactionTaskService.cls (the only task-gate consumer)
  * @see force-app/main/default/classes/RecordStageAdvanceService.cls (the gate dispatch)
  * @see force-app/main/default/classes/OpportunityActionPermissionService.cls (the acquisitions gate)
  * @see force-app/main/default/customPermissions/Transaction_Stage_Actions.customPermission-meta.xml
@@ -166,6 +185,29 @@ public with sharing class TransactionActionPermissionService {
      */
     private static final String TRANSACTION_ACTION_CUSTOM_PERMISSION = 'Transaction_Stage_Actions';
 
+    /**
+     * The AUTHORIZATION token for the Transaction CHECKLIST TASK write path (added 2026-08-28).
+     *
+     * 🔴 IT IS A SECOND, INDEPENDENT PERMISSION — NOT A REUSE OF THE STAGE ONE, AND THAT IS A
+     * USER DECISION, NOT A STYLE CHOICE. Advancing a Transaction stage and completing a
+     * checklist Task are to be independently grantable, so anyone tempted to collapse the two
+     * tokens (they are carried by sets in the same group today, so the populations currently
+     * coincide) would be removing a capability the user explicitly asked for.
+     *
+     * Granted by `DPEG_Task_Edit`, a member of the `DPEG_Transaction_Team` permission set group
+     * (both verified live on usman-dpeg, 2026-08-28). Consumed by TransactionTaskService's three
+     * write methods, which then run their DML in SYSTEM_MODE — because Task object Edit is
+     * literally un-grantable by permission set on this platform (ObjectPermissions.SobjectType
+     * is a restricted picklist that does not contain Task/Event/Activity). See that class's
+     * header for the full proof.
+     *
+     * ⚠ Same runtime-resolution caveat as the stage token above: a String, so this class
+     * compiles and deploys whether or not the permission exists yet, and an absent permission
+     * returns `false` — denying the whole Transactions team rather than granting everyone.
+     * Correct direction, but silent. The Apex and the permission belong in the SAME deploy.
+     */
+    private static final String TASK_ACTION_CUSTOM_PERMISSION = 'Transaction_Task_Actions';
+
     // Transaction-scoped cache of the composed answer. Neither the running user's custom-permission
     // grants nor their "Modify All Data" can change mid-transaction, so the bypass read happens at
     // most once per execution context.
@@ -173,6 +215,18 @@ public with sharing class TransactionActionPermissionService {
     // LeadActionPermissionService's shared cache; it now owns one, like both sibling gates.
     @TestVisible
     private static Boolean cachedHasTransactionActionAccess;
+
+    /**
+     * Transaction-scoped cache for the TASK gate.
+     *
+     * 🔴 A SEPARATE VARIABLE ON PURPOSE. The two permissions are independently grantable, so one
+     * shared cache would let whichever gate ran first answer the other one's question — a user
+     * holding only `Transaction_Stage_Actions` would silently pass the task gate (or vice
+     * versa) for the rest of the transaction. That failure would be invisible in any test that
+     * asks only one gate per transaction, which is most of them.
+     */
+    @TestVisible
+    private static Boolean cachedHasTaskActionAccess;
 
     /**
      * Test seam for the permission-machinery fault branch — the only deterministic way to make this
@@ -237,6 +291,56 @@ public with sharing class TransactionActionPermissionService {
     }
 
     /**
+     * Whether the running user may complete/update a Transaction CHECKLIST TASK.
+     *
+     * Mirrors hasTransactionActionAccess() line for line, including the caching nuance: the
+     * cache is assigned only AFTER a successful computation, so a thrown fault leaves it empty
+     * and the next ask re-evaluates rather than memoizing a fault as an answer.
+     *
+     * @return true when the user holds the `Transaction_Task_Actions` custom permission
+     *         (granted through `DPEG_Task_Edit`, directly or via the `DPEG_Transaction_Team`
+     *         permission set group), or has "Modify All Data"; false otherwise.
+     * @throws System.QueryException when the permission-set lookup behind the admin bypass fails
+     *         unexpectedly. Deliberately NOT swallowed — see the fail-closed note in the class
+     *         header.
+     * @example
+     * if (!TransactionActionPermissionService.hasTaskActionAccess()) { return; }
+     */
+    public static Boolean hasTaskActionAccess() {
+        if (cachedHasTaskActionAccess != null) {
+            return cachedHasTaskActionAccess;
+        }
+        // Assign only AFTER a successful computation: a thrown fault must leave the cache empty
+        // so the next ask re-evaluates rather than memoizing a fault as an answer.
+        Boolean allowed = computeTaskActionAccess();
+        cachedHasTaskActionAccess = allowed;
+        return allowed;
+    }
+
+    /**
+     * Server-side guard for the Transaction checklist Task write path. Called at the top of all
+     * three TransactionTaskService write methods, which then run their DML in SYSTEM_MODE.
+     *
+     * 🔴 UNLIKE assertTransactionActionAccess ABOVE, THIS ONE IS LOAD-BEARING TODAY. It is not
+     * defence in depth over a platform CRUD check — it IS the only authorization on that write
+     * path, because the platform's own Task Edit CRUD is un-grantable by permission set here
+     * (see TransactionTaskService's header). Removing this call does not fall back to a
+     * platform refusal; it opens the write to every user who can reach the controller.
+     *
+     * @throws TransactionActionPermissionService.AccessDeniedException carrying
+     *         NO_PERMISSION_MESSAGE when the running user lacks access.
+     * @throws System.QueryException when the permission lookup itself fails unexpectedly.
+     * @example
+     * TransactionActionPermissionService.assertTaskActionAccess();
+     */
+    public static void assertTaskActionAccess() {
+        if (hasTaskActionAccess()) {
+            return;
+        }
+        throw new AccessDeniedException(NO_PERMISSION_MESSAGE);
+    }
+
+    /**
      * Evaluates the gate.
      *
      * ⚠ ORDER: the custom permission is tested FIRST because it costs ZERO SOQL, so a Transactions
@@ -251,6 +355,33 @@ public with sharing class TransactionActionPermissionService {
 
         // 0 SOQL. Returns false (never throws) for an unknown or unheld permission.
         if (FeatureManagement.checkPermission(TRANSACTION_ACTION_CUSTOM_PERMISSION)) {
+            return true;
+        }
+
+        return hasModifyAllData();
+    }
+
+    /**
+     * Evaluates the TASK gate. Structurally identical to computeTransactionActionAccess above,
+     * differing only in the permission token it tests.
+     *
+     * ⚠ THE "Modify All Data" BYPASS IS RETAINED HERE DELIBERATELY, AND DROPPING IT WOULD BE A
+     * REGRESSION, NOT A TIGHTENING. Administrators are the ONLY people who can complete a
+     * checklist Task today — "Modify All Data" implies Task CRUD, which is precisely why the
+     * defect reads as "works for me" to an admin. A task gate without the bypass would take
+     * that away from every administrator who has not also been assigned `DPEG_Task_Edit`.
+     *
+     * ⚠ It shares the `simulateLookupFailure` test seam with the stage gate — one flag meaning
+     * "the permission machinery itself failed", not one per gate. A test setting it affects
+     * both, which is correct: the fault it simulates is not permission-specific.
+     */
+    private static Boolean computeTaskActionAccess() {
+        if (simulateLookupFailure == true && Test.isRunningTest()) {
+            throw new QueryException('Simulated permission-lookup failure (test seam).');
+        }
+
+        // 0 SOQL. Returns false (never throws) for an unknown or unheld permission.
+        if (FeatureManagement.checkPermission(TASK_ACTION_CUSTOM_PERMISSION)) {
             return true;
         }
 
@@ -296,6 +427,9 @@ public with sharing class TransactionActionPermissionService {
     @TestVisible
     private static void clearCache() {
         cachedHasTransactionActionAccess = null;
+        // ⚠ BOTH caches. A user switch invalidates every memoized answer in this class, not just
+        // the stage one; clearing only half would leave the previous user's task answer standing.
+        cachedHasTaskActionAccess = null;
         simulateLookupFailure = false;
     }
 }

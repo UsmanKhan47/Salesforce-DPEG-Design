@@ -6,6 +6,10 @@
          PermissionSet deploy REPLACES its whole fieldPermissions set rather than merging, shipping the
          repo as-is would have silently revoked that org grant. The repo file must always be a superset
          of the org before it ships. -->
+    <customPermissions>
+        <enabled>true</enabled>
+        <name>Transaction_Task_Actions</name>
+    </customPermissions>
     <description>Create/read/update standard Tasks, no delete. Task has no custom fields and no OWD/sharing of its own - row access to non-owned tasks derives from the Activity model plus Read/Write sharing on the parent Transaction.</description>
     <fieldPermissions>
         <editable>true</editable>
@@ -184,13 +188,27 @@
     </fieldPermissions>
     <hasActivationRequired>false</hasActivationRequired>
     <label>Task – Edit</label>
-    <objectPermissions>
-        <allowCreate>true</allowCreate>
-        <allowDelete>false</allowDelete>
-        <allowEdit>true</allowEdit>
-        <allowRead>true</allowRead>
-        <modifyAllRecords>false</modifyAllRecords>
-        <object>Task</object>
-        <viewAllRecords>false</viewAllRecords>
-    </objectPermissions>
+    <!--
+        2026-08-28: REMOVED the Task <objectPermissions> block that lived here. This is not a
+        typo or a missed deploy — it is IMPOSSIBLE to grant on this platform, proven, not
+        assumed: ObjectPermissions.SobjectType is a RESTRICTED PICKLIST of 3,007 values, and
+        Task, Event and Activity are NOT among them (Account/Contact/Lead/Opportunity/Case/
+        Contract all are). A direct API insert of an ObjectPermissions row for Task returns
+        INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST on SobjectType — Task CRUD can only be granted
+        via a PROFILE, which is ruled out for this org.
+
+        Worse, leaving the block in this file was actively misleading: Salesforce ACCEPTS it on
+        deploy and reports the component as Changed, then SILENTLY DISCARDS it. Measured
+        2026-08-28 on usman-dpeg: deploy of this exact block reported success, and a readback of
+        the deployed permission set showed 35 fieldPermissions present and ZERO
+        objectPermissions. Do not re-add this block believing the earlier absence was a bug or
+        an unfinished deploy.
+
+        The replacement authorization path is the Transaction_Task_Actions custom permission
+        (granted above via <customPermissions>), which TransactionTaskService reads via
+        FeatureManagement.checkPermission before running its Task-completion DML in system mode.
+        Sharing is unaffected by this — only object-level CRUD is bypassed, and only on that one
+        write path. See customPermissions/Transaction_Task_Actions.customPermission-meta.xml for
+        the full rationale.
+    -->
 </PermissionSet>
