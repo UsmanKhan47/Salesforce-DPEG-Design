@@ -97,9 +97,32 @@
         record type keeps showing its (possibly stale) day count rather than having it silently
         hidden by a rule that was only ever argued for two named types plus the migration-window
         blank/Master case.
+
+        🔴 AMENDED 2026-08-27 - 'Sent' WAS REMOVED FROM THE Acquisition_NDA RECORD TYPE, SO THE
+        ACQUISITION TERMINAL MOVED FROM 'Sent' TO 'Signed'. That cascade shipped in deploy
+        0Afiw000000SlqPCAS / commit 1f28e9a - RecordType, the FlexiPage entry, the Path step, and
+        RecordStageAdvanceService.NDA_ACQUISITION_NEXT_STAGE were all updated then. This field was
+        MISSED in that pass: it still tested TEXT(Status__c) = "Sent" in the acquisition branch, a
+        value the record type could no longer hold, so that branch became permanently unreachable
+        and Days_Out__c never blanked - silently reintroducing the exact "grows forever" bug the
+        2026-08-16 redesign above exists to prevent, visible as e.g. "out 340 days" on a finished
+        acquisition NDA in reports/Acquisitions/NDA_Tracker_Recent. Fixed here by changing ONLY the
+        acquisition branch's literal from "Sent" to "Signed" - the two Disposition_NDA branches
+        ("Signed" and "Declined"), the ISBLANK(RecordType.DeveloperName) acquisition pairing, and
+        every piece of reasoning above (enumeration shape, defaultTypeKey coupling, the Master-type
+        disposition asymmetry) are UNCHANGED and still apply verbatim; acquisition and disposition
+        now both terminate the count at their own 'Signed', for different, already-documented
+        reasons.
+
+        ⚠ RESIDUAL, NOT SOLVED HERE: Date_Sent__c remains hand-entered and ungated on
+        Acquisition_NDA - nothing currently writes it automatically, so a user can still populate it
+        even though no acquisition step is named "sent" anymore. This amendment only makes the
+        counter blank correctly at the new terminal; it does not make Date_Sent__c's meaning on
+        acquisition NDAs self-evident. Whether Date_Sent__c should be renamed, repointed, or
+        replaced on the acquisition side is a separate, open decision for the user.
     -->
     <fullName>Days_Out__c</fullName>
-    <description>Days since the NDA was sent (TODAY - Date Sent), blank once the NDA reaches its own record type's terminal state (Sent for Acquisition_NDA or blank/Master, matching RecordStageAdvanceService.defaultTypeKey; Signed or Declined for Disposition_NDA). Acquisition and not-yet-migrated (blank/Master) NDAs therefore read permanently blank once Sent - see the field's own comment for why. Gives the dashboard NDA Tracker table a numeric column and flags aging NDAs still genuinely outstanding.</description>
+    <description>Days since the NDA was sent (TODAY - Date Sent), blank once the NDA reaches its own record type's terminal state (Signed for Acquisition_NDA or blank/Master, matching RecordStageAdvanceService.defaultTypeKey; Signed or Declined for Disposition_NDA). Acquisition and not-yet-migrated (blank/Master) NDAs therefore read permanently blank once Signed - see the field's own comment for why. Gives the dashboard NDA Tracker table a numeric column and flags aging NDAs still genuinely outstanding.</description>
     <externalId>false</externalId>
     <formula><![CDATA[IF(
   ISBLANK(Date_Sent__c),
@@ -108,7 +131,7 @@
     OR(
       AND(
         OR(RecordType.DeveloperName = "Acquisition_NDA", ISBLANK(RecordType.DeveloperName)),
-        TEXT(Status__c) = "Sent"
+        TEXT(Status__c) = "Signed"
       ),
       AND(RecordType.DeveloperName = "Disposition_NDA", TEXT(Status__c) = "Signed"),
       AND(RecordType.DeveloperName = "Disposition_NDA", TEXT(Status__c) = "Declined")
