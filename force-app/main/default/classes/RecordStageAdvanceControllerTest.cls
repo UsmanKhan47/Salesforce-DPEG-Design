@@ -199,8 +199,19 @@ private class RecordStageAdvanceControllerTest {
         // new order 'Signed' HAS a hop, so that version of this test would have advanced the NDA
         // successfully and failed on its own Assert.fail. The subject of the test is unchanged: a
         // terminal stage's message must reach the LWC verbatim. Only which value is terminal moved.
+        //
+        // 🔴 AND IT MOVED BACK ON 2026-08-27 — 'Sent' IS OFF THE Acquisition_NDA RECORD TYPE
+        // ENTIRELY (user decision), SO THE TERMINAL IS 'Signed' AGAIN AND THIS FIXTURE IS BACK TO
+        // ITS PRE-2026-08-16 SHAPE. The paragraph above is retained verbatim so the round trip is
+        // visible rather than looking like a revert nobody explained.
+        // ⚠ THE 2026-08-16 VERSION DID NOT MERELY GO STALE, IT BROKE AT THE DML. `nda()` returns
+        // the @TestSetup NDA, which TestDataFactory stamps Acquisition_NDA, and NDA__c.Status__c is
+        // a restricted picklist whose record-type subset IS enforced by Apex DML (measured — see
+        // RecordStageAdvanceService's class header). So `update record` with 'Sent' threw
+        // INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST on line one and this test failed in its FIXTURE,
+        // two lines before the behaviour it exists to check.
         NDA__c record = nda();
-        record.Status__c = 'Sent';
+        record.Status__c = 'Signed';
         update record;
 
         Test.startTest();
@@ -208,8 +219,11 @@ private class RecordStageAdvanceControllerTest {
             RecordStageAdvanceController.advance(record.Id);
             Assert.fail('A terminal stage has no next step');
         } catch (AuraHandledException e) {
-            Assert.areEqual('There is no next step available from the Sent stage.', e.getMessage(),
-                'A user-actionable service message must reach the LWC verbatim');
+            Assert.areEqual('There is no next step available from the Signed stage.', e.getMessage(),
+                'A user-actionable service message must reach the LWC verbatim. This is also the '
+                + 'end-to-end proof of the 2026-08-27 corrective: what reaches the LWC from an '
+                + 'acquisition NDA at Signed must be THIS sentence, not the platform\'s '
+                + 'INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST surfaced verbatim by setStage');
         }
         Test.stopTest();
     }

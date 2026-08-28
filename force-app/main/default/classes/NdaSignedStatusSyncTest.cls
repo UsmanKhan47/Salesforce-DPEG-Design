@@ -19,8 +19,29 @@
  * would silently un-sign its NDA and lock the deal out of every stage past the gate, with nothing
  * red anywhere to explain it.
  *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * 🔴 AMENDED 2026-08-27 — THE ACQUISITION SEQUENCE ENDS AT 'Signed'. 'Sent' WAS REMOVED FROM THE
+ * Acquisition_NDA RECORD TYPE BY USER DECISION. THE PARAGRAPH ABOVE IS RETAINED VERBATIM AS THE
+ * RECORD OF THE HAZARD IT DESCRIBES, WHICH HAS NOT GONE AWAY — IT HAS MOVED.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Measured live that day (UI API picklist-values, record type 012iw0000009yeZAAQ): Acquisition_NDA
+ * offers exactly Pending | Received | Signed. `RecordStageAdvanceService`'s
+ * NDA_ACQUISITION_NEXT_STAGE lost its 'Signed' => 'Sent' hop in the same corrective change.
+ *
+ * ⇒ WHAT THIS DOES TO THE HAZARD. An acquisition NDA no longer moves PAST the value that sets the
+ * checkbox, so the flow's latch is no longer what protects the deal gate — the sequence's own
+ * shape is. That is a STRONGER guarantee, not a weaker one, and it is why the pin below changed
+ * from "the latch holds across Signed -> Sent" to "Signed -> Sent cannot happen at all".
+ * 🔴 THE HAZARD IS DORMANT, NOT DEAD, AND THE FLOW WAS NOT TOUCHED. Connecting
+ * `NDA_Signed_Status_Sync`'s dead `Set_Signed_False` branch is still forbidden: it would clear the
+ * checkbox on `Pending` and `Received`, and it would re-arm the original hazard in full the moment
+ * anyone re-adds a hop out of 'Signed'. `dispositionNdaSignedThenDeclined_clearsNdaSigned` and
+ * `statusPendingToReceived_leavesCheckboxUntouched` are unaffected and still cover those paths.
+ *
  * ── THE TEST THAT MUST NEVER BE DELETED ──────────────────────────────────────
  * `acquisitionNdaSignedThenSent_keepsNdaSignedTrue` is the regression pin for that entire hazard.
+ * ⚠ RENAMED 2026-08-27 to `acquisitionNdaCannotLeaveSigned_soTheGateCannotBeUnLatched`. The old
+ * name will not resolve against this class; it is written out because this header names it.
  *
  * ── ⚠ BEFORE-SAVE FLOW: ASSERT ON A RE-QUERIED RECORD, NEVER THE IN-MEMORY ONE ──
  * `NDA_Signed_Status_Sync` is `RecordBeforeSave`, so the in-memory `NDA__c` variable used to build
@@ -42,9 +63,34 @@ private class NdaSignedStatusSyncTest {
      * TRUE. 'Declined' is exposed only on Disposition_NDA, so the new Is_Declined branch is
      * structurally unreachable from this transition; if this test ever goes false, either that
      * value-named exemption broke or someone connected a blanket "not Signed => false" rule.
+     *
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * 🔴 REWRITTEN AND RENAMED 2026-08-27 (was acquisitionNdaSignedThenSent_keepsNdaSignedTrue).
+     * THE DOC ABOVE IS RETAINED VERBATIM; IT DESCRIBES A TRANSITION THAT NO LONGER EXISTS.
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * The user removed 'Sent' from the Acquisition_NDA record type in Setup, so the old body's
+     * `nda.Status__c = 'Sent'; update nda;` no longer proves the latch — it throws
+     * INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST at the DML, because NDA__c.Status__c is restricted
+     * and its record-type subset IS enforced by Apex DML (measured; see this class's own
+     * acquisitionNdaDeclinedViaApiResidual_isRefusedByThePicklistRestrictionItself, which is the
+     * measurement this repo cites everywhere else).
+     *
+     * 🔴 THE PIN IS KEPT AND STRENGTHENED RATHER THAN DELETED, AND THE REASON MATTERS. The hazard
+     * was never "the latch might fail"; it was "a live acquisition deal gets un-signed by the
+     * click that completes its NDA". That click no longer exists — the buy-side NDA ENDS at
+     * 'Signed'. This test now asserts the two facts that make the hazard unreachable, in the
+     * order a future reader needs them:
+     *   1. 'Signed' still derives NDA_Signed__c = true (the deal gate still opens at all);
+     *   2. the record CANNOT be moved to 'Sent' afterwards, by ANY channel — the platform refuses
+     *      it, so no flow change, no Advance Stage click and no hand-crafted API write can reach
+     *      the transition the old test was guarding.
+     * A red on (2) — the update SUCCEEDING — means 'Sent' is back on the Acquisition_NDA record
+     * type, at which point the ORIGINAL hazard is live again and this test must be restored to its
+     * pre-2026-08-27 body along with the NDA_ACQUISITION_NEXT_STAGE hop. That instruction is the
+     * whole reason the old doc paragraph above was not deleted.
      */
     @isTest
-    static void acquisitionNdaSignedThenSent_keepsNdaSignedTrue() {
+    static void acquisitionNdaCannotLeaveSigned_soTheGateCannotBeUnLatched() {
         Opportunity opp = TestDataFactory.createOpportunity(null, true);
         NDA__c nda = TestDataFactory.createNda(opp.Id, false); // Acquisition_NDA, seeds 'Pending'
         nda.Status__c = 'Signed';
@@ -54,16 +100,36 @@ private class NdaSignedStatusSyncTest {
         Assert.isTrue(afterSigned.NDA_Signed__c,
             'PRECONDITION: Status = Signed must derive NDA_Signed__c = true on insert');
 
-        nda.Status__c = 'Sent'; // acquisition TERMINAL (Pending -> Received -> Signed -> Sent)
-        update nda;
+        Boolean refused = false;
+        String platformMessage = '';
+        try {
+            update new NDA__c(Id = nda.Id, Status__c = 'Sent');
+            Assert.fail('🔴 THE REGRESSION THIS TEST EXISTS TO PIN, IN ITS 2026-08-27 FORM. The '
+                + 'platform MUST refuse Sent on an Acquisition_NDA. If this update succeeded, Sent '
+                + 'is back on that record type and the ORIGINAL hazard is live again: restore the '
+                + 'Signed => Sent hop in RecordStageAdvanceService.NDA_ACQUISITION_NEXT_STAGE AND '
+                + 'restore this test\'s pre-2026-08-27 body, which asserted that the flow\'s latch '
+                + 'holds across that hop. Do not simply delete this assertion');
+        } catch (DmlException e) {
+            refused = true;
+            platformMessage = e.getMessage();
+        }
 
-        NDA__c afterSent = [SELECT NDA_Signed__c FROM NDA__c WHERE Id = :nda.Id];
-        Assert.isTrue(afterSent.NDA_Signed__c,
-            '🔴 THE REGRESSION THIS TEST EXISTS TO PIN. The acquisition terminal Sent must NOT '
-            + 'clear NDA_Signed__c — Declined is exposed only on Disposition_NDA, so the Is_Declined '
-            + 'branch is structurally unreachable from this transition. If this goes false, a live '
-            + 'acquisition deal is locked out of Underwriting/LOI/PSA/About to Close/Closed Won on '
-            + 'its final Advance Stage click, with nothing red to explain it');
+        Assert.isTrue(refused,
+            'An acquisition NDA at Signed has nowhere left to go — Sent left this record type on '
+            + '2026-08-27, so the un-signing hazard is structurally unreachable rather than merely '
+            + 'guarded by the flow\'s latching false branch');
+        Assert.isTrue(platformMessage.contains('restricted picklist'),
+            'and the refusal must be the record-type picklist restriction specifically, not a '
+            + 'validation rule standing in for it — a rule could be deactivated without anyone '
+            + 'noticing this test had stopped proving what it claims; got: ' + platformMessage);
+
+        NDA__c afterRefusal = [SELECT NDA_Signed__c, Status__c FROM NDA__c WHERE Id = :nda.Id];
+        Assert.areEqual('Signed', afterRefusal.Status__c,
+            'and the refused write must leave the record on Signed');
+        Assert.isTrue(afterRefusal.NDA_Signed__c,
+            'and NDA_Signed__c must still be true — the deal stays unblocked for '
+            + 'Underwriting/LOI/PSA/About to Close/Closed Won');
     }
 
     /**

@@ -98,6 +98,39 @@
         dropdown, the acquisition dropdown order cannot be corrected without harming disposition
         (per the constraint above), and the Path bubbles - already verified correct - remain the
         authoritative visual sequence for users regardless of what the dropdown shows.
+
+        =====================================================================
+        AMENDED 2026-08-27 (URGENT CORRECTIVE) - 'Sent' STEP REMOVED. EVERYTHING ABOVE THIS BLOCK
+        DESCRIBING A FOUR-STEP Pending/Received/Signed/Sent PATH, IN EITHER ORDER, IS NOW
+        HISTORICAL - RETAINED VERBATIM AS THE RECORD OF WHAT CHANGED, NOT AS CURRENT BEHAVIOUR.
+        =====================================================================
+
+        THIS PATH NOW HAS THREE STEPS: Pending -> Received -> Signed. The <pathAssistantSteps>
+        block for 'Sent' below is removed. 'Signed' is now the LAST step and the acquisition
+        terminal, replacing 'Sent' in that role.
+
+        WHY: same day as deploy 0Afiw000000SIoPCAW, the user removed 'Sent' from the
+        Acquisition_NDA record type's restricted Status__c subset in Setup (see that record
+        type's own 2026-08-27 amendment). A Path step naming a picklist value the record type no
+        longer carries is exactly the kind of drift this file's own house style (the 2026-08-16
+        amendment above) warns against leaving unreconciled - here it also directly caused the
+        urgent defect: NDA__c.Move_to_Sent, a quick-action button gated at Status__c EQUAL
+        'Signed' on an Acquisition_NDA row (flexipages/NDA_Record_Page), attempted to write a
+        value ('Sent') the record type no longer permits, throwing
+        INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST on every click. Removing the step here keeps this
+        file's <pathAssistantSteps> order in sync with the record type's picklistValues order,
+        which is the same discipline the "EVERY PICKLIST ON THE OBJECT IS ENUMERATED" note in
+        Acquisition_NDA's own file exists to protect on the record-type side.
+
+        WHAT THIS EDIT DOES NOT TOUCH: NDA_Path_Disposition is untouched - the disposition path
+        still ends ... Sent -> Signed and 'Sent' remains a mid-sequence disposition value. The
+        master Status__c field's value list (objects/NDA__c/fields/Status__c.field-meta.xml) is
+        also untouched - 'Sent' remains a valid master value, still used by Disposition_NDA. The
+        removed step's <info> text ("Signed copy returned to the broker...") is simply deleted
+        with the step, not relocated - 'Signed' step's own <info> text below ("NDA fully
+        executed...") already stands as the terminal-step description and was not reworded here,
+        since the underlying decision (Signed = terminal) is a reversion to what that text already
+        said before the 2026-08-16 reorder, not a new claim needing new wording.
     -->
     <active>true</active>
     <entityName>NDA__c</entityName>
@@ -120,12 +153,6 @@
         <fieldNames>NDA_Signed__c</fieldNames>
         <info>NDA fully executed. NDA Signed = TRUE is what unlocks advancing the deal to Underwriting.</info>
         <picklistValueName>Signed</picklistValueName>
-    </pathAssistantSteps>
-    <pathAssistantSteps>
-        <fieldNames>Date_Sent__c</fieldNames>
-        <fieldNames>OneDrive_URL__c</fieldNames>
-        <info>Signed copy returned to the broker. This is the final step - the deal gate is already open and nothing comes back.</info>
-        <picklistValueName>Sent</picklistValueName>
     </pathAssistantSteps>
     <recordTypeName>Acquisition_NDA</recordTypeName>
 </PathAssistant>

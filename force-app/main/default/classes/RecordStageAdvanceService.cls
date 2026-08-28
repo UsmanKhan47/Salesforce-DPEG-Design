@@ -46,7 +46,7 @@
  * stage sequences per type (D7 / D14.1 / D6, plus observation 7 and the 2026-08-19 redesign):
  *
  *   NDA__c
- *   Acquisition_NDA   Pending  -> Received -> Signed -> Sent        explicit targets: none
+ *   Acquisition_NDA   Pending  -> Received -> Signed              explicit targets: none
  *                     gate: DEAL_DRIVER
  *                     ⚠ REORDERED 2026-08-16 (user decision). 'Sent' moved from the SECOND
  *                     position to the TERMINAL one and changed meaning with it: it is now "the
@@ -54,6 +54,13 @@
  *                     placement of 'Sent' is REVERSED — see NDA_ACQUISITION_NEXT_STAGE for the
  *                     retracted argument, the unmigrated-row residual, and why this needed NO
  *                     change to NDA_Signed_Status_Sync (the deal gate's checkbox LATCHES true).
+ *                     🔴 NARROWED 2026-08-27 (user decision), AND THE PARAGRAPH ABOVE IS NOW
+ *                     HISTORY. This line read "Pending -> Received -> Signed -> Sent" until that
+ *                     day, when the user removed 'Sent' from the Acquisition_NDA record type in
+ *                     Setup. 'Signed' is the acquisition TERMINAL again and 'Sent' is unreachable
+ *                     on this record type — see NDA_ACQUISITION_NEXT_STAGE for the measurement,
+ *                     the DML-refusal defect it fixed, and why no legacy hop was retained. Do not
+ *                     restore either the 2026-08-16 order or D14.1's from the paragraphs above.
  *   Disposition_NDA   Prepare -> Approved -> Sent -> Signed
  *                                                                   explicit targets: {Declined}
  *                     gate: DISPOSITION_DRIVER
@@ -218,6 +225,52 @@
  * other keeps walking — the same key must produce a hop on one type and a refusal on the other.
  * That single fact is why an object-keyed map cannot express this feature and why the record type
  * has to be read off the record. The conclusion is unchanged; only the illustration moved.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * 🔴 SUPERSEDED 2026-08-27 — THE TWO-LINE TABLE AND THE PARAGRAPH ABOVE ARE BOTH OBSOLETE ON
+ * NDA__c. THEY ARE RETAINED VERBATIM BECAUSE THIS IS THE THIRD TIME THIS EXACT BLOCK HAS BEEN
+ * REWRITTEN AND THE HISTORY IS THE POINT — BUT DO NOT RE-DERIVE ANY MAP FROM THEM.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * The user removed 'Sent' from the Acquisition_NDA record type in Setup (measured live that day
+ * via the UI API picklist-values endpoint — Acquisition_NDA is exactly Pending | Received |
+ * Signed; Disposition_NDA is unchanged at Prepare | Approved | Sent | Signed | Declined). So:
+ *
+ *   'Sent'    NOT ON the acquisition value set at all. DML refuses it there on insert AND on
+ *             update, so no acquisition NDA can reach the value to be refused BY THIS SERVICE.
+ *             disposition: still advances to 'Signed'. UNCHANGED.
+ *   'Signed'  acquisition: advances NOWHERE — it is the TERMINAL again, as it was before
+ *             2026-08-16.
+ *             disposition: advances NOWHERE — TERMINAL, as it always was.
+ *
+ * 🔴 ⇒ THE TWO NDA VALUE SETS NOW SHARE EXACTLY ONE VALUE ('Signed'), AND NEITHER MAP HAS AN ENTRY
+ * FOR IT. THE "SAME KEY, HOP ON ONE TYPE, REFUSAL ON THE OTHER" PROPERTY — WHICH THIS BLOCK HAS
+ * PRESENTED SINCE 3A AS *THE* ARGUMENT THAT AN OBJECT-KEYED MAP CANNOT EXPRESS NDA__c — IS GONE.
+ * Stated plainly, because someone will work it out and propose the merge as a tidy-up: a single
+ * merged NDA map {Pending=>Received, Received=>Signed, Prepare=>Approved, Approved=>Sent,
+ * Not Sent=>Sent, Sent=>Signed} would today produce the CORRECT hop or the CORRECT refusal for
+ * every stage on both NDA record types. That is a real fact and pretending otherwise would be
+ * worse than recording it.
+ *
+ * 🔴 THE SPLIT MUST NOT BE MERGED ANYWAY, AND THE TWO REASONS THAT SURVIVE ARE THE TWO THAT WERE
+ * ALWAYS THE SECURITY-RELEVANT ONES:
+ *   1. THE GATE. Acquisition_NDA answers to DEAL_DRIVER and Disposition_NDA to
+ *      DISPOSITION_DRIVER, and the two custom permissions are disjoint across every permission set
+ *      in the repo. A merged StageTypeConfig has ONE gate, so merging hands an acquisitions deal
+ *      driver the buttons on a SALE's NDA or locks the disposition persona out of its own object.
+ *      Pinned by theGateIsResolvedPerRecordTypeNotPerObject.
+ *   2. THE EXPLICIT-TARGET ALLOW-LIST. 'Declined' belongs to Disposition_NDA alone; an
+ *      object-level list makes advanceTo(acquisitionNdaId, 'Declined') reachable. Pinned by
+ *      acquisitionNdaRefusesTheDispositionOnlyDeclinedTarget. See
+ *      NDA_DISPOSITION_EXPLICIT_TARGETS.
+ * ⚠ AND THE SEQUENCE REASON IS ONLY DORMANT, NOT DEAD. It has been revived by a one-line Setup
+ * change three times in eleven days (2026-08-16, 2026-08-25, 2026-08-27), each time without any
+ * Apex deploy. Collapsing the split now would mean re-deriving it on the next one, under time
+ * pressure, on a live defect. The SPLIT IS THE CHEAP HALF; the argument is what costs.
+ *
+ * ⚠ LOI__c AND Contract_Review__c ARE NOT AFFECTED BY THIS PARAGRAPH AND THEIR SEQUENCE SPLITS
+ * REMAIN LOAD-BEARING ON THE ORIGINAL GROUNDS — LOI__c shares 'Under Review', 'Negotiation' and
+ * 'Signed' across its two types with genuinely different onward hops. Do not generalise the NDA
+ * observation above to either of them.
  *
  * 🔴 ON LOI__c THE TWO STAGE SETS ARE NO LONGER DISJOINT — 'Under Review' IS SHARED BY BOTH SINCE
  * 2026-08-14 (observation 5). It is the acquisition sequence's second stage and the disposition
@@ -763,11 +816,59 @@ public with sharing class RecordStageAdvanceService {
      * appear to complete the NDA and would in fact un-sign it. That is the hazard to guard: a
      * FUTURE flow change, not this map. Anyone making the flow set false must ALSO exempt the
      * acquisition terminal 'Sent'.
+     *
+     * =====================================================================
+     * 🔴 NARROWED 2026-08-27 (USER DECISION) — 'Sent' IS OFF THE Acquisition_NDA RECORD TYPE
+     * ENTIRELY, SO THE 'Signed' => 'Sent' HOP IS GONE AND 'Signed' IS NOW THE TERMINAL.
+     * EVERYTHING ABOVE THIS BLOCK DESCRIBES A FOUR-VALUE SEQUENCE IN ONE ORDER OR THE OTHER AND IS
+     * RETAINED VERBATIM AS THE RECORD OF WHAT CHANGED, NOT AS CURRENT BEHAVIOUR.
+     * =====================================================================
+     *
+     * THE MAP IS NOW Pending -> Received -> Signed, WITH 'Signed' TERMINAL. Measured live on
+     * usman-dpeg 2026-08-27 via the UI API picklist-values endpoint for record type
+     * 012iw0000009yeZAAQ: Status__c on Acquisition_NDA is exactly Pending | Received | Signed,
+     * default Pending. Disposition_NDA (012iw0000009yeaAAA) is UNCHANGED and still carries
+     * Prepare | Approved | Sent | Signed | Declined — so NDA_DISPOSITION_NEXT_STAGE was not
+     * touched, and its two uses of 'Sent' ('Approved' => 'Sent' and the legacy
+     * 'Not Sent' => 'Sent') stand exactly as they were.
+     *
+     * 🔴 THIS WAS A LIVE DEFECT, NOT A TIDY-UP — SAME SHAPE AS THE 'Review' INCIDENT ON THE
+     * DISPOSITION MAP TWO DAYS EARLIER, AND FOR THE SAME REASON. `NDA__c.Status__c` is a
+     * RESTRICTED value set whose record-type subset DML DOES enforce (measured; see the block at
+     * the end of this class header and the 2026-08-20 correction in
+     * objects/NDA__c/recordTypes/Acquisition_NDA.recordType-meta.xml). With the hop still in
+     * place, the Advance Stage click on an acquisition NDA sitting at 'Signed' resolved a target
+     * of 'Sent' and threw `INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST` — surfaced verbatim to the
+     * user by setStage's DmlException clause, because that clause cannot tell a validation rule
+     * from a picklist refusal. The org's ONE live acquisition NDA was sitting at 'Signed' when
+     * this was found, so the broken button was on screen. It now falls through to
+     * noNextStepMessage and reads 'There is no next step available from the Signed stage.'
+     *
+     * ⚠ NO RESIDUAL ROWS. A live aggregate the same day
+     * (SELECT RecordType.DeveloperName, Status__c, COUNT(Id) FROM NDA__c GROUP BY both) returned
+     * exactly ONE row org-wide — an Acquisition_NDA at 'Signed' — and ZERO acquisition rows at
+     * 'Sent'. So unlike the 2026-08-16 reorder, this change strands nobody and needs no data pass.
+     * Do not cite that as a standing fact; re-measure before relying on it.
+     *
+     * ✅ THE DEAL GATE IS AGAIN UNAFFECTED, AND NOW FOR A STRONGER REASON THAN THE LATCH. The
+     * 2026-08-16 block above rests the gate's safety on `NDA_Signed_Status_Sync`'s checkbox
+     * LATCHING true past 'Signed'. That argument is no longer load-bearing: the acquisition NDA
+     * now STOPS at 'Signed', so nothing moves it past the value that sets the checkbox in the
+     * first place. The latch is back to being harmless dead metadata on this path, exactly as it
+     * was before 2026-08-16. 🔴 The hazard warning above is NOT retracted — it applies again the
+     * moment anyone re-adds a hop out of 'Signed', which is precisely the "tidy-up" this note
+     * exists to make visible.
+     *
+     * ⚠ 'Sent' GETS NO LEGACY HOP HERE, AND THAT ASYMMETRY WITH 'Not Sent' ON THE DISPOSITION MAP
+     * IS DELIBERATE AND EVIDENCE-BASED, NOT PRINCIPLED. 'Not Sent' keeps its hop because a future
+     * data load could land a disposition row on it. 'Sent' gets none because it is UNREACHABLE on
+     * this record type in both directions — nothing in this map targets it and DML refuses it on
+     * insert or update — so an entry would be dead code that reads as evidence 'Sent' is still
+     * part of the buy-side sequence. Do NOT add 'Sent' => anything "for symmetry".
      */
     private static final Map<String, String> NDA_ACQUISITION_NEXT_STAGE = new Map<String, String>{
         'Pending' => 'Received',
-        'Received' => 'Signed',
-        'Signed' => 'Sent'
+        'Received' => 'Signed'
     };
 
     /**
@@ -867,6 +968,21 @@ public with sharing class RecordStageAdvanceService {
      * not a substitute for it, and it is a backstop on loan: it disappears the day someone adds
      * 'Declined' to the acquisition type for an unrelated reason, at which point the split is the
      * only control and the original sentence becomes literally true.
+     *
+     * ⚠ AMENDED 2026-08-27 — THE PREMISE "a value SHARED by both NDA record types" IS NOW FALSE,
+     * AND THIS SET IS UNCHANGED BECAUSE OF IT, NOT IN SPITE OF IT. The user removed 'Sent' from
+     * Acquisition_NDA, so the Mark Declined action's `Status__c = 'Sent'` visibility rule can no
+     * longer render on an acquisition NDA at all — the shared-value framing of the paragraph above
+     * described the state of the org between 2026-08-09 and 2026-08-27 and is retained as the
+     * record of why the split was made.
+     * 🔴 THE SPLIT IS STILL LOAD-BEARING AND MUST NOT BE COLLAPSED ON THE STRENGTH OF THAT. What
+     * changed is only how a hand-crafted advanceTo(acquisitionNdaId, 'Declined') would REACH the
+     * button — it never could reach it through the UI in the first place, which is the entire
+     * reason the allow-list exists as a SERVER-side control. Both the refusal and its user-safe
+     * wording are unchanged, and the acquisition NDA still supplies no explicit target at all, so
+     * advanceTo remains structurally unreachable on it. Pinned by
+     * acquisitionNdaRefusesTheDispositionOnlyDeclinedTarget, whose fixture moved from 'Sent' to
+     * 'Signed' on this date for the DML reason, not for a change of subject.
      *
      * The action itself is `quickActions/NDA__c.Mark_Declined` -> `c/ndaMarkDeclined`, which
      * passes this exact literal as a module constant. It is no longer "a future action".
@@ -1469,7 +1585,19 @@ public with sharing class RecordStageAdvanceService {
      * rested on. What it buys, as it happens, is safety rather than risk: a hint fires ONLY where
      * there is no hop, so `NDA|Sent` could now fire on the acquisition type alone and `NDA|Signed` on
      * the disposition type alone — one wording, one record type, no collision. Before the reorder
-     * `NDA|Signed` would have fired on BOTH. The instruction is still the LOI one below: check, do
+     * `NDA|Signed` would have fired on BOTH.
+     *
+     * 🔴 REVERSED 2026-08-27 — THE SENTENCE IMMEDIATELY ABOVE HAS COME BACK TRUE, AND THE NDA HALF
+     * IS NOW THE *UNSAFE* CASE RATHER THAN THE SAFE ONE. The user removed 'Sent' from the
+     * Acquisition_NDA record type, so 'Signed' is terminal on BOTH NDA record types again and
+     * neither map has an entry for it. A hint keyed `NDA|Signed` would therefore fire on a PURCHASE
+     * and on a SALE with one wording — exactly the collision the LOI paragraph below forbids.
+     * `NDA|Sent` is the mirror and is now simply dead: 'Sent' is off the acquisition value set and
+     * has a HOP on the disposition side, so no NDA can ever reach a hint keyed on it.
+     * ⇒ THERE IS NO SUCH KEY TODAY, WHICH IS THE ONLY REASON THIS IS A NOTE AND NOT A DEFECT — the
+     * same standing this map's LOI paragraph has had since 2026-08-14. BEFORE ADDING ANY NDA ENTRY
+     * HERE, widen the key to `<label>|<recordTypeKey>|<currentStage>` rather than adding a second
+     * map. The instruction is still the LOI one below: check, do
      * not assume. The LOI half is FALSE — observation 5 made 'Under Review' a stage on BOTH
      * LOI record types, so a hint keyed `LOI|Under Review` would now fire on a purchase AND a sale
      * with one wording. There is no such key today, which is the only reason this is a note rather

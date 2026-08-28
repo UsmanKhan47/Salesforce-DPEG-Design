@@ -19,6 +19,38 @@
          =====================================================================
 
          =====================================================================
+         🔴 AMENDED 2026-08-27 (URGENT CORRECTIVE, SAME-DAY FOLLOW-UP TO THE BLOCK IMMEDIATELY
+         ABOVE). "THREE PER-HOP ACQUISITION BUTTONS" AND "'Sent' IS THE ACQUISITION TERMINAL — NO
+         BUTTON, NO HINT" ARE BOTH NOW WRONG AND ARE RETAINED VERBATIM ABOVE AS THE RECORD OF WHAT
+         WAS DEPLOYED (0Afiw000000SIoPCAW) AND WHY IT BROKE, NOT AS CURRENT BEHAVIOUR.
+         =====================================================================
+
+         WHAT HAPPENED: deploy 0Afiw000000SIoPCAW went live with the acquisition
+         NDA__c.Move_to_Sent entry described above, gated at Status__c EQUAL 'Signed'. Two hours
+         later the user removed 'Sent' from the Acquisition_NDA record type's restricted
+         Status__c subset IN SETUP (see that record type's own 2026-08-27 amendment) - a decision
+         made independently of this page, not caused by it. Because NDA__c.Status__c is
+         `<restricted>true</restricted>` and this repo has MEASURED that a restricted picklist's
+         record-type subset IS enforced by Apex DML (see the CORRECTED 2026-08-20 block in
+         Acquisition_NDA's own file), every click of that button on an Acquisition_NDA row at
+         'Signed' now threw INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST instead of advancing the
+         record. The org's one live acquisition NDA was sitting at 'Signed', so the broken button
+         was on screen.
+
+         THE FIX: the acquisition Move_to_Sent valueListItems entry is REMOVED from the
+         actionNames list below (see the inline comment at that block for the exact entry that
+         was removed). 'Signed' is now the acquisition terminal - no button follows it, same
+         no-next-step convention as before, just one stage earlier than this page originally
+         shipped. The acquisition chain on this page is now exactly: Pending -> Move_to_Received
+         -> Received -> Move_to_Signed -> Signed, full stop. The three DISPOSITION entries
+         (Move_to_Approved@Prepare, Move_to_Sent@Approved, Move_to_Sent@Not Sent legacy,
+         Move_to_Signed@Sent) are UNCHANGED - disposition still carries 'Sent' as a mid-sequence
+         value. quickActions/NDA__c.Move_to_Sent.quickAction-meta.xml is NOT deleted, since the
+         disposition entries still reference it. The companion RecordType and PathAssistant edits
+         landed in the same corrective change, each with its own 2026-08-27 amendment.
+         =====================================================================
+
+         =====================================================================
          🔴 2026-08-26 - "ADVANCE STAGE" IS REPLACED BY NAMED PER-HOP BUTTONS ON THE DISPOSITION
          SIDE ONLY. USER DECISION: "we don't need a quick action named 'Advance Stage'; instead we
          need the NEXT STAGE NAME."
@@ -167,16 +199,29 @@
                              live acquisition-gated, one disposition-gated and already
                              self-contradictory since the 2026-08-26 edit above) are REMOVED, not
                              amended, finishing the "separate, deliberate step" that edit's own
-                             comment called for. Replaced by three per-hop acquisition buttons
-                             below: Move_to_Received (new file) and reused entries on
-                             Move_to_Signed / Move_to_Sent (files already exist for the disposition
-                             side; only the page entry is new here). All three carry
-                             {!Record.RecordType.DeveloperName} NE 'Disposition_NDA' — NE, not
-                             EQUAL 'Acquisition_NDA' — so a Master-typed row fails OPEN and keeps
-                             its button, matching RecordStageAdvanceService's defaultTypeKey, which
-                             routes Master to the acquisition map. Status__c NE 'Declined' from the
-                             old entry is subsumed: an EQUAL Pending|Received|Signed test can never
-                             be true at 'Declined'. -->
+                             comment called for. Replaced by per-hop acquisition buttons below:
+                             Move_to_Received (new file) and a reused entry on Move_to_Signed
+                             (file already exists for the disposition side; only the page entry is
+                             new here). Both carry {!Record.RecordType.DeveloperName} NE
+                             'Disposition_NDA' — NE, not EQUAL 'Acquisition_NDA' — so a Master-typed
+                             row fails OPEN and keeps its button, matching
+                             RecordStageAdvanceService's defaultTypeKey, which routes Master to the
+                             acquisition map. Status__c NE 'Declined' from the old entry is
+                             subsumed: an EQUAL Pending|Received|Signed test can never be true at
+                             'Declined'.
+
+                             🔴 AMENDED 2026-08-27 (URGENT CORRECTIVE, SAME-DAY FOLLOW-UP — see the
+                             top-of-file comment for the full incident). THIS BLOCK ORIGINALLY SAID
+                             "three per-hop acquisition buttons ... and reused entries on
+                             Move_to_Signed / Move_to_Sent". THAT THIRD ENTRY - the acquisition
+                             Move_to_Sent, gated at Status__c EQUAL 'Signed' - IS REMOVED: it wrote
+                             a value ('Sent') the Acquisition_NDA record type no longer permits
+                             (see that record type's own 2026-08-27 amendment), and every click
+                             threw INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST. 'Signed' is now the
+                             acquisition terminal — no button follows it. Only TWO acquisition
+                             entries remain below: Move_to_Received and Move_to_Signed. The
+                             disposition Move_to_Sent entries further down this same valueList are
+                             UNCHANGED. -->
                         <valueListItems>
                             <value>NDA__c.Move_to_Received</value>
                             <visibilityRule>
@@ -225,40 +270,26 @@
                                 </criteria>
                             </visibilityRule>
                         </valueListItems>
-                        <!-- REUSED ACTION: NDA__c.Move_to_Sent already exists (disposition button,
-                             rendered twice above for Approved/Not Sent -> Sent). This is a THIRD
-                             page entry pointing at the same file, for the acquisition terminal hop
-                             Signed -> Sent. 🔴 WITHOUT THE RECORD-TYPE PIN HERE, a disposition NDA
-                             sitting on its own terminal 'Signed' would be offered this "Sent"
-                             button and move BACKWARDS relative to its own sequence — the pin is
-                             load-bearing, not decoration. All three Move_to_Sent entries
-                             (disposition@Approved, disposition@Not Sent, this one@Signed) are
-                             mutually exclusive: Status__c holds one value, and this one additionally
-                             inverts the record-type operator. -->
-                        <valueListItems>
-                            <value>NDA__c.Move_to_Sent</value>
-                            <visibilityRule>
-                                <booleanFilter>1 AND 2 AND 3</booleanFilter>
-                                <criteria>
-                                    <leftValue>{!$Permission.CustomPermission.Acquisition_Deal_Actions}</leftValue>
-                                    <operator>EQUAL</operator>
-                                    <rightValue>true</rightValue>
-                                </criteria>
-                                <criteria>
-                                    <leftValue>{!Record.RecordType.DeveloperName}</leftValue>
-                                    <operator>NE</operator>
-                                    <rightValue>Disposition_NDA</rightValue>
-                                </criteria>
-                                <criteria>
-                                    <leftValue>{!Record.Status__c}</leftValue>
-                                    <operator>EQUAL</operator>
-                                    <rightValue>Signed</rightValue>
-                                </criteria>
-                            </visibilityRule>
-                        </valueListItems>
-                        <!-- 'Sent' is the acquisition NDA's TERMINAL stage — no button follows it,
-                             per user decision #2 (no-next-step stages render nothing, no hint
-                             text). -->
+                        <!-- 🔴 AMENDED 2026-08-27 (URGENT CORRECTIVE, SAME DAY AS DEPLOY
+                             0Afiw000000SIoPCAW). THE ENTRY THAT STOOD HERE - NDA__c.Move_to_Sent,
+                             gated at Status__c EQUAL 'Signed' AND RecordType.DeveloperName NE
+                             'Disposition_NDA' - IS REMOVED, NOT AMENDED. It rendered on an
+                             Acquisition_NDA row at 'Signed' and, on click, attempted to write
+                             Status__c = 'Sent'. THE SAME DAY, BY USER DECISION, 'Sent' WAS REMOVED
+                             FROM Acquisition_NDA's RESTRICTED PICKLIST SUBSET (see that record
+                             type's own 2026-08-27 amendment) - the record type this button's own
+                             criteria targeted no longer permits the value it tried to write, so
+                             every click threw INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST. 'Signed' is
+                             now the acquisition NDA's TERMINAL stage — no button follows it, per
+                             user decision #2 (no-next-step stages render nothing, no hint text).
+                             The acquisition chain on this page is now exactly: Pending ->
+                             Move_to_Received -> Received -> Move_to_Signed -> Signed, and nothing
+                             at Signed. The three DISPOSITION Move_to_Sent entries below (@Approved,
+                             @Not Sent legacy) and the disposition Move_to_Signed entry (@Sent) are
+                             UNCHANGED and still correct - disposition still carries 'Sent' as a
+                             mid-sequence value, not terminal. quickActions/
+                             NDA__c.Move_to_Sent.quickAction-meta.xml is NOT deleted - the
+                             disposition entries below still reference it. -->
                         <valueListItems>
                             <value>NDA__c.Move_to_Approved</value>
                             <visibilityRule>

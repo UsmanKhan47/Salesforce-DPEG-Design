@@ -53,6 +53,29 @@ public with sharing class OpportunityDocStatusController {
                 // records the day DPEG returned the SIGNED copy to the broker, not the day an NDA
                 // went out awaiting signature. The DTO member is named for that meaning rather
                 // than for the field, so the next reader does not have to re-derive it.
+                //
+                // 🔴 AMENDED 2026-08-27 — THE STEP THIS MEMBER IS NAMED FOR NO LONGER EXISTS ON
+                // THE BUY SIDE, AND THE MEMBER WAS DELIBERATELY *NOT* RENAMED. The user removed
+                // 'Sent' from the Acquisition_NDA record type in Setup (measured live: that type
+                // offers exactly Pending | Received | Signed), so on an ACQUISITION NDA there is
+                // no longer any step whose completion means "the signed copy went back". The map
+                // hop that drove records into it is gone from
+                // RecordStageAdvanceService.NDA_ACQUISITION_NEXT_STAGE in the same change.
+                //
+                // ⚠ THE FIELD IS NOT DEAD, WHICH IS THE PART THAT IS EASY TO GET WRONG.
+                // Date_Sent__c is NOT stamped by any flow, trigger or service anywhere in this
+                // repo — it is hand-entered, and it is on the NDA layout and record page with no
+                // Status__c gating. So a user can still populate it on an acquisition NDA and this
+                // card will still render "Signed copy returned <date>" for a record that never
+                // passed a 'Sent' step. It also stays populated on every row worked before
+                // 2026-08-27, under either of the two meanings the value has carried.
+                // 🔴 RENAMING THIS MEMBER, RETIRING THE FIELD, RE-WORDING lwc/dealDocStatus's
+                // label or changing NDA__c.Days_Out__c (IF(ISBLANK(Date_Sent__c), null,
+                // TODAY() - Date_Sent__c)) ARE ALL USER DECISIONS AND WERE EXPLICITLY OUT OF SCOPE
+                // OF THE 2026-08-27 CORRECTIVE. Note the DTO member name is load-bearing across
+                // the Apex/LWC boundary — lwc/dealDocStatus reads `ndaSignedCopyReturned` by name
+                // and its Jest suite asserts the rendered string, so a rename is a two-file change
+                // plus a test update, not a tidy-up.
                 d.ndaSignedCopyReturned = nda.Date_Sent__c;
                 d.ndaExpiry = nda.NDA_Expiry_Date__c;
                 d.ndaSigned = nda.NDA_Signed__c == true;

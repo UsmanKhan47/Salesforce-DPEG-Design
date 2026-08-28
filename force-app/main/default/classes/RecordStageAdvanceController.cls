@@ -157,6 +157,16 @@ public with sharing class RecordStageAdvanceController {
      * enforces the record type's subset; the leak surfaces as an opaque platform error rather than
      * a bad write, and only while Acquisition_NDA omits 'Declined'. See
      * RecordStageAdvanceService.NDA_DISPOSITION_EXPLICIT_TARGETS for the full re-derivation.
+     * ⚠ AMENDED 2026-08-27 — SECOND PREMISE NOW FALSE, CONCLUSION AGAIN INTACT. The clause
+     * "`Status__c = 'Sent'` which BOTH NDA record types carry" stopped being true when the user
+     * removed 'Sent' from the Acquisition_NDA record type in Setup (measured live that day:
+     * Acquisition_NDA is Pending | Received | Signed; Disposition_NDA still carries 'Sent'). The
+     * Mark Declined action can therefore never RENDER on an acquisition NDA. That removes the
+     * UI route to the hazard, not the hazard — `advanceTo` is an @AuraEnabled entry point and a
+     * hand-crafted call needs no visibility rule to reach it, which is why the allow-list lives on
+     * the SERVER and stays keyed by record type. Nothing here changed behaviourally; only the
+     * illustration did, for the third time (2026-08-09 shared value, 2026-08-21 mechanism,
+     * 2026-08-27 the value set itself).
      *
      * @param recordId the stage-controlled record to move
      * @param target   the destination stage; must be on the object's allow-list

@@ -168,10 +168,55 @@
           meaning ("we sent it out"), and nothing on the record distinguishes those rows from ones
           stamped under the new meaning. The label above is therefore UNCONDITIONAL by necessity -
           a status-conditional label would invent a rule the data cannot support.
+
+        =====================================================================
+        AMENDED 2026-08-27 - 'Sent' REMOVED FROM THIS RECORD TYPE, BY USER DECISION. EVERYTHING
+        ABOVE THIS BLOCK ABOUT A FOUR-STATE Pending/Received/Signed/Sent SEQUENCE, IN EITHER
+        ORDER, IS NOW HISTORICAL - RETAINED VERBATIM AS THE RECORD OF WHAT CHANGED, NOT AS
+        CURRENT BEHAVIOUR.
+        =====================================================================
+
+        THE ACQUISITION_NDA <picklistValues><picklist>Status__c</picklist> BLOCK BELOW NOW LISTS
+        EXACTLY THREE VALUES - Pending, Received, Signed - IN THAT ORDER. 'Signed' IS NOW THE
+        ACQUISITION TERMINAL, replacing 'Sent' in that role. 'Sent' remains a valid value on the
+        DISPOSITION_NDA record type and on the master Status__c field; it is only removed from
+        THIS record type's allowed subset. Method__c and Party_Role__c are UNCHANGED by this
+        amendment - both blocks below are untouched.
+
+        WHY THIS HAPPENED URGENTLY (2026-08-27, corrective, same day as deploy
+        0Afiw000000SIoPCAW): that deploy shipped a per-hop quick-action button,
+        NDA__c.Move_to_Sent, gated to render on an Acquisition_NDA row at Status__c = 'Signed'
+        (see flexipages/NDA_Record_Page's own 2026-08-27 amendment). The moment this record type's
+        allowed Status__c subset stopped including 'Sent' - which is what THIS edit records, not
+        what caused it - clicking that button on any acquisition NDA would attempt to write a
+        value this record type no longer permits. Per the CORRECTED 2026-08-20 block above,
+        measured on this exact field, a restricted picklist's record-type subset IS enforced by
+        Apex DML, not just the UI, so that write throws
+        `INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST` rather than silently succeeding or silently
+        failing open. The org's one live acquisition NDA was sitting at 'Signed' when this was
+        found, so the broken button was on screen.
+
+        WHAT THIS EDIT DOES NOT DO: it does not touch the master Status__c field's value list
+        (objects/NDA__c/fields/Status__c.field-meta.xml) - 'Sent' remains a valid master value,
+        still used by Disposition_NDA. It also does not touch
+        quickActions/NDA__c.Move_to_Sent.quickAction-meta.xml, which the disposition path still
+        uses. See flexipages/NDA_Record_Page's own 2026-08-27 amendment for removal of the
+        acquisition-side Move_to_Sent page entry, and pathAssistants/NDA_Path_Acquisition's own
+        2026-08-27 amendment for removal of the Sent path step - both companion edits made in the
+        same corrective change, for the same reason.
+
+        WHAT THIS EDIT LEAVES OPEN, FOR THE PARALLEL DEVELOPER STREAM, NOT DECIDED HERE:
+        RecordStageAdvanceService / NDA_ACQUISITION_NEXT_STAGE's 'Signed' => 'Sent' hop is Apex
+        and is out of scope for this metadata-only file; see this task's own instructions for the
+        explicit carve-out. NDA__c.Days_Out__c's known mismeasurement (documented above at the
+        2026-08-16 amendment, paragraph (a)) is NOT resolved by this edit either - Date_Sent__c on
+        an acquisition NDA now again means "not applicable" for any row that never passed through
+        the old order, which is arguably a partial return to the pre-2026-08-16 meaning, but no
+        formula change was made here and none should be inferred from this comment.
     -->
     <fullName>Acquisition_NDA</fullName>
     <active>true</active>
-    <description>The buy-side NDA, parented by Opportunity. Four states in process order: Pending, Received, Signed, Sent (reordered 2026-08-16 - Sent is now terminal). Not Sent and Declined are restricted out. See the XML comment in this file.</description>
+    <description>The buy-side NDA, parented by Opportunity. Three states in process order: Pending, Received, Signed (Signed is terminal as of 2026-08-27 - Sent removed). Not Sent, Sent and Declined are restricted out. See the XML comment in this file.</description>
     <label>Acquisition NDA</label>
     <picklistValues>
         <picklist>Method__c</picklist>
@@ -207,10 +252,6 @@
         </values>
         <values>
             <fullName>Signed</fullName>
-            <default>false</default>
-        </values>
-        <values>
-            <fullName>Sent</fullName>
             <default>false</default>
         </values>
     </picklistValues>

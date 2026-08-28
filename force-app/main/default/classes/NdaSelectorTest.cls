@@ -147,7 +147,14 @@ private class NdaSelectorTest {
         // disposition -> Signed)" until the acquisition reorder of 2026-08-16
         // (Pending -> Received -> Signed -> Sent), which moved 'Sent' from second position to last;
         // the divergence it illustrates got SHARPER, not weaker — one record type now refuses where
-        // the other writes. Narrowing the SELECT does not
+        // the other writes.
+        // ⚠ AMENDED 2026-08-27 — THE ILLUSTRATION IS DEAD, THE FIELD-LIST CONTRACT IS NOT. 'Sent'
+        // was removed from the Acquisition_NDA record type by user decision, so it is no longer a
+        // SHARED value at all: the two sequences now share only 'Signed', which is TERMINAL on
+        // both. RecordTypeId is still mandatory in this SELECT — it is what resolves the GATE
+        // (DEAL_DRIVER vs DISPOSITION_DRIVER) and the explicit-target allow-list ('Declined',
+        // disposition-only), both of which remain fully divergent. Only the stage-sequence half of
+        // the argument lapsed. Narrowing the SELECT does not
         // fail loudly; it silently routes every NDA to the acquisition sequence, so the only way to
         // catch it is to assert the field was actually QUERIED.
         //
