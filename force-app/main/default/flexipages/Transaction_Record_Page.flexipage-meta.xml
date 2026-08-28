@@ -13,19 +13,42 @@
          explicitly deferred for Transaction__c because it had no Dynamic Actions to populate at
          the time.
 
-         THE TEN ENTRIES ADDED BELOW restore the bar. FOUR are new named per-hop stage actions —
+         🔴 AMENDED 2026-08-28, SAME DAY, AFTER A FAILED DEPLOY (0Afiw000000SstVCAS). THIS BLOCK
+         USED TO SAY "THE TEN ENTRIES ADDED BELOW restore the bar" AND LISTED SIX NON-STAGE
+         ENTRIES (Edit, Clone, Delete, LogACall, NewEvent, NewTask) AS ADDED HERE ALONGSIDE THE
+         FOUR STAGE ACTIONS. THAT WAS WRONG AND IS CORRECTED, NOT LEFT STANDING. The deploy failed
+         with "Component [force:highlightsPanel] attribute [actionNames]: We couldn't validate
+         Action LogACall" — the highlightsPanel's actionNames attribute does not validate a
+         standard button or a global quick action, only object-specific custom quick actions. Every
+         other already-deployed record page in this repo (Opportunity_Record_Page,
+         Disposition_Record_Page, NDA_Record_Page, LOI_Record_Page, Underwriting_Record_Page) lists
+         ONLY <Object>.<CustomAction> entries — not one of them carries Edit/Clone/Delete or a
+         global action. This page now matches that precedent exactly.
+
+         ⇒ actionNames BELOW HOLDS EXACTLY FOUR ENTRIES, the named per-hop stage actions —
          Transaction__c.Move_to_Due_Diligence / Move_to_Closing_Prep / Move_to_Post_Closing /
          Move_to_Closed_Won, one per hop of RecordStageAdvanceService.TRANSACTION_NEXT_STAGE — each
          gated on BOTH {!$Permission.CustomPermission.Transaction_Stage_Actions} EQUAL true (the
          same gate TransactionActionPermissionService / RecordStageAdvanceService already enforce
          server-side for this object) AND {!Record.Stage__c} EQUAL its own SOURCE stage, so exactly
-         one (or zero, at the 'Closed Won' terminal) renders per record. SIX are the layout's
-         pre-existing entries, added here UNCONDITIONALLY because Dynamic Actions no longer falls
-         back to the layout once enabled: Edit, Clone, Delete, LogACall (Log a Call), NewEvent
-         (New Event), NewTask (New Task). Transaction__c.Advance_Stage — the generic button these
-         four named actions replace — is REMOVED from both this page and the layout's
-         platformActionList in the same change; the quickAction file itself is not deleted,
-         matching the retirement convention used for NDA__c/LOI__c/Underwriting__c etc.
+         one (or zero, at the 'Closed Won' terminal) renders per record. Transaction__c.Advance_Stage
+         — the generic button these four named actions replace — is REMOVED from both this page and
+         the layout's platformActionList in the same change; the quickAction file itself is not
+         deleted, matching the retirement convention used for NDA__c/LOI__c/Underwriting__c etc.
+
+         🔴 THE SIX NON-STAGE ACTIONS (Edit, Clone, Delete, LogACall, NewEvent, NewTask) ARE
+         DELIBERATELY *NOT* RE-LISTED HERE, AND THAT IS A REAL, ACCEPTED, BEHAVIOURAL CONSEQUENCE OF
+         ENABLING DYNAMIC ACTIONS — NOT AN OVERSIGHT THIS COMMIT INTRODUCES. Before Dynamic Actions
+         was enabled on this page (a change made in App Builder, outside this commit), those six
+         actions rendered on the Transaction highlights panel via the layout's platformActionList
+         fallback. Once Dynamic Actions is on, that fallback no longer applies, and the
+         highlightsPanel's actionNames attribute cannot carry them at all (see the failed-deploy
+         error above) — so THEY ARE GONE FROM THE HIGHLIGHTS PANEL, full stop, on every one of the
+         five sibling pages already deployed this way and now on this one too. A user who wants to
+         Edit, Clone, Delete, Log a Call, create a New Event or New Task on a Transaction must use a
+         different entry point (the object's standard buttons/menu elsewhere on the page, or the
+         Activity panel for the three activity actions) — this was seen and accepted when Dynamic
+         Actions was turned on, not missed by this change.
 
          🔴 Transaction__c CARRIES NO RECORD TYPES (verified: no <recordTypes> element in
          objects/Transaction__c/Transaction__c.object-meta.xml, no recordTypes/ folder), so none
@@ -51,9 +74,9 @@
          ⚠ STILL NOT PROVEN, AND NOT PROVABLE FROM A REPO: RENDERER BEHAVIOUR. After deploying, a
          human must open a Transaction at each of Open Contract / Due Diligence / Closing Prep /
          Post-Closing / Closed Won and confirm exactly one correctly-named stage button (none at
-         Closed Won) alongside Edit/Clone/Delete/Log a Call/New Event/New Task, for both a
-         Transaction_Stage_Actions holder and a non-holder (who should see only the six
-         unconditional entries). -->
+         Closed Won), and none of the six retired highlights-panel actions, for both a
+         Transaction_Stage_Actions holder and a non-holder (who should see NO stage button at any
+         stage). -->
     <flexiPageRegions>
         <itemInstances>
             <componentInstance>
@@ -123,29 +146,6 @@
                                     <rightValue>Post-Closing</rightValue>
                                 </criteria>
                             </visibilityRule>
-                        </valueListItems>
-                        <!-- The six entries below are the layout's pre-existing platformActionList
-                             items, carried onto this page UNCONDITIONALLY now that Dynamic Actions
-                             is enabled (no visibility rule = always rendered, matching their
-                             previous layout-driven behaviour for every user regardless of the
-                             Transaction_Stage_Actions gate). -->
-                        <valueListItems>
-                            <value>Edit</value>
-                        </valueListItems>
-                        <valueListItems>
-                            <value>Clone</value>
-                        </valueListItems>
-                        <valueListItems>
-                            <value>Delete</value>
-                        </valueListItems>
-                        <valueListItems>
-                            <value>LogACall</value>
-                        </valueListItems>
-                        <valueListItems>
-                            <value>NewEvent</value>
-                        </valueListItems>
-                        <valueListItems>
-                            <value>NewTask</value>
                         </valueListItems>
                     </valueList>
                 </componentInstanceProperties>
