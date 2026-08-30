@@ -16,6 +16,13 @@
  *      seller's asking price and cap rate (from the lead's Guidance fields)
  *      plus the address, asset type, and Placer/CoStar links carried on the lead.
  *
+ *      ⚠ CHANGED 2026-08-30 (WS3): "create" became "REUSE OR create". Two brokers emailing the
+ *      same building used to produce two `Property__c` rows, so the building's underwriting,
+ *      its CoStar/Placer links, its deal folder and its Property Management tree forked in
+ *      two. Conversion now looks the building up first, by a stored normalized-address key, and
+ *      LINKS to the existing row when one is found. 🔴 A REUSED PROPERTY IS NOT TOUCHED — see
+ *      `createProperties` for the full decision and its two visible consequences.
+ *
  *   3. CONVERSION ENRICHMENT (S1, 2026-08-03) — the deal-screening field set the
  *      Broker-Protection extraction pipeline writes onto the Lead used to DIE at
  *      conversion: the Opportunity arrived nearly empty. Conversion now SPLITS that
@@ -54,6 +61,21 @@
  *      test can detect that kind of repurposing, so that comment plus ARCHITECTURE.md §1/§2
  *      residual R1 are the only control.
  *
+ *      ⚠ EXTENDED AGAIN 2026-08-30 (WS2, broker protection past conversion) by TWO fields, both
+ *      DEAL-PROCESS and therefore both to the Opportunity: `Broker_First_Seen__c` (from
+ *      `Lead.First_Seen_Date__c`) and `DPEG_First__c` (from `Lead.DPEG_First__c`). They carry the
+ *      broker-protection window onto the deal, which until now ended at conversion.
+ *      🔴 THE GOVERNOR CONTRACT BELOW IS AGAIN UNCHANGED — two in-memory assignments on a record
+ *      already being written, zero queries, zero statements, no picklist and so not even a
+ *      describe. `Opportunity.BP_Expiry__c` and `Opportunity.Days_in_System__c` are FORMULAS that
+ *      derive from `Broker_First_Seen__c`; nothing here assigns them and nothing may.
+ *      ⚠ THIS MADE A LIVE FIELD OUT OF A DEAD ONE, WHICH HAS BLAST RADIUS BEYOND THIS CLASS.
+ *      `CallForOffersService`'s `dealArrivedDate` had ALWAYS resolved to its `CreatedDate` leg
+ *      because nothing wrote `Broker_First_Seen__c`; from this change on, every newly converted
+ *      deal takes the other leg, and the "Deal arrived <date>" text in `lwc/callForOffersList`
+ *      moves from the Opportunity's creation moment to the broker-first-seen moment. That is
+ *      correct and intended — see that class's header §4, amended in the same change.
+ *
  *   4. BROKER CONTACT ROLE (S2, 2026-08-03) — the submitting broker becomes visible
  *      on the deal as a primary OpportunityContactRole with Role = 'Broker'.
  *
@@ -74,10 +96,22 @@
  * is correct whether or not the platform creates the row — it does not depend on undocumented
  * conversion behaviour — and it is naturally idempotent if this path ever re-runs.
  *
- * ═══ BULK SHAPE IS A CONTRACT: 2 SOQL, ≤5 DML, CONSTANT — WAS ≤4, RAISED 2026-08-10 ═══
+ * ═══ BULK SHAPE IS A CONTRACT: 3 SOQL, ≤5 DML, CONSTANT — SOQL WAS 2, RAISED 2026-08-30 ═══
+ * 🔴 THIS IS A DECLARED CONTRACT CHANGE, WHICH THE PREVIOUS VERSION OF THIS BLOCK DEMANDED BY
+ * NAME: *"A future change here that needs a SECOND read or a SECOND statement is a contract change
+ * and must say so."* WS3 (Property reuse) adds SOQL 3 below and makes DML 1 CONDITIONAL. Nothing
+ * else moved: the new read is ONE call for the whole converted chunk, not one per Lead, and the new
+ * conditional cannot raise the DML ceiling — it can only lower the count.
  *   SOQL 1 — RecordTypeSelector (Land / Retail)
  *   SOQL 2 — OpportunityContactRoleSelector (the rows conversion already created)
- *   DML  1 — Database.insert(properties, false)
+ *   SOQL 3 — PropertySelector.selectByNormalizedAddresses  (WS3, 2026-08-30) — the reuse lookup:
+ *            ONE bulk `WHERE Normalized_Address__c IN :keys` for every converted Lead in the chunk.
+ *            It is SKIPPED ENTIRELY (the selector short-circuits before issuing SOQL) when no Lead
+ *            in the chunk carries an address at all, so the honest bound is "≤3, normally 3".
+ *   DML  1 — Database.insert(properties, false)          🔴 NOW CONDITIONAL (WS3). It is
+ *            isEmpty()-guarded, because a chunk in which EVERY Lead reuses an existing Property
+ *            builds no rows at all — unguarded, that batch would spend a DML statement inserting
+ *            an empty list. The reachable floor is therefore 4 statements, not 5.
  *   DML  2 — update updates                       (all-or-none, deliberately — see below)
  *   DML  3 — Database.update(roleUpdates, false)  ┐ the contact-role write, PARTITIONED.
  *   DML  4 — Database.insert(roleInserts, false)  ┘ Each is isEmpty()-guarded, and standard
@@ -97,7 +131,7 @@
  *   every converted Contact in the chunk, one for every distinct converted Account, never one
  *   per record. They are never both absent (every conversion produces a Contact and an
  *   Account), so the honest worst case actually reachable through this path is DML 1, 2, one of
- *   {3 or 4}, 5, 6 — five statements. The class-level contract is therefore 2 SOQL / ≤5 DML.
+ *   {3 or 4}, 5, 6 — five statements. The class-level contract is therefore 3 SOQL / ≤5 DML.
  *
  *   ⚠ WHY NOT ONE upsert: partitioning costs one conditional statement and removes an unknown.
  *   insert and update on OpportunityContactRole are certainly supported — the platform creates
@@ -124,7 +158,17 @@
  * the same reason it always had it: one bad Property must never roll back the conversion.
  *
  * ═══ FLS POSTURE — READ THIS BEFORE ASSUMING A BLANK FIELD IS A FAILED STAMP ═══
- * This service's DML runs in SYSTEM MODE and Trigger.new is not FLS-filtered, so a missing FLS
+ * 🔴 CORRECTED 2026-08-30 (WS3), AND THE CORRECTION IS LOAD-BEARING. This paragraph used to say
+ * flatly that "this service's DML runs in SYSTEM MODE". It runs in system mode only where the
+ * ACCESS LEVEL IS STATED. `Database.insert(properties, false)` — the two-argument form this method
+ * used for its entire life — was MEASURED on 2026-08-30 to be REFUSED with
+ * `System.DmlException: Operation failed due to fields being inaccessible on Sobject Property__c`
+ * as soon as the payload contained a field with no `FieldPermissions` row anywhere. The Property
+ * insert therefore now passes `AccessLevel.SYSTEM_MODE` explicitly; see the long note at that
+ * statement for why the alternative was a silent, org-wide loss of Property creation rather than an
+ * error. Anything ADDED to this class that writes a newly-deployed field must state its access
+ * level too — do not rely on "Apex DML is system mode by default".
+ * Trigger.new is not FLS-filtered, so a missing FLS
  * grant does NOT block the stamp — the data lands. FLS is required only so the persona can SEE
  * the values; without it the highlight panel renders blank, silently. Verify as a real persona,
  * never as an admin (a System Administrator has no FLS on Metadata-API-deployed custom fields —
@@ -217,11 +261,40 @@ public with sharing class LeadConvertService {
         if (oppToLead.isEmpty()) {
             return;
         }
-        // 1. Build one Property per converted deal and link it back to its Opportunity.  [DML 1]
+        // 1. Reuse or build the Property for each converted deal, and link it back to its
+        //    Opportunity.  [SOQL 3, DML 1 — the DML is conditional as of WS3]
         Map<Id, Id> oppToPropertyId = createProperties(oppToLead);
         // 2. Stamp every Opportunity: structural fields plus the deal-process set.  [SOQL 1, DML 2]
         List<Opportunity> updates = buildOpportunityUpdates(oppToLead, oppToPropertyId);
-        update updates;
+        // 🔴 STILL ALL-OR-NONE (the `true`), AND NOW EXPLICITLY SYSTEM MODE. Both halves matter and
+        // neither is cosmetic.
+        //
+        // ⚠ THE ACCESS LEVEL WAS FOUND THE HARD WAY ON 2026-08-30, VALIDATING WS3, AND THE DEFECT
+        // IT FIXES IS A TOTAL, ORG-WIDE, SILENT-UNTIL-CLICKED OUTAGE OF LEAD CONVERSION. The bare
+        // `update updates;` this line replaces was refused outright the moment WS2 added
+        // `o.DPEG_First__c = l.DPEG_First__c` to `applyDealFields`:
+        //     System.DmlException: Operation failed due to fields being inaccessible on
+        //     Sobject Opportunity
+        // which, raised inside a Lead after-update trigger, surfaces to the user as
+        // `CANNOT_INSERT_UPDATE_ACTIVATE_ENTITY ... There was an error converting the lead` and
+        // rolls the WHOLE conversion back. Measured: 28 of the 30 methods in
+        // `LeadConvertServiceTest` failed on it, including every pre-existing one that has nothing
+        // to do with broker protection. `Opportunity.DPEG_First__c` is deployed by the Metadata API
+        // and this work grants it to nobody, so it has no `FieldPermissions` row for ANY profile,
+        // System Administrator included — and such a field is not FLS-denied, it is ABSENT from the
+        // running user's schema, which the DML layer refuses rather than ignores.
+        //
+        // 🔴 "APEX DML IS SYSTEM MODE BY DEFAULT" IS THE BELIEF THAT PRODUCED THIS. It governs
+        // ENFORCEMENT on a field the running user can see; it does not put back a field that is not
+        // in their schema. Only a stated AccessLevel does. The same fact forced the explicit
+        // AccessLevel on the Property insert in `createProperties`, for the same reason.
+        //
+        // ⚠ AN FLS GRANT IS NOT AN ALTERNATIVE FIX, IT IS A SECOND, WEAKER ONE. Granting
+        // `DPEG_First__c` on `DPEG_Acquisition_Edit` would fix conversion only for personas holding
+        // that set, and would leave the deploy-time `RunLocalTests` pass failing for any admin who
+        // does not — which is how this reached a validation run in the first place. The grant is
+        // still wanted (a human has to SEE the value); it is not what keeps conversion working.
+        Database.update(updates, true, AccessLevel.SYSTEM_MODE);
         // 3. Put the converted Contact on the deal as the primary Broker.  [SOQL 2, DML 3/4]
         stampBrokerContactRoles(oppToLead);
         // 4. Stamp the converted Contact and Account with their broker record types.  [DML 5, DML 6]
@@ -246,29 +319,199 @@ public with sharing class LeadConvertService {
     }
 
     /**
-     * Inserts one Property per converted deal and returns Opportunity Id -> new Property Id for
-     * the deals whose insert succeeded.
+     * REUSES an existing Property where the converted deal names a building this org already
+     * holds, and inserts one only where it does not. Returns Opportunity Id -> Property Id for
+     * every deal that ended up with a Property (reused or newly inserted).
      *
-     * allOrNone = false: a single bad Property must never roll back the whole conversion. The cost
-     * is that a failed row simply leaves Opportunity.Property__c null (and with it the
-     * Property_Address__c formula blank) rather than raising — deliberate, and the same posture
-     * the class has had since it was written.
+     * ═══ WS3 (2026-08-30) — WHY THIS STOPPED BEING A BLIND INSERT ═══
+     * Until this change every conversion minted a `Property__c`, so two brokers emailing the SAME
+     * building produced two rows for it. That is not a cosmetic duplicate: `Property__c` is the
+     * root of the acquisition graph, so the building's underwriting figures, its CoStar/Placer
+     * links, its SharePoint deal folder and (at Closed Won) its Property Management asset tree all
+     * forked in two, and no screen showed that they had. Competing brokers on one building is the
+     * scenario Broker Protection exists for — it is the ordinary case here, not an edge case.
+     *
+     * ═══ 🔴 A REUSED PROPERTY IS NOT MODIFIED. NOT ONE FIELD, NOT EVEN A BLANK ONE. ═══
+     * USER DECISION, taken deliberately over both "overwrite" and the softer "fill in the blanks".
+     * The existing row's values are CURATED — an analyst's underwriting, or data synced from
+     * CoStar/Placer — and the second broker's email is an unreviewed LLM extraction. Blank-filling
+     * sounds free and is not: `Occupancy_Pct__c` empty because nobody has measured it and
+     * `Occupancy_Pct__c` empty because an analyst DELETED a wrong number are indistinguishable from
+     * here, and the second is silently overwritten by the machine. So the newer facts are
+     * DISCARDED on purpose, and this method holds no update path at all — there is nothing to
+     * disable if the decision is ever revisited, only something to add.
+     *
+     * TWO CONSEQUENCES, BOTH VISIBLE TO USERS, BOTH ACCEPTED:
+     *   ⚠ 1. `Opportunity.Property_Address__c` is a CROSS-OBJECT FORMULA over `Property__r
+     *         .Address__c`, so the second deal displays the FIRST broker's wording of the address
+     *         rather than the wording in its own email. The second email's wording is not lost —
+     *         it survives verbatim on `Lead.Property_Address__c`, a stored Text field on the
+     *         converted Lead, which is where to look when the two disagree.
+     *   ⚠⚠ 2. SHARING. `Property__c` OWD is Private and the reuse lookup deliberately escapes
+     *         sharing (`PropertySelector.ReuseLookupReads` — it has to, or a converter who cannot
+     *         see the first Property would read "no such building" and mint the duplicate this
+     *         feature exists to prevent). So the Opportunity can now point at a Property its own
+     *         converter cannot open: the lookup renders, and clicking through gives INSUFFICIENT
+     *         PRIVILEGES. That is correct per the decision — the reuse is a system fact about the
+     *         building, not a grant of access to it — but it is a NEW user-visible condition and
+     *         belongs in the release note. The remedy is a permission-set grant
+     *         (`DPEG_Property_View` / `DPEG_Acquisition_View`), never a narrowing of that read.
+     *
+     * ═══ BULK SHAPE — ONE QUERY FOR THE WHOLE CHUNK, NEVER ONE PER LEAD ═══
+     * Step 1 is pure in-memory key derivation; step 2 is the single `PropertySelector` call
+     * [SOQL 3]; step 3 builds rows only for the keys that missed. This service fires TWICE in one
+     * transaction on a 251-conversion batch (`Database.convertLead` caps a call at 200), which is
+     * why the per-INVOCATION cost is what matters and why
+     * `LeadConvertServiceTest.stampCostDoesNotScaleWithBatchSize` compares a 1-record run against a
+     * 50-record one rather than asserting a ceiling.
+     *
+     * ═══ WITHIN-BATCH DEDUPE — THE CASE THE QUERY CANNOT SEE ═══
+     * One inbound email naming the same building twice, or two Leads for one building converted in
+     * the same chunk, both key identically and BOTH miss the query (neither Property exists yet).
+     * Building one row per Lead would re-create the exact duplicate this method removes, one
+     * transaction later. So a key that has already claimed a row in `properties` reuses that row's
+     * INDEX, and both Opportunities take the same inserted Id. Iteration is over a SORTED list of
+     * Opportunity Ids so that "which of the two Leads' facts become the new Property" is
+     * deterministic (the lower Opportunity Id wins) rather than dependent on Map iteration order.
+     *
+     * ═══ A LEAD WITH NO ADDRESS AT ALL GETS ITS OWN PROPERTY, ALWAYS ═══
+     * `normalizeAddress` returns '' for a blank address. A blank key is NEVER looked up and NEVER
+     * stamped — it is not a key, it is the absence of one. Were it treated as a key, every
+     * addressless deal in the org would collapse onto one shared "building". Branch (c) of the
+     * broker-protection routing tree legitimately produces addressless Leads, so this is a live
+     * path, not a defensive nicety.
+     *
+     * allOrNone = false, unchanged: a single bad Property must never roll back the whole
+     * conversion. The cost is that a failed row simply leaves Opportunity.Property__c null (and
+     * with it the Property_Address__c formula blank) rather than raising — deliberate, and the same
+     * posture the class has had since it was written.
      */
     private static Map<Id, Id> createProperties(Map<Id, Lead> oppToLead) {
-        List<Property__c> properties = new List<Property__c>();
-        List<Id> propertyOppIds = new List<Id>(); // parallel to `properties`
-        for (Id oppId : oppToLead.keySet()) {
-            properties.add(buildProperty(oppToLead.get(oppId)));
-            propertyOppIds.add(oppId);
+        // Sorted for determinism — see the within-batch dedupe note above. Id ordering is total,
+        // stable across runs, and needs no extra state on the Lead.
+        List<Id> oppIds = new List<Id>(oppToLead.keySet());
+        oppIds.sort();
+
+        // ── 1. Derive every key, in memory. Zero SOQL, zero DML. ────────────────────────────────
+        Map<Id, String> keyByOpp = new Map<Id, String>();
+        Set<String> keys = new Set<String>();
+        for (Id oppId : oppIds) {
+            // 🔴 THE SAME PRECEDENCE buildProperty USES FOR Address__c, VIA THE SAME HELPER. If the
+            // key were derived from a different field than the address that gets stored, the row
+            // this method inserts would not be findable by the key it was inserted under, and reuse
+            // would fail for exactly the buildings it just created.
+            String key = PropertyMatchingService.normalizeAddress(propertyAddress(oppToLead.get(oppId)));
+            keyByOpp.put(oppId, key);
+            if (String.isNotBlank(key)) {
+                keys.add(key);
+            }
         }
+
+        // ── 2. ONE read for the whole chunk. [SOQL 3] ───────────────────────────────────────────
+        // First row per key wins, and the selector orders oldest-first, so reuse converges on the
+        // ORIGINAL Property when the org holds pre-existing duplicates (Normalized_Address__c is
+        // deliberately not unique — the backfill has to be able to land on a dirty org).
+        //
+        // ⚠ `.toLowerCase()` ON BOTH SIDES OF THIS MAP CLOSES A GENUINE MISMATCH, NOT A HYPOTHETICAL
+        // ONE. `Normalized_Address__c` is `caseSensitive = false`, so the SOQL `IN` above matches
+        // CASE-BLIND at the index — but an Apex `Map<String, ...>` lookup is CASE-SENSITIVE. A row
+        // whose stored key differed only in case would therefore come BACK from the query and then
+        // silently MISS here, and the visible result would be a duplicate Property with no error.
+        // `normalizeAddress` lower-cases before it returns, so in practice both sides are already
+        // lower and this is a no-op; it costs one string operation per row and removes the one way
+        // the two matchers can disagree.
+        Map<String, Id> existingByKey = new Map<String, Id>();
+        for (Property__c existing : PropertySelector.selectByNormalizedAddresses(keys)) {
+            String foundKey = existing.Normalized_Address__c.toLowerCase();
+            if (!existingByKey.containsKey(foundKey)) {
+                existingByKey.put(foundKey, existing.Id);
+            }
+        }
+
+        // ── 3. Build rows ONLY for the misses. ──────────────────────────────────────────────────
         Map<Id, Id> oppToPropertyId = new Map<Id, Id>();
-        Database.SaveResult[] saves = Database.insert(properties, false);
-        for (Integer i = 0; i < saves.size(); i++) {
-            if (saves[i].isSuccess()) {
-                oppToPropertyId.put(propertyOppIds[i], saves[i].getId());
+        List<Property__c> properties = new List<Property__c>();
+        Map<Id, Integer> rowIndexByOpp = new Map<Id, Integer>(); // opp -> its row in `properties`
+        Map<String, Integer> rowIndexByKey = new Map<String, Integer>(); // within-batch dedupe
+        for (Id oppId : oppIds) {
+            // Lower-cased for the same reason the map above is — see that comment.
+            String key = keyByOpp.get(oppId);
+            Boolean keyed = String.isNotBlank(key);
+            String lookupKey = keyed ? key.toLowerCase() : null;
+            if (keyed && existingByKey.containsKey(lookupKey)) {
+                // REUSE. No DML, no field written, nothing on the existing row touched.
+                oppToPropertyId.put(oppId, existingByKey.get(lookupKey));
+                continue;
+            }
+            if (keyed && rowIndexByKey.containsKey(lookupKey)) {
+                // A second Lead for the same building INSIDE this chunk — share the pending row.
+                rowIndexByOpp.put(oppId, rowIndexByKey.get(lookupKey));
+                continue;
+            }
+            Integer rowIndex = properties.size();
+            properties.add(buildProperty(oppToLead.get(oppId)));
+            rowIndexByOpp.put(oppId, rowIndex);
+            if (keyed) {
+                rowIndexByKey.put(lookupKey, rowIndex);
+            }
+        }
+
+        // ── 4. [DML 1] — isEmpty()-GUARDED, WHICH IT DID NOT USED TO NEED. ──────────────────────
+        // A chunk in which every Lead reuses an existing Property builds no rows, and
+        // `Database.insert` on an empty list still spends a DML statement. Guarding is what keeps
+        // the header's ≤5 an honest ceiling rather than a floor.
+        //
+        // 🔴 `AccessLevel.SYSTEM_MODE` IS EXPLICIT AS OF WS3, AND IT IS NOT A WIDENING — IT IS THE
+        // CLASS HEADER'S "FLS POSTURE" PARAGRAPH BECOMING TRUE. That paragraph has always asserted
+        // "this service's DML runs in SYSTEM MODE, so a missing FLS grant does NOT block the
+        // stamp". MEASURED 2026-08-30 against usman-dpeg at API 67.0, that was FALSE for a field
+        // nobody has been granted: `Database.insert(properties, false)` — the two-argument form —
+        // was REFUSED with
+        //     System.DmlException: Operation failed due to fields being inaccessible on
+        //     Sobject Property__c
+        // the moment `Normalized_Address__c` appeared in the payload. A Metadata-API-deployed
+        // custom field arrives with NO field permissions for ANY profile, System Administrator
+        // included, and such a field is not merely FLS-denied — it is ABSENT from the running
+        // user's schema, which the DML layer reports as inaccessible rather than ignoring.
+        //
+        // ⚠ WHY THAT WOULD HAVE BEEN A SILENT, TOTAL OUTAGE RATHER THAN AN ERROR. `allOrNone`
+        // is false here, deliberately, so the refusal does not throw — it fails EVERY row in the
+        // list, `oppToPropertyId` comes back empty, and every converted deal in the chunk ends up
+        // with a null `Property__c` and a blank `Property_Address__c` formula. Not just WS3's reuse:
+        // PROPERTY CREATION ITSELF, for every conversion in the org, which is behaviour this class
+        // has had since it was written. So the explicit AccessLevel is what keeps THIS change from
+        // being the largest regression in the file.
+        //
+        // ⚠ IT DOES NOT LIFT SHARING (an insert has no existing rows to be filtered by) and it does
+        // NOT change this class's `with sharing` declaration. It also does not remove the need for
+        // the P8 FLS grant on `Normalized_Address__c`: the grant is what lets a HUMAN see the field
+        // and what the backfill script depends on (anonymous Apex cannot use SYSTEM_MODE at all).
+        if (!properties.isEmpty()) {
+            Database.SaveResult[] saves = Database.insert(properties, false, AccessLevel.SYSTEM_MODE);
+            for (Id oppId : rowIndexByOpp.keySet()) {
+                Database.SaveResult save = saves[rowIndexByOpp.get(oppId)];
+                if (save.isSuccess()) {
+                    oppToPropertyId.put(oppId, save.getId());
+                }
             }
         }
         return oppToPropertyId;
+    }
+
+    /**
+     * The address a converted Lead is ABOUT: the extracted property address when it has one, the
+     * standard Street otherwise.
+     *
+     * Extracted 2026-08-30 (WS3) from `buildProperty`, where this expression already lived, so that
+     * `createProperties` derives the reuse KEY from exactly the string `buildProperty` stores in
+     * `Address__c`. Two copies of this precedence would be a silent divergence: the key would
+     * describe one address and the record another, and every reuse lookup would miss.
+     *
+     * @param l The converted lead.
+     * @return The address, or null when the lead carries neither field.
+     */
+    private static String propertyAddress(Lead l) {
+        return String.isNotBlank(l.Property_Address__c) ? l.Property_Address__c : l.Street;
     }
 
     /**
@@ -300,9 +543,12 @@ public with sharing class LeadConvertService {
             // OpportunityContactRole created below. The role alone was invisible in practice: a
             // contact role is a related list, so it cannot appear in the highlights panel, a
             // compact layout, a list view column or a report column on the Opportunity. Riding on
-            // this existing loop keeps the class's 2-SOQL / ≤5-DML contract EXACTLY as documented in
-            // the header — the value is already on the Lead, so this adds no query and no
-            // statement. ⚠ This is the SUBMITTING broker; the OM's listing broker is a different
+            // this existing loop leaves the class's governor contract EXACTLY as documented in the
+            // header — the value is already on the Lead, so this adds no query and no
+            // statement. (Do not restate the numbers here: they were restated as "2 SOQL" and went
+            // stale the moment WS3 raised the header to 3. The header is the single statement of
+            // the contract; these in-method notes say only "unchanged by this line".)
+            // ⚠ This is the SUBMITTING broker; the OM's listing broker is a different
             // person and lives in Listing_Broker_Name__c / Listing_Broker_Email__c (set by
             // applyDealFields below). Do not merge the two.
             if (l.ConvertedContactId != null) {
@@ -378,6 +624,44 @@ public with sharing class LeadConvertService {
         o.Fields_Captured_Count__c = l.Fields_Captured_Count__c;
         o.Fields_Missing_Count__c = l.Fields_Missing_Count__c;
 
+        // ── WS2 (2026-08-30) — THE BROKER-PROTECTION PAIR, CARRIED PAST CONVERSION ──────────────
+        // Until this change the protection window DIED at conversion. `Opportunity
+        // .Broker_First_Seen__c` had NO writer anywhere in this repo — only two seed scripts
+        // backdated it — so a converted deal could not say when DPEG first saw it, and the
+        // Opportunity had no equivalent of Lead.BP_Expiry__c / Lead.Days_in_System__c at all.
+        // These two assignments are the whole of the fix.
+        //
+        // 🔴 THE HEADER'S GOVERNOR CONTRACT IS UNCHANGED BY WS2, AND A REVIEWER MUST NOT READ THIS
+        // AS A BREACH. (Read the numbers off the header, never off this line — this comment used to
+        // restate them as "2 SOQL / ≤5 DML" and was stale from the moment WS3 raised SOQL to 3.)
+        // Both values are already on `l` (a Trigger.new
+        // record) and `o` is already a member of the `updates` list the caller writes with ONE
+        // statement: zero new queries, zero new statements, and no picklist so not even a describe.
+        // Exactly the shape the Portfolio_Deal__c carry-forward below already has.
+        //
+        // ⚠ BOTH SIDES ARE DateTime, AND THAT SYMMETRY IS THE POINT OF THE WS2 FIELD TYPE CHANGE.
+        // `Lead.First_Seen_Date__c` is a DateTime despite its Date-suffixed name (a pre-existing
+        // ARCHITECTURE.md §1 violation, deliberately NOT "fixed" here — a rename is a
+        // delete-and-create), and `Broker_First_Seen__c` moved Date -> DateTime in this same change
+        // so the instant maps straight across. A `.date()` on this line would silently discard the
+        // time of day and re-introduce exactly what the type change removed.
+        //
+        // 🔴 BP_Expiry__c AND Days_in_System__c ARE FORMULA FIELDS AND ARE NOT ASSIGNED HERE. They
+        // derive from Broker_First_Seen__c the moment it lands. Assigning a formula field is a
+        // COMPILE error, not a runtime one; they are named here so nobody adds them "for
+        // completeness" after reading the field list on the layout.
+        //
+        // ⚠ NULL IS COPIED AS-IS, for the same reason as the three extraction numbers above: every
+        // field on a freshly created Opportunity is empty at this instant, so a `!= null` guard
+        // would be indistinguishable from no guard and would mask a real bug later. In practice
+        // neither source is normally blank — flows/Lead_Intake_Stamp stamps First_Seen_Date__c on
+        // every Lead save where it IsNull, and DPEG_First__c on every save where it IsNull AND the
+        // owner is a User. The one reachable blank is a QUEUE-OWNED Lead, which converts with
+        // DPEG_First__c empty and leaves the Opportunity's empty too — the honest answer ("no DPEG
+        // user had this first"), not a failed stamp.
+        o.Broker_First_Seen__c = l.First_Seen_Date__c;
+        o.DPEG_First__c = l.DPEG_First__c;
+
         // ── The multi-property PORTFOLIO DEAL, carried forward (2026-08-17) ──────────────────
         // One inbound broker email that named several properties produced several Leads, all
         // stamped with one Portfolio_Deal__c at insert (Decision C1). Carrying it here is what
@@ -386,7 +670,7 @@ public with sharing class LeadConvertService {
         //
         // ZERO SOQL AND ZERO DML: `l` is a Trigger.new record that already carries the value and
         // `o` is already in the `updates` list this method's caller writes with ONE statement — so
-        // the class's 2 SOQL / ≤5 DML contract in the header is UNCHANGED. It is a lookup, not a
+        // the governor contract stated in the class header is UNCHANGED. It is a lookup, not a
         // picklist, so there is nothing to describe-guard; a SetNull delete constraint means a
         // deleted portfolio deal blanks this field rather than cascading into the deal.
         //
@@ -448,7 +732,7 @@ public with sharing class LeadConvertService {
      * so an unexpected value can't fail the insert.
      */
     private static Property__c buildProperty(Lead l) {
-        String address = String.isNotBlank(l.Property_Address__c) ? l.Property_Address__c : l.Street;
+        String address = propertyAddress(l);
         // NAME PRECEDENCE (S1): a marketing name beats the address. Previously the address always
         // won, so a named asset converted as "1400 Royal Lane, Dallas TX" instead of "Orion
         // ParkView". The address is still on Address__c and on the Property tab, so nothing
@@ -465,6 +749,27 @@ public with sharing class LeadConvertService {
         Property__c p = new Property__c();
         p.Name = name;
         p.Address__c = address;
+        // ── WS3 (2026-08-30) — THE REUSE KEY. THIS METHOD IS THE ONLY WRITER IN THE APPLICATION. ──
+        // 🔴 IT MUST BE `PropertyMatchingService.normalizeAddress`, CALLED — never a second
+        // implementation of it, however small. That method is the SOLE definition of the key, it is
+        // regex (`[^a-z0-9\s]` -> ' ', collapse, trim), and the same call produces
+        // `Property_Registry__c.Property_Key__c` on the broker-protection side. A private copy here
+        // would agree with it today and diverge the first time either is touched, at which point
+        // the same building keys two ways: the reuse lookup misses, a duplicate Property is created,
+        // and NOTHING ANYWHERE REPORTS IT — the org simply goes back to the pre-WS3 behaviour while
+        // the tests, which use one path, stay green. P14 also rules out the declarative alternative:
+        // Salesforce formulas have no regex, so this cannot be a formula field.
+        //
+        // ⚠ A BLANK ADDRESS LEAVES THE FIELD NULL, WHICH IS NOT THE SAME AS ''. `normalizeAddress`
+        // returns '' for blank input, and an empty key stored on every addressless Property would
+        // make them all match each other — every addressless deal in the org collapsing onto one
+        // "building". Branch (c) of the routing tree produces addressless Leads, so this is live.
+        //
+        // ZERO SOQL, ZERO DML: a pure in-memory string transform on a record already in the list
+        // `createProperties` inserts with ONE statement. The header's SOQL change is the LOOKUP in
+        // `createProperties`, not this line.
+        String normalized = PropertyMatchingService.normalizeAddress(address);
+        p.Normalized_Address__c = String.isBlank(normalized) ? null : normalized;
         p.City__c = l.City;
         p.State__c = l.State;
         p.Zip__c = l.PostalCode;
@@ -498,7 +803,7 @@ public with sharing class LeadConvertService {
         // the grouping's one-to-many, and it is the member that makes the grouping legible on the
         // Portfolio_Deal__c record page: three Properties from one email, side by side.
         // ZERO SOQL and ZERO DML — this record is already in the list `createProperties` inserts
-        // with ONE statement, so the class's 2 SOQL / ≤5 DML contract is UNCHANGED. See
+        // with ONE statement, so the governor contract in the class header is UNCHANGED. See
         // applyDealFields above for the ONE question this lookup answers ("which inbound broker email
         // routed this record?"), why a seller-bundle meaning must never be poured into it, and why
         // the field's NEW name makes that mistake MORE tempting rather than less.
@@ -517,7 +822,7 @@ public with sharing class LeadConvertService {
      * READ-THEN-WRITE, never a blind insert: standard conversion has already created a primary
      * OpportunityContactRole for this Contact with a blank Role (see the class header). One
      * selector read for the whole converted set, then ONE bulk statement per partition —
-     * SOQL 2 of 2, DML 3 (≤4), constant regardless of batch size. The partition is deliberate
+     * SOQL 2 of 3, DML 3 (≤4), constant regardless of batch size. The partition is deliberate
      * and is explained in the class header: upsert would be one statement instead of two, but
      * its support on this standard junction is the one unknown in this method, and a DML failure
      * raised inside a Lead after-update trigger rolls back the entire conversion.
@@ -596,7 +901,7 @@ public with sharing class LeadConvertService {
 
     /**
      * The contact-role rows that already exist on the converted Opportunities, keyed by
-     * (Opportunity, Contact). ONE selector call for the whole set — SOQL 2 of 2.
+     * (Opportunity, Contact). ONE selector call for the whole set — SOQL 2 of 3.
      */
     private static Map<String, OpportunityContactRole> existingRolesByPair(Set<Id> opportunityIds) {
         Map<String, OpportunityContactRole> existingByPair = new Map<String, OpportunityContactRole>();
@@ -756,7 +1061,7 @@ public with sharing class LeadConvertService {
     /**
      * The Id of a record type by developer name, or null when it does not exist in this org or
      * is not available to the running user. A describe, not a query — it costs no SOQL, so the
-     * class's 2-SOQL contract is unchanged. Guarded on isAvailable() (not just non-null)
+     * SOQL contract stated in the class header is unchanged. Guarded on isAvailable() (not just non-null)
      * because this is a USER-INITIATED path (conversion), unlike the automation-path helpers in
      * EmailToLeadService / TestDataFactory that guard on null only — see ARCHITECTURE.md §2's
      * WITH SYSTEM_MODE automation-path table and the 2026-08-10 measured finding that record

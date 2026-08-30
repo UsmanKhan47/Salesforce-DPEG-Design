@@ -147,6 +147,101 @@ public with sharing class PropertyClaimService {
     private static final Integer LEN_TEXT = 255;
 
     /**
+     * Per-transaction answer for Property_Registry__c.Protection_Window_Days__c; null until
+     * first asked. See stampResolvedWindow.
+     *
+     * 🔴 `@TestVisible` IS THE ONLY WAY THE STAMP CAN BE PROVEN IN THIS ORG TODAY, AND THAT IS
+     * MEASURED, NOT ASSUMED. The field is brand-new and Metadata-API-deployed, so it has
+     * FieldPermissions for nobody — including the deploy-time test runner. Measured on
+     * `usman-dpeg` 2026-08-30 (validation 0Afiw000000TlrZCAS): both end-to-end claim tests
+     * passed, and the stamp assertion inside each was SKIPPED, leaving the assignment in
+     * stampResolvedWindow as the only uncovered line in the method. A guard whose guarded
+     * branch no test can enter is a guard nobody has read. Pre-seeding this cache lets a test
+     * enter that branch and assert the RESOLVED value on an in-memory row — no DML, so no FLS
+     * is involved and no grant is needed. The end-to-end tests still exist and still assert
+     * the same thing through real DML; they simply start proving it the day the grant lands.
+     */
+    @TestVisible
+    private static Boolean windowStampWritableCache;
+
+    /**
+     * 🔴 GATE A MITIGATION (b) — THE DURABLE AUDIT TRAIL. REQUIRED, NOT DIAGNOSTIC. DO NOT DELETE.
+     *
+     * Stamp the protection window that was in force onto the registry row itself, at the
+     * moment the claim is decided. `BrokerProtectionConfig`'s GATE A block is the full
+     * decision record; the short version is that the user accepted a Setup-editable
+     * protection window — a value that can retroactively release live claims with no deploy —
+     * ON CONDITION that the window applied to a disputed claim stays recoverable.
+     *
+     * ═══ WHY A FIELD AND NOT (ONLY) THE WARN LOG — UPGRADED 2026-08-30 (WS8 review, W6) ═══
+     * That condition was originally discharged by `PropertyMatchingService.logResolvedWindow`,
+     * a `System.debug(WARN)`. A debug log is captured ONLY while a trace flag is active on the
+     * EXECUTING principal and expires (24h retention, 20MB per flag). This code runs inside an
+     * async queueable as the Email Service context user — the principal least likely to be
+     * traced — so in practice the promised audit trail usually would not exist at all, and its
+     * absence would only be discovered by the person who needed it. The log is KEPT (it costs
+     * nothing and is genuinely useful when a flag IS active); it is now the secondary half.
+     *
+     * ═══ IT RIDES THE EXISTING DML: ZERO NEW SOQL, ZERO NEW DML ═══
+     * Every caller passes a row that is about to be inserted or updated by a statement that
+     * already exists. `ExtractAddressQueueable`'s QUERY_BUDGET and DML_BUDGET are EQUALITY
+     * assertions at N=10, so anything else here would have to be argued as a budget change.
+     * `BrokerProtectionConfig.protectionWindowDays()` is a cached CMDT accessor, measured at
+     * `Limits.getQueries() == 0` (see that class's LAYER note), so it is free at any N.
+     *
+     * ═══ 🔴 GUARDED ON isCreateable(), FOR A REASON MEASURED TWICE IN THIS BUILD ═══
+     * `Protection_Window_Days__c` is a brand-new Metadata-API-deployed field, which arrives
+     * with FLS for NOBODY — System Administrator included (ARCHITECTURE.md §2). An
+     * unconditional write would not cost the audit value, it would throw
+     * `System.DmlException: Operation failed due to fields being inaccessible` and abort the
+     * whole claim: no registry row, no submission, no Lead retained, for every inbound broker
+     * email until a permission set caught up. Both halves of that were measured on
+     * `usman-dpeg` on 2026-08-30 — 42 of 45 tests on `Lead`, and an org-wide lead-conversion
+     * failure on `Opportunity`. The guard makes a missing grant cost the AUDIT VALUE and
+     * nothing else, which is the correct trade: the claim is the product, the stamp is
+     * evidence about it.
+     *
+     * ⚠ `isCreateable()` IS THE RIGHT QUESTION ON BOTH PATHS, including the two adoptions,
+     * which are updates. It is the same permission bit in practice for a plain custom Number
+     * field, and asking one question keeps the two paths from diverging into "stamped on
+     * insert, silently not stamped on adoption" — which is the shape that would make the
+     * audit trail wrong rather than merely absent.
+     *
+     * 🔴 PROVISIONING IS THE REAL FIX, AND IT IS DECLARED, NOT MADE HERE. Read + Edit on
+     * `Property_Registry__c.Protection_Window_Days__c` for the intake principal
+     * (`Broker_Protection_Access`), or this mitigation is silently OFF. No permission set is
+     * edited by this change. Verify with `FieldPermissions`, never with a green deploy.
+     *
+     * @param registry The row about to be written by an EXISTING insert or update statement.
+     */
+    @TestVisible
+    private static void stampResolvedWindow(Property_Registry__c registry) {
+        if (!windowStampWritable()) {
+            return;
+        }
+        registry.Protection_Window_Days__c = BrokerProtectionConfig.protectionWindowDays();
+    }
+
+    /**
+     * Can the running principal WRITE `Property_Registry__c.Protection_Window_Days__c`? See
+     * stampResolvedWindow for the decision and the measurement behind it.
+     *
+     * ⚠ CACHED PER TRANSACTION, NOT PER CALL. This is reached once per property, up to
+     * `ExtractAddressQueueable.MAX_PROPERTIES` times. A describe is a schema read rather than
+     * SOQL, so the pinned QUERY_BUDGET and DML_BUDGET are untouched at any N either way — the
+     * cache is about CPU, matching `EmailToLeadService.brokerLinkWritable()`'s reasoning.
+     *
+     * @return True when the field may be written by the running principal.
+     */
+    private static Boolean windowStampWritable() {
+        if (windowStampWritableCache == null) {
+            windowStampWritableCache =
+                Schema.SObjectType.Property_Registry__c.fields.Protection_Window_Days__c.isCreateable();
+        }
+        return windowStampWritableCache;
+    }
+
+    /**
      * Claim `normalized` for `sourceLeadId`, race-safe against concurrent same-property
      * submissions. The winner decision is made while HOLDING a pessimistic FOR UPDATE lock
      * on the address cluster, so a competing claim for the same property is serialised behind
@@ -327,6 +422,8 @@ public with sharing class PropertyClaimService {
                 Winning_Lead__c = sourceLeadId,
                 Registered_DateTime__c = Datetime.now()
             );
+            // GATE A durable audit trail. Rides this insert — no new statement, no new query.
+            stampResolvedWindow(registry);
             insert registry;
             // The winner anchor is the Lead itself, with NO resolve query: this Lead was
             // inserted by the caller seconds ago and cannot have been converted yet, so passing
@@ -412,6 +509,33 @@ public with sharing class PropertyClaimService {
      * written `Registered_DateTime__c = Datetime.now()` since the module shipped; expiry
      * inherits the already-working answer rather than inventing one.
      *
+     * ═══ 🔴 WHY THE GATE A WINDOW STAMP IS RE-WRITTEN HERE (WS8, 2026-08-30) ═══
+     * Because this method resets `Registered_DateTime__c`, an adoption IS a fresh claim, and
+     * the window that decided it is the window in force NOW. Leaving the original stamp
+     * standing would produce the one outcome worse than no audit trail: a row whose
+     * "registered" date and whose "window" came from two different claims, reading as
+     * authoritative and being wrong. This matters most on the EXPIRED leg, which is the exact
+     * scenario GATE A was opened for — an admin lowering the window is what MAKES a row
+     * expired, so the adopted row must record the lowered value, not the one it replaced.
+     *
+     * 🔴 THIS CONTRADICTS THE FIELD'S OWN `description`, WHICH SAYS "copied once ... and never
+     * updated afterward". THE CODE IS RIGHT AND THE DESCRIPTION NEEDS AMENDING — it was
+     * written by a concurrent agent that owned the field file (which this workstream was
+     * forbidden to edit) and that saw only the new-winner INSERT path. The same description's
+     * FIRST clause is the one that governs: "the window that was IN FORCE WHEN THIS CLAIM WAS
+     * REGISTERED". An adoption re-registers the row — that is what resetting
+     * `Registered_DateTime__c` MEANS — so honouring "never updated" would make the two fields
+     * describe two different claims. The amendment owed is one sentence: written on every
+     * path that sets `Registered_DateTime__c`, which is this method and the new-winner insert.
+     *
+     * ⚠ IT IS NOT A BREACH OF THE PROHIBITION IN registerWinner's HEADER, clause (iii). That
+     * clause forbids a registry UPDATE that does not carry the `Winning_Lead__r.IsConverted =
+     * false` filter — because such a row may hold a converted Lead and the platform may reject
+     * the whole DML over a lookup the update never touched. This adds a Number field to the
+     * TWO EXISTING, ALREADY-FILTERED update statements; it introduces no statement and reaches
+     * no new row. Clause (iii)'s example of "a 'last touched' stamp" refers to a stamp written
+     * by a sweep over ARBITRARY rows, which this is not.
+     *
      * ⚠ THE WINNER ANCHOR IS THE LEAD ITSELF, WITH NO RESOLVE QUERY, on both legs: the Lead
      * was inserted by the caller seconds ago and cannot have been converted yet. See
      * buildSubmission.
@@ -430,6 +554,10 @@ public with sharing class PropertyClaimService {
         registry.Winning_Lead__c = sourceLeadId;
         registry.Normalized_Address__c = normalized;
         registry.Registered_DateTime__c = Datetime.now();
+        // GATE A durable audit trail, RE-stamped because this IS a new claim decision — see
+        // stampResolvedWindow, and the paragraph directly below for why re-stamping is not
+        // optional here. Rides the existing update: no new statement, no new query.
+        stampResolvedWindow(registry);
         update registry;
         insertSubmission(buildSubmission(
             sourceLeadId, sourceLeadId, sourceLeadId, extracted, submittedOn,

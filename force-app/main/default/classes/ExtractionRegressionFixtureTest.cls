@@ -22,8 +22,17 @@
  *      response derived from the same email must produce the IDENTICAL `broker_email` and the
  *      IDENTICAL `PropertyMatchingService.normalizeAddress(property_address)`. Not "a similar
  *      address" — the SAME normalized key, because that key IS the claim identity.
- *   2. THE PROMPT TEXT — the four legacy instructions are asserted verbatim, so an accidental
- *      edit to the claim engine's prompt fails here instead of silently re-keying the registry.
+ *   2. 🔴 THE PROMPT TEXT — NO LONGER PINNED. DELETED 2026-08-30 (WS5), BY THE USER'S
+ *      EXPLICIT DECISION. This used to read "the four legacy instructions are asserted
+ *      verbatim, so an accidental edit to the claim engine's prompt fails here instead of
+ *      silently re-keying the registry". That is now FALSE and the sentence is corrected
+ *      rather than deleted, so no reader trusts a guard that is gone. The prompt moved to
+ *      Broker_Protection_Config__mdt.Default.Extraction_Prompt__c and is Setup data; a test
+ *      cannot pin data an admin edits, and pinning the Apex fallback instead would report
+ *      green while the live prompt drifted. ⚠ Measured (P3): ENRICHED_EXTRACTION_RULES is
+ *      ~95% of the prompt, is not @TestVisible, and was NEVER pinned — so most of this
+ *      protection never existed. The full rationale, and what to do instead, is in the
+ *      section-2 tombstone in the body of this class. READ IT BEFORE RE-ADDING A PIN.
  *   3. THE 40,000-CHARACTER INPUT CLIP (C-15) — asserted not to remove the outermost "From:" /
  *      "Sent:" lines the legacy rules read, which is the ONLY reason clipping is safe at all.
  *
@@ -249,49 +258,60 @@ private class ExtractionRegressionFixtureTest {
     }
 
     // ═════════════════════════════════════════════════════════════════════════
-    // 2. THE PROMPT ITSELF — pinned verbatim.
+    // 2. THE PROMPT ITSELF — 🔴 DELETED 2026-08-30 (WS5). READ THIS BEFORE RE-ADDING IT.
+    //
+    // This section held two tests, and they are gone on purpose:
+    //   • legacyExtractionRules_areStillVerbatim         — pinned LEGACY_EXTRACTION_RULES
+    //   • rollbackLever_recomposesTheOriginalFourKeyPrompt — pinned LEGACY_RESPONSE_FORMAT
+    //
+    // WHAT WAS GIVEN UP. WS5 moved the extraction prompt into
+    // Broker_Protection_Config__mdt.Default.Extraction_Prompt__c, so the live prompt is now
+    // Setup DATA, not Apex source. A test cannot pin data an admin can edit, and pinning
+    // the Apex FALLBACK constant while the org sends a different configured string would be
+    // worse than no test at all: it would report green while the real prompt drifted. The
+    // protection surrendered is the one named in this class's own header — "an accidental
+    // edit to the claim engine's prompt fails here instead of silently re-keying the
+    // registry". That backstop no longer exists for prompt EDITS.
+    //
+    // WHO DECIDED, AND WHEN. The user, on 2026-08-30, knowingly — design-requirements.md
+    // §2/WS5 records "the user accepted 'prompt in CMDT with NO regression guard' knowing
+    // the risk", and instructed that ONLY these verbatim prompt-text assertions be removed.
+    //
+    // ⚠ THE TRADE IS SMALLER THAN IT LOOKS, AND THAT IS MEASURED, NOT ASSUMED (P3).
+    // ⚠ RE-MEASURED 2026-08-30 (WS8 review, finding W3). This block previously read
+    // "~18,658 of the prompt's 19,254 characters — roughly 95%". BOTH figures were pre-WS7.
+    // WS7 added 1,338 characters, and it added ALL of them to ENRICHED_EXTRACTION_RULES —
+    // so the numerator moved with the denominator and the SHARE went UP, not down. Anyone
+    // recomputing this against the new total while holding the old numerator gets ~90.6%,
+    // which is wrong in the direction that makes the trade look worse than it is. Counted
+    // from source: LEGACY_EXTRACTION_RULES 596 + ENRICHED_EXTRACTION_RULES 19,996 = 20,592,
+    // matching LLMExtractionCalloutService.shippedPrompt()'s documented length exactly.
+    // ENRICHED_EXTRACTION_RULES is 19,996 of the prompt's 20,592 characters — roughly 97%
+    // — and it is NOT @TestVisible and was NEVER pinned by this class or any other. So for
+    // 97% of the prompt there was never a regression guard to lose. What actually went away
+    // is the pin on the two LEGACY constants (~762 characters), which are themselves marked
+    // "DO NOT EDIT" in LLMExtractionCalloutService and, on the enriched path,
+    // LEGACY_RESPONSE_FORMAT is not even referenced.
+    //
+    // 🔴 WHAT REPLACES IT. Nothing automated. The only mitigation is the manual one named in
+    // LLMExtractionCalloutService's header — "🔁 RE-RUN BOTH AFTER ANY MODEL-VERSION CHANGE
+    // (and after any edit to this block)" — run the two manual fixtures before and after any
+    // edit to Extraction_Prompt__c and diff the normalised addresses by hand. This is
+    // restated in that CMDT field's own description, because Setup is where the edit will
+    // actually happen.
+    //
+    // ⚠ DO NOT "RESTORE" THESE TESTS BY PINNING EXTRACTION_INSTRUCTION. That constant is now
+    // only the fallback used when the config record is absent; asserting on it proves
+    // nothing about what a loaded org actually sends. If a real guard is ever wanted, it
+    // must assert against the CMDT record's live value, and it must be understood that such
+    // a test turns every legitimate prompt edit into a required code change — which is the
+    // configurability this workstream was asked to deliver, undone.
+    //
+    // ✅ EVERYTHING ELSE IN THIS CLASS SURVIVES UNCHANGED: section 1's parser-contract and
+    // PropertyMatchingService.normalizeAddress claim-key assertions, section 3's input-clip
+    // assertions, and section 4. Those do not depend on prompt text and are still the
+    // highest-value tests here.
     // ═════════════════════════════════════════════════════════════════════════
-
-    @isTest
-    static void legacyExtractionRules_areStillVerbatim() {
-        // These four sentences produced the broker_email / property_address values that every
-        // EXISTING Property_Registry__c row is keyed on. An edit here silently re-keys the ledger,
-        // so the text is pinned rather than trusted to review.
-        String rules = LLMExtractionCalloutService.LEGACY_EXTRACTION_RULES;
-
-        Test.startTest();
-        Assert.isTrue(rules.startsWith('You are extracting fields from a FORWARDED email.'),
-            'The legacy block must still open with the original sentence');
-        Assert.isTrue(rules.contains('The OUTERMOST / EARLIEST "From:" line identifies the ORIGINAL BROKER'),
-            'The broker-identity rule is a claim-engine input and must not be paraphrased');
-        Assert.isTrue(rules.contains('IGNORE it; never use it for the '),
-            'The "ignore the To: line" rule is what stops claims being attributed to the DPEG forwarder');
-        Assert.isTrue(rules.contains('property_address is any property address found anywhere in the body.'),
-            'The address rule defines the claim key and must not be paraphrased');
-        Assert.isTrue(rules.contains('sent_datetime is the OUTERMOST / EARLIEST "Sent:" line'),
-            'The send-time rule must not be paraphrased');
-        Test.stopTest();
-    }
-
-    @isTest
-    static void rollbackLever_recomposesTheOriginalFourKeyPrompt() {
-        // The documented one-line rollback is
-        //   EXTRACTION_INSTRUCTION = LEGACY_EXTRACTION_RULES + LEGACY_RESPONSE_FORMAT;
-        // This asserts the second half is still intact, so that lever is real rather than a claim
-        // in a comment.
-        // `promptRollback`, not `rollback`: ROLLBACK is a reserved word in Apex and will not
-        // compile as an identifier (same trap this repo hit with `bulk`).
-        String promptRollback = LLMExtractionCalloutService.LEGACY_EXTRACTION_RULES
-            + LLMExtractionCalloutService.LEGACY_RESPONSE_FORMAT;
-
-        Test.startTest();
-        Assert.isTrue(promptRollback.endsWith('{"broker_name": "", "broker_email": "", "property_address": "", "sent_datetime": ""}.'),
-            'The rollback prompt must still end with the exact original four-key response contract');
-        Assert.isTrue(promptRollback.contains('Respond ONLY with a single JSON object of exactly these keys'),
-            'The retired response-format sentence must survive verbatim, or the rollback lever is fiction');
-        Test.stopTest();
-    }
-
     // ═════════════════════════════════════════════════════════════════════════
     // 3. THE 40,000-CHARACTER INPUT CLIP (C-15).
     // ═════════════════════════════════════════════════════════════════════════

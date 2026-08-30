@@ -127,6 +127,61 @@ public class LLMExtractionResult {
      */
     public Decimal categoryConfidence;
 
+    /**
+     * `field_confidence` — PER-FIELD extraction confidence, keyed by the response's own JSON
+     * key (lower-cased), valued 0–1. Added 2026-08-30 (WS7). Never null; EMPTY is the normal
+     * answer for a legacy-shape response, a degraded call, or any model that ignored the key.
+     *
+     * ⚠ IT ANSWERS A THIRD, DIFFERENT QUESTION. `confidence` is about
+     * `is_acquisition_related`; `categoryConfidence` is about `email_category`; this is about
+     * whether the model READ each value correctly. None of the three substitutes for another,
+     * and this one is the only one that can say "the address is solid but the NOI is a guess".
+     *
+     * ⚠ EMAIL-LEVEL, NOT PER-PROPERTY, AND THAT IS A DELIBERATE NARROWING. Most of the keys it
+     * scores (`noi`, `year_built`, `cap_rate`) live on PropertyExtraction, so a strictly correct
+     * model would be one map per property. The prompt therefore asks for ONE object per email
+     * carrying the LOWEST confidence for each key across every property, and every Lead the
+     * email mints is stamped with it. On the single-property email — the overwhelmingly common
+     * shape — the two are identical. On a portfolio email the map is a WORST-CASE summary, which
+     * is the conservative direction for something whose only consumer asks a human to re-read
+     * the email. Making it per-property is an additive change to PropertyExtraction, not a
+     * rewrite of this one; do that if the portfolio case ever needs field-level precision.
+     *
+     * 🔴 NO BAND AND NO GATE IS DERIVED FROM IT, and it must not acquire one.
+     * `Parse_Confidence__c`'s HIGH/MEDIUM/LOW and ExtractAddressQueueable's `>= 0.85`
+     * suppression gate both read `confidence` and are UNCHANGED by WS7. The only thing derived
+     * here is `lowConfidenceFieldCount` below, which drives a REVIEW LIST VIEW — it suppresses
+     * nothing and creates nothing.
+     *
+     * @see lowConfidenceFieldCount (the filterable half)
+     * @see LLMExtractionParser.toFieldConfidence (the only producer; bounded at 60 entries)
+     */
+    public Map<String, Decimal> fieldConfidence = new Map<String, Decimal>();
+
+    /**
+     * How many entries of `fieldConfidence` sit BELOW `LLMExtractionParser.CONFIDENCE_MEDIUM_MIN`
+     * — i.e. how many extracted values a human is being asked to check. Added 2026-08-30 (WS7).
+     * Becomes `Lead.Low_Confidence_Field_Count__c`, whose `> 0` filter joins the Review Queue's
+     * existing `Parse_Confidence__c = LOW` filter with OR.
+     *
+     * DERIVED BY APEX FROM THE MODEL'S NUMBERS, exactly as `confidenceBand` is, and for the same
+     * reason: a threshold that lives in one place is tunable without touching the prompt. Since
+     * WS5 that place is `Broker_Protection_Config__mdt.Default.Confidence_Medium_Min__c`, so
+     * ONE Setup value moves the MEDIUM band and this count together and they can never disagree.
+     *
+     * ⚠ ZERO IS AMBIGUOUS BY DESIGN AND THAT IS THE SAFE DIRECTION. It means either "every field
+     * scored at or above the threshold" or "the model returned no map at all". Both resolve to
+     * "this Lead is not in the per-field review queue", which is correct: an email with no
+     * per-field signal has nothing per-field to review, and whole-email doubt is still caught by
+     * `Parse_Confidence__c = LOW` on the other side of the OR.
+     *
+     * ⚠ BOUNDED, BECAUSE ITS DESTINATION IS Number(2,0). The parser caps `fieldConfidence` at 60
+     * entries, so this can never exceed 60 and can never reach the field's 99 ceiling — which is
+     * why no second clamp exists here. A pathological response cannot throw at DML and roll back
+     * a committed claim.
+     */
+    public Integer lowConfidenceFieldCount = 0;
+
     // ── broker identity (the forwarding / original broker — claim engine input) ─
 
     /** `broker_name` — LEGACY KEY. The ORIGINAL broker from the outermost 'From:' line. */

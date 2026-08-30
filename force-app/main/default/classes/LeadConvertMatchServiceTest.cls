@@ -533,4 +533,253 @@ private class LeadConvertMatchServiceTest {
             'The map must contain an entry for exactly the matched Leads and no others');
         Assert.isFalse(LeadConvertMatchService.lastRunDegraded, 'The bulk run must not have degraded');
     }
+
+    // ═════════════════════════════════════════════════════════════════════════════════════
+    // WS8 (2026-08-30) — PREFER THE INTAKE-TIME BROKER LINK
+    //
+    // 🔴 EVERY TEST BELOW IS FLS-BRANCHED, AND BOTH BRANCHES ASSERT SOMETHING REAL. `Lead.Broker__c`
+    // and `Lead.Broker_Firm__c` are new Metadata-API-deployed fields, so on the day WS8 lands NO
+    // PRINCIPAL CAN WRITE OR READ THEM — a test fixture that set them unconditionally would throw
+    // `System.DmlException: Operation failed due to fields being inaccessible on Sobject Lead` at
+    // `insert l` and take this whole class down (measured shape, 2026-08-30, on WS7's two fields:
+    // 42 of 45 methods red, 38 of them unrelated).
+    //
+    // ⚠ SO THE `else` BRANCHES ARE NOT FILLER. They assert that the OLD behaviour — the email and
+    // company matching this class shipped on 2026-08-02 — is byte-identical when the link is not
+    // available. That is the property that makes WS8 a STRENGTHENING rather than a replacement,
+    // and it is the one that must hold in every org from the moment this deploys.
+    // ═════════════════════════════════════════════════════════════════════════════════════
+
+    /** True when the running principal may WRITE both WS8 lookups (fixtures depend on this). */
+    private static Boolean brokerLinkWritable() {
+        return Schema.SObjectType.Lead.fields.Broker__c.isCreateable()
+            && Schema.SObjectType.Lead.fields.Broker_Firm__c.isCreateable();
+    }
+
+    /**
+     * Stamp the intake broker link onto an UNSAVED Lead, when the running principal may.
+     *
+     * @param l         The unsaved Lead.
+     * @param contactId The broker Contact, or null to leave `Broker__c` blank.
+     * @param accountId The brokerage Account, or null to leave `Broker_Firm__c` blank.
+     * @return True when the link was actually stamped; false when FLS forbids it and the caller
+     *         must assert the pre-WS8 behaviour instead.
+     */
+    private static Boolean linkBroker(Lead l, Id contactId, Id accountId) {
+        if (!brokerLinkWritable()) {
+            return false;
+        }
+        l.Broker__c = contactId;
+        l.Broker_Firm__c = accountId;
+        return true;
+    }
+
+    @isTest
+    static void matchForConversion_intakeBrokerLink_beatsTheEmailMatch() {
+        // 🔴 THE PRECEDENCE PROOF, MADE NON-VACUOUS BY DISAGREEMENT. The Lead's EMAIL names one
+        // broker and its `Broker__c` names a DIFFERENT one, each under a different firm. If the
+        // link did not take precedence, the email broker would come back and this fails.
+        Account linkedFirm = buildFirm('Linked Firm WS8');
+        Account emailFirm = buildFirm('Email Firm WS8');
+        TestDataFactory.insertAllowingDuplicates(new List<Account>{ linkedFirm, emailFirm });
+        Contact linkedBroker = buildBroker('linked.broker.ws8@firm.invalid', linkedFirm.Id);
+        Contact emailBroker = buildBroker('email.broker.ws8@firm.invalid', emailFirm.Id);
+        TestDataFactory.insertAllowingDuplicates(new List<Contact>{ linkedBroker, emailBroker });
+
+        Lead l = buildLead('email.broker.ws8@firm.invalid', 'Some Unrelated Company');
+        Boolean linked = linkBroker(l, linkedBroker.Id, linkedFirm.Id);
+        insert l;
+
+        Test.startTest();
+        Map<Id, LeadConvertMatchService.ConversionMatch> matches =
+            LeadConvertMatchService.matchForConversion(new List<Id>{ l.Id });
+        Test.stopTest();
+
+        LeadConvertMatchService.ConversionMatch match = matches.get(l.Id);
+        Assert.isNotNull(match, 'Either way this Lead matches something — only WHICH thing differs');
+        if (linked) {
+            Assert.areEqual(linkedBroker.Id, match.contactId,
+                'THE INTAKE LINK WINS. It is a higher-confidence source for the same answer: intake '
+                + 'resolved it against Contact.Email on the Broker record type with AccountId != null, '
+                + 'the same predicate this class uses at conversion');
+            Assert.areEqual(linkedFirm.Id, match.accountId,
+                '🔴 AND THE ACCOUNT IS SPANNED THROUGH THE CONTACT (Broker__r.AccountId), NOT READ '
+                + 'FROM Broker_Firm__c. That is what keeps the ConversionMatch invariant true by '
+                + 'construction, so Database.convertLead can never be handed a Contact that does not '
+                + 'belong to the Account');
+        } else {
+            Assert.areEqual(emailBroker.Id, match.contactId,
+                'WITHOUT the FLS grant the link is invisible and the 2026-08-02 EMAIL match still runs, '
+                + 'unchanged. This branch is the regression pin: WS8 must never make matching WORSE');
+            Assert.areEqual(emailFirm.Id, match.accountId, 'with that Contact\'s own Account, as before');
+        }
+    }
+
+    @isTest
+    static void matchForConversion_intakeBrokerLink_matchesWhereTheEmailMatchCannot() {
+        // 🔴 THE HOLE WS8 CLOSES, WHICH IS THE WHOLE JUSTIFICATION FOR THE CHANGE. The broker's
+        // Contact exists, but the Lead's Email no longer resolves to it — a Contact whose address
+        // was updated, or a Lead.Email a human corrected after intake. Before WS8 this Lead would
+        // convert by minting a SECOND Contact for a person we already have, which is the exact
+        // DUPLICATES_DETECTED shape this class was built for.
+        Account firm = buildFirm('Renamed Firm WS8');
+        insert firm;
+        Contact broker = buildBroker('current.address.ws8@firm.invalid', firm.Id);
+        insert broker;
+
+        Lead l = buildLead('stale.address.ws8@firm.invalid', 'Some Unrelated Company');
+        Boolean linked = linkBroker(l, broker.Id, firm.Id);
+        insert l;
+
+        Test.startTest();
+        Map<Id, LeadConvertMatchService.ConversionMatch> matches =
+            LeadConvertMatchService.matchForConversion(new List<Id>{ l.Id });
+        Test.stopTest();
+
+        if (linked) {
+            LeadConvertMatchService.ConversionMatch match = matches.get(l.Id);
+            Assert.isNotNull(match,
+                'The Lead matches through the LINK even though its Email resolves to no Contact');
+            Assert.areEqual(broker.Id, match.contactId, 'and attaches to the broker we already have');
+            Assert.areEqual(firm.Id, match.accountId, 'under that Contact\'s own Account');
+        } else {
+            Assert.isFalse(matches.containsKey(l.Id),
+                'WITHOUT the grant this is the PRE-WS8 behaviour and the duplicate is still minted — '
+                + 'stated plainly rather than hidden, because it is exactly what the P8 FLS grant buys');
+        }
+    }
+
+    @isTest
+    static void matchForConversion_brokerFirmLinkOnly_beatsTheCompanyNameMatch() {
+        // PRECEDENCE 3. No Contact is being specified, so no invariant arises: an accountId with a
+        // null contactId is the legitimate firm-only match this class has always produced. The
+        // explicit lookup outranks the Company STRING, which on an email-born Lead is an LLM's
+        // reading of a signature block.
+        Account linkedFirm = buildFirm('Explicit Firm WS8');
+        Account namedFirm = buildFirm('Named Firm WS8');
+        TestDataFactory.insertAllowingDuplicates(new List<Account>{ linkedFirm, namedFirm });
+
+        Lead l = buildLead('nobody.ws8@firm.invalid', 'Named Firm WS8');
+        Boolean linked = linkBroker(l, null, linkedFirm.Id);
+        insert l;
+
+        Test.startTest();
+        Map<Id, LeadConvertMatchService.ConversionMatch> matches =
+            LeadConvertMatchService.matchForConversion(new List<Id>{ l.Id });
+        Test.stopTest();
+
+        LeadConvertMatchService.ConversionMatch match = matches.get(l.Id);
+        Assert.isNotNull(match, 'Either way the Lead matches a firm — only WHICH firm differs');
+        Assert.isNull(match.contactId, 'No Contact is specified on either path — this is firm-only');
+        if (linked) {
+            Assert.areEqual(linkedFirm.Id, match.accountId,
+                'The EXPLICIT firm lookup wins over the Company name string');
+        } else {
+            Assert.areEqual(namedFirm.Id, match.accountId,
+                'and without the grant the D1b Company-name match still runs exactly as before');
+        }
+    }
+
+    @isTest
+    static void matchForConversion_brokerLinkWithoutAnAccount_fallsBackRatherThanBreakingConversion() {
+        // ⚠ AN ACCOUNT-LESS `Broker__c` IS NOT A USABLE CONVERSION TARGET — `setContactId` is valid
+        // only alongside a `setAccountId` for that Contact's OWN Account, so specifying one would
+        // make `Database.convertLead` THROW and break a conversion that works today. Intake's
+        // selector already excludes orphans, so this state is only reachable by hand-editing; the
+        // correct response is to fall through to the ordinary email match, NOT to throw.
+        Account firm = buildFirm('Orphan Fallback Firm WS8');
+        insert firm;
+        Contact orphan = buildBroker('orphan.link.ws8@firm.invalid', null);
+        Contact emailBroker = buildBroker('email.fallback.ws8@firm.invalid', firm.Id);
+        TestDataFactory.insertAllowingDuplicates(new List<Contact>{ orphan, emailBroker });
+
+        Lead l = buildLead('email.fallback.ws8@firm.invalid', 'Some Unrelated Company');
+        linkBroker(l, orphan.Id, null);
+        insert l;
+
+        Test.startTest();
+        Map<Id, LeadConvertMatchService.ConversionMatch> matches =
+            LeadConvertMatchService.matchForConversion(new List<Id>{ l.Id });
+        Test.stopTest();
+
+        LeadConvertMatchService.ConversionMatch match = matches.get(l.Id);
+        Assert.isNotNull(match, 'The Lead must still match — falling through is not failing');
+        Assert.areEqual(emailBroker.Id, match.contactId,
+            'The ORPHAN link is skipped and the EMAIL match runs. If this returns the orphan, a '
+            + 'hand-edited lookup has been turned into a hard conversion failure');
+        Assert.areEqual(firm.Id, match.accountId, 'with the email-matched Contact\'s own Account');
+        Assert.isFalse(LeadConvertMatchService.lastRunDegraded,
+            'and nothing degraded — an unusable link is a normal state, not a denied read');
+    }
+
+    @isTest
+    static void matchForConversion_at251LeadsWithBrokerLinks_isStillThreeQueries() {
+        // 🔴 THE BULK CONTRACT IS UNCHANGED BY WS8, AND THIS IS WHERE THAT IS PROVEN. The link is
+        // read as THREE MORE COLUMNS ON THE EXISTING FIRST QUERY, and the choice between the two
+        // column sets is a CACHED DESCRIBE — not a second read, and not one describe per Lead.
+        // Mirrors matchForConversion_at251Leads_isBulkSafe above deliberately, against the SAME
+        // named budget, so a regression shows up against an unchanged number.
+        final Integer leadCount = 251;
+
+        Account firm = buildFirm('Bulk WS8 Firm Account');
+        insert firm;
+        Contact broker = buildBroker('bulk.ws8.broker@firm.invalid', firm.Id);
+        insert broker;
+
+        List<Lead> leads = TestDataFactory.createLeads(leadCount, false);
+        for (Integer i = 0; i < leadCount; i++) {
+            if (Math.mod(i, 3) == 0) {
+                linkBroker(leads[i], broker.Id, firm.Id);               // intake-link match
+            } else if (Math.mod(i, 3) == 1) {
+                leads[i].Email = 'bulk.ws8.broker@firm.invalid';        // email match
+            }
+            // i % 3 == 2 keeps the factory's unique email + company -> no match
+        }
+        insert leads;
+
+        List<Id> leadIds = new List<Id>();
+        for (Lead l : leads) {
+            leadIds.add(l.Id);
+        }
+
+        Test.startTest();
+        Integer queriesBefore = Limits.getQueries();
+        Map<Id, LeadConvertMatchService.ConversionMatch> matches =
+            LeadConvertMatchService.matchForConversion(leadIds);
+        Integer queriesAfter = Limits.getQueries();
+        Test.stopTest();
+
+        Integer queryDelta = queriesAfter - queriesBefore;
+        Assert.isTrue(queryDelta <= 3,
+            'BUDGET UNMOVED BY WS8: at most 3 SOQL (lead keys, contacts, accounts) for ANY number of '
+            + 'Leads. Observed ' + queryDelta + ' for ' + leadCount + ' Leads. A per-Lead re-read of '
+            + 'the broker link would blow the 100-query limit at Lead 34 in production.');
+
+        Boolean linked = brokerLinkWritable();
+        for (Integer i = 0; i < leadCount; i++) {
+            LeadConvertMatchService.ConversionMatch match = matches.get(leadIds[i]);
+            if (Math.mod(i, 3) == 0) {
+                if (linked) {
+                    Assert.isNotNull(match, 'Lead ' + i + ' carries an intake link and must match');
+                    Assert.areEqual(broker.Id, match.contactId,
+                        'Lead ' + i + ' must attach through its LINK, at 251 exactly as at 1');
+                    Assert.areEqual(firm.Id, match.accountId,
+                        'Lead ' + i + ' must attach to that Contact\'s own Account, spanned not copied');
+                } else {
+                    Assert.isNull(match,
+                        'Lead ' + i + ' has no readable link and no matching email — the pre-WS8 answer');
+                }
+            } else if (Math.mod(i, 3) == 1) {
+                Assert.isNotNull(match, 'Lead ' + i + ' shares the broker email and must match');
+                Assert.areEqual(broker.Id, match.contactId,
+                    'Lead ' + i + ' must still attach through the UNCHANGED email path');
+            } else {
+                Assert.isNull(match, 'Lead ' + i + ' matches nothing and must be absent from the map');
+            }
+        }
+        Assert.isFalse(LeadConvertMatchService.lastRunDegraded,
+            '🔴 AND THE BULK RUN MUST NOT HAVE DEGRADED. A degrade here would mean the WS8 columns '
+            + 'were selected without the describe gate, which returns an EMPTY map and silently '
+            + 'disables ALL matching — the exact regression brokerLinkReadable() exists to prevent');
+    }
 }

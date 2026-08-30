@@ -1,21 +1,63 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ListView xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY - a comment ABOVE the root
+        breaks `sf` deploy at conversion with a misleading "unable to find matching parent
+        xml file" error.
+
+        WS6/WS7 CORRECTION (2026-08-30). Two changes, both deliberate:
+
+        1) COLUMNS re-ordered onto the standard six-column set now shared by all five Lead
+           list views (New/Under Review/Qualified/Dead Leads/Review Queue): Deal Name,
+           Status, Channel (LeadSource), Extraction Score, Broker, Age. LEAD.LAST_NAME /
+           LEAD.FIRST_NAME / LEAD.COMPANY are dropped from the lead position - Deal_Name__c
+           (a Property-centric, never-blank formula) replaces them, since Lead.Name is the
+           BROKER's personal name, not the deal. Property_Address__c, Guidance_Price__c and
+           Parse_Confidence__c are dropped as DISPLAY columns to match the shared six-column
+           set exactly; Parse_Confidence__c remains load-bearing in the FILTER below.
+
+        2) FILTER widened, GATE D (WS7). The filter was Parse_Confidence__c = LOW alone.
+           Field_Confidence_JSON__c (a per-field confidence map) cannot itself be used in a
+           list-view filter - Low_Confidence_Field_Count__c is the derived, filterable count
+           built for exactly this. The new filter is
+              Parse_Confidence__c = LOW  OR  Low_Confidence_Field_Count__c > 0
+           via <booleanFilter>1 OR 2</booleanFilter>. THE OR IS LOAD BEARING - it JOINS the
+           existing signal, it does NOT replace it. The two answer different questions:
+           Parse_Confidence__c is a single whole-email band over is_acquisition_related;
+           Low_Confidence_Field_Count__c counts individually weak DEAL fields inside an
+           email that can otherwise be confidently classified. Replacing filter 1 with the
+           new field would silently narrow this already-live queue - filter 1 is unchanged
+           in isolation (byte-identical value), filter 2 only adds rows.
+
+        3) 🔴 C2 FIX (2026-08-30, BA Gap-Closure code-review pass). At the time filter 1 was
+           added above, Lead.Parse_Confidence__c had ZERO FieldPermissions rows on
+           DPEG_Admin_Access or Broker_Protection_Access - the field carried an existing,
+           deliberate "do not grant" note on Broker_Protection_Access written BEFORE it became
+           a filter term here. Resolved by GRANTING read on both sets (the cheap, safe option)
+           rather than assuming Salesforce degrades gracefully on an inaccessible filter field -
+           that behaviour was never proven here and was not worth staking this queue on. See
+           each set's own in-file note for the corrected reasoning. Low_Confidence_Field_Count__c
+           (filter 2) was already granted read on both sets when this filter was written, so it
+           needed no further action.
+    -->
+    <booleanFilter>1 OR 2</booleanFilter>
     <fullName>Review_Queue</fullName>
-    <columns>LEAD.LAST_NAME</columns>
-    <columns>LEAD.FIRST_NAME</columns>
-    <columns>LEAD.COMPANY</columns>
+    <columns>Deal_Name__c</columns>
     <columns>LEAD.STATUS</columns>
     <columns>LEAD.LEAD_SOURCE</columns>
-    <columns>Property_Address__c</columns>
-    <columns>Guidance_Price__c</columns>
-    <columns>Broker_First__c</columns>
-    <columns>Parse_Confidence__c</columns>
     <columns>Extraction_Score_Pct__c</columns>
+    <columns>Broker_First__c</columns>
+    <columns>Days_in_System__c</columns>
     <filterScope>Everything</filterScope>
     <filters>
         <field>Parse_Confidence__c</field>
         <operation>equals</operation>
         <value>LOW</value>
+    </filters>
+    <filters>
+        <field>Low_Confidence_Field_Count__c</field>
+        <operation>greaterThan</operation>
+        <value>0</value>
     </filters>
     <label>Review Queue</label>
 </ListView>

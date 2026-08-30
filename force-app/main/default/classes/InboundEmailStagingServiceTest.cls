@@ -81,6 +81,55 @@ private class InboundEmailStagingServiceTest {
         Assert.areEqual('logo.png | png | 5000 | image below IMAGE_MIN_BYTES', staging.Dropped_Attachment_Notes__c, '');
     }
 
+    // ── WS1 (2026-08-30) — Received_DateTime__c rides the EXISTING insert ─────
+
+    @isTest
+    static void createStaging_receivedDateTime_isStampedInTheSameInsert() {
+        // The claim is "the same insert", not merely "the value arrives": the whole reason WS1 is
+        // free at this boundary is that it adds no statement to EmailToLeadHandler's pinned
+        // 0 SOQL / 2 DML budget. The DML assertion below is what makes that structural rather
+        // than aspirational — an implementation that updated the row afterwards would read 2.
+        Datetime received = Datetime.newInstanceGmt(2026, 8, 26, 19, 3, 22);
+        InboundEmailStagingService.StagingRequest request = minimalRequest('msg-service-ws1-1@example.invalid');
+        request.receivedDateTime = received;
+
+        Test.startTest();
+        Integer dmlBefore = Limits.getDmlStatements();
+        Id stagingId = InboundEmailStagingService.createStaging(request);
+        Integer dmlUsed = Limits.getDmlStatements() - dmlBefore;
+        Test.stopTest();
+
+        Inbound_Email_Staging__c staging = [
+            SELECT Received_DateTime__c FROM Inbound_Email_Staging__c WHERE Id = :stagingId
+        ];
+        Assert.areEqual(received, staging.Received_DateTime__c,
+            'Received_DateTime__c must carry the parsed RFC Date header verbatim');
+        Assert.areEqual(1, dmlUsed,
+            'EXACTLY ONE DML: the value must ride the EXISTING staging insert. If this reads 2, WS1 has '
+            + 'started costing the inbound-email boundary a statement it does not have to spare');
+    }
+
+    @isTest
+    static void createStaging_nullReceivedDateTime_stampsNullAndDoesNotSubstituteNow() {
+        // The absent/unparseable-header case, which is ordinary rather than exceptional. The
+        // fallback to CreatedDate belongs to ExtractAddressQueueable and to nothing else — a
+        // second fallback here would be a second rule to keep in step with the first.
+        InboundEmailStagingService.StagingRequest request = minimalRequest('msg-service-ws1-2@example.invalid');
+        request.receivedDateTime = null;
+
+        Test.startTest();
+        Id stagingId = InboundEmailStagingService.createStaging(request);
+        Test.stopTest();
+
+        Inbound_Email_Staging__c staging = [
+            SELECT Received_DateTime__c FROM Inbound_Email_Staging__c WHERE Id = :stagingId
+        ];
+        Assert.isNull(staging.Received_DateTime__c,
+            'A null must be written as null. Substituting Datetime.now() here would silently make every '
+            + 'header-less email look as though it carried a readable Date header, and would put a '
+            + 'SECOND fallback rule in a second layer');
+    }
+
     // ── appendDroppedNote (NEW, 2026-08-05) ───────────────────────────────────
 
     @isTest

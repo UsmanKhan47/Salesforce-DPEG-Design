@@ -116,7 +116,13 @@ if ([SELECT COUNT() FROM Property__c WHERE Name = :MARKER] > 0) {
             Market_Cap_Rate__c = r[10] == null ? null : (Decimal) r[10],
             Deal_Status__c = (String) r[11],
             Deal_Category__c = (String) r[12],
-            Broker_First_Seen__c = Date.today().addDays(-(Integer) r[13]),
+            // WS2 (2026-08-30): Broker_First_Seen__c is a DateTime now, matching its new source
+            // Lead.First_Seen_Date__c. A Date literal here no longer compiles. ⚠ Because
+            // BP_Expiry__c and Days_in_System__c wrap the field in DATEVALUE() — which converts in
+            // GMT while TODAY() is in the user's zone — a seed run late in the local day can make
+            // a deal read one day younger than r[13] says. Accepted for demo data; use a midday
+            // instant instead if an exact age ever matters on a screenshot.
+            Broker_First_Seen__c = Datetime.now().addDays(-(Integer) r[13]),
             LeadSource = 'Email-to-Lead'
         );
         if (r[14] != null) { o.Rejection_Reason__c = (String) r[14]; }

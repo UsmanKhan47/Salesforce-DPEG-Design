@@ -288,6 +288,28 @@
  * the loop would make it 2N and would show up HERE, as an equality failure at N=10, which is the
  * whole reason that assertion is an equality rather than a ceiling.
  *
+ * ═══ 🔴 BUDGET AMENDED 2026-08-30 (WS8) — +1 QUERY PER EMAIL, +0 PER PROPERTY, +0 DML ═══
+ * The intake broker match (resolveBrokerLink) resolves the SENDER to an existing broker Contact so
+ * every Lead this email mints is born carrying `Broker__c` / `Broker_Firm__c`. The sender is an
+ * EMAIL-level fact, so it is read ONCE per job and latched:
+ *
+ *       N = 1    QUERY (ceiling 30)             +1        still passes; ceiling NOT moved
+ *       N = 10   QUERY_BUDGET (ceiling, 120)    +1        🔴 +1, NOT +10 — the latch is the reason
+ *       N = 1    singlePropertyDmlBudget (<=20) UNCHANGED  ┐ no DML is added on ANY path;
+ *       N = 1    singlePropertyDmlBudget (==7)  UNCHANGED  ┘ the two lookups ride the EXISTING
+ *       N = 10   DML_BUDGET (EQUALITY, 45)      UNCHANGED    `insert lead` in EmailToLeadService
+ *       call-for-offers CFO_QUERY_BUDGET (60)   UNCHANGED  U2 creates no Lead, so resolveBrokerLink
+ *       call-for-offers CFO_DML_BUDGET (8)      UNCHANGED  is never reached — same for reply,
+ *                                                          pre-filter, duplicate delivery, hard gate
+ *
+ * ⚠ NO BUDGET LITERAL IN THE TEST CLASS WAS MOVED BY WS8, and that is a claim worth checking
+ * rather than trusting: the two QUERY figures are CEILINGS with tens of queries of slack, so +1
+ * is invisible to them. That slack is exactly why the ceilings CANNOT falsify the property that
+ * matters — "once per EMAIL, never once per property" — and why
+ * `lastRunBrokerLookupCount` exists and is asserted as an EQUALITY of 1 at N = 10. A change that
+ * moves this read inside the per-property loop would add nine queries, pass every budget above,
+ * and fail that one assertion.
+ *
  * ⚠ **THE SINGLE CHAINED-JOB SLOT IS NOW CONSUMED.** SP-2 confirmed this class held zero
  * `System.enqueueJob` calls; `enqueueAttachmentPersist` takes that one slot. A future
  * 11+-property chaining feature (deferred in MAX_PROPERTIES' own comment) must SHARE this job
@@ -319,6 +341,19 @@
  * `with sharing` is declared for standards conformance (ARCHITECTURE.md §2). It is functionally
  * a no-op here because the class performs no SOQL/DML directly — the classes it delegates to
  * enforce their own sharing.
+ *
+ * ⚠ AMENDED 2026-08-30 (WS8) — "performs no SOQL/DML directly" IS STILL TRUE, but this class now
+ * calls a SELECTOR directly for the first time (`ContactSelector.selectBrokerByEmailForIntake`,
+ * from resolveBrokerLink) rather than reaching every read through a service. Stated plainly so the
+ * next reader does not have to rediscover it:
+ *   • `.claude/rules/apex-layering-rule.md`'s real requirement — ALL SOQL lives in a Selector — is
+ *     satisfied; there is still no inline SOQL anywhere in this file.
+ *   • The sharing sentence above is also still true: `ContactSelector` is `with sharing` and
+ *     enforces its own, and that method is deliberately NOT in a `without sharing` inner class.
+ *   • A one-method service wrapper was considered and rejected: it would add a class whose entire
+ *     body is a selector call, and the mode/sharing argument that actually matters already lives
+ *     where the query does, in the selector's ApexDoc. If a SECOND direct selector call ever
+ *     appears here, revisit that — one is a shortcut, two is a missing layer.
  *
  * ═══ ROUTING RESILIENCE (2026-08-08) — ONE STATEMENT, AND IT IS THE FIRST ONE ═══
  * 🔴 `System.attachFinalizer(new RoutingFailureFinalizer(stagingId))` is the FIRST statement of
@@ -724,6 +759,40 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
     @TestVisible private static Integer lastRunDmlCount;
 
     /**
+     * WS8 (2026-08-30) TEST-ONLY TELEMETRY — how many times this run ISSUED the intake broker
+     * lookup. It must read 1 for an email that creates any Lead, and 1 at N = MAX_PROPERTIES, not
+     * N.
+     *
+     * 🔴 IT EXISTS BECAUSE THE OBVIOUS ASSERTION CANNOT FALSIFY THE THING WE CARE ABOUT.
+     * `lastRunQueryCount <= QUERY_BUDGET` is a CEILING (120 at N=10) with tens of queries of
+     * slack, so moving this lookup inside the per-property loop — the single most likely future
+     * regression, and the one the pinned budgets were built to catch — would add nine queries and
+     * still pass. Counting the lookup itself turns "once per EMAIL, never once per property" from
+     * a comment into an EQUALITY a test can fail.
+     *
+     * Reset at the top of every execute(), so it measures ONE job. With several jobs in one
+     * transaction it holds the LAST job's figure, exactly like its two siblings above.
+     */
+    @TestVisible private static Integer lastRunBrokerLookupCount = 0;
+
+    /**
+     * TEST-ONLY DECISION SEAM for the intake broker lookup's fail-soft (WS8, 2026-08-30). When
+     * true, resolveBrokerLink throws instead of querying.
+     *
+     * WHY A SEAM RATHER THAN A REAL FAILURE, and why the catch is not dead code: under
+     * `WITH SYSTEM_MODE` the selector cannot throw for CRUD/FLS, which is most of what would
+     * naturally break a read — so there is no naturally reachable failure to lean on, exactly as
+     * forceRouteFailure above documents for its own catch. The catch is nonetheless REQUIRED
+     * rather than defensive: the broker link is an optional enrichment and this transaction owns
+     * the broker's Lead and their registry claim, so the enrichment must never be able to abort
+     * it. That is the same contract applyExtractionScore and the routeCallForOffers try/catch
+     * already hold, and it is the contract this seam makes testable.
+     *
+     * NEVER set this outside a test class. Same prohibition as forceClaimRace / forceRouteFailure.
+     */
+    @TestVisible private static Boolean forceBrokerLookupFailure = false;
+
+    /**
      * TEST-ONLY DECISION SEAM for the file-job chain (design §8.6.2).
      *
      * 🔴 IT EXISTS BECAUSE THE CHAIN IS UNPROVABLE IN APEX, NOT BECAUSE IT IS OPTIONAL. SP-2
@@ -764,6 +833,64 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
      */
     private String senderName;
     private String senderEmail;
+
+    /**
+     * WS1 (2026-08-30) — the value every Lead this email produces gets as `First_Seen_Date__c`:
+     * when the email ARRIVED, not when this job happened to run. `Received_DateTime__c` when the
+     * RFC `Date:` header was readable, else the staging row's `CreatedDate`.
+     *
+     * 🔴 THE FALLBACK IS RESOLVED HERE, EXACTLY ONCE, AND THAT IS THE WHOLE REASON THIS IS A
+     * MEMBER RATHER THAN A TERNARY AT THE CALL SITE. Two things depend on it:
+     *   1. A NULL MUST NEVER REACH THE LEAD. `Lead_Intake_Stamp` stamps `Datetime.now()` whenever
+     *      `First_Seen_Date__c` is null — that is the flow's correct behaviour for the portal and
+     *      manual channels and is NOT being changed — so a null arriving from here would silently
+     *      restore exactly the late, job-clock timestamp this feature exists to remove, with no
+     *      error and nothing to notice.
+     *   2. EVERY LEAD FROM ONE EMAIL GETS THE SAME VALUE. A multi-property email creates N Leads
+     *      in a loop; resolving per-Lead would be identical today but is one refactor away from N
+     *      slightly different protection windows for one email.
+     *
+     * ⚠ IT COSTS NO QUERY. Both fields are already on the row `InboundEmailStagingSelector`
+     * loaded — `CreatedDate` was added to that SELECT alongside `Received_DateTime__c` precisely
+     * so this fallback needs no second read. The pinned QUERY_BUDGET / DML_BUDGET are unchanged.
+     *
+     * ⚠ `Received_DateTime__c` is NULL on every staging row written before WS1 deployed — there
+     * is no backfill and none is wanted. Those rows resolve to `CreatedDate`, which is what their
+     * Leads effectively used already.
+     */
+    private Datetime firstSeenDateTime;
+
+    /**
+     * WS8 (2026-08-30) — THE INTAKE BROKER LINK, RESOLVED ONCE PER EMAIL.
+     *
+     * `brokerContactId` is the existing broker Contact this email's SENDER already is, and
+     * `brokerFirmAccountId` is that Contact's brokerage Account. Both null when the sender matched
+     * nothing, which is the ordinary case for a broker writing in for the first time and is a
+     * first-class answer, not a gap (MATCH ONLY at intake — no Contact and no Account is ever
+     * created here; creation stays at conversion).
+     *
+     * 🔴 `brokerLinkResolved` IS THE WHOLE GOVERNOR STORY. THE SENDER IS AN EMAIL-LEVEL FACT AND
+     * MUST BE READ AS ONE. createLead() runs once per PROPERTY, up to MAX_PROPERTIES (10) times
+     * for a single email; resolving inside it without this latch would turn one query into ten
+     * against a class whose QUERY_BUDGET is PINNED (30 at N=1, 120 at N=10). The flag — not the
+     * null-ness of the two Ids — is what makes the memoisation correct, because "no match" is a
+     * legitimate result that must not be re-queried nine more times.
+     *
+     * ⚠ RESOLVED LAZILY, FROM createLead(), RATHER THAN EAGERLY IN execute(). Deliberate: the
+     * reply, pre-filter, duplicate-delivery, hard-gate and call-for-offers branches all create NO
+     * Lead, so under lazy resolution they pay NOTHING and their own pinned budgets (notably
+     * CFO_QUERY_BUDGET) are untouched. Resolving eagerly would spend a query on every gated email
+     * — the highest-volume traffic this pipeline sees — to populate a field nobody will read.
+     *
+     * ⚠ IT IS SAFE TO RESOLVE LAZILY ONLY BECAUSE THE SENDER IDENTITY IS SETTLED BEFORE ANY
+     * createLead() CALL. Both inputs — `extraction.brokerEmail` and `staging.From_Address__c` —
+     * are fixed by the time routeProperties runs. If a future branch ever creates a Lead BEFORE
+     * the extraction is available, this latch would freeze an envelope-only answer for the whole
+     * email; check that before moving any createLead() call earlier.
+     */
+    private Id brokerContactId;
+    private Id brokerFirmAccountId;
+    private Boolean brokerLinkResolved = false;
 
     /**
      * Everything routing has achieved SO FAR. Held as members, not locals, so the catch block
@@ -912,6 +1039,9 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
         // this class attaches; the platform permits one per queueable.
         System.attachFinalizer(new RoutingFailureFinalizer(stagingId));
 
+        // WS8 telemetry — reset per JOB, not per transaction, so the count means "this email".
+        lastRunBrokerLookupCount = 0;
+
         staging = InboundEmailStagingService.getStaging(stagingId);
         if (staging == null) {
             // The row was hard-deleted between the synchronous insert and this async run.
@@ -929,6 +1059,14 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
         // fields are already on the row InboundEmailStagingSelector loaded.
         senderName = staging.From_Name__c;
         senderEmail = staging.From_Address__c;
+
+        // WS1 (2026-08-30) — resolve the received-time fallback ONCE, here, for the same reason
+        // the sender identity above is set here: every branch that reaches createLead must see the
+        // same answer, and a null must never escape into the Lead (see the member's own Javadoc).
+        // Costs no query — both fields are on the row selectById already loaded.
+        firstSeenDateTime = (staging.Received_DateTime__c != null)
+            ? staging.Received_DateTime__c
+            : staging.CreatedDate;
 
         try {
             if (STATUS_PROCESSED.equals(staging.Status__c)) {
@@ -2025,6 +2163,11 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
      * @return The Id of the inserted Lead.
      */
     private Id createLead(LLMExtractionResult extraction, PropertyExtraction property) {
+        // WS8 (2026-08-30) — ONE lookup for the whole email, latched. See resolveBrokerLink and
+        // the `brokerLinkResolved` member's Javadoc: this line runs once per PROPERTY but queries
+        // once per EMAIL, which is the only reason the pinned QUERY_BUDGET survives at N=10.
+        resolveBrokerLink(extraction);
+
         EmailToLeadService.LeadRequest request = new EmailToLeadService.LeadRequest();
         request.brokerName = extraction.brokerName;
         request.brokerEmail = extraction.brokerEmail;
@@ -2034,6 +2177,11 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
         request.emailSubject = staging.Subject__c;
         request.rawBody = staging.Raw_Body__c;
         request.forwardedByEmail = staging.Forwarded_By__c;
+        // WS1 (2026-08-30) — the email's ARRIVAL time, already fallback-resolved at the staging
+        // load and therefore guaranteed non-null. It becomes Lead.First_Seen_Date__c, which is
+        // what `Lead_Intake_Stamp` leaves alone when it is populated and what `BP_Expiry__c`
+        // (+ 90 days) and `Days_in_System__c` are both derived from.
+        request.firstSeenDateTime = firstSeenDateTime;
 
         request.brokerCompany = extraction.brokerCompany;
         request.brokerPhone = extraction.brokerPhone;
@@ -2046,10 +2194,26 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
         request.dealSummary = extraction.dealSummary;
         request.extractionNotes = extraction.notes;
         request.parseConfidence = extraction.confidenceBand;
+        // WS7 (2026-08-30) — the per-field review signal, carried through to the same insert that
+        // already writes parseConfidence above.
+        //
+        // 🔴 ZERO PER-PROPERTY COST, WHICH IS THE ONLY THING THIS CLASS'S BUDGETS CARE ABOUT.
+        // Both values were derived ONCE, by LLMExtractionParser, when the email was parsed. These
+        // are two reference assignments off a DTO already in memory: no query, no DML, no
+        // describe, and no copy — every Lead this email mints shares the one map object rather
+        // than allocating its own. QUERY_BUDGET (30 at N=1 / 120 at N=10) and DML_BUDGET
+        // (7 and <=20 at N=1 / 45 at N=10) are all UNCHANGED, and ExtractAddressQueueableTest
+        // asserts that at N=10 rather than taking this comment's word for it.
+        request.fieldConfidence = extraction.fieldConfidence;
+        request.lowConfidenceFieldCount = extraction.lowConfidenceFieldCount;
         // Decision C1 — stamped AT INSERT, so no Lead is ever re-updated for the portfolio deal. Null on
         // a single-property email and on every branch that reaches createLead without a work-list
         // (branch (c), including the LLM-down path), where assigning null is a no-op.
         request.propertyPackageId = propertyPackageId;
+        // WS8 — two reference assignments off values already in memory. Every Lead this email
+        // mints carries the SAME pair, because the sender is one fact about one email.
+        request.brokerContactId = brokerContactId;
+        request.brokerFirmAccountId = brokerFirmAccountId;
 
         if (String.isNotBlank(pendingSpillover) && spilloverLeadId == null) {
             request.spilloverNote = pendingSpillover;
@@ -2060,6 +2224,103 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
             spilloverLeadId = leadId;
         }
         return leadId;
+    }
+
+    /**
+     * WS8 (2026-08-30) — resolve THIS EMAIL'S SENDER to an existing broker Contact and their
+     * brokerage Account, at most ONCE per job, and never fail the email over it.
+     *
+     * ═══ WHAT IT DOES, AND — MORE IMPORTANTLY — WHAT IT DOES NOT ═══════════════════════════
+     * MATCH ONLY. On a hit, both `brokerContactId` and `brokerFirmAccountId` are set and every
+     * Lead this email produces is born carrying them. On a miss, BOTH STAY NULL and the Lead is
+     * created exactly as it is today. This method NEVER creates a Contact, NEVER creates an
+     * Account, and NEVER derives a firm from the sender's email domain. Those are the user's
+     * decision, not an omission: creation stays at conversion, where `LeadConvertMatchService` and
+     * the platform's own convert already own it, and a domain-derived firm ("example.invalid" ->
+     * "Example") would be a guess printed onto a broker-attribution record.
+     *
+     * ═══ 🔴 ONE QUERY PER EMAIL. THE NUMERIC IMPACT, STATED ════════════════════════════════
+     * Exactly +1 SOQL and +0 DML on any email that creates at least one Lead; +0 and +0 on every
+     * branch that creates none (reply, pre-filter, duplicate delivery, hard gate, call for
+     * offers), because this is reached only from createLead(). Against the pinned budgets:
+     *
+     *     N = 1    QUERY (ceiling 30)      +1     — unchanged ceiling, unchanged pass
+     *     N = 10   QUERY (ceiling 120)     +1     — NOT +10; the latch is what makes that true
+     *     N = 1    DML (equality 7, ceiling 20)   UNCHANGED — this method performs no DML
+     *     N = 10   DML (EQUALITY 45)               UNCHANGED — same reason
+     *     CFO      QUERY 60 / DML 8                UNCHANGED — U2 creates no Lead, so unreached
+     *
+     * `lastRunBrokerLookupCount` pins the "+1, not +10" half as an EQUALITY, because the ceilings
+     * above have enough slack to absorb nine extra queries silently. See that member's Javadoc.
+     *
+     * ═══ THE MATCH KEY IS Lead.Email's OWN RULE, NOT `senderEmail` ═════════════════════════
+     * `EmailToLeadService.resolveBrokerEmail` is called here rather than reusing this class's
+     * `senderEmail` member, and the difference is real rather than stylistic: `senderEmail` takes
+     * `extraction.brokerEmail` whenever it is NON-BLANK, while the Lead takes it only when it
+     * SANITIZES. On an extraction that returns a display name instead of an address the two
+     * diverge — and keying the lookup on a value that is not the one landing in `Lead.Email` would
+     * let intake and conversion disagree about who the broker is, since
+     * `LeadConvertMatchService` matches `Contact.Email = Lead.Email`. One rule, one place; see
+     * that method's own Javadoc for why it was promoted out of an inline expression.
+     *
+     * ═══ FAIL-SOFT IS MANDATORY HERE, NOT DEFENSIVE ═══════════════════════════════════════
+     * The broker link is an OPTIONAL ENRICHMENT. This transaction owns the broker's Lead and,
+     * moments later, their registry claim — the irreplaceable things. So a failure to resolve the
+     * link costs THE LINK AND NOTHING ELSE: the text is recorded on `routingErrors` (the same
+     * durable channel finish() persists to `Error__c`), and routing continues. That is the
+     * identical contract `EmailToLeadService.applyExtractionScore` and the `routeCallForOffers`
+     * try/catch already hold, for the identical reason.
+     *
+     * ⚠ THE LATCH IS SET BEFORE THE QUERY, SO A FAILURE IS NOT RETRIED NINE MORE TIMES. A read
+     * that threw once for this email will throw for every property of it; re-entering would turn
+     * one logged failure into ten and could spend ten queries doing it.
+     *
+     * ⚠ `catch (Exception e)`, DELIBERATELY WIDE — the same argument applyExtractionScore makes:
+     * a narrower catch is a claim about which failures are possible, and this repo has twice been
+     * wrong about exactly that (a `TypeException` is not a `DmlException`; a `QueryException` is
+     * not either). There is nothing useful to do differently per type. It cannot catch an
+     * uncatchable platform LimitException, and nothing here can.
+     *
+     * @param extraction The email-level extraction; `brokerEmail` is read as the preferred key.
+     */
+    private void resolveBrokerLink(LLMExtractionResult extraction) {
+        if (brokerLinkResolved) {
+            return;
+        }
+        brokerLinkResolved = true;
+
+        String key = EmailToLeadService.resolveBrokerEmail(
+            (extraction == null) ? null : extraction.brokerEmail,
+            (staging == null) ? null : staging.From_Address__c);
+        if (String.isBlank(key)) {
+            // No usable sender address at all. Nothing to match on, and nothing to report — an
+            // unaddressable sender is already visible on the Lead, whose Email is blank too.
+            return;
+        }
+
+        try {
+            if (forceBrokerLookupFailure) {
+                // TEST-ONLY. A QueryException rather than a bespoke type, to match the shape a
+                // real denied read would take — the same reasoning forceRouteFailure's
+                // DmlException follows.
+                throw new QueryException('Simulated intake broker lookup failure.');
+            }
+            lastRunBrokerLookupCount++;
+            List<Contact> matched = ContactSelector.selectBrokerByEmailForIntake(key);
+            if (!matched.isEmpty()) {
+                brokerContactId = matched[0].Id;
+                // Never re-read, never inferred: the firm is this Contact's OWN Account, which the
+                // selector guarantees is non-null. That pairing is what LeadConvertMatchService
+                // relies on to satisfy the platform's setContactId/setAccountId rule.
+                brokerFirmAccountId = matched[0].AccountId;
+            }
+        } catch (Exception e) {
+            String errorText = describeFailure(e);
+            routingErrors.add(errorText);
+            System.debug(LoggingLevel.ERROR,
+                'ExtractAddressQueueable.resolveBrokerLink failed for staging ' + stagingId
+                + '; the Lead is created WITHOUT a broker link and routing continues: ' + errorText);
+        }
     }
 
     /**

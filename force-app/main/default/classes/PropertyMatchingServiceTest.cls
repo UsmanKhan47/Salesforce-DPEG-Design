@@ -426,17 +426,164 @@ private class PropertyMatchingServiceTest {
      * the protection window) and INVISIBLE on the fuzzy leg (already outside the lookback)
      * — which is exactly the defect the protection window was added to remove, relocated
      * rather than fixed: a re-worded resubmission would win a property that an
-     * identically-worded one loses. The two constants are held together by this assertion
-     * and by nothing else, which is why it exists as its own test rather than a comment.
+     * identically-worded one loses.
+     *
+     * ⚠ RE-POINTED AT THE ACCESSORS 2026-08-30 (WS5). It used to say the two constants "are
+     * held together by this assertion and by nothing else". That is no longer true, and the
+     * change is not cosmetic: both values now come from Setup
+     * (Broker_Protection_Config__mdt.Default), where NO Apex test can see them, so this
+     * assertion alone stopped being enforcement the moment they became configurable. What
+     * actually holds them together now is the runtime clamp in
+     * BrokerProtectionConfig.effectiveLookbackDays() — proved by
+     * effectiveLookback_clampsUpToTheWindow_whenAnAdminMisconfiguresIt below.
+     *
+     * This test is kept, and asserts the SAME relationship through the accessors, because it
+     * still catches the one case the clamp cannot: a future edit that repoints
+     * PropertyMatchingService.LOOKBACK_DAYS at the RAW configuredLookbackDays() instead of
+     * the clamped accessor. That would silently reopen the gap, and this goes red.
      */
     @isTest
     static void protectionWindow_neverExceedsTheFuzzyLookback() {
         Assert.isTrue(
+            BrokerProtectionConfig.effectiveLookbackDays() >= BrokerProtectionConfig.protectionWindowDays(),
+            'effectiveLookbackDays (' + BrokerProtectionConfig.effectiveLookbackDays()
+            + ') must be >= protectionWindowDays (' + BrokerProtectionConfig.protectionWindowDays()
+            + '); otherwise a claim in the gap is protected on the exact path and invisible on the '
+            + 'fuzzy path, reintroducing the exact/fuzzy asymmetry');
+
+        Assert.isTrue(
             PropertyMatchingService.LOOKBACK_DAYS >= PropertyMatchingService.PROTECTION_WINDOW_DAYS,
-            'LOOKBACK_DAYS (' + PropertyMatchingService.LOOKBACK_DAYS + ') must be >= PROTECTION_WINDOW_DAYS ('
-            + PropertyMatchingService.PROTECTION_WINDOW_DAYS + '); otherwise a claim in the gap is protected on the '
-            + 'exact path and invisible on the fuzzy path, reintroducing the exact/fuzzy asymmetry');
+            'The constants this service actually reads must satisfy the invariant too. '
+            + 'LOOKBACK_DAYS (' + PropertyMatchingService.LOOKBACK_DAYS + ') must be >= '
+            + 'PROTECTION_WINDOW_DAYS (' + PropertyMatchingService.PROTECTION_WINDOW_DAYS
+            + '). If this fails while the accessor assertion above passes, LOOKBACK_DAYS has '
+            + 'been repointed at the RAW configured value instead of the clamped one.');
     }
+
+    /**
+     * 🔴 THE CLAMP. An admin CAN type a violating pair into Setup; the engine must not act
+     * on it.
+     *
+     * This is the test that replaces what the invariant pin above used to provide. Before
+     * WS5 a violation could only arrive through a deploy, so a compile-time pin was real
+     * enforcement. Now it arrives through a Setup edit that no test can observe, so
+     * enforcement had to move into the runtime accessor.
+     *
+     * ⚠ WHY THE ROW IS INJECTED RATHER THAN INSERTED. A test cannot DML a __mdt row —
+     * custom metadata records are not insertable from Apex. BrokerProtectionConfig
+     * .overrideForTest is the seam that exists for exactly this, and it is the only way to
+     * exercise a misconfiguration that by definition cannot be committed from a test.
+     *
+     * ⚠ NOT A BULK TEST, AND THAT IS DELIBERATE (.claude/rules/bulk-test-rule.md). There is
+     * no collection, no trigger and no DML here — this asserts a pure arithmetic decision on
+     * two scalars. 251 rows would exercise no additional code path and prove nothing.
+     */
+    @isTest
+    static void effectiveLookback_clampsUpToTheWindow_whenAnAdminMisconfiguresIt() {
+        // Given — a record an admin could really save: lookback SHORTER than the window.
+        BrokerProtectionConfig.overrideForTest(new Broker_Protection_Config__mdt(
+            Protection_Window_Days__c = 90,
+            Lookback_Days__c = 30));
+
+        // When
+        Test.startTest();
+        Integer effective = BrokerProtectionConfig.effectiveLookbackDays();
+        Integer configured = BrokerProtectionConfig.configuredLookbackDays();
+        Test.stopTest();
+
+        // Then
+        Assert.areEqual(30, configured,
+            'configuredLookbackDays must report what the admin actually typed, unclamped — it is '
+            + 'the only way to tell a clamped org from a correctly-configured one');
+        Assert.areEqual(90, effective,
+            'The engine must use the WINDOW (90), not the shorter configured lookback (30). '
+            + 'Using 30 would leave claims aged 31-90 days protected on the exact path and '
+            + 'invisible on the fuzzy path — a re-worded resubmission would win a property that '
+            + 'an identically-worded one loses.');
+        Assert.isTrue(effective >= BrokerProtectionConfig.protectionWindowDays(),
+            'The clamp must restore the invariant, not merely soften the violation');
+    }
+
+    /**
+     * The clamp must NOT fire when the configuration is legitimate. LOOKBACK_DAYS is allowed
+     * to exceed the window — the two answer different questions and may diverge upward on
+     * the lookback side (see PropertyMatchingService's header). A clamp that flattened them
+     * to equal would silently narrow the fuzzy candidate set.
+     */
+    @isTest
+    static void effectiveLookback_leavesALegitimatelyLongerLookbackAlone() {
+        BrokerProtectionConfig.overrideForTest(new Broker_Protection_Config__mdt(
+            Protection_Window_Days__c = 90,
+            Lookback_Days__c = 180));
+
+        Test.startTest();
+        Integer effective = BrokerProtectionConfig.effectiveLookbackDays();
+        Test.stopTest();
+
+        Assert.areEqual(180, effective,
+            'A lookback LONGER than the window is valid and must pass through unchanged; '
+            + 'clamping it down to 90 would silently shrink the fuzzy candidate window');
+    }
+
+    /**
+     * 🔴 THE FRESH-ORG CASE. The Default record is created by
+     * scripts/load-broker-protection-config.apex, NOT by a deploy, so "record absent" is
+     * reachable in every newly built org — and measured on usman-dpeg 2026-08-30,
+     * getInstance on a missing record returns NULL, not an empty row. A null reaching the
+     * arbitration path would take the claim engine down, so every accessor must default.
+     *
+     * The specific values asserted are the pre-WS5 Apex literals: an org with no config
+     * record must behave EXACTLY as it did before this workstream.
+     */
+    @isTest
+    static void accessors_returnThePreWS5Literals_whenTheConfigRecordIsAbsent() {
+        BrokerProtectionConfig.overrideForTest(null);
+
+        Test.startTest();
+        Integer window = BrokerProtectionConfig.protectionWindowDays();
+        Integer lookback = BrokerProtectionConfig.effectiveLookbackDays();
+        Decimal high = BrokerProtectionConfig.confidenceHighMin();
+        Decimal medium = BrokerProtectionConfig.confidenceMediumMin();
+        String modelName = BrokerProtectionConfig.model();
+        Decimal temperature = BrokerProtectionConfig.temperature();
+        Integer maxTokens = BrokerProtectionConfig.maxTokens();
+        String promptOverride = BrokerProtectionConfig.extractionPromptOverride();
+        Test.stopTest();
+
+        Assert.areEqual(90, window, 'Was PropertyMatchingService.PROTECTION_WINDOW_DAYS');
+        Assert.areEqual(90, lookback, 'Was PropertyMatchingService.LOOKBACK_DAYS');
+        Assert.areEqual(0.85, high, 'Was LLMExtractionParser.CONFIDENCE_HIGH_MIN');
+        Assert.areEqual(0.60, medium, 'Was LLMExtractionParser.CONFIDENCE_MEDIUM_MIN');
+        Assert.areEqual('gpt-4o-mini', modelName, 'Was LLMExtractionCalloutService.MODEL');
+        Assert.areEqual(0, temperature, 'Was the inline literal 0 in buildRequestBody');
+        Assert.areEqual(4096, maxTokens, 'Was LLMExtractionCalloutService.MAX_TOKENS');
+        Assert.isNull(promptOverride,
+            'extractionPromptOverride is the ONE accessor allowed to return null — null is its '
+            + 'documented "no override" signal, and LLMExtractionCalloutService.resolvePrompt is '
+            + 'the enforcement point that turns it back into the shipped prompt');
+    }
+
+    /**
+     * A NEGATIVE day count must not be honoured. It is not merely odd — it INVERTS the
+     * value: Datetime.now().addDays(-(-30)) puts the protection cutoff 30 days in the
+     * FUTURE, which expires every live claim in the org at once. That is the precise
+     * catastrophe GATE A's risk statement describes, reachable by one Setup typo.
+     */
+    @isTest
+    static void negativeWindow_fallsBackToTheDefault_ratherThanInvertingTheCutoff() {
+        BrokerProtectionConfig.overrideForTest(new Broker_Protection_Config__mdt(
+            Protection_Window_Days__c = -30,
+            Lookback_Days__c = 90));
+
+        Test.startTest();
+        Integer window = BrokerProtectionConfig.protectionWindowDays();
+        Test.stopTest();
+
+        Assert.areEqual(90, window,
+            'A negative window must fall back to the shipped default. Honouring -30 would put '
+            + 'the protection cutoff in the FUTURE and release every live claim at once.');
+    }
+
 
     @isTest
     static void findMatchingRegistry_exactKeyInsideTheWindow_stillReportsTheWinner() {

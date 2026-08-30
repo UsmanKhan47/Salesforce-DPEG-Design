@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY — a comment ABOVE the root
+        breaks `sf` deploy at conversion with a misleading "unable to find matching parent
+        xml file" error.
+
+        WS6 (2026-08-30). "Deal Name" list-view column for five Lead list views (New,
+        Under Review, Qualified, Dead Leads, Review Queue). Lead.Name is the BROKER's
+        personal name, not the deal - this field exists so the column shows the property,
+        not the sender.
+
+        PRECEDENCE — deliberately the FULL LeadConvertService.buildProperty chain, NOT the
+        shorter 2-term applyDealFields (Opportunity.Name) chain:
+          firstNonBlank(Property_Name__c, Property_Address__c, Street, Company, Name)
+          falling back to the literal 'Property' if all five are blank.
+        applyDealFields' chain (Property_Name__c, Property_Address__c only) leaves
+        Opportunity.Name UNASSIGNED when both are blank, which is fine there because it
+        preserves whatever the platform already derived for a required field. A list-view
+        column has no such fallback - BLANKVALUE on an empty chain renders a blank cell, and
+        branch (c) of the inbound-email routing tree deliberately creates Leads with a null
+        Property_Address__c (and, on that branch, frequently no Property_Name__c either).
+        A blank column on exactly the rows a triage queue most needs to distinguish is a
+        worse outcome than showing a fallback identifier, so this field mirrors
+        buildProperty's full chain and terminal 'Property' literal instead of the shorter
+        brief-quoted form.
+
+        Lead.Name cannot be referenced directly in a formula (Full Name is a compound,
+        read-only outside Apex) - substituted with TRIM(FirstName & " " & LastName), the
+        same pattern already used by Broker_Assignment__c.Broker_Name__c and
+        Lease_Inquiry__c.Broker_Name__c elsewhere in this repo (there, cross-object via a
+        Contact lookup; here, same-object, but the FirstName/LastName substitution is
+        identical). TRIM handles the case where only one of the two is populated, so the
+        BLANKVALUE that follows it can still detect "both names blank" correctly.
+    -->
+    <fullName>Deal_Name__c</fullName>
+    <description>Property-centric display name for list views, formula-derived - never edit directly. Lead.Name is the broker's personal name, not the deal, so the five WS6 list views (New/Under Review/Qualified/Dead/Review Queue) use this column instead. Mirrors LeadConvertService.buildProperty's full name precedence (Property_Name__c, then Property_Address__c, then Street, then Company, then the broker's own name), ending in the literal "Property" so the column is never blank - including on branch-(c) routing-tree Leads, which are created with a null Property_Address__c.</description>
+    <formula>BLANKVALUE(Property_Name__c, BLANKVALUE(Property_Address__c, BLANKVALUE(Street, BLANKVALUE(Company, BLANKVALUE(TRIM(FirstName &amp; &quot; &quot; &amp; LastName), &quot;Property&quot;)))))</formula>
+    <formulaTreatBlanksAs>BlankAsZero</formulaTreatBlanksAs>
+    <label>Deal Name</label>
+    <required>false</required>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>

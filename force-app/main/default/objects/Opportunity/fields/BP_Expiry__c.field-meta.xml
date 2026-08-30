@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY — a comment ABOVE the root
+        breaks `sf` deploy at conversion with a misleading "unable to find matching parent
+        xml file" error.
+
+        WS2/WS5 REPOINT (2026-08-30). The `$CustomMetadata`-in-formula question this field
+        was waiting on is now ANSWERED and PROVEN — see Lead.BP_Expiry__c's own comment
+        block for the measurement. The literal `+ 90` becomes
+        `+ $CustomMetadata.Broker_Protection_Config__mdt.Default.Protection_Window_Days__c`,
+        the same record PropertyMatchingService.PROTECTION_WINDOW_DAYS,
+        LeadFunnelController.BP_WINDOW_DAYS and Lead.BP_Expiry__c all resolve the window
+        from, so this DISPLAY field and the ARBITRATION value can no longer drift apart.
+
+        🔴 DEPLOY ORDER — THIS FIELD WILL NOT DEPLOY UNTIL THE CMDT *RECORD* EXISTS.
+        Measured on `usman-dpeg`, 2026-08-30, against Lead.BP_Expiry__c (same shape, same
+        CMDT reference) by check-only dry-run:
+          • record ABSENT  -> CustomField Lead.BP_Expiry__c: "Field Default does not exist.
+            Check spelling. (280:13)"  (deploy 0Afiw000000Tj09CAC, Failed)
+          • record PRESENT -> Status: Succeeded, 1/1 components validated
+            (deploy 0Afiw000000Tj1lCAC, proved against an existing CMDT record)
+        The `Default` record is created by scripts/load-broker-protection-config.apex, NOT
+        by a deploy (.forceignore excludes **/customMetadata/**). So the order for THIS
+        field is identical to Lead.BP_Expiry__c's:
+            1. deploy objects/Broker_Protection_Config__mdt/ (type + 8 fields)
+            2. RUN scripts/load-broker-protection-config.apex
+            3. only then deploy THIS field
+        Deploying this field before step 2 fails with the error above, which names the
+        RECORD ("Default"), not the syntax — do not read it as "$CustomMetadata is
+        unsupported". It is supported at API 67.0 in this org; it was proven (on the Lead
+        sibling field, since that is the one that carries the dated measurement).
+    -->
+    <fullName>BP_Expiry__c</fullName>
+    <description>Broker protection expiry = Broker First Seen (fallback CreatedDate) + the configured protection window. The window is NOT a literal here: it resolves from Broker_Protection_Config__mdt.Default.Protection_Window_Days__c, the same record PropertyMatchingService.PROTECTION_WINDOW_DAYS, LeadFunnelController.BP_WINDOW_DAYS and Lead.BP_Expiry__c all read, so display and arbitration cannot disagree. This field will not deploy until that record exists (it is created by scripts/load-broker-protection-config.apex, not by a deploy). ⚠ TIMEZONE NOTE: DATEVALUE() on this DateTime field resolves in GMT, so a Broker_First_Seen__c instant after ~18:00 US Central can display as the next calendar day here. Same known, accepted quirk as Lead.BP_Expiry__c / Lead.Days_in_System__c - not fixed here to avoid diverging from that established Lead behavior.</description>
+    <formula>DATEVALUE(IF(ISBLANK(Broker_First_Seen__c), CreatedDate, Broker_First_Seen__c)) + $CustomMetadata.Broker_Protection_Config__mdt.Default.Protection_Window_Days__c</formula>
+    <formulaTreatBlanksAs>BlankAsZero</formulaTreatBlanksAs>
+    <label>BP Expiry</label>
+    <required>false</required>
+    <type>Date</type>
+</CustomField>

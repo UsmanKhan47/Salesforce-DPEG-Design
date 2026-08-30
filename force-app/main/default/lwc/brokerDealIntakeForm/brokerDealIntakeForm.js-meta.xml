@@ -3,9 +3,21 @@
     <apiVersion>67.0</apiVersion>
     <isExposed>true</isExposed>
     <masterLabel>Broker Deal Intake Form</masterLabel>
-    <description>Public broker portal form that submits a property/deal as a Lead.</description>
+    <!-- 255-char cap on description, and ONLY a deploy catches a breach: Jest, the SLDS linter
+         and code review all pass a 258-char one. Keep this line short. -->
+    <description>Public broker portal form that submits a property/deal as a Lead, gated by Cloudflare Turnstile.</description>
     <targets>
         <target>lightningCommunity__Page</target>
         <target>lightningCommunity__Default</target>
     </targets>
+    <targetConfigs>
+        <targetConfig targets="lightningCommunity__Default">
+            <property
+                name="siteKey"
+                type="String"
+                label="Turnstile Site Key"
+                description="Public Cloudflare Turnstile sitekey for this environment. NOT the secret key - the secret lives only in the Turnstile_Credential External Credential. The widget will not render until this is set."
+                required="true"/>
+        </targetConfig>
+    </targetConfigs>
 </LightningComponentBundle>

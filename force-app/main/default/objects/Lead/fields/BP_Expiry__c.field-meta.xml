@@ -1,8 +1,34 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY — a comment ABOVE the root
+        breaks `sf` deploy at conversion with a misleading "unable to find matching parent
+        xml file" error.
+
+        WS5 (2026-08-30). The literal `+ 90` became
+        `+ $CustomMetadata.Broker_Protection_Config__mdt.Default.Protection_Window_Days__c`,
+        so this DISPLAY field and the ARBITRATION value in PropertyMatchingService can no
+        longer drift apart. Before WS5 the register in PropertyMatchingService's header held
+        them together by hand, which is not enforcement.
+
+        🔴 DEPLOY ORDER — THIS FIELD WILL NOT DEPLOY UNTIL THE CMDT *RECORD* EXISTS.
+        Measured on `usman-dpeg`, 2026-08-30, by check-only dry-run:
+          • record ABSENT  -> CustomField Lead.BP_Expiry__c: "Field Default does not exist.
+            Check spelling. (280:13)"  (deploy 0Afiw000000Tj09CAC, Failed)
+          • record PRESENT -> Status: Succeeded, 1/1 components validated
+            (deploy 0Afiw000000Tj1lCAC, proved against an existing CMDT record)
+        The `Default` record is created by scripts/load-broker-protection-config.apex, NOT
+        by a deploy (.forceignore excludes **/customMetadata/**). So the order is:
+            1. deploy objects/Broker_Protection_Config__mdt/ (type + 8 fields)
+            2. RUN scripts/load-broker-protection-config.apex
+            3. only then deploy THIS field
+        Deploying this field before step 2 fails with the error above, which names the
+        RECORD ("Default"), not the syntax — do not read it as "$CustomMetadata is
+        unsupported". It is supported at API 67.0 in this org; it was proven.
+    -->
     <fullName>BP_Expiry__c</fullName>
-    <description>Broker protection expiry = First Seen Date (fallback CreatedDate) + 90 days. Mirrors LeadFunnelController.BP_WINDOW_DAYS.</description>
-    <formula>DATEVALUE(IF(ISBLANK(First_Seen_Date__c), CreatedDate, First_Seen_Date__c)) + 90</formula>
+    <description>Broker protection expiry = First Seen Date (fallback CreatedDate) + the configured protection window. The window is NOT a literal here: it resolves from Broker_Protection_Config__mdt.Default.Protection_Window_Days__c, the same record PropertyMatchingService.PROTECTION_WINDOW_DAYS and LeadFunnelController.BP_WINDOW_DAYS read, so display and arbitration cannot disagree. This field will not deploy until that record exists (it is created by scripts/load-broker-protection-config.apex, not by a deploy).</description>
+    <formula>DATEVALUE(IF(ISBLANK(First_Seen_Date__c), CreatedDate, First_Seen_Date__c)) + $CustomMetadata.Broker_Protection_Config__mdt.Default.Protection_Window_Days__c</formula>
     <formulaTreatBlanksAs>BlankAsZero</formulaTreatBlanksAs>
     <label>BP Expiry</label>
     <required>false</required>

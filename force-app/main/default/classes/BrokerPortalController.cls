@@ -40,6 +40,19 @@ public without sharing class BrokerPortalController {
         @AuraEnabled public String assetType { get; set; }
         @AuraEnabled public String dealType { get; set; }
         @AuraEnabled public String website { get; set; } // honeypot - must be blank
+        /**
+         * The Cloudflare Turnstile token produced by the widget in the guest's browser
+         * (`cf-turnstile-response`). Verified server-side by BrokerPortalService via
+         * TurnstileVerificationService before any DML — see ARCHITECTURE.md §3.5.
+         *
+         * ⚠ SINGLE-USE. A token that has already been verified comes back from Cloudflare as
+         * `timeout-or-duplicate` and is refused, which is why brokerDealIntakeForm resets the
+         * widget after every failed submit rather than resubmitting the same value.
+         *
+         * ⚠ It is UNTRUSTED CLIENT INPUT like every other field on this DTO. Its only use is as an
+         * opaque parameter to Cloudflare; nothing derives a decision from its contents locally.
+         */
+        @AuraEnabled public String turnstileToken { get; set; }
     }
 
     public class SubmitResult {

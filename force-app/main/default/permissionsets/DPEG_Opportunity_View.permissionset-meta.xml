@@ -21,6 +21,10 @@
       must move 63 -> 67, with the four fields above present.
 
       Full sequence: agent-output/runbook-acquisition-observations-phase1.md
+
+      P8 HUB PASS (2026-08-30): count moves 67 -> 69 with two more read-only formula grants,
+      Opportunity.BP_Expiry__c and Opportunity.Days_in_System__c (WS2). See
+      agent-output/ba-gap-closure-p8-hub-pass.md §1.
     -->
     <description>Read-only access to Opportunity, View All, full FLS. Shared building block for teams that reference deals but don't own them (e.g. the Transaction team).</description>
     <fieldPermissions>
@@ -55,6 +59,12 @@
     <fieldPermissions>
         <editable>false</editable>
         <field>Opportunity.Asset_Type__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!-- BP_Expiry__c ADDED P8 HUB PASS (2026-08-30), WS2. Formula field. -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Opportunity.BP_Expiry__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -98,6 +108,19 @@
     <fieldPermissions>
         <editable>false</editable>
         <field>Opportunity.CoStar_URL__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!-- Days_In_Stage__c ADDED Acquisitions gap-fix Item 2 (2026-08-31). Formula field; read-only
+         (formula fields cannot carry an editable grant). -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Opportunity.Days_In_Stage__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!-- Days_in_System__c ADDED P8 HUB PASS (2026-08-30), WS2. Formula field. -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Opportunity.Days_in_System__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -270,6 +293,13 @@
         <field>Opportunity.Offer_Due_Date__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!-- Offer_Status__c ADDED Acquisitions gap-fix Item 5a (2026-08-30). Read-only in this
+         View-only set. -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Opportunity.Offer_Status__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
         <field>Opportunity.OneDrive_Folder_URL__c</field>
@@ -360,6 +390,13 @@
         <field>Opportunity.Rejection_Reason__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!-- Stage_Entry_Date__c ADDED Acquisitions gap-fix Item 2 (2026-08-31). Read-only view of the
+         Apex-stamped stage-entry date. -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Opportunity.Stage_Entry_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
         <field>Opportunity.Sale_Process__c</field>
@@ -408,6 +445,27 @@
     <fieldPermissions>
         <editable>false</editable>
         <field>Opportunity.UW_Approved_By__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!-- Total_Deals_Submitted__c / Deals_Won__c / Deals_Lost__c ADDED Acquisitions gap-fix
+         Item 6.1/FIX 4 (2026-08-30). Roll-up summaries on Account (broker firm), read-only by
+         type. Added because BrokerFirmController reads these three fields to render the Broker
+         Firm sidebar card on the Opportunity record page - a live UI read path, not only a
+         report. Same three fields, same reasoning, also added this pass to
+         DPEG_Acquisition_Edit, DPEG_Acquisition_View, DPEG_Account_View and DPEG_Admin_Access. -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Account.Deals_Lost__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Account.Deals_Won__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Account.Total_Deals_Submitted__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <hasActivationRequired>false</hasActivationRequired>

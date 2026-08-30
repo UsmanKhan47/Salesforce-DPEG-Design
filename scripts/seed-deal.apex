@@ -2,7 +2,7 @@
 // values matched to the Underwriting prototype screenshot.
 Opportunity opp = new Opportunity(
     Name = 'Magnolia Crossing',
-    StageName = 'LOI Signed',
+    StageName = 'LOI',            // NOT 'LOI Signed' — that is a Deal_Status__c value, set below
     CloseDate = Date.today().addDays(60),
     Asking_Price__c = 33000000,
     My_Price__c = 31500000,
@@ -10,7 +10,8 @@ Opportunity opp = new Opportunity(
     Market_Cap_Rate__c = 6.5,
     Deal_Status__c = 'LOI Signed',
     Asset_Type__c = 'Retail Strip',
-    Broker_First_Seen__c = Date.today().addDays(-38)
+    // WS2 (2026-08-30): DateTime now, not Date — a Date literal no longer compiles here.
+    Broker_First_Seen__c = Datetime.now().addDays(-38)
 );
 insert opp;
 

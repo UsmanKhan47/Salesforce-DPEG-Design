@@ -37,6 +37,13 @@
  *     lookups are UNFILTERED, so that method's "every Id reaching here is a broker" premise
  *     is false for these callers. The full argument is at `selectNamesByIds`; do not merge
  *     the two.
+ *   • ExtractAddressQueueable.resolveBrokerLink -> selectBrokerByEmailForIntake (WS8 intake
+ *     broker match, 2026-08-30 — resolves the SENDER to an existing broker Contact so the
+ *     email-born Lead is born carrying `Broker__c` / `Broker_Firm__c`; AUTOMATION path,
+ *     SYSTEM_MODE, see that method's ApexDoc). ⚠ It is the THIRD SYSTEM_MODE method on the outer
+ *     class and it is deliberately NOT `selectByEmails`, which answers the same question for a
+ *     signed-in user under USER_MODE. Same question, two trust models — read both ApexDocs
+ *     before merging them.
  *
  * ═══════════════════════════════════════════════════════════════════════════════════
  * 🔴 WHAT "BROKER" MEANS IN THIS CLASS — CHANGED 2026-08-20. READ THIS FIRST.
@@ -96,6 +103,12 @@
  *     but are NOT itemised in design §5's Contact FLS table — see the ⚠ DESIGN NOTE below.
  *   • selectByEmails uses `WITH USER_MODE` and is the first OUTER method that reads the
  *     FLS-permissionable Contact.Email; its caller owns the fail-soft (see its ApexDoc).
+ *   • selectBrokerByEmailForIntake uses `WITH SYSTEM_MODE` (API 67) and reads the SAME
+ *     FLS-permissionable Contact.Email for the INBOUND-EMAIL principal. The mode differs from its
+ *     USER_MODE twin above precisely BECAUSE the caller differs: a USER_MODE throw here would land
+ *     in the routing job that owns the broker's Lead and registry claim, not in a button click.
+ *     It stays `with sharing`; its `AccountId != null` filter is what makes that costless — see
+ *     the method for the account-less-Contact measurement.
  *   • selectBrokerLabelsByIds uses `WITH SYSTEM_MODE` (API 67) on the OUTER class —
  *     ARCHITECTURE.md §2's automation-path exception, argued in full at the method. It
  *     stays `with sharing`: SYSTEM_MODE lifts CRUD/FLS and never sharing, and an
@@ -365,6 +378,121 @@ public with sharing class ContactSelector {
               AND RecordType.DeveloperName = 'Broker'
             WITH USER_MODE
             ORDER BY CreatedDate ASC, Id ASC
+        ];
+    }
+
+    /**
+     * The ONE existing broker Contact an inbound email's sender resolves to — backs the
+     * intake-time broker match (WS8, 2026-08-30), which stamps `Lead.Broker__c` /
+     * `Lead.Broker_Firm__c` at the moment the email-born Lead is created rather than waiting for
+     * conversion. Called ONCE PER EMAIL by `ExtractAddressQueueable`, never once per property.
+     *
+     * ── 🔴 THIS IS NOT `selectByEmails` WITH A LIMIT, AND MERGING THE TWO WOULD BE WRONG ──────
+     * They answer the same QUESTION under two different trust models, which is precisely the
+     * distinction `selectByEmails`' own ApexDoc draws against `GuestReads`. `selectByEmails` runs
+     * for a signed-in user who clicked Convert; this runs for the Email Service context user, in a
+     * `Queueable`, on behalf of a broker who is not a Salesforce user at all. The MODE differs as a
+     * result (below), and mode is a property of the METHOD in this class — see the class header.
+     * Do not consolidate them; do not "fix" this one to USER_MODE for symmetry.
+     *
+     * ── 🔴 WITH SYSTEM_MODE — automation path, and USER_MODE here would DESTROY THE EMAIL ─────
+     * ARCHITECTURE.md §2's automation-path exception, argued on its own terms.
+     *
+     * `Contact.Email` is FLS-permissionable and `USER_MODE` THROWS rather than degrades: a
+     * principal without read on it raises `System.QueryException: No such column` — an FLS denial
+     * wearing a schema error. `selectByEmails` can afford that because its caller is a synchronous
+     * service whose catch turns it into "no match" for one user's button click. THIS caller cannot:
+     * the throw would escape into `ExtractAddressQueueable.execute`'s catch, the routing transaction
+     * would be recorded as an Error, and — depending on where in the tree it lands — the broker's
+     * Lead and their registry claim are the things being paid for. An OPTIONAL ENRICHMENT must not
+     * be able to abort the transaction that owns an irreplaceable claim. Same argument, same shape,
+     * as `selectNamesByIds` and `selectBrokerLabelsByIds` above.
+     *
+     * It is not theoretical. The intake principal is the Email Service context user, whom nobody
+     * provisions through the UI, and every DPEG persona starts on `Minimum Access`. "It works for
+     * the admin who ran the test" is not evidence about this principal.
+     *
+     * ⚠ SYSTEM_MODE LIFTS CRUD/FLS AND NEVER SHARING, and this method stays on the `with sharing`
+     * OUTER class deliberately — there is no `GuestReads`-style escape here and none is wanted. See
+     * the `AccountId != null` note below for why that costs nothing in practice.
+     *
+     * ── 🔴 `AccountId != null` IS A CORRECTNESS FILTER, NOT HYGIENE — AND IT IS ALSO THE ANSWER
+     *      TO THE ACCOUNT-LESS-CONTACT SHARING TRAP ───────────────────────────────────────────
+     * Copied deliberately from `selectByEmails`, for TWO independent reasons:
+     *
+     *   1. IT KEEPS THE TWO LEAD LOOKUPS A PAIR. The caller stamps `Broker__c` and
+     *      `Broker_Firm__c` from ONE row (`Id` and `AccountId`), so they can never disagree, and
+     *      `LeadConvertMatchService` can then prefer that pair knowing the platform's rule —
+     *      `LeadConvert.setContactId` is valid only alongside a `setAccountId` for that Contact's
+     *      OWN Account — is satisfied by construction. An account-less Contact stamped into
+     *      `Broker__c` would be a conversion target the platform refuses.
+     *
+     *   2. IT MAKES THE ANSWER SHARING-INDEPENDENT WHERE IT WOULD OTHERWISE BE OWNER-DEPENDENT.
+     *      MEASURED IN THIS REPO: a Contact with NO AccountId is visible only to its OWNER, whatever
+     *      `Contact` OWD says — because `Contact` OWD is `ControlledByParent` and a parentless
+     *      Contact has no parent to inherit from. Under `with sharing` such a row would match for
+     *      one principal and not another, so the SAME broker email would sometimes link and
+     *      sometimes not, with nothing logged either way. Excluding orphans in the QUERY replaces
+     *      that coin-flip with a rule: an account-less broker Contact NEVER matches at intake, for
+     *      everyone, always. The Lead is still created and still carries `Email`, so the broker is
+     *      not lost — they simply take the ordinary unlinked path, and `LeadConvertMatchService`
+     *      re-asks the same question at conversion. This is the SAME accepted residual
+     *      `selectByEmails` already records (design L1), reached for a second reason.
+     *
+     *      Conversely, a Contact that DOES have an Account is readable by every internal user:
+     *      `Account` OWD is `ReadWrite` internally and `Contact` is `ControlledByParent`. So for the
+     *      population this method can return, `with sharing` filters nothing — which is why no
+     *      `without sharing` escape is needed and none should be added.
+     *
+     * RECORD TYPE SCOPE — `Contact.Broker`, identical to `selectByEmails` (IR segregation,
+     * 2026-08-10). One email address shared between a broker and an investor must never attach an
+     * acquisition Lead to an IR Contact. The traversal is not an FLS-permissionable custom field
+     * and cannot throw.
+     *
+     * ⚠ A USEFUL CONSEQUENCE, MEASURED 2026-08-30 RATHER THAN ASSUMED: the `Record_Type_Matches_Account`
+     * validation rule on Contact makes "Broker record type AND has an Account" imply "the Account is
+     * on the Broker_Firm record type" — it BLOCKS a Broker Contact parented to anything else, on
+     * creation and on reparenting. So the Account Id this method hands the caller for
+     * `Lead.Broker_Firm__c` is a brokerage firm by construction, and no Account-side record-type
+     * predicate is needed here. Do not add one: it would be a second copy of a rule the platform
+     * already enforces, and the two could drift.
+     *
+     * OLDEST WINS, DETERMINISTICALLY — `CreatedDate ASC, Id ASC LIMIT 1`, the same total order
+     * `selectByEmails` and `AccountSelector.selectByNames` use, so intake and conversion converge on
+     * the SAME Contact rather than on two different duplicates. `CreatedDate` alone is not a total
+     * order (same-transaction rows share it); `Id ASC` is the tiebreak.
+     *
+     * ⚠ RETURNS A LIST, NOT A CONTACT, AND THAT IS LOAD-BEARING. The class header's warning applies
+     * verbatim: a single-row assignment (`Contact c = [SELECT ...];`) throws `QueryException` on the
+     * ORDINARY no-match case, which the caller's fail-soft would then swallow as a degrade — turning
+     * "this broker is new" into an invisible, permanent disabling of the feature.
+     *
+     * ⚠ NO ACCOUNT QUERY IS NEEDED OR WANTED. `AccountId` is on this row, so the firm is resolved by
+     * the SAME statement. Adding an `AccountSelector` round trip would double this feature's whole
+     * governor cost (1 SOQL per email, not 2) to re-read a value already in hand.
+     *
+     * @param email The sender's broker email, already sanitized by the caller; null/blank returns an
+     *              empty list WITHOUT querying.
+     * @return At most one Broker-record-type Contact with an Account (Id, Email, AccountId,
+     *         CreatedDate); an empty list when the input is blank, nothing matches, the only match
+     *         is account-less, or the only match is on a non-Broker record type (never null).
+     * @example
+     * List<Contact> hit = ContactSelector.selectBrokerByEmailForIntake('jane@brokerfirm.example');
+     */
+    public static List<Contact> selectBrokerByEmailForIntake(String email) {
+        if (String.isBlank(email)) {
+            return new List<Contact>();
+        }
+        String key = email.trim();
+        return [
+            SELECT Id, Email, AccountId, CreatedDate
+            FROM Contact
+            WHERE Email = :key
+              AND AccountId != null
+              AND RecordType.DeveloperName = 'Broker'
+            WITH SYSTEM_MODE
+            ORDER BY CreatedDate ASC, Id ASC
+            LIMIT 1
         ];
     }
 

@@ -45,31 +45,80 @@
  * This is not "an expiry feature" bolted on; it is making the third read agree with the
  * two that already agreed with each other.
  *
- * 🔴 LOOKBACK_DAYS >= PROTECTION_WINDOW_DAYS IS AN INVARIANT, AND IT IS PINNED BY A TEST
- * RATHER THAN GUARANTEED BY CONSTRUCTION. If the protection window were ever set LONGER
- * than the fuzzy lookback, a claim in the gap would be protected on the exact path and
- * INVISIBLE on the fuzzy path — reintroducing exactly the asymmetry above, in a new place.
- * The two constants stay separate (they answer different questions and may legitimately
- * diverge upward on the lookback side) and are held together by
- * PropertyMatchingServiceTest, the same arrangement CallForOffersService uses for
- * CRITICAL_DAYS / APPROACHING_DAYS against ALERT_INTERVALS.
+ * 🔴 LOOKBACK_DAYS >= PROTECTION_WINDOW_DAYS IS AN INVARIANT. If the protection window
+ * were ever set LONGER than the fuzzy lookback, a claim in the gap would be protected on
+ * the exact path and INVISIBLE on the fuzzy path — reintroducing exactly the asymmetry
+ * above, in a new place. The two values stay separate (they answer different questions and
+ * may legitimately diverge upward on the lookback side).
  *
- * ⚠ "90" IS HARDCODED IN FIVE PLACES AND FORMULAS CANNOT READ APEX CONSTANTS. The register,
- * so a future change moves all of them:
+ * ✅ AMENDED 2026-08-30 (WS5): this used to read "PINNED BY A TEST RATHER THAN GUARANTEED
+ * BY CONSTRUCTION". It is now BOTH. `BrokerProtectionConfig.effectiveLookbackDays()`
+ * guarantees it by construction (it returns `max(lookback, window)` and logs WARN when the
+ * clamp fires), and `PropertyMatchingServiceTest` still pins it — re-pointed at the
+ * accessors, since the constants below are no longer where the value lives. The clamp is
+ * not belt-and-braces: a test pin cannot see a Setup edit, so once these became
+ * configurable the pin alone stopped being enforcement at all.
+ *
+ * ✅ "90" USED TO BE HARDCODED IN FOUR PLACES. SINCE WS5 (2026-08-30) ALL FOUR RESOLVE FROM
+ * ONE CUSTOM METADATA RECORD — `Broker_Protection_Config__mdt.Default`, read through
+ * `BrokerProtectionConfig`. The register, kept so a future change can still find them all:
  *   1. PropertyMatchingService.LOOKBACK_DAYS            (this class)
+ *      -> BrokerProtectionConfig.effectiveLookbackDays()
  *   2. PropertyMatchingService.PROTECTION_WINDOW_DAYS   (this class)
+ *      -> BrokerProtectionConfig.protectionWindowDays()
  *   3. LeadFunnelController.BP_WINDOW_DAYS
- *   4. Lead.BP_Expiry__c                                (formula: First_Seen_Date + 90)
- *   5. Property_Registry__c.Protection_Expiry_Date__c   (formula; ADMIN item A1 — see the
- *      report note: not created by this change, and its absence does not affect behaviour,
- *      only visibility)
- * Sites 4 and 5 are DISPLAY ONLY. Nothing in the arbitration path reads either.
+ *      -> BrokerProtectionConfig.protectionWindowDays()
+ *   4. Lead.BP_Expiry__c (formula)
+ *      -> $CustomMetadata.Broker_Protection_Config__mdt.Default.Protection_Window_Days__c
+ * Site 4 is DISPLAY ONLY. Nothing in the arbitration path reads it.
  *
- * ⚠ CONFIGURABILITY WAS CONSIDERED AND REFUSED (design §1.7). This is a claim-ARBITRATION
- * constant, so lowering it in Setup retroactively re-decides who owns properties that are
- * already claimed — every claim between the new and old value releases at once, and the
- * next email on any of them mints a new winner, with no deploy, no review and no audit.
- * That is a data migration wearing a checkbox. Change it by deploy.
+ * ⚠ THIS REGISTER PREVIOUSLY LISTED A FIFTH SITE,
+ * `Property_Registry__c.Protection_Expiry_Date__c`. THAT FIELD DOES NOT EXIST and never
+ * did — `Property_Registry__c` carries exactly four fields (`Normalized_Address__c`,
+ * `Property_Key__c`, `Registered_DateTime__c`, `Winning_Lead__c`). The entry was a
+ * forward-reference to an admin item that was never built. Deleted 2026-08-30 (WS5, P1) so
+ * the register describes the org rather than an intention.
+ *
+ * ⚠⚠ CONFIGURABILITY WAS CONSIDERED AND REFUSED HERE — AND THAT REFUSAL WAS EXPLICITLY
+ * OVERRULED BY THE USER ON 2026-08-30. DO NOT RE-REFUSE IT. The original text, kept
+ * verbatim because the risk it names is real and is now an ACCEPTED risk rather than an
+ * avoided one:
+ *
+ *     "CONFIGURABILITY WAS CONSIDERED AND REFUSED (design §1.7). This is a
+ *      claim-ARBITRATION constant, so lowering it in Setup retroactively re-decides who
+ *      owns properties that are already claimed — every claim between the new and old
+ *      value releases at once, and the next email on any of them mints a new winner, with
+ *      no deploy, no review and no audit. That is a data migration wearing a checkbox.
+ *      Change it by deploy."
+ *
+ * The reversal is design-requirements.md §0/GATE A, decision A1, taken with the failure
+ * mode above stated in full. It shipped with a REQUIRED, non-optional mitigation — the three
+ * parts below are conditions of the approval, not nice-to-haves:
+ *   (a) the two arbitration fields carry that warning in their CMDT `description` and
+ *       `inlineHelpText`, so it is visible to whoever edits the record in Setup and not
+ *       only to a reader of this file;
+ *   (b) 🔴 `PropertyClaimService.stampResolvedWindow` writes the RESOLVED window onto
+ *       `Property_Registry__c.Protection_Window_Days__c` on the claimed row itself, at claim
+ *       time, on every path that (re)sets `Registered_DateTime__c`. This is the PRIMARY
+ *       audit trail: it is durable, queryable months later, and needs no trace flag;
+ *   (c) `logResolvedWindow` ALSO logs the resolved window at WARN on EVERY claim run — the
+ *       secondary, best-effort half, and the only one that covers a DECLINED claim (no row
+ *       is written on that path) or a window field that is deployed but never granted.
+ * Removing any part re-opens GATE A and needs a new user decision.
+ *
+ * ⚠ (b) WAS ADDED 2026-08-30 (WS8 review, W6) BECAUSE (c) ALONE DID NOT DELIVER THE
+ * CONDITION. This block used to say the value was "reconstructible from the logs" and that
+ * "nothing else records it". A debug log needs an active trace flag on the executing
+ * principal and expires within 24h; this code runs as the Email Service context user inside
+ * an async queueable, so the log usually would not exist when the dispute arrived.
+ *
+ * ⚠ THE INVARIANT IS NOW ENFORCED BY CONSTRUCTION, NOT BY A TEST PIN. While both values
+ * were Apex literals a test could pin `LOOKBACK_DAYS >= PROTECTION_WINDOW_DAYS`, because a
+ * violation could only arrive through a deploy. An admin editing Setup is invisible to
+ * every Apex test, so the pin alone stopped being enforcement the moment these became
+ * configurable. `BrokerProtectionConfig.effectiveLookbackDays()` CLAMPS the lookback up to
+ * the window and logs WARN when it does; the test pin is kept as well, re-pointed at the
+ * accessors.
  *
  * ✅ FUZZY DUAL-WINNER RACE — NOW CLOSED (W4). Previously race-safety was exact-string
  * only: the unique index on Property_Registry__c.Property_Key__c stopped two
@@ -117,9 +166,25 @@ public with sharing class PropertyMatchingService {
      *  property on the fuzzy path. */
     public static final Decimal SIMILARITY_THRESHOLD = 0.6;
 
-    /** Fuzzy-match recency window (days): only registrations claimed within the last
-     *  LOOKBACK_DAYS are considered candidates. */
-    public static final Integer LOOKBACK_DAYS = 90;
+    /**
+     * Fuzzy-match recency window (days): only registrations claimed within the last
+     * LOOKBACK_DAYS are considered candidates.
+     *
+     * ⚠ NO LONGER A LITERAL (WS5, 2026-08-30). It resolves from
+     * `BrokerProtectionConfig.effectiveLookbackDays()` — the CLAMPED accessor, never the
+     * raw configured value — so the invariant in the class header holds even when the
+     * `Broker_Protection_Config__mdt.Default` record says otherwise.
+     *
+     * ⚠ IT IS STILL `static final`, AND THAT IS THE POINT. The value is resolved ONCE per
+     * transaction, at class initialisation, so a 10-property email arbitrates every one of
+     * its properties against the SAME window. An accessor call per read would let a Setup
+     * save land mid-transaction and give property 3 and property 7 different answers about
+     * who owns a building. It also keeps the published SIGNATURE CONTRACT above intact:
+     * `PropertyMatchingService.LOOKBACK_DAYS` reads identically at all four existing call
+     * sites (PropertyClaimServiceTest, PropertyRegistrySelectorTest,
+     * CompetingBrokerSubmissionSelectorTest, PropertyMatchingServiceTest).
+     */
+    public static final Integer LOOKBACK_DAYS = BrokerProtectionConfig.effectiveLookbackDays();
 
     /**
      * Broker-protection window (days): a registration older than this RELEASES the
@@ -130,10 +195,15 @@ public with sharing class PropertyMatchingService {
      * PropertyRegistrySelector.selectLiveByPropertyKey for why that is what makes the
      * adoption update admissible at all, and for the stated converted-then-dead residual.
      *
-     * 🔴 MUST BE <= LOOKBACK_DAYS. Pinned by PropertyMatchingServiceTest, not by
-     * construction; the class header explains what breaks if it is not.
+     * 🔴 MUST BE <= LOOKBACK_DAYS. Guaranteed by construction since WS5 — LOOKBACK_DAYS
+     * above resolves from the CLAMPED accessor — and still pinned by
+     * PropertyMatchingServiceTest. The class header explains what breaks if it is not.
+     *
+     * ⚠ NO LONGER A LITERAL (WS5, 2026-08-30): resolves from
+     * `BrokerProtectionConfig.protectionWindowDays()`, once per transaction, for the same
+     * reasons given on LOOKBACK_DAYS.
      */
-    public static final Integer PROTECTION_WINDOW_DAYS = 90;
+    public static final Integer PROTECTION_WINDOW_DAYS = BrokerProtectionConfig.protectionWindowDays();
 
     /**
      * The opening edge of the protection window, relative to now — the single place the
@@ -144,6 +214,56 @@ public with sharing class PropertyMatchingService {
      */
     private static Datetime protectionCutoff() {
         return Datetime.now().addDays(-PROTECTION_WINDOW_DAYS);
+    }
+
+    /**
+     * 🔴 GATE A MITIGATION (c) — THE SECONDARY, BEST-EFFORT HALF. STILL DO NOT DELETE.
+     *
+     * Emit the RESOLVED arbitration window at WARN on every claim run, next to the address
+     * being arbitrated. This is part of the mitigation for the user's 2026-08-30 decision to
+     * make the window Setup-editable (GATE A, decision A1); see `BrokerProtectionConfig`'s
+     * class header for the reversal, the full risk it accepts, and all three mitigations.
+     *
+     * ═══ 🔴 DEMOTED 2026-08-30 (WS8 review, W6) — READ THIS BEFORE RELYING ON IT ═══
+     * This block used to claim to BE the audit trail: "this log line is the ONLY evidence of
+     * the window the engine actually applied to that address." That was not a safe promise. A
+     * Salesforce debug log is captured ONLY while a trace flag is active on the EXECUTING
+     * principal, and expires (24h retention, 20MB per flag). The claim runs inside an async
+     * queueable as the Email Service context user — the principal least likely to be traced —
+     * so in the ordinary case the evidence a disputed claim needs would simply not exist, and
+     * nobody would find that out until they went looking.
+     *
+     * THE PRIMARY MITIGATION IS NOW DURABLE: `PropertyClaimService.stampResolvedWindow` writes
+     * the resolved window onto `Property_Registry__c.Protection_Window_Days__c` on the row
+     * itself, at claim time, riding the DML that already exists. A disputed claim is settled
+     * by querying the row.
+     *
+     * WHY THIS LINE SURVIVES ANYWAY, AND IS NOT REDUNDANT. It costs one debug statement and
+     * carries two things the field cannot: the EFFECTIVE LOOKBACK and the RAW CONFIGURED
+     * lookback (so a clamp is visible), and a line for a property whose claim was DECLINED —
+     * no registry row is written on that path, so there is nothing to stamp. It is also the
+     * only evidence available if `Protection_Window_Days__c` is deployed but never granted,
+     * which is a real window (see stampResolvedWindow's isCreateable guard).
+     *
+     * WHY IT IS A `System.debug` AND NOT A LOG ROW. Writing a row would be DML — inside a
+     * read-only service, on the hot path of every property of every inbound email, against
+     * `ExtractAddressQueueable`'s pinned DML budget (an EQUALITY assertion at N=10).
+     * `.claude/skills/sf-apex`'s "avoid System.debug on main code paths" is knowingly
+     * traded here: the alternative is a governor-budget change.
+     *
+     * ⚠ It fires PER CLAIM, deliberately — not once per transaction. The window is what is
+     * being evidenced against a specific address, so a 10-property email must produce ten
+     * lines, one per arbitrated address, or the evidence is incomplete for nine of them.
+     *
+     * @param normalized The normalized address being arbitrated, so the line is attributable.
+     */
+    private static void logResolvedWindow(String normalized) {
+        System.debug(LoggingLevel.WARN,
+            'BROKER PROTECTION CLAIM RUN: resolved window=' + PROTECTION_WINDOW_DAYS
+            + 'd, effective lookback=' + LOOKBACK_DAYS
+            + 'd (source: Broker_Protection_Config__mdt.' + BrokerProtectionConfig.RECORD_NAME
+            + ', configured lookback=' + BrokerProtectionConfig.configuredLookbackDays()
+            + 'd); arbitrating key="' + normalized + '"');
     }
 
     /**
@@ -304,6 +424,8 @@ public with sharing class PropertyMatchingService {
         if (String.isBlank(normalized)) {
             return null;
         }
+
+        logResolvedWindow(normalized);
 
         List<Property_Registry__c> exact = PropertyRegistrySelector.selectLiveByPropertyKey(
             new Set<String>{ normalized }, protectionCutoff());

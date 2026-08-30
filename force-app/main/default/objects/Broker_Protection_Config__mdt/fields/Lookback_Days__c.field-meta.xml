@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY — see
+        Protection_Window_Days__c.field-meta.xml in this folder for why a comment above the
+        root breaks `sf` deploy at conversion.
+
+        GATE A MITIGATION — this field is the SAME risk category as
+        Protection_Window_Days__c and the full rationale in that file's comment applies
+        here too (design-requirements.md §0/GATE A, decision A1, 2026-08-30): configurable,
+        with the required logging mitigation, user-overruled from
+        PropertyMatchingService.cls's original refusal.
+
+        THE INVARIANT — LOOKBACK_DAYS >= PROTECTION_WINDOW_DAYS (PropertyMatchingService.cls
+        lines 48-55, verbatim): "LOOKBACK_DAYS >= PROTECTION_WINDOW_DAYS IS AN INVARIANT,
+        AND IT IS PINNED BY A TEST RATHER THAN GUARANTEED BY CONSTRUCTION. If the
+        protection window were ever set LONGER than the fuzzy lookback, a claim in the gap
+        would be protected on the exact path and INVISIBLE on the fuzzy path —
+        reintroducing exactly the asymmetry [the original bug] fixed, in a new place." Made
+        configurable, an admin can now violate this invariant in Setup, where no Apex test
+        can see it. design-requirements.md §2/WS5 requires the accessor
+        (BrokerProtectionConfig.cls, not built by this task) to CLAMP this at runtime —
+        effectiveLookback = max(configured Lookback_Days__c, configured
+        Protection_Window_Days__c) — and to log a WARN when the clamp fires, so a
+        misconfiguration here is diagnosable rather than silently wrong.
+
+        Replaces PropertyMatchingService.LOOKBACK_DAYS (currently 90), one of the five "90
+        is hardcoded" sites named in that class's own header comment.
+    -->
+    <fullName>Lookback_Days__c</fullName>
+    <description>Recency window (days) for the FUZZY property-match candidate read (PropertyMatchingService.LOOKBACK_DAYS) — how far back a registration is still a candidate for a similarity match. 🔴 CLAIM-ARBITRATION CONSTANT, same risk category as Protection_Window_Days__c: lowering it in Setup can hide a still-protected claim from the fuzzy path, with NO deploy, NO review and NO undo. 🔴 MUST STAY &gt;= Protection_Window_Days__c — if the window is ever longer than this lookback, a claim in the gap is protected on the exact path and INVISIBLE on the fuzzy path, reintroducing the asymmetry the recency window exists to close. The accessor clamps at runtime (effective lookback = max(this, window)) and logs WARN when the clamp fires — treat that WARN as a live misconfiguration needing a Setup fix.</description>
+    <externalId>false</externalId>
+    <fieldManageability>DeveloperControlled</fieldManageability>
+    <inlineHelpText>🔴 Claim-arbitration constant. Must stay >= Protection Window Days or a fuzzy-match gap opens. See field description before changing.</inlineHelpText>
+    <label>Lookback Days</label>
+    <precision>3</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

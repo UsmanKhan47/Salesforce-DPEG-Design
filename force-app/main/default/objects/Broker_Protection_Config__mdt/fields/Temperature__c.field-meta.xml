@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY — see
+        Protection_Window_Days__c.field-meta.xml in this folder for why a comment above the
+        root breaks `sf` deploy at conversion.
+
+        Replaces the inline literal `0` at LLMExtractionCalloutService.cls:875
+        (buildRequestBody's 'temperature' => 0 entry) — P2 in design-requirements.md §1
+        notes this was never a named Apex constant, only a literal, so this move is an
+        expression change at the call site, not a simple constant swap. Precision(3,2)
+        covers the OpenAI temperature range 0.00-2.00 with one digit of headroom.
+    -->
+    <fullName>Temperature__c</fullName>
+    <description>Sampling temperature (0-2) sent on every extraction callout. Replaces the inline literal 0 in LLMExtractionCalloutService.buildRequestBody. 0 = fully deterministic, the value this pipeline was built and tested against — raising it introduces run-to-run variance in the SAME broker_email / property_address fields the registry claim key depends on. Treat any change away from 0 as a claim-key-behaviour change, not a routine tuning knob.</description>
+    <externalId>false</externalId>
+    <fieldManageability>DeveloperControlled</fieldManageability>
+    <inlineHelpText>0-2. 0 = deterministic (tested value). Raising it adds variance to the broker/property claim key.</inlineHelpText>
+    <label>Temperature</label>
+    <precision>3</precision>
+    <required>false</required>
+    <scale>2</scale>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

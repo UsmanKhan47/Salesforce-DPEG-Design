@@ -47,7 +47,12 @@ const opportunities = deals.map((d, i) => {
   const f = {
     Name: d[0], StageName: d[7], CloseDate: '2026-09-30', AccountId: `@acc_${d[10]}`, Property__c: `@prop_${i}`,
     Asset_Type__c: d[3], Asking_Price__c: d[4], Amount: d[4], My_Cap_Rate__c: d[5], Market_Cap_Rate__c: d[6],
-    Deal_Status__c: d[8], Deal_Category__c: d[9], Broker_First_Seen__c: '2026-04-01',
+    // WS2 (2026-08-30): Broker_First_Seen__c is a DateTime. A date-only literal into a DateTime
+    // column is a loader-dependent coercion, not a guarantee — sf data import may accept it, may
+    // midnight-it in an unspecified zone, or may reject it. The explicit UTC instant removes the
+    // question. Midday, so the DATEVALUE()-based BP_Expiry__c / Days_in_System__c formulas (which
+    // convert in GMT) land on the same calendar day a viewer sees in their own zone.
+    Deal_Status__c: d[8], Deal_Category__c: d[9], Broker_First_Seen__c: '2026-04-01T12:00:00.000Z',
   };
   if (d[7] === 'Dead/Pass') f.Rejection_Reason__c = 'Bad Anchor Tenant';
   return rec('Opportunity', `opp_${i}`, f);

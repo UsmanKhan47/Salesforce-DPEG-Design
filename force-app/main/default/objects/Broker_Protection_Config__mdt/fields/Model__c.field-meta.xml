@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY — see
+        Protection_Window_Days__c.field-meta.xml in this folder for why a comment above the
+        root breaks `sf` deploy at conversion.
+
+        Replaces LLMExtractionCalloutService.MODEL (currently 'gpt-4o-mini', 11 chars).
+        Length 80 leaves generous headroom for longer/dated model identifiers (e.g. a future
+        'gpt-4o-2026-08-06'-style pinned snapshot name) without ever needing to widen it.
+
+        🔴 The callout ENDPOINT constant (ARCHITECTURE.md §3.3's direct-OpenAI retirement
+        lever, 'callout:OpenAI_API/v1/chat/completions') stays HARDCODED in Apex and is NOT
+        part of this CMDT — only the model identifier sent in the request body is
+        configurable here.
+    -->
+    <fullName>Model__c</fullName>
+    <description>OpenAI chat-completions model identifier sent on every broker-email extraction callout. Replaces LLMExtractionCalloutService.MODEL (&apos;gpt-4o-mini&apos;). Changing the model changes behaviour on broker_email / property_address, the Property_Registry__c claim key — re-run both manual regression fixtures named in LLMExtractionCalloutService&apos;s header before and after any change, and diff the normalised addresses by hand. The callout ENDPOINT itself stays hardcoded in Apex (the ARCHITECTURE.md §3.3 direct-OpenAI retirement lever) and is not affected by this field.</description>
+    <externalId>false</externalId>
+    <fieldManageability>DeveloperControlled</fieldManageability>
+    <inlineHelpText>OpenAI model id, e.g. gpt-4o-mini. Changing it affects the broker/property claim key — re-run the regression fixtures.</inlineHelpText>
+    <label>Model</label>
+    <length>80</length>
+    <required>false</required>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>

@@ -261,6 +261,237 @@ private class LLMExtractionParserTest {
             'and the tuning value is simply absent, as it is on every legacy-shape response');
     }
 
+    // ── field_confidence (WS7, 2026-08-30) ────────────────────────────────────
+    //
+    // 🔴 WHAT THESE TESTS ARE REALLY FOR: PROVING THE PARSER NEVER THROWS ON THIS KEY.
+    // `field_confidence` is the NEWEST thing in the response schema, so it is the key the model
+    // is least reliable about — and it is read on the SAME parse that produces `broker_email` and
+    // `property_address`. An exception here would abort the routing transaction and cost a real
+    // broker a real claim over a review-queue nicety. Every degraded shape a model can plausibly
+    // emit therefore gets its own method below: absent, JSON null, a string, an array, an object
+    // of prose, an object of out-of-range numbers, a blank key, and 120 entries.
+    //
+    // ⚠ NOTHING HERE PROVES THE MODEL RETURNS THE KEY OR SCORES IT SENSIBLY. The model is mocked
+    // in every Apex test in this module. That half is UAT — see LLMExtractionCalloutService's WS7
+    // header block for the fixture it needs.
+
+    /** Parses a response carrying `field_confidence` set to `raw`, whatever shape that is. */
+    private static LLMExtractionResult parseFieldConfidence(Object raw) {
+        return LLMExtractionParser.parse(
+            JSON.serialize(new Map<String, Object>{ 'field_confidence' => raw }));
+    }
+
+    @isTest
+    static void parse_fieldConfidence_readsEveryEntryAndCountsThoseBelowMedium() {
+        LLMExtractionResult result = parseFieldConfidence(new Map<String, Object>{
+            'noi' => 0.92, 'property_address' => 0.99, 'year_built' => 0.40, 'cap_rate' => 0.10
+        });
+
+        Assert.areEqual(4, result.fieldConfidence.size(), 'All four scores should be read');
+        Assert.areEqual(0.92, result.fieldConfidence.get('noi'), 'The value must survive as a number');
+        Assert.areEqual(2, result.lowConfidenceFieldCount,
+            'Exactly the two entries below 0.60 (year_built and cap_rate) are what a human is being '
+            + 'asked to check — that count IS Low_Confidence_Field_Count__c and the whole filterable signal');
+    }
+
+    @isTest
+    static void parse_fieldConfidenceAtMediumThreshold_isNotCountedAsLow() {
+        LLMExtractionResult result = parseFieldConfidence(new Map<String, Object>{ 'noi' => 0.60 });
+        Assert.areEqual(0, result.lowConfidenceFieldCount,
+            'STRICTLY BELOW, matching toBand exactly: 0.60 bands MEDIUM on Parse_Confidence__c, so it '
+            + 'must not simultaneously count as a field needing review — one threshold, one answer');
+    }
+
+    @isTest
+    static void parse_fieldConfidenceJustBelowMediumThreshold_isCountedAsLow() {
+        LLMExtractionResult result = parseFieldConfidence(new Map<String, Object>{ 'noi' => 0.59 });
+        Assert.areEqual(1, result.lowConfidenceFieldCount,
+            'and the value one hundredth below it does count — the boundary is asserted from both '
+            + 'sides so a >= / > slip cannot pass');
+    }
+
+    @isTest
+    static void parse_fieldConfidenceCountUsesTheConfiguredMediumThreshold_notALiteral() {
+        // 🔴 THE WS5 COUPLING, ASSERTED RATHER THAN ASSUMED. The count must be derived from
+        // BrokerProtectionConfig.confidenceMediumMin() — the same number that makes a band MEDIUM —
+        // so ONE Setup value moves both and they can never disagree on the record. Deriving the
+        // fixture FROM the accessor is what makes this test still correct after an admin edits it;
+        // a hardcoded 0.60 here would silently re-pin the literal this workstream removed.
+        Decimal threshold = BrokerProtectionConfig.confidenceMediumMin();
+        LLMExtractionResult result = parseFieldConfidence(new Map<String, Object>{
+            'below' => threshold - 0.01, 'at' => threshold, 'above' => threshold + 0.01
+        });
+
+        Assert.areEqual(3, result.fieldConfidence.size(), 'Precondition: all three entries parsed');
+        Assert.areEqual(1, result.lowConfidenceFieldCount,
+            'Only the entry below the CONFIGURED threshold counts. If this fails after a Setup edit '
+            + 'to Confidence_Medium_Min__c, the count has been re-pinned to a literal somewhere');
+    }
+
+    @isTest
+    static void parse_fieldConfidenceAbsent_yieldsAnEmptyMapZeroCountAndNoNote() {
+        LLMExtractionResult result = LLMExtractionParser.parse('{}');
+
+        Assert.isNotNull(result.fieldConfidence,
+            'Absent must yield an EMPTY map, never null — callers iterate it without a guard');
+        Assert.isTrue(result.fieldConfidence.isEmpty(), 'and it must be empty');
+        Assert.areEqual(0, result.lowConfidenceFieldCount,
+            'No map means nothing to review, which correctly keeps the Lead OUT of the per-field '
+            + 'queue; whole-email doubt is still caught by Parse_Confidence__c = LOW');
+        Assert.isTrue(result.notes.isEmpty(),
+            '🔴 AND NO NOTE. A legacy-shape response and any older configured prompt legitimately '
+            + 'carry no such key — noting that on every one of them would push the parser\'s REAL '
+            + 'rejections off Deal_Notes__c. Same rule category_confidence already follows');
+    }
+
+    @isTest
+    static void parse_fieldConfidenceJsonNull_yieldsAnEmptyMapAndNoNote() {
+        // ⚠ HAND-WRITTEN JSON, NOT JSON.serialize. Serializing a map with a null value can emit
+        // the key or omit it depending on the shape, and an omitted key would silently turn this
+        // into a duplicate of the "absent" test above rather than the explicit-null case it is named
+        // for. The literal is the only way to be sure which shape the parser actually saw.
+        LLMExtractionResult result = LLMExtractionParser.parse(
+            '{"broker_email": "jane@brokerfirm.example.invalid", "field_confidence": null}');
+
+        Assert.areEqual('jane@brokerfirm.example.invalid', result.brokerEmail,
+            'Precondition: the response parsed, so parseEmailLevel really did reach the null key');
+        Assert.isTrue(result.fieldConfidence.isEmpty(), 'An explicit JSON null is the same as absent');
+        Assert.isTrue(result.notes.isEmpty(), 'and is equally unremarkable — no note for a key the model simply did not fill');
+    }
+
+    @isTest
+    static void parse_fieldConfidenceAsString_yieldsAnEmptyMapAndNeverThrows() {
+        LLMExtractionResult result = parseFieldConfidence('high');
+
+        Assert.isTrue(result.fieldConfidence.isEmpty(),
+            'A model that answers in prose must degrade to an empty map, not throw — this parse also '
+            + 'carries broker_email and property_address, and an exception here loses the claim');
+        Assert.isFalse(result.notes.isEmpty(),
+            'but a PRESENT-and-unusable value is a rejection, and every rejection reaches a human');
+    }
+
+    @isTest
+    static void parse_fieldConfidenceAsArray_yieldsAnEmptyMapAndNeverThrows() {
+        LLMExtractionResult result = parseFieldConfidence(new List<Object>{ 0.9, 0.2 });
+
+        Assert.isTrue(result.fieldConfidence.isEmpty(),
+            'An array is the other wrong-container the model can plausibly emit, and instanceof must '
+            + 'reject it rather than letting a ClassCastException escape');
+        Assert.isFalse(result.notes.isEmpty(), 'and it is noted');
+    }
+
+    @isTest
+    static void parse_fieldConfidencePartiallyMalformed_keepsTheGoodEntriesAndNotesTheRest() {
+        // THE REALISTIC FAILURE, and the reason this must be per-entry rather than all-or-nothing:
+        // a model gets most of a new key right and one entry wrong. Discarding the whole map over
+        // one bad value would throw away a working review signal.
+        LLMExtractionResult result = parseFieldConfidence(new Map<String, Object>{
+            'noi' => 0.92,
+            'cap_rate' => 'very sure',
+            'year_built' => 4.2,
+            'unit_count' => -1,
+            'zoning' => null,
+            'occupancy_pct' => 0.30
+        });
+
+        Assert.areEqual(2, result.fieldConfidence.size(),
+            'The two usable entries survive; prose, out-of-range, negative and null are all dropped');
+        Assert.areEqual(0.92, result.fieldConfidence.get('noi'), 'noi survives intact');
+        Assert.areEqual(1, result.lowConfidenceFieldCount,
+            'and the count is derived from what SURVIVED — a dropped entry is not silently counted as low');
+        Assert.areEqual(1, result.notes.size(),
+            '🔴 ONE AGGREGATE NOTE, NOT FOUR. MAX_NOTES is 60 and is shared with the parser\'s real '
+            + 'per-field rejections; a note per bad entry would let a junk field_confidence push a '
+            + 'rejected cap rate off the record entirely');
+        Assert.isTrue(result.notes[0].contains('cap_rate'),
+            'and it must name the dropped keys, or it diagnoses nothing. Actual: ' + result.notes[0]);
+    }
+
+    @isTest
+    static void parse_fieldConfidenceKeyCasing_isNormalizedSoTheStoredJsonIsStable() {
+        LLMExtractionResult result = parseFieldConfidence(new Map<String, Object>{ '  NOI  ' => 0.2 });
+
+        Assert.isTrue(result.fieldConfidence.containsKey('noi'),
+            'Keys are trimmed and lower-cased so the JSON written to Field_Confidence_JSON__c reads '
+            + 'the same whatever casing the model chose that day');
+        Assert.areEqual(1, result.lowConfidenceFieldCount, 'and the entry still counts');
+    }
+
+    @isTest
+    static void parse_fieldConfidenceBlankKey_isDroppedNotStored() {
+        LLMExtractionResult result = parseFieldConfidence(new Map<String, Object>{ '' => 0.2, 'noi' => 0.1 });
+
+        Assert.areEqual(1, result.fieldConfidence.size(), 'A nameless score identifies no field and is useless');
+        Assert.isTrue(result.fieldConfidence.containsKey('noi'), 'while the named one is kept');
+    }
+
+    @isTest
+    static void parse_fieldConfidenceOversizedMap_isBoundedBelowTheNumber2_0Ceiling() {
+        // 🔴 THIS IS A DML-SAFETY TEST, NOT A TIDINESS ONE. The count lands in
+        // Low_Confidence_Field_Count__c, which is Number(2,0): a value of 100 throws at DML and
+        // rolls back a COMMITTED CLAIM. The parser's 60-entry cap is what makes that unreachable,
+        // and 120 low scores is the shape that would otherwise reach it.
+        Map<String, Object> oversized = new Map<String, Object>();
+        for (Integer i = 0; i < 120; i++) {
+            oversized.put('field_' + i, 0.1);
+        }
+        LLMExtractionResult result = parseFieldConfidence(oversized);
+
+        Assert.areEqual(60, result.fieldConfidence.size(),
+            'The map is capped at MAX_FIELD_CONFIDENCE_ENTRIES (60), which is above the 38 keys the '
+            + 'response schema can actually produce and below the field ceiling');
+        Assert.isTrue(result.lowConfidenceFieldCount < 100,
+            'THE LOAD-BEARING ASSERTION: the count must never reach 100. Actual: '
+            + result.lowConfidenceFieldCount + '. If this fails, a Lead insert can now throw '
+            + 'and take a broker claim with it');
+        Assert.isFalse(result.notes.isEmpty(), 'and the 60 discarded entries are reported, not silently lost');
+    }
+
+    @isTest
+    static void parse_malformedJson_stillYieldsAnEmptyFieldConfidenceMapNotNull() {
+        LLMExtractionResult result = LLMExtractionParser.parse('{"field_confidence": [ truncated');
+
+        Assert.isNotNull(result.fieldConfidence,
+            'The empty-result path must also carry an empty map — a null here would NPE in '
+            + 'EmailToLeadService on exactly the responses that are already degraded');
+        Assert.areEqual(0, result.lowConfidenceFieldCount, 'and a count of zero');
+    }
+
+    @isTest
+    static void lowConfidenceFieldCount_nullMap_returnsZero() {
+        Assert.areEqual(0, LLMExtractionParser.lowConfidenceFieldCount(null),
+            'The helper is public and null-safe: a caller holding a null map gets 0, not an NPE');
+    }
+
+    @isTest
+    static void lowConfidenceFieldCount_emptyMap_returnsZero() {
+        Assert.areEqual(0, LLMExtractionParser.lowConfidenceFieldCount(new Map<String, Decimal>()),
+            'and an empty map means nothing to review');
+    }
+
+    @isTest
+    static void parse_fieldConfidence_doesNotDisturbTheConfidenceBandOrTheHardGateInput() {
+        // 🔴 THE NON-REGRESSION THE WHOLE WORKSTREAM TURNS ON. Parse_Confidence__c and
+        // ExtractAddressQueueable's >= 0.85 suppression gate both read the single top-level
+        // `confidence` and were required to be left EXACTLY as they are. A response whose
+        // per-field scores are uniformly terrible must still band on `confidence` alone.
+        LLMExtractionResult result = LLMExtractionParser.parse(JSON.serialize(new Map<String, Object>{
+            'confidence' => 0.95,
+            'category_confidence' => 0.20,
+            'field_confidence' => new Map<String, Object>{ 'noi' => 0.05, 'year_built' => 0.05 },
+            'is_acquisition_related' => false
+        }));
+
+        Assert.areEqual(0.95, result.confidence, 'confidence is still read from its own key');
+        Assert.areEqual(LLMExtractionParser.BAND_HIGH, result.confidenceBand,
+            'and still bands HIGH — two rock-bottom per-field scores must not drag the band down, or '
+            + 'WS7 would silently have changed which emails the hard gate suppresses');
+        Assert.areEqual(0.20, result.categoryConfidence,
+            'category_confidence is likewise untouched by the new key');
+        Assert.areEqual(2, result.lowConfidenceFieldCount,
+            'while the per-field signal reports both shaky fields — three independent answers, as designed');
+    }
+
     // ── currency (§3.4) ───────────────────────────────────────────────────────
 
     @isTest

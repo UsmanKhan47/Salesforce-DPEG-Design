@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomObject xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        WS5 (2026-08-30) — Broker Protection runtime configuration, moved out of Apex
+        constants per the user's explicit GATE A decision A1: "make the window configurable
+        as asked, and accept the retroactive-release risk", WITH the required mitigation
+        (see Protection_Window_Days__c and Lookback_Days__c field comments, and
+        PropertyMatchingService.cls's own header, for the full risk this accepts).
+
+        ═══ ONE TYPE, NOT TWO — DECISION AND JUSTIFICATION ═══
+        This bundles the numeric knobs (window/lookback/confidence/model/temperature/
+        max_tokens) AND the ~20KB prompt body into ONE type with ONE record
+        (DeveloperName = Default), rather than splitting config from prompt into two types.
+        Both shapes are defensible; one was chosen for three reasons:
+          1. agent-output/design-requirements.md §2/WS5 names BrokerProtectionConfig.cls as
+             "a single accessor with a static cache" reading one CMDT — matching that
+             shape needs one type, one record, one cache entry, not two coordinated reads.
+          2. The DEPLOY ORDERING CONSTRAINT the same section pins is: "__mdt type -> RUN
+             THE APEX LOADER -> only then the two BP_Expiry formula fields" (singular
+             "the record"). Two types would mean two loader runs and two existence checks
+             before Lead.BP_Expiry__c / Opportunity.BP_Expiry__c can safely deploy, for no
+             offsetting benefit — both types would still need to exist before those
+             formulas, so splitting buys no parallelism.
+          3. The §6 admin prompt this build follows literally names
+             "Broker_Protection_Config__mdt + 8 fields" as one type.
+        The counter-argument (separating the high-risk 19KB prompt text, edited by
+        developers doing prompt engineering, from the routine numeric knobs an admin tunes
+        in Setup, so the two are never visible on the same edit screen and could later get
+        different customMetadataTypeAccesses grants) is real and was weighed — but it is a
+        PERMISSION-SET-level concern, and this task is explicitly forbidden from touching
+        permission sets (see the field-level FLS handoff instead). If that separation is
+        ever wanted, splitting Extraction_Prompt__c into its own type later is a clean,
+        additive move (new type + new field + repoint the one accessor call site) — nothing
+        here forecloses it.
+
+        ═══ RECORDS ARE NOT DEPLOYABLE HERE ═══
+        .forceignore line 16 excludes **/customMetadata/** in this org (file-based CMDT
+        record deploy throws UNKNOWN_EXCEPTION here — same trap the Transaction task-groups
+        build hit). This file (the TYPE) and its fields/*.field-meta.xml files ARE deployed
+        normally; the single Default RECORD is loaded by an Apex script
+        (scripts/load-broker-protection-config.apex, not yet written — the developer/
+        technical-architect step that consumes this handoff owns it), following the exact
+        pattern of scripts/load-task-group-defs.apex, scripts/load-onboarding-task-defs.apex
+        and scripts/load-transaction-task-defs.apex in this same folder.
+
+        See agent-output/design-requirements.md §0/GATE A and §2/WS5 for the full workstream
+        context, and this build's own handoff (reported by the invoking agent) for the exact
+        record values the loader must write.
+    -->
+    <label>Broker Protection Config</label>
+    <pluralLabel>Broker Protection Configs</pluralLabel>
+    <visibility>Public</visibility>
+</CustomObject>

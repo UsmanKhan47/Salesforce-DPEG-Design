@@ -93,6 +93,46 @@
  *     wrapped by applyExtractionScore, which is where the mandatory fail-soft guarantee lives.
  *     🔴 A FAILURE THERE COSTS THE SCORE AND NOTHING ELSE — read applyExtractionScore's own
  *     comment before narrowing its catch or moving the try/catch into ExtractionScoreUtil.
+ *
+ * EXTENDED 2026-08-30 (WS7, per-field confidence) with a two-field pair — `Field_Confidence_JSON__c`
+ * and `Low_Confidence_Field_Count__c` — stamped by applyFieldConfidence in the SAME insert as
+ * everything above. NO NEW DML, NO NEW SOQL, NO NEW DESCRIBE: two more assignments on a record
+ * this method was already writing.
+ *
+ * 🔴 IT CHANGES NOTHING ABOUT `Parse_Confidence__c`. That band and ExtractAddressQueueable's
+ * `>= 0.85` suppression gate both read the single top-level `confidence` and are byte-identical
+ * after WS7. The new pair answers a DIFFERENT question — "which extracted values look shaky" —
+ * gates nothing, suppresses nothing, and drives one list-view filter.
+ *
+ * ═══ EXTENDED 2026-08-30 (WS8) — TWO SEPARATE CHANGES, BOTH IN THE SAME EXISTING INSERT ═══
+ *
+ * 1. THE INTAKE BROKER LINK — `Broker__c` (-> Contact) and `Broker_Firm__c` (-> Account),
+ *    stamped by applyBrokerLink from Ids the CALLER resolved. MATCH ONLY, NEVER CREATE: when the
+ *    sender's email resolves to an existing broker Contact both lookups are set; when it does not,
+ *    BOTH ARE LEFT BLANK. This class does not create a Contact, does not create an Account, and
+ *    does not derive a firm name from the email domain — record creation stays at conversion,
+ *    where LeadConvertMatchService and the platform's own convert already own it.
+ *    NO NEW DML, NO NEW SOQL, NO NEW QUERY OF ANY KIND HERE: the resolution is one query per
+ *    EMAIL, performed once by ExtractAddressQueueable, and this method receives two Ids.
+ *
+ *    🔴 GUARDED ON isCreateable(), FOR THE MEASURED REASON jsonWritable() DOCUMENTS AT LENGTH.
+ *    Both lookups are brand-new Metadata-API-deployed fields, which arrive with FLS for NOBODY —
+ *    System Administrator included. An unconditional write to them would not cost the broker link,
+ *    it would throw `System.DmlException: Operation failed due to fields being inaccessible on
+ *    Sobject Lead` and destroy every inbound email until a permission set catches up. Same trade,
+ *    same class, same answer as acquisitionBrokerRecordTypeId() and jsonWritable().
+ *
+ * 2. `Broker_First__c` IS NOW WRITTEN ON THE EMAIL CHANNEL AT ALL — a carried-over GAP FIX,
+ *    not a new feature. Until today this class had ZERO references to that field; only
+ *    BrokerPortalService wrote it (from `input.brokerageFirm`), so it was blank for every
+ *    genuinely email-born Lead. It holds the brokerage FIRM NAME, and WS6 has just made it the
+ *    "Broker" column on five Lead list views, where the org's primary intake channel would have
+ *    shown an empty column. (The 23 populated email-born Leads in `usman-dpeg` are SEED DATA and
+ *    were masking the gap — they were written by a script, not by this pipeline.)
+ *    It is set from `request.brokerCompany` — the SAME value that feeds `lead.Company` — and ONLY
+ *    when that value is non-blank, so COMPANY_PLACEHOLDER ('Unknown - Via Email') can never leak
+ *    into a broker column. See applyBrokerBlock for why that write is unguarded while the two
+ *    lookups above are guarded.
  */
 public with sharing class EmailToLeadService {
 
@@ -134,6 +174,10 @@ public with sharing class EmailToLeadService {
     private static final Integer LEN_DESCRIPTION = 32000;
     private static final Integer LEN_DEAL_NOTES = 32000;
     private static final Integer LEN_ZONING = 100;
+    /** `Field_Confidence_JSON__c` is LongTextArea(32768). The clip is a belt-and-braces backstop,
+     *  not the real bound: LLMExtractionParser caps the map at 60 entries, so the serialized
+     *  string is ~1.5KB at its worst. */
+    private static final Integer LEN_FIELD_CONFIDENCE_JSON = 32768;
 
     /** Standard Lead field lengths. */
     private static final Integer LEN_FIRST_NAME = 40;
@@ -173,6 +217,23 @@ public with sharing class EmailToLeadService {
         public String rawBody;
         /** The monitored inbox that forwarded the email → Forwarded_By_Email__c. */
         public String forwardedByEmail;
+        /**
+         * WS1 (2026-08-30) → `First_Seen_Date__c`. When the EMAIL ARRIVED, not when the routing
+         * job ran: `Inbound_Email_Staging__c.Received_DateTime__c` (the RFC `Date:` header) when
+         * it was readable, else that row's `CreatedDate`.
+         *
+         * 🔴 THE CALLER RESOLVES THE FALLBACK, NOT THIS CLASS, AND THERE IS DELIBERATELY NO
+         * SECOND ONE HERE. `ExtractAddressQueueable` does it once at the staging load. This class
+         * has no staging row to fall back to and inventing one (`Datetime.now()`) would put a
+         * second, divergent rule in a second layer — the exact drift the typed-values note on
+         * `createLeadFromExtracted` warns about.
+         *
+         * ⚠ NULL IS TOLERATED AND MEANS "let the platform decide". Leaving it null makes the
+         * `Lead_Intake_Stamp` flow stamp `Datetime.now()` on insert, which is the CORRECT and
+         * unchanged behaviour for the portal and manual channels. It is only the email channel
+         * that now supplies a value — and there it is guaranteed non-null by the caller.
+         */
+        public Datetime firstSeenDateTime;
 
         // ── enrichment: broker block ─────────────────────────────────────────
 
@@ -214,6 +275,34 @@ public with sharing class EmailToLeadService {
          *  RESTRICTED picklist — only HIGH / MEDIUM / LOW may be passed. */
         public String parseConfidence;
 
+        /**
+         * WS7 (2026-08-30) → `Field_Confidence_JSON__c`. Per-field extraction confidence, keyed
+         * by the model's own JSON key, valued 0–1. Serialized to JSON on the way out by
+         * `applyFieldConfidence`; null and empty both leave the field blank.
+         *
+         * ⚠ TYPED, NOT PRE-SERIALIZED, ON PURPOSE. Every other member of this DTO carries the
+         * typed value LLMExtractionParser produced and lets this class do the field-safety work
+         * on the way out — `createLeadFromExtracted`'s own contract. Passing a String would move
+         * the serialization into `ExtractAddressQueueable`, which calls this once PER PROPERTY,
+         * so the same map would be serialized up to MAX_PROPERTIES times per email.
+         *
+         * 🔴 PARSE_CONFIDENCE__C ABOVE IS UNTOUCHED BY THIS. The band and the `>= 0.85`
+         * suppression gate still read the single top-level `confidence`. These two members
+         * answer a different question and gate nothing.
+         */
+        public Map<String, Decimal> fieldConfidence;
+
+        /**
+         * WS7 (2026-08-30) → `Low_Confidence_Field_Count__c`, Number(2,0). How many
+         * `fieldConfidence` entries fall below the WS5 medium threshold — the FILTERABLE half of
+         * the pair, because a LongTextArea cannot be used in a list-view filter at all.
+         *
+         * Derived once per EMAIL by `LLMExtractionParser`, never recomputed here: this DTO is
+         * assembled once per PROPERTY, and re-deriving would repeat identical arithmetic up to
+         * ten times. Null is tolerated and leaves the field blank; 0 means "nothing to review".
+         */
+        public Integer lowConfidenceFieldCount;
+
         // ── the multi-property PORTFOLIO DEAL (2026-08-17) ────────────────────
 
         /**
@@ -241,6 +330,38 @@ public with sharing class EmailToLeadService {
          * to `BrokerPortalService`, which does not use this DTO at all.
          */
         public Id propertyPackageId;
+
+        // ── WS8 (2026-08-30): the INTAKE BROKER LINK, resolved once per EMAIL ─────
+
+        /**
+         * `Broker__c` — the EXISTING broker Contact this email's sender already is, or NULL when
+         * the sender resolves to no such Contact.
+         *
+         * 🔴 NULL IS A FIRST-CLASS ANSWER AND MUST STAY ONE. The user decision behind WS8 is
+         * "MATCH ONLY at intake": an unmatched sender leaves this blank. Do NOT add a
+         * create-the-Contact fallback here or in the caller — creation stays at conversion, where
+         * `LeadConvertMatchService` re-asks the same question against the Lead's own Email and the
+         * platform's convert mints the Contact under the right Account.
+         *
+         * ⚠ RESOLVED ONCE PER EMAIL, NOT PER PROPERTY, AND THIS DTO IS THE REASON THAT IS CHEAP.
+         * The sender is an EMAIL-level fact; this DTO is assembled once per PROPERTY. The caller
+         * memoises the single lookup and assigns the same Id to all N requests, so ten properties
+         * cost one SOQL, not ten. See ExtractAddressQueueable.resolveBrokerLink.
+         *
+         * ⚠ PAIRED WITH brokerFirmAccountId BY CONSTRUCTION. Both come from ONE Contact row
+         * (`Id` and `AccountId`) returned by a selector that filters `AccountId != null`, so they
+         * are both-set or both-null and can never name a Contact that does not belong to the
+         * Account. `LeadConvertMatchService` depends on exactly that.
+         */
+        public Id brokerContactId;
+
+        /**
+         * `Broker_Firm__c` — the brokerage Account that `brokerContactId`'s Contact belongs to, or
+         * NULL when there was no match. Never derived from the email domain, never a placeholder,
+         * and never read from anywhere but the matched Contact's own `AccountId`. See
+         * brokerContactId above for the pairing invariant.
+         */
+        public Id brokerFirmAccountId;
     }
 
     /**
@@ -286,6 +407,38 @@ public with sharing class EmailToLeadService {
      *
      * @return The Acquisition_Broker RecordTypeId, or null.
      */
+    /**
+     * THE ONE RULE FOR "WHICH EMAIL ADDRESS IS THIS BROKER" — extracted 2026-08-30 (WS8) from the
+     * expression that was inline in createLeadFromExtracted, with ZERO behaviour change.
+     *
+     * 🔴 IT WAS PROMOTED BECAUSE A SECOND CALLER NOW NEEDS THE SAME ANSWER, AND A COPY WOULD BE
+     * SUBTLY WRONG. `ExtractAddressQueueable` must resolve the sender to an existing broker Contact
+     * using the value that will actually land on `Lead.Email`, because `LeadConvertMatchService`
+     * matches `Contact.Email = Lead.Email` at conversion — if intake keyed on a different string,
+     * the two stages could disagree about who the broker is.
+     *
+     * The obvious copy is wrong in a way that is easy to miss: that class already carries
+     * `senderEmail`, which looks identical but is NOT. `senderEmail` prefers
+     * `extraction.brokerEmail` whenever it is merely NON-BLANK; this method prefers it only when it
+     * SANITIZES — so an extracted "email" that is really a display name ('Jane at Acme') makes
+     * `senderEmail` the display name while `Lead.Email` falls back to the envelope. `senderEmail`
+     * is correct for its own purpose (it names the sender on the logged Task) and must not be
+     * changed; it is simply the wrong key for a Contact lookup.
+     *
+     * PRECEDENCE, UNCHANGED: the LLM's `broker_email` beats the envelope, because on a MANUALLY
+     * forwarded email the envelope describes DPEG's own coordinator, not the broker. Both sides are
+     * sanitized, so a malformed value is a null rather than an INVALID_EMAIL_ADDRESS at DML.
+     *
+     * @param brokerEmail The LLM-extracted `broker_email`; may be null, blank or malformed.
+     * @param fromAddress The envelope From address; may be null, blank or malformed.
+     * @return The sanitized address to write to Lead.Email and to key the broker lookup on, or
+     *         null when neither value sanitizes.
+     */
+    public static String resolveBrokerEmail(String brokerEmail, String fromAddress) {
+        String extracted = InboundEmailFieldUtil.sanitizeEmail(brokerEmail);
+        return (extracted != null) ? extracted : InboundEmailFieldUtil.sanitizeEmail(fromAddress);
+    }
+
     public static Id acquisitionBrokerRecordTypeId() {
         Schema.RecordTypeInfo info = Lead.SObjectType.getDescribe()
             .getRecordTypeInfosByDeveloperName()
@@ -335,10 +488,7 @@ public with sharing class EmailToLeadService {
 
         applyName(lead, String.isNotBlank(request.brokerName) ? request.brokerName : request.fromName);
 
-        String brokerEmail = InboundEmailFieldUtil.sanitizeEmail(request.brokerEmail);
-        lead.Email = (brokerEmail != null)
-            ? brokerEmail
-            : InboundEmailFieldUtil.sanitizeEmail(request.fromAddress);
+        lead.Email = resolveBrokerEmail(request.brokerEmail, request.fromAddress);
 
         lead.Company = String.isNotBlank(request.brokerCompany)
             ? InboundEmailFieldUtil.clip(request.brokerCompany, LEN_COMPANY)
@@ -361,6 +511,26 @@ public with sharing class EmailToLeadService {
         applyPropertyBlock(lead, request.property);
 
         lead.Parse_Confidence__c = request.parseConfidence;
+        // WS7 (2026-08-30) — the PER-FIELD review signal, stamped in THIS insert alongside the
+        // whole-email band above. Two more fields on a record already being written: no extra
+        // DML, no extra SOQL, no describe.
+        applyFieldConfidence(lead, request);
+        // WS8 (2026-08-30) — the INTAKE BROKER LINK, stamped in THIS insert from two Ids the caller
+        // resolved with ONE query for the whole email. No SOQL here, no DML here, no describe that
+        // is not cached per transaction. MATCH ONLY: both Ids are null when the sender is a broker
+        // this org has never met, and that is the designed answer, not a gap to fill.
+        applyBrokerLink(lead, request);
+        // WS1 (2026-08-30) — WHEN THE EMAIL ARRIVED, replacing the flow's Datetime.now() for the
+        // email channel only. `Lead_Intake_Stamp` stamps First_Seen_Date__c only when it IsNull,
+        // so writing it here is what makes the flow leave it alone; leave it null (every other
+        // caller) and the flow behaves exactly as it always has. Assigning null on a brand-new
+        // Lead is a no-op, so no guard is needed — the same reasoning Portfolio_Deal__c below
+        // and Parse_Confidence__c above already rely on.
+        //
+        // ⚠ THIS FIELD IS DOWNSTREAM OF TWO OTHERS. `Lead.BP_Expiry__c` is this + 90 days and
+        // `Days_in_System__c` counts from it, so an earlier value here moves an email-born
+        // Lead's whole 90-day protection window earlier. That is the requested behaviour change.
+        lead.First_Seen_Date__c = request.firstSeenDateTime;
         // The multi-property portfolio deal (2026-08-17, Decision C1) — stamped AT INSERT so no Lead is
         // ever re-updated for it. Null on every single-property email, and assigning null is a
         // no-op on a brand-new Lead, so no guard is needed or wanted here (the same reasoning
@@ -406,6 +576,13 @@ public with sharing class EmailToLeadService {
      * `listingBrokerEmail` is sanitized rather than clipped: it is bound to an Email field,
      * where a malformed value throws INVALID_EMAIL_ADDRESS instead of merely truncating.
      *
+     * ⚠ SINCE 2026-08-30 (WS8) THIS METHOD ALSO WRITES `Broker_First__c`, THE BROKERAGE FIRM NAME.
+     * That is a gap fix, not an addition: this class had zero references to the field, so it was
+     * blank on every email-born Lead while the portal channel populated it. Read the guard comment
+     * at the assignment before touching it — the `isNotBlank` test is what keeps the required-field
+     * placeholder out of a display column, and it is not interchangeable with `lead.Company`'s
+     * fallback two methods up.
+     *
      * @param lead    The unsaved Lead to stamp.
      * @param request The source values.
      */
@@ -415,6 +592,124 @@ public with sharing class EmailToLeadService {
         lead.Title = InboundEmailFieldUtil.clip(request.brokerTitle, LEN_TITLE);
         lead.Listing_Broker_Name__c = InboundEmailFieldUtil.clip(request.listingBrokerName, LEN_TEXT);
         lead.Listing_Broker_Email__c = InboundEmailFieldUtil.sanitizeEmail(request.listingBrokerEmail);
+
+        // ── WS8 (2026-08-30) — THE BROKERAGE FIRM NAME, WRITTEN ON THIS CHANNEL FOR THE FIRST TIME.
+        //
+        // 🔴 THE `isNotBlank` GUARD IS THE WHOLE POINT, NOT A NULL CHECK. `lead.Company` above
+        // falls back to COMPANY_PLACEHOLDER ('Unknown - Via Email') because Company is a REQUIRED
+        // field and must never be blank. Broker_First__c is NOT required, is a display field, and
+        // is now the "Broker" column on five Lead list views (WS6) — so mirroring Company here
+        // would print 'Unknown - Via Email' into a broker column on every firm-unknown email.
+        // A BLANK CELL SAYS "we don't know the firm"; the placeholder says it in a way that looks
+        // like data and would be sorted, filtered and reported on as a firm name. Same reasoning
+        // LeadConvertMatchService's D1b makes about never Account-MATCHING on that literal.
+        //
+        // ⚠ SOURCED FROM `brokerCompany`, THE SAME MEMBER THAT FEEDS `lead.Company` — deliberately,
+        // so the two cannot drift. It is NOT sourced from the email domain, from
+        // `listingBrokerName`, or from the matched Contact's Account name: an inferred firm on a
+        // list-view column is worse than a blank, and the matched Account is already carried
+        // structurally by `Broker_Firm__c` (see applyBrokerLink).
+        //
+        // ⚠ UNGUARDED BY DESIGN, UNLIKE THE TWO LOOKUPS IN applyBrokerLink. Broker_First__c is NOT
+        // a new field: it has shipped since the portal channel, and `DPEG_Acquisition_Edit` — the
+        // set measured on 2026-08-30 as the one granting this pipeline's `Parse_Confidence__c`,
+        // `Deal_Notes__c` and `First_Seen_Date__c` — grants it editable today. This write is
+        // therefore exactly as exposed as the four unconditional writes already on this path, and
+        // `BrokerPortalService` has written it unconditionally on the portal channel all along. A
+        // describe guard here would imply a risk that the neighbouring lines already carry.
+        if (String.isNotBlank(request.brokerCompany)) {
+            lead.Broker_First__c = InboundEmailFieldUtil.clip(request.brokerCompany, LEN_TEXT);
+        }
+    }
+
+    /**
+     * Stamp the WS8 intake broker link — `Broker__c` (the existing broker Contact) and
+     * `Broker_Firm__c` (that Contact's brokerage Account).
+     *
+     * 🔴 MATCH ONLY. NEITHER FIELD IS EVER DERIVED, INFERRED OR CREATED HERE. Both Ids arrive
+     * already resolved from ONE query the caller ran for the whole email; when the sender matched
+     * nothing, both are null and both fields stay blank. That is the requested behaviour: a blank
+     * `Broker__c` means "this broker is not in our system yet", and CREATION HAPPENS AT CONVERSION,
+     * not at intake. Do not add a "create the Contact if missing" branch — it would put record
+     * creation inside an inbound-email transaction that must be able to fail without minting
+     * half a CRM, and it would race the same broker's other emails.
+     *
+     * 🔴 EACH WRITE IS GUARDED ON isCreateable(), AND THAT IS THE FIX FOR A MEASURED FAILURE —
+     * SEE jsonWritable() FOR THE FULL REPRODUCTION. Both fields are new Metadata-API-deployed
+     * lookups, so on the day WS8 deploys NO PRINCIPAL CAN WRITE THEM, System Administrator
+     * included (ARCHITECTURE.md §2). Measured on `usman-dpeg` 2026-08-30 with WS7's two fields in
+     * exactly this state: an unconditional assignment made `insert lead` throw
+     * `System.DmlException: Operation failed due to fields being inaccessible on Sobject Lead` and
+     * took 42 of 45 test methods with it — 38 of which had nothing to do with the new fields. In
+     * production that is not a missing link, it is NO LEAD, NO CLAIM AND NO BOUNCE for every
+     * inbound broker email until a permission set catches up.
+     * With the guard, a missing grant costs THE LINK AND NOTHING ELSE, and a later backfill can
+     * populate what was skipped from the Lead's own Email.
+     *
+     * ⚠ THE TWO GRANTS ARE ASKED SEPARATELY, NOT AS A PAIR — the same argument countWritable()
+     * makes: a permission-set deploy REPLACES its whole `fieldPermissions` block, so "one granted,
+     * one not" is a real state, and treating them as one question would throw away the half that
+     * was writable. A `Broker__c` with no `Broker_Firm__c` is still useful and is still handled
+     * correctly downstream: `LeadConvertMatchService` derives the Account from the Contact's own
+     * `AccountId`, not from this field.
+     *
+     * ⚠ ASSIGNING NULL WOULD BE A NO-OP ON A BRAND-NEW LEAD, so the null checks below are NOT
+     * about safety — they are about not paying for a describe on the overwhelmingly common
+     * no-match email. The describes are cached per transaction regardless.
+     *
+     * @param lead    The unsaved Lead to stamp.
+     * @param request The source values; `brokerContactId` and `brokerFirmAccountId` are read.
+     */
+    private static void applyBrokerLink(Lead lead, LeadRequest request) {
+        if (request.brokerContactId != null && brokerLinkWritable()) {
+            lead.Broker__c = request.brokerContactId;
+        }
+        if (request.brokerFirmAccountId != null && brokerFirmLinkWritable()) {
+            lead.Broker_Firm__c = request.brokerFirmAccountId;
+        }
+    }
+
+    /** Per-transaction answer for Broker__c; null until first asked. */
+    private static Boolean brokerLinkWritableCache;
+    /** Per-transaction answer for Broker_Firm__c; null until first asked. */
+    private static Boolean brokerFirmLinkWritableCache;
+
+    /**
+     * Can the running principal WRITE `Lead.Broker__c`? See applyBrokerLink for the decision and
+     * jsonWritable() for the measurement this guard exists because of — the reproduction, the
+     * isolation and the blast radius are all recorded there and are not repeated here.
+     *
+     * ⚠ CACHED PER TRANSACTION, NOT PER CALL, for the same reason its WS7 siblings are:
+     * ExtractAddressQueueable reaches this once PER PROPERTY, up to MAX_PROPERTIES times, and a
+     * describe is a schema read rather than SOQL — so the pinned QUERY_BUDGET and DML_BUDGET are
+     * untouched at any N.
+     *
+     * 🔴 PROVISIONING IS THE REAL FIX. `Lead.Broker__c` and `Lead.Broker_Firm__c` need Read + Edit
+     * on the permission set the intake principal holds (measured 2026-08-30: `DPEG_Acquisition_Edit`)
+     * plus Read on the Acquisition VIEW set, or this feature is silently OFF and nothing logs it.
+     * That grant is DECLARED to the P8 hub pass and is deliberately NOT made here — no permission
+     * set is edited by this change. Verify with FieldPermissions, never with a green deploy.
+     *
+     * @return True when the field may be written by the running principal.
+     */
+    private static Boolean brokerLinkWritable() {
+        if (brokerLinkWritableCache == null) {
+            brokerLinkWritableCache = Schema.SObjectType.Lead.fields.Broker__c.isCreateable();
+        }
+        return brokerLinkWritableCache;
+    }
+
+    /**
+     * Can the running principal WRITE `Lead.Broker_Firm__c`? Its twin — see brokerLinkWritable()
+     * and, for why the two are asked as separate questions rather than as one, applyBrokerLink.
+     *
+     * @return True when the field may be written by the running principal.
+     */
+    private static Boolean brokerFirmLinkWritable() {
+        if (brokerFirmLinkWritableCache == null) {
+            brokerFirmLinkWritableCache = Schema.SObjectType.Lead.fields.Broker_Firm__c.isCreateable();
+        }
+        return brokerFirmLinkWritableCache;
     }
 
     /**
@@ -520,6 +815,115 @@ public with sharing class EmailToLeadService {
             lead.Extraction_Score_Pct__c = blank.scorePct;
             return SCORE_FAILED_NOTE + ' ' + e.getMessage();
         }
+    }
+
+    /**
+     * Stamp the WS7 per-field confidence pair (2026-08-30) — the JSON map and the filterable
+     * count of its below-threshold entries.
+     *
+     * 🔴 THERE IS DELIBERATELY NO TRY/CATCH HERE, AND THAT IS AN ARGUMENT RATHER THAN AN
+     * OMISSION. `applyExtractionScore` above is wrapped because it calls out to a separate
+     * utility doing real arithmetic over nine nullable members. This does one thing —
+     * `JSON.serialize` of a `Map<String, Decimal>` — a shape with no reachable throw:
+     * serialization only fails on unsupported types, and both type parameters are primitives the
+     * serializer handles unconditionally. The one residual hazard is SIZE, and size is bounded
+     * TWICE and independently: `LLMExtractionParser` caps the map at 60 entries (~1.5KB
+     * serialized) and the clip below caps the string at the field's 32,768. A catch here would
+     * be unreachable in every test that could be written for it, which this repo has learned to
+     * treat as a defect in its own right rather than as free insurance.
+     *
+     * ⚠ AN EMPTY MAP WRITES NOTHING, NOT '{}'. A blank field reads as "no per-field signal",
+     * which is what an empty map means; a literal `{}` looks like data that says nothing and
+     * would show up as content in every report and detail page.
+     *
+     * ⚠ THE COUNT IS WRITTEN EVEN WHEN THE MAP IS EMPTY, and 0 is the correct answer there — it
+     * keeps the Lead OUT of the per-field review queue (`> 0`) while `Parse_Confidence__c = LOW`
+     * on the other side of that list view's OR still catches whole-email doubt. Assigning null
+     * on a brand-new Lead is a no-op, the same reasoning `Portfolio_Deal__c` relies on.
+     *
+     * @param lead    The unsaved Lead to stamp.
+     * @param request The source values; `fieldConfidence` and `lowConfidenceFieldCount` are read.
+     */
+    private static void applyFieldConfidence(Lead lead, LeadRequest request) {
+        if (jsonWritable() && request.fieldConfidence != null && !request.fieldConfidence.isEmpty()) {
+            lead.Field_Confidence_JSON__c = InboundEmailFieldUtil.clip(
+                JSON.serialize(request.fieldConfidence), LEN_FIELD_CONFIDENCE_JSON);
+        }
+        if (countWritable()) {
+            lead.Low_Confidence_Field_Count__c = request.lowConfidenceFieldCount;
+        }
+    }
+
+    /** Per-transaction answer for Field_Confidence_JSON__c; null until first asked. */
+    private static Boolean jsonWritableCache;
+    /** Per-transaction answer for Low_Confidence_Field_Count__c; null until first asked. */
+    private static Boolean countWritableCache;
+
+    /**
+     * Can the running principal WRITE Field_Confidence_JSON__c?
+     *
+     * 🔴 THIS GUARD IS NOT DEFENSIVE PROGRAMMING — IT IS THE FIX FOR A MEASURED, REPRODUCED
+     * FAILURE, AND REMOVING IT RE-BREAKS THE WHOLE INBOUND PIPELINE. Measured on `usman-dpeg`,
+     * 2026-08-30, by check-only deploy 0Afiw000000TjplCAC: with these two fields deployed and
+     * NO FieldPermissions row anywhere, `insert lead` on line ~450 throws
+     * `System.DmlException: Operation failed due to fields being inaccessible on Sobject Lead`
+     * and 42 of EmailToLeadServiceTest's 45 methods fail. It was isolated: the same tests pass
+     * 39/39 against the org, and pass 39/39 with the two FIELDS deployed but not WRITTEN — it is
+     * the WRITE that fails, not the field.
+     *
+     * That matters far beyond a test run. A Metadata-API-deployed field arrives with FLS for
+     * nobody, System Administrator included (ARCHITECTURE.md §2). So the DEFAULT state of this
+     * org on the day WS7 deploys is "no principal can write these two fields" — and without this
+     * guard, that state does not cost the review signal, it DESTROYS EVERY INBOUND BROKER EMAIL
+     * at the Lead insert: no Lead, no registry claim, no bounce. This repo has already lost six
+     * days to precisely that shape once (see this class's FLS incident history and
+     * InboundEmailAttachmentService's header), which is why an unconditional write to a
+     * newly-deployed field is not an acceptable pattern here.
+     *
+     * SAME PRECEDENT, SAME TRADE, SAME CLASS: acquisitionBrokerRecordTypeId()'s isAvailable()
+     * guard, twenty lines of argument above, resolves the identical question for RecordTypeId —
+     * "throws vs. doesn't set the field at all" — and chooses the recoverable answer. A missing
+     * grant here costs the per-field review signal on Leads created before it is fixed, and
+     * nothing else; the Lead, the claim and the email all survive, and a later backfill can
+     * populate what was skipped.
+     *
+     * 🔴 PROVISIONING IS STILL THE REAL FIX, AND THIS GUARD ONLY MAKES IT A TASK RATHER THAN AN
+     * INCIDENT. `Field_Confidence_JSON__c` and `Low_Confidence_Field_Count__c` need Read + Edit
+     * on whichever permission set the intake principal holds — measured 2026-08-30, that is
+     * `DPEG_Acquisition_Edit`, which is what grants `Parse_Confidence__c`, `Deal_Notes__c` and
+     * `First_Seen_Date__c` today. Until that lands, this feature is silently OFF and nothing
+     * logs it. Verify with FieldPermissions, never with a green deploy.
+     *
+     * ⚠ CACHED PER TRANSACTION, NOT PER CALL. ExtractAddressQueueable calls into this method once
+     * PER PROPERTY, up to MAX_PROPERTIES times; the describe is resolved once and reused, so the
+     * cost is two describes per transaction whatever the property count. Describes are schema
+     * reads, not SOQL — the pinned QUERY_BUDGET and DML_BUDGET are untouched.
+     *
+     * @return True when the field may be written by the running principal.
+     */
+    private static Boolean jsonWritable() {
+        if (jsonWritableCache == null) {
+            jsonWritableCache = Schema.SObjectType.Lead.fields.Field_Confidence_JSON__c.isCreateable();
+        }
+        return jsonWritableCache;
+    }
+
+    /**
+     * Can the running principal WRITE Low_Confidence_Field_Count__c? See jsonWritable() for the
+     * measurement, the precedent and the provisioning requirement — this is its twin.
+     *
+     * ⚠ ASKED SEPARATELY, NOT AS A PAIR. A half-granted permission set is a real state (a set
+     * deploy REPLACES its whole fieldPermissions block, so one field can be dropped and the other
+     * kept), and treating the pair as one question would throw away a signal that was actually
+     * writable. The two fields are independently useful to a reviewer.
+     *
+     * @return True when the field may be written by the running principal.
+     */
+    private static Boolean countWritable() {
+        if (countWritableCache == null) {
+            countWritableCache = Schema.SObjectType.Lead.fields.Low_Confidence_Field_Count__c.isCreateable();
+        }
+        return countWritableCache;
     }
 
     /**

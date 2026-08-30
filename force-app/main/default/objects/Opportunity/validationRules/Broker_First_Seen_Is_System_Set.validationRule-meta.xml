@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT, NOT IN <description>, AND IT MUST STAY THAT WAY.
+        ValidationRule.description is capped at 255 characters. The full rationale below is
+        operationally important, so it lives here rather than being trimmed; a comment is
+        repo-only and is never sent to the Metadata API. It is INSIDE the root element on
+        purpose - a comment ABOVE <ValidationRule> breaks `sf` deploy at conversion with the
+        misleading error "unable to find matching parent xml file". Same shape as the house
+        precedent, Contract_Signed_Before_Closed_Won, and its sibling on Lead.
+
+        =====================================================================
+        WHAT IT DOES AND WHY IT EXISTS HERE NOW (WS2, 2026-08-30).
+        =====================================================================
+        FSD Gap Tranche 1 §26 asks for "Broker First-Seen Timestamp is system-set and cannot
+        be edited", naming Opportunity.Broker_First_Seen__c. When the sibling Lead rule
+        (Lead.Broker_First_Seen_Is_System_Set) was built on 2026-08-16, a repo-wide grep
+        found NOTHING wrote this Opportunity field - no Apex writer, no Flow writer - so a
+        rule built here at that time would have permanently locked an already-blank field.
+        The rule was built on Lead.First_Seen_Date__c instead, as a deliberate, user-approved
+        re-target (see that file's own header for the full account).
+
+        WS2 changes the premise: LeadConvertService.applyDealFields now copies
+        Lead.First_Seen_Date__c into Opportunity.Broker_First_Seen__c on every conversion, so
+        this field is live for the first time. The FSD-named field now has a real writer, so
+        the rule the FSD originally asked for is built HERE, on the field it originally named,
+        alongside (not instead of) the Lead rule, which still protects Lead.First_Seen_Date__c
+        for Leads that are never converted or are still mid-funnel.
+
+        =====================================================================
+        THE FORMULA AND WHY EACH WRITER IS OR IS NOT CAUGHT.
+        =====================================================================
+        AND(ISCHANGED(Broker_First_Seen__c), NOT(ISBLANK(PRIORVALUE(Broker_First_Seen__c))))
+
+        🔴 CORRECTED 2026-08-30 (P7/WS6 admin pass) - THE PRECEDING VERSION OF THIS BLOCK
+        WRONGLY CLAIMED "ISCHANGED() is FALSE on record creation... this rule CANNOT fire on
+        insert." That is FALSE FOR THIS OBJECT and must not be re-introduced.
+
+        LeadConvertService.applyDealFields does NOT insert the Opportunity. By the time it
+        runs, Database.convertLead has already created the Opportunity; applyDealFields
+        mutates the already-existing record `o` in memory and adds it to the `updates` list,
+        which the service commits with a single `update updates;` (an UPDATE DML, not an
+        INSERT). ISCHANGED(Broker_First_Seen__c) is therefore TRUE on that write - the field
+        genuinely transitions from blank to a value on an update, not a creation.
+
+        THE RULE IS SAFE HERE ONLY BECAUSE OF THE SECOND CLAUSE,
+        NOT(ISBLANK(PRIORVALUE(Broker_First_Seen__c))). PRIORVALUE is blank on every first
+        conversion (the field has never been set before), so the second clause evaluates
+        FALSE, the AND() is FALSE, and the rule does not fire - not because ISCHANGED was
+        false, but because the prior value was blank. Writer-by-writer:
+
+        - Lead conversion (LeadConvertService.applyDealFields -> `update updates`): ISCHANGED
+          = TRUE, PRIORVALUE = blank -> second clause FALSE -> rule does not fire. Safe by the
+          PRIORVALUE clause, not by ISCHANGED.
+        - Manual edit / inline edit / API write / Data Loader change to an ALREADY-STAMPED
+          Opportunity: ISCHANGED = TRUE, PRIORVALUE = populated -> both clauses TRUE -> rule
+          fires, and correctly - this is the population the rule exists to protect once
+          conversion has set it.
+        - Seed scripts that write this field directly (scripts/seed-deal.apex,
+          scripts/seed-fsd-06-volume-pipeline.apex) perform a genuine INSERT, so ISCHANGED is
+          FALSE there and the rule cannot fire regardless of PRIORVALUE - this is the only
+          writer for which the retired "insert" reasoning was ever actually true.
+
+        WHY THE DISTINCTION MATTERS ENOUGH TO CORRECT: a future reader who "simplified" this
+        formula to ISCHANGED(Broker_First_Seen__c) alone - on the retired comment's own stated
+        reasoning that conversion is an insert and therefore already exempt - would produce a
+        formula that is FALSE for this writer too, since conversion is in fact an UPDATE and
+        ISCHANGED is TRUE on it. That simplified rule WOULD fire on every Lead conversion, and
+        because `update updates` in LeadConvertService is deliberately ALL-OR-NONE, one
+        validation-rule failure rolls back every Opportunity in that `update updates` call -
+        i.e. every conversion in the chunk, not just the one that tripped it.
+
+        =====================================================================
+        BYPASS: DELIBERATELY NONE, MIRRORING THE LEAD RULE'S ACCEPTED DECISION.
+        =====================================================================
+        The rule's entire purpose is anti-tampering. An admin bypass re-opens the field for
+        exactly the population most able to tamper with it, and a genuine data correction has
+        an auditable path already (deactivate this rule, correct the value, reactivate). If a
+        bypass is ever added, it MUST be a Custom Permission checked via
+        {!$Permission.CustomPermission.<Name>} - never a reference to a User field. A rule
+        bound to a field evaluates FALSE for anyone lacking FLS READ on that field, silently,
+        with no error and no log.
+
+        =====================================================================
+        FLS AND THIS RULE ARE COMPLEMENTARY, NOT ALTERNATIVES.
+        =====================================================================
+        Removing Broker_First_Seen__c edit FLS from a profile/permission set stops that
+        persona from editing it in the UI, but does nothing about a Data Loader run or an API
+        call by a user who DOES hold the FLS grant. This validation rule is what closes that
+        gap; it runs in system context regardless of the running user's FLS.
+    -->
+    <fullName>Broker_First_Seen_Is_System_Set</fullName>
+    <active>true</active>
+    <description>Blocks changing Broker_First_Seen__c once stamped at Lead conversion. Starts the broker protection window (BP_Expiry__c); window length comes from Broker_Protection_Config__mdt, not a literal. Must not be hand-edited afterward. See XML comment.</description>
+    <errorConditionFormula>AND(
+    ISCHANGED(Broker_First_Seen__c),
+    NOT(ISBLANK(PRIORVALUE(Broker_First_Seen__c)))
+)</errorConditionFormula>
+    <errorDisplayField>Broker_First_Seen__c</errorDisplayField>
+    <errorMessage>Broker First Seen is set automatically at Lead conversion and cannot be changed afterward. It drives the broker protection window.</errorMessage>
+</ValidationRule>

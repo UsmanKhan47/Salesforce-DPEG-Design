@@ -1305,6 +1305,133 @@ private class ExtractAddressQueueableTest {
     }
 
     @isTest
+    static void execute_fieldConfidence_reachesEveryLeadAndCostsNoPerPropertyGovernor() {
+        // WS7 (2026-08-30) — the carry-through, asserted at N = MAX_PROPERTIES because that is the
+        // only volume at which a per-property cost would be visible.
+        //
+        // 🔴 THE BUDGETS BELOW ARE THE SAME LITERALS AS
+        // execute_tenPropertyEmail_routesEveryPropertyAndStaysInsideTheGovernorBudget, AND THAT IS
+        // THE POINT OF THE TEST. WS7 added two DTO assignments to createLead, which runs once per
+        // property; if either of them ever acquires a query, a describe or a second DML, this
+        // equality fails at 45 and the ceiling fails at 120 — HERE, at N=10 in a test, rather than
+        // in production at N=8 against the async caps of 200 and 150.
+        final Integer QUERY_BUDGET = 120;   // async cap is 200 — identical to the N=10 test above
+        final Integer DML_BUDGET = 45;      // async cap is 150 — EQUALITY, identical to that test
+
+        Map<String, Object> emailLevel = new Map<String, Object>{
+            'broker_name' => 'Volume Broker',
+            'broker_email' => 'confidence.broker@example.invalid',
+            'is_acquisition_related' => true,
+            'confidence' => 0.95,
+            'sent_datetime' => '',
+            // Two shaky fields and one solid one — the count must come back 2, not 3 and not 0.
+            'field_confidence' => new Map<String, Object>{
+                'property_address' => 0.99, 'noi' => 0.30, 'year_built' => 0.10
+            }
+        };
+        List<Map<String, Object>> properties = new List<Map<String, Object>>();
+        for (String address : addresses(10)) {
+            properties.add(new Map<String, Object>{ 'property_address' => address });
+        }
+        Inbound_Email_Staging__c staging = insertStaging(
+            'confidence.broker@example.invalid', 'forwarder-ws7@example.invalid',
+            'FW: 10-property portfolio with per-field confidence', 'portfolio body',
+            'msg-ws7-fieldconf@example.invalid', null, null);
+        Test.setMock(HttpCalloutMock.class, new LLMExtractionCalloutMock(
+            200, LLMExtractionCalloutMock.enrichedBody(emailLevel, properties)));
+
+        Test.startTest();
+        System.enqueueJob(new ExtractAddressQueueable(staging.Id, null, null));
+        Test.stopTest();
+
+        List<Lead> routed = [
+            SELECT Id, Parse_Confidence__c FROM Lead WHERE Property_Address__c LIKE '%Multi St'
+        ];
+        Assert.areEqual(10, routed.size(), 'Precondition: all ten properties routed');
+        for (Lead lead : routed) {
+            Assert.areEqual(LLMExtractionParser.BAND_HIGH, lead.Parse_Confidence__c,
+                '🔴 WHILE THE WHOLE-EMAIL BAND STAYS HIGH. confidence is 0.95 and two per-field scores '
+                + 'are near zero: if this ever reads MEDIUM or LOW, the per-field map has leaked into '
+                + 'the band that drives the >= 0.85 suppression gate, which WS7 was required not to touch');
+        }
+
+        // ⚠ FLS-BRANCHED, INCLUDING THE QUERY ITSELF. See EmailToLeadService.jsonWritable(): with no
+        // FieldPermissions row the WRITE is skipped by design AND a plain SELECT of the field throws
+        // "No such column" (measured, check-only 0Afiw000000TjwDCAS). Everything above — ten Leads,
+        // ten registry rows, ten HIGH bands, and the two budgets below — is asserted unconditionally,
+        // which is the half that must hold in every org.
+        if (Schema.SObjectType.Lead.fields.Field_Confidence_JSON__c.isAccessible()
+                && Schema.SObjectType.Lead.fields.Field_Confidence_JSON__c.isCreateable()) {
+            for (Lead lead : [
+                SELECT Field_Confidence_JSON__c FROM Lead WHERE Property_Address__c LIKE '%Multi St'
+            ]) {
+                Map<String, Object> stored =
+                    (Map<String, Object>) JSON.deserializeUntyped(lead.Field_Confidence_JSON__c);
+                Assert.areEqual(3, stored.size(),
+                    'EVERY Lead the email mints carries the email-level map. The map is deliberately '
+                    + 'email-level rather than per-property — see LLMExtractionResult.fieldConfidence '
+                    + 'for why, and for what changing that would take');
+            }
+        }
+        if (Schema.SObjectType.Lead.fields.Low_Confidence_Field_Count__c.isAccessible()
+                && Schema.SObjectType.Lead.fields.Low_Confidence_Field_Count__c.isCreateable()) {
+            for (Lead lead : [
+                SELECT Low_Confidence_Field_Count__c FROM Lead WHERE Property_Address__c LIKE '%Multi St'
+            ]) {
+                Assert.areEqual(2, lead.Low_Confidence_Field_Count__c,
+                    'and the count of entries below the configured MEDIUM threshold — noi and '
+                    + 'year_built, not property_address');
+            }
+        }
+
+        Assert.isTrue(ExtractAddressQueueable.lastRunQueryCount <= QUERY_BUDGET,
+            'GOVERNOR HEADROOM, WS7: 10 properties consumed ' + ExtractAddressQueueable.lastRunQueryCount
+            + ' SOQL queries against the unchanged budget of ' + QUERY_BUDGET + '. Carrying two values '
+            + 'that were already in memory must cost nothing — if this fails, the confidence pair is '
+            + 'being re-derived or re-read inside the per-property loop.');
+        Assert.areEqual(DML_BUDGET, ExtractAddressQueueable.lastRunDmlCount,
+            'AND THE DML COUNT IS UNMOVED AT EXACTLY ' + DML_BUDGET + '. Both fields are stamped in the '
+            + 'Lead insert that already existed. A second statement per property would read 55 here.');
+        Assert.isTrue(ExtractAddressQueueable.lastRunQueryCount > 0,
+            'Sanity: the telemetry was captured INSIDE the async context — Limits.getQueries() read '
+            + 'after Test.stopTest() reflects the pre-test counters and would be silently vacuous');
+    }
+
+    @isTest
+    static void execute_responseWithoutFieldConfidence_stillRoutesAndLeavesTheSignalBlank() {
+        // 🔴 THE STATE EVERY ORG IS IN UNTIL scripts/load-broker-protection-config.apex IS RE-RUN.
+        // Since WS5 the live prompt is the CMDT record, so an org seeded before the WS7 prompt edit
+        // keeps sending the old prompt and the model returns no `field_confidence` at all. That must
+        // route exactly as it always has — the feature absent, not the pipeline broken.
+        Inbound_Email_Staging__c staging = insertStaging(
+            'noconf.broker@example.invalid', 'forwarder-ws7b@example.invalid',
+            'FW: 700 No Confidence Way', 'body',
+            'msg-ws7-noconf@example.invalid', null, null);
+        setPropertiesMock('noconf.broker@example.invalid', new List<String>{ '700 No Confidence Way' });
+
+        Test.startTest();
+        System.enqueueJob(new ExtractAddressQueueable(staging.Id, null, null));
+        Test.stopTest();
+
+        Id leadId = [
+            SELECT Result_Record_Id__c FROM Inbound_Email_Staging__c WHERE Id = :staging.Id
+        ].Result_Record_Id__c;
+        Assert.isNotNull(leadId, 'The email must still produce a Lead — a missing key is not an error');
+        if (Schema.SObjectType.Lead.fields.Field_Confidence_JSON__c.isAccessible()) {
+            Assert.isNull(
+                [SELECT Field_Confidence_JSON__c FROM Lead WHERE Id = :leadId].Field_Confidence_JSON__c,
+                'with no per-field JSON — the model returned no map to write');
+        }
+        if (Schema.SObjectType.Lead.fields.Low_Confidence_Field_Count__c.isAccessible()
+                && Schema.SObjectType.Lead.fields.Low_Confidence_Field_Count__c.isCreateable()) {
+            Assert.areEqual(0,
+                [SELECT Low_Confidence_Field_Count__c FROM Lead WHERE Id = :leadId].Low_Confidence_Field_Count__c,
+                'and a count of 0, which keeps it out of the per-field review queue rather than '
+                + 'flooding that queue with every Lead in a not-yet-reloaded org');
+        }
+    }
+
+    @isTest
     static void execute_fifteenProperties_truncatesVisiblyAtTheCap() {
         // §7 item 2. Truncation must be VISIBLE in three independent places, because the whole
         // design principle is that dropping a broker's property silently is unacceptable.
@@ -4388,8 +4515,16 @@ private class ExtractAddressQueueableTest {
         // 🔴 THE WIRING TEST FOR THE FIELD THAT REPLACED A PROXY, AND THE FIXTURE IS BUILT SO THAT
         // A PROXY CANNOT PASS IT. The stated send time is over three months before this test runs,
         // so `Date.today()`, the Opportunity's CreatedDate (created seconds ago by
-        // registerConvertedWinner) and Broker_First_Seen__c (null) are ALL different from the
-        // expected value. Only reading extraction.sent_datetime produces it.
+        // registerConvertedWinner) and Broker_First_Seen__c are ALL different from the expected
+        // value. Only reading extraction.sent_datetime produces it.
+        //
+        // ⚠ CORRECTED 2026-08-30 (WS2): this note used to say Broker_First_Seen__c was "(null)".
+        // It is no longer null on this fixture. `registerConvertedWinner` CONVERTS its Lead, and
+        // `LeadConvertService.applyDealFields` now copies `Lead.First_Seen_Date__c` onto
+        // `Opportunity.Broker_First_Seen__c` at conversion — and `flows/Lead_Intake_Stamp` stamps
+        // that Lead field on insert — so the field holds roughly NOW. The fixture is UNWEAKENED by
+        // that: "roughly now" is further from the 2026-05-04 expected value than null was, so a
+        // proxy reading it still cannot pass. The assertions below are unchanged.
         //
         // ⚠ 12:00:00 GMT ON PURPOSE. `parseSentDatetime` parses GMT and the stamp takes `.date()`
         // in the running user's zone; midday keeps the calendar date identical for any offset from
@@ -4439,8 +4574,20 @@ private class ExtractAddressQueueableTest {
             'and it is emphatically NOT "today" — a stamp that quietly used the clock would pass a '
             + 'weaker version of this test every day of the year');
         Assert.areNotEqual(stamped.CreatedDate.date(), stamped.Call_For_Offers_Received_Date__c,
-            'nor the deal\'s own creation date, which is what the retired proxy actually resolved '
-            + 'to in production (nothing in this repo writes Broker_First_Seen__c)');
+            'nor the deal\'s own creation date, which is what the retired proxy resolved to in '
+            + 'production for as long as nothing wrote Broker_First_Seen__c — true until WS2 '
+            + '(2026-08-30), after which conversion writes it and the proxy takes its OTHER leg. '
+            + 'Either way it is not this field');
+        // 🔴 ADDED 2026-08-30 (WS2) — THE PROXY LEG THAT WENT LIVE. Until WS2 nothing wrote
+        // Broker_First_Seen__c, so this assertion would have been vacuous (null != a real date,
+        // trivially). Conversion now populates it, which makes it a real second falsifier: a
+        // future edit that re-coalesced the received date onto the deal-arrival proxy would now
+        // produce a PLAUSIBLE date instead of a null, and only this line would catch it.
+        Assert.areNotEqual(stamped.Broker_First_Seen__c?.date(),
+            stamped.Call_For_Offers_Received_Date__c,
+            'and NOT the broker-first-seen date either. That field is populated on this fixture '
+            + 'now (conversion copies Lead.First_Seen_Date__c into it), so a received date equal '
+            + 'to it means the demoted proxy has been coalesced back in');
     }
 
     @isTest
@@ -5213,5 +5360,462 @@ private class ExtractAddressQueueableTest {
         Assert.areEqual(0, [SELECT COUNT() FROM Portfolio_Deal__c],
             'No callout means no work-list means no portfolio deal (residual R3). The remedy, if this ever '
             + 'matters, is a change to branch (a) — not to the portfolio deal gate');
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // WS1 (2026-08-30) — FIRST SEEN IS WHEN THE EMAIL ARRIVED, NOT WHEN THIS JOB RAN
+    //
+    // This class is where the two halves meet: the staging row carries
+    // `Received_DateTime__c` (possibly null), and this job resolves the fallback to the row's
+    // `CreatedDate` ONCE, then hands the result to every Lead the email produces.
+    //
+    // 🔴 WHY `Test.setCreatedDate` IS USED HERE AND WHY THE TESTS WOULD BE VACUOUS WITHOUT IT.
+    // Inside one test transaction, `CreatedDate`, `Datetime.now()` and the job's clock are all
+    // within milliseconds of each other — so "First_Seen_Date__c is roughly now" is satisfied
+    // identically by the new behaviour, by the OLD behaviour, and by the Lead_Intake_Stamp flow
+    // stamping it because a null reached the Lead. Backdating the staging row to 2026-06-01
+    // makes the three answers numerically far apart, which is the only thing that turns these
+    // into real falsifiers.
+    //
+    // ⚠ NO 251-RECORD BULK TEST, PER .claude/rules/bulk-test-rule.md's NARROWED C-18 SCOPE — the
+    // reasoning is stated once at the top of the MAX_PROPERTIES section above and is not repeated
+    // here. The volume dimension of WS1 is the third test below: N Leads from ONE email must all
+    // carry ONE first-seen value, which is the claim that would break if a future refactor moved
+    // the fallback resolution inside the per-property loop.
+    //
+    // ⚠ GOVERNOR HEADROOM IS NOT RE-ASSERTED HERE, DELIBERATELY. WS1 adds ZERO queries and ZERO
+    // DML — `Received_DateTime__c` and `CreatedDate` ride the SELECT `selectById` already
+    // performs, and the value rides the Lead insert that already happens. The existing
+    // `execute_tenPropertyEmail_routesEveryPropertyAndStaysInsideTheGovernorBudget` is the guard:
+    // its EQUALITY assertion on DML_BUDGET (45) and its ceiling on QUERY_BUDGET (120) both go red
+    // if that ever stops being true, and duplicating them here would only mean two numbers to
+    // re-pin instead of one.
+    // ═════════════════════════════════════════════════════════════════════════
+
+    /**
+     * The staging row's backdated CreatedDate, far enough from "now" to be unmistakable.
+     *
+     * ⚠ RELATIVE TO TODAY, NOT AN ABSOLUTE LITERAL, AND THE MILLISECONDS ARE EXPLICITLY ZERO.
+     * Two separate reasons, both learned the hard way in this repo:
+     *   • A hardcoded calendar date drifts out from under the 90-day protection window as the
+     *     org ages, so a test that is a clean winner-path case today becomes an expired-window
+     *     case next quarter and fails for a reason that has nothing to do with what it asserts.
+     *   • Zero milliseconds keeps the EQUALITY assertions safe against any second-granularity
+     *     rounding anywhere between `Test.setCreatedDate`, the SELECT and the Lead field.
+     * Three days is far more than the microseconds separating CreatedDate, Datetime.now() and
+     * the job clock inside one test transaction, which is all the separation these tests need.
+     */
+    private static final Datetime WS1_STAGING_CREATED =
+        Datetime.newInstanceGmt(Date.today().addDays(-3), Time.newInstance(8, 0, 0, 0));
+    /** The parsed RFC Date header, deliberately DIFFERENT from WS1_STAGING_CREATED. */
+    private static final Datetime WS1_HEADER_RECEIVED =
+        Datetime.newInstanceGmt(Date.today().addDays(-5), Time.newInstance(16, 45, 10, 0));
+
+    @isTest
+    static void execute_stagingCarriesReceivedDateTime_stampsItAsTheLeadFirstSeen() {
+        Inbound_Email_Staging__c staging = insertStaging(
+            'jane@brokerfirm.example.invalid', 'forwarder@example.invalid',
+            'FW: 700 Received St', 'forwarded body',
+            'msg-ws1-received@example.invalid', null, null);
+        staging.Received_DateTime__c = WS1_HEADER_RECEIVED;
+        update staging;
+        Test.setCreatedDate(staging.Id, WS1_STAGING_CREATED);
+        setMock(new Map<String, String>{
+            'broker_name' => 'Jane Broker', 'broker_email' => 'jane@brokerfirm.example.invalid',
+            'property_address' => '700 Received St', 'sent_datetime' => '2026-05-30 16:45:10'
+        });
+
+        Test.startTest();
+        System.enqueueJob(new ExtractAddressQueueable(staging.Id, null, null));
+        Test.stopTest();
+
+        Id leadId = [SELECT Result_Record_Id__c FROM Inbound_Email_Staging__c WHERE Id = :staging.Id]
+            .Result_Record_Id__c;
+        Lead created = [SELECT First_Seen_Date__c FROM Lead WHERE Id = :leadId];
+        Assert.areEqual(WS1_HEADER_RECEIVED, created.First_Seen_Date__c,
+            'The header time must WIN over both the row CreatedDate and this job\'s own clock. That is the '
+            + 'entire feature: before WS1 this field was Datetime.now() inside THIS async job, i.e. after '
+            + 'the LLM callout, so a broker\'s 90-day window started late by the extraction latency');
+        Assert.areNotEqual(WS1_STAGING_CREATED, created.First_Seen_Date__c,
+            'Sanity on the precedence: if this equals the backdated CreatedDate then the fallback is being '
+            + 'taken unconditionally and Received_DateTime__c is not being read at all');
+    }
+
+    @isTest
+    static void execute_stagingWithoutReceivedDateTime_fallsBackToTheRowCreatedDate() {
+        // The ordinary shape for every email whose Date header was absent or unreadable — and for
+        // EVERY staging row written before WS1 deployed, none of which are backfilled.
+        Inbound_Email_Staging__c staging = insertStaging(
+            'jane@brokerfirm.example.invalid', 'forwarder@example.invalid',
+            'FW: 701 Fallback St', 'forwarded body',
+            'msg-ws1-fallback@example.invalid', null, null);
+        Test.setCreatedDate(staging.Id, WS1_STAGING_CREATED);
+        setMock(new Map<String, String>{
+            'broker_name' => 'Jane Broker', 'broker_email' => 'jane@brokerfirm.example.invalid',
+            'property_address' => '701 Fallback St', 'sent_datetime' => '2026-06-01 08:00:00'
+        });
+
+        Test.startTest();
+        System.enqueueJob(new ExtractAddressQueueable(staging.Id, null, null));
+        Test.stopTest();
+
+        Id leadId = [SELECT Result_Record_Id__c FROM Inbound_Email_Staging__c WHERE Id = :staging.Id]
+            .Result_Record_Id__c;
+        Lead created = [SELECT First_Seen_Date__c FROM Lead WHERE Id = :leadId];
+        Assert.areEqual(WS1_STAGING_CREATED, created.First_Seen_Date__c,
+            'A null Received_DateTime__c must fall back to the staging row CreatedDate — the moment the '
+            + 'email landed, which is still far better than this job\'s clock. 🔴 IF THIS READS "NOW" '
+            + 'INSTEAD, a null reached the Lead and Lead_Intake_Stamp silently stamped Datetime.now(): '
+            + 'WS1 has reverted for every header-less email, with no error anywhere');
+    }
+
+    @isTest
+    static void execute_tenPropertyEmail_everyLeadCarriesTheSameFirstSeen() {
+        // ONE email, N Leads, ONE arrival time. This is the assertion that goes red if the
+        // fallback resolution is ever moved inside the per-property loop: N slightly different
+        // protection windows for one email is a data defect no user would ever report, because
+        // each individual Lead would look perfectly reasonable on its own.
+        Inbound_Email_Staging__c staging = insertStaging(
+            'blast.broker@example.invalid', 'forwarder21@example.invalid',
+            'FW: 10-property portfolio', 'portfolio body',
+            'msg-ws1-multi@example.invalid', null, null);
+        staging.Received_DateTime__c = WS1_HEADER_RECEIVED;
+        update staging;
+        Test.setCreatedDate(staging.Id, WS1_STAGING_CREATED);
+        setPropertiesMock('blast.broker@example.invalid', addresses(10));
+
+        Test.startTest();
+        System.enqueueJob(new ExtractAddressQueueable(staging.Id, null, null));
+        Test.stopTest();
+
+        List<Lead> routed = [
+            SELECT First_Seen_Date__c FROM Lead WHERE Property_Address__c LIKE '%Multi St'
+        ];
+        Assert.areEqual(10, routed.size(),
+            'Precondition: all ten properties must have routed, or the loop below proves nothing');
+        Set<Datetime> distinct = new Set<Datetime>();
+        for (Lead routedLead : routed) {
+            distinct.add(routedLead.First_Seen_Date__c);
+        }
+        Assert.areEqual(1, distinct.size(),
+            'All ten Leads from ONE email must share ONE First_Seen_Date__c. Distinct values found: '
+            + distinct);
+        Assert.areEqual(WS1_HEADER_RECEIVED, new List<Datetime>(distinct)[0],
+            'And that one value must be the email\'s received time, not the job\'s clock');
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════════════════════
+    // WS8 (2026-08-30) — THE INTAKE BROKER MATCH
+    //
+    // The user decision this section pins: MATCH ONLY at intake. A sender who resolves to an
+    // existing broker Contact gets `Lead.Broker__c` / `Lead.Broker_Firm__c`; a sender who does
+    // not gets BLANKS. No Contact is created, no Account is created, and no firm is derived from
+    // the email domain — creation stays at conversion.
+    //
+    // 🔴 THE GOVERNOR PROPERTY IS THE HARD ONE AND IT NEEDS ITS OWN COUNTER. The sender is an
+    // EMAIL-level fact read once per job, but `createLead` runs once per PROPERTY. The pinned
+    // QUERY budgets (30 at N=1, 120 at N=10) are CEILINGS with tens of queries of slack, so a
+    // change that moved this read inside the loop would add nine queries and pass all of them.
+    // `lastRunBrokerLookupCount` is asserted as an EQUALITY of 1 at N = MAX_PROPERTIES for
+    // exactly that reason. See `.claude/rules/bulk-test-rule.md`'s narrowed scope: this class is
+    // de-exempted and owes MAX_PROPERTIES-volume + named-budget headroom rather than a literal
+    // 251, which `System.enqueueJob`'s 50-call cap and the SOQL limit both make unreachable.
+    // ═════════════════════════════════════════════════════════════════════════════════════════
+
+    /** True when the running principal can READ both WS8 lookups (see EmailToLeadService). */
+    private static Boolean brokerLinkReadable() {
+        return Schema.SObjectType.Lead.fields.Broker__c.isAccessible()
+            && Schema.SObjectType.Lead.fields.Broker_Firm__c.isAccessible();
+    }
+
+    /**
+     * A broker Contact on the `Contact.Broker` record type carrying an EXACT email, optionally
+     * under a firm Account.
+     *
+     * ⚠ INSERTED THROUGH `TestDataFactory.insertAllowingDuplicates`, not a plain `insert`. This org
+     * has an ACTIVE Contact duplicate rule — it is the rule that produced the 2026-08-02
+     * DUPLICATES_DETECTED incident `LeadConvertMatchService` exists because of — and these fixtures
+     * deliberately pin an email a sibling test may also use.
+     *
+     * @param accountId The firm Account, or null for the deliberately ORPHAN case.
+     * @param email     The exact address the sender will be matched on.
+     * @return The inserted broker Contact.
+     */
+    private static Contact brokerContactWithEmail(Id accountId, String email) {
+        Contact broker = TestDataFactory.createBrokerContact(accountId, false);
+        broker.Email = email;
+        TestDataFactory.insertAllowingDuplicates(new List<Contact>{ broker });
+        return broker;
+    }
+
+    @isTest
+    static void execute_senderMatchesExistingBrokerContact_stampsBothLookupsAtIntake() {
+        Account firm = TestDataFactory.createAccount(true);
+        Contact broker = brokerContactWithEmail(firm.Id, 'known.broker@brokerfirm.example.invalid');
+
+        Inbound_Email_Staging__c staging = insertStaging(
+            'known.broker@brokerfirm.example.invalid', 'forwarder-ws8@example.invalid',
+            'FW: 100 Known Broker St', 'a forwarded broker email',
+            'msg-ws8-match@example.invalid', null, null);
+        setMock(new Map<String, String>{
+            'broker_name' => 'Known Broker', 'broker_email' => 'known.broker@brokerfirm.example.invalid',
+            'property_address' => '100 Known Broker St', 'sent_datetime' => ''
+        });
+
+        Test.startTest();
+        System.enqueueJob(new ExtractAddressQueueable(staging.Id, null, null));
+        Test.stopTest();
+
+        // Unconditional first: the Lead must exist whatever the FLS state of the two new fields.
+        Lead routed = [SELECT Id, Email FROM Lead WHERE Property_Address__c = '100 Known Broker St'];
+        Assert.areEqual('known.broker@brokerfirm.example.invalid', routed.Email,
+            'Precondition: the Lead carries the sender address the lookup was keyed on. If these two '
+            + 'ever diverge, intake and conversion are matching on different strings');
+        Assert.areEqual(1, ExtractAddressQueueable.lastRunBrokerLookupCount,
+            'ONE lookup for this email');
+
+        if (brokerLinkReadable()) {
+            Lead linked = [SELECT Broker__c, Broker_Firm__c FROM Lead WHERE Id = :routed.Id];
+            Assert.areEqual(broker.Id, linked.Broker__c,
+                'THE MATCH, AT INTAKE: the sender resolved to an existing broker Contact, so the Lead '
+                + 'is BORN carrying it rather than waiting for someone to convert');
+            Assert.areEqual(firm.Id, linked.Broker_Firm__c,
+                'and the firm comes from that same Contact\'s own AccountId — never from the email '
+                + 'domain, never from a second query');
+        }
+    }
+
+    @isTest
+    static void execute_senderMatchesNoContact_leavesBothLookupsBlankAndCreatesNothing() {
+        // 🔴 THE USER DECISION. An unknown broker is the COMMON case and must cost nothing but a
+        // blank: no Contact, no Account, no domain-derived firm name.
+        Integer accountsBefore = [SELECT COUNT() FROM Account];
+        Integer contactsBefore = [SELECT COUNT() FROM Contact];
+
+        Inbound_Email_Staging__c staging = insertStaging(
+            'stranger@newfirm.example.invalid', 'forwarder-ws8b@example.invalid',
+            'FW: 200 Stranger Ave', 'a forwarded broker email',
+            'msg-ws8-nomatch@example.invalid', null, null);
+        setMock(new Map<String, String>{
+            'broker_name' => 'A Stranger', 'broker_email' => 'stranger@newfirm.example.invalid',
+            'property_address' => '200 Stranger Ave', 'sent_datetime' => ''
+        });
+
+        Test.startTest();
+        System.enqueueJob(new ExtractAddressQueueable(staging.Id, null, null));
+        Test.stopTest();
+
+        Lead routed = [SELECT Id FROM Lead WHERE Property_Address__c = '200 Stranger Ave'];
+        Assert.isNotNull(routed.Id, 'The Lead is still created — the link is an ENRICHMENT');
+        if (brokerLinkReadable()) {
+            Lead linked = [SELECT Broker__c, Broker_Firm__c FROM Lead WHERE Id = :routed.Id];
+            Assert.isNull(linked.Broker__c, 'No match means BLANK, not a newly minted Contact');
+            Assert.isNull(linked.Broker_Firm__c,
+                'and BLANK on the firm — "newfirm.example.invalid" must never become "Newfirm"');
+        }
+        Assert.areEqual(accountsBefore, [SELECT COUNT() FROM Account],
+            'INTAKE CREATES NO ACCOUNT. This count is the permanent falsifier for anyone who adds a '
+            + '"create the firm if missing" branch to resolveBrokerLink');
+        Assert.areEqual(contactsBefore, [SELECT COUNT() FROM Contact],
+            'and no Contact either — creation stays at conversion, by decision');
+    }
+
+    @isTest
+    static void execute_accountLessBrokerContact_doesNotMatchAndTheLeadIsStillRouted() {
+        // 🔴 THE ACCOUNT-LESS CONTACT CASE, ANSWERED BY EXCLUSION RATHER THAN BY SHARING LUCK.
+        //
+        // A Contact with no AccountId is visible only to its OWNER whatever the OWD says (Contact
+        // OWD is ControlledByParent, and a parentless Contact has no parent to inherit from), so
+        // under `with sharing` the same broker email would link for one principal and not another,
+        // with nothing logged either way. `ContactSelector.selectBrokerByEmailForIntake` therefore
+        // filters `AccountId != null`: an orphan NEVER matches, for everyone, deterministically.
+        //
+        // ⚠ THIS TEST WOULD PASS EVEN IF THE FILTER WERE REMOVED **AND** SHARING HAPPENED TO HIDE
+        // THE ROW — so read the assertion as "the orphan is excluded", and note that the fixture is
+        // owned by the test-running user and therefore VISIBLE to it. Sharing cannot be what makes
+        // this pass here; only the predicate can.
+        //
+        // The second reason for the filter is structural: an account-less Contact stamped into
+        // `Broker__c` would be a conversion target `Database.convertLead` REFUSES, because
+        // setContactId is valid only alongside a setAccountId for that Contact's own Account.
+        Contact orphan = brokerContactWithEmail(null, 'orphan.broker@brokerfirm.example.invalid');
+        Assert.isNull(orphan.AccountId, 'Precondition: the fixture really is account-less');
+
+        Inbound_Email_Staging__c staging = insertStaging(
+            'orphan.broker@brokerfirm.example.invalid', 'forwarder-ws8c@example.invalid',
+            'FW: 300 Orphan Rd', 'a forwarded broker email',
+            'msg-ws8-orphan@example.invalid', null, null);
+        setMock(new Map<String, String>{
+            'broker_name' => 'Orphan Broker',
+            'broker_email' => 'orphan.broker@brokerfirm.example.invalid',
+            'property_address' => '300 Orphan Rd', 'sent_datetime' => ''
+        });
+
+        Test.startTest();
+        System.enqueueJob(new ExtractAddressQueueable(staging.Id, null, null));
+        Test.stopTest();
+
+        Lead routed = [SELECT Id FROM Lead WHERE Property_Address__c = '300 Orphan Rd'];
+        Assert.isNotNull(routed.Id,
+            'THE EMAIL IS NOT LOST. An unmatched sender is a blank link, never a failure');
+        if (brokerLinkReadable()) {
+            Lead linked = [SELECT Broker__c, Broker_Firm__c FROM Lead WHERE Id = :routed.Id];
+            Assert.isNull(linked.Broker__c,
+                'AN ACCOUNT-LESS BROKER CONTACT MUST NOT BE LINKED. It cannot be a conversion target, '
+                + 'and matching it would make the answer depend on who owns the row');
+            Assert.isNull(linked.Broker_Firm__c, 'and there is no firm to link either, by definition');
+        }
+    }
+
+    @isTest
+    static void execute_tenPropertyEmail_resolvesTheBrokerExactlyOnceAndMovesNoBudget() {
+        // §7 items 1 + 3 for WS8 — the MAX_PROPERTIES volume case AND the headroom guard.
+        //
+        // 🔴 THE BUDGETS BELOW ARE THE SAME LITERALS AS
+        // execute_tenPropertyEmail_routesEveryPropertyAndStaysInsideTheGovernorBudget, AND THAT IS
+        // THE POINT. WS8 adds ONE query per EMAIL and ZERO DML, so neither may move.
+        final Integer QUERY_BUDGET = 120;   // async cap is 200 — identical to the N=10 test above
+        final Integer DML_BUDGET = 45;      // async cap is 150 — EQUALITY, identical to that test
+
+        Account firm = TestDataFactory.createAccount(true);
+        Contact broker = brokerContactWithEmail(firm.Id, 'blast.broker@example.invalid');
+
+        Inbound_Email_Staging__c staging = insertStaging(
+            'blast.broker@example.invalid', 'forwarder-ws8d@example.invalid',
+            'FW: 10-property portfolio from a known broker', 'portfolio body',
+            'msg-ws8-volume@example.invalid', null, null);
+        setPropertiesMock('blast.broker@example.invalid', addresses(10));
+
+        Test.startTest();
+        System.enqueueJob(new ExtractAddressQueueable(staging.Id, null, null));
+        Test.stopTest();
+
+        List<Lead> routed = [SELECT Id FROM Lead WHERE Property_Address__c LIKE '%Multi St'];
+        Assert.areEqual(10, routed.size(),
+            'Precondition: all ten properties routed, or everything below proves nothing');
+
+        // 🔴 THE LOAD-BEARING ASSERTION OF THIS WHOLE FEATURE. The sender is an EMAIL-level fact.
+        // createLead runs TEN times here; the lookup must run ONCE. The two ceilings below CANNOT
+        // catch a regression on this — 120 has enough slack to absorb nine extra queries silently —
+        // which is precisely why lastRunBrokerLookupCount exists and why this is an EQUALITY.
+        Assert.areEqual(1, ExtractAddressQueueable.lastRunBrokerLookupCount,
+            'EXACTLY ONE broker lookup for a TEN-property email. A 10 here means someone moved the '
+            + 'resolution inside the per-property loop, or removed the brokerLinkResolved latch');
+
+        if (brokerLinkReadable()) {
+            Set<Id> distinctBrokers = new Set<Id>();
+            for (Lead linked : [
+                SELECT Broker__c, Broker_Firm__c FROM Lead WHERE Property_Address__c LIKE '%Multi St'
+            ]) {
+                distinctBrokers.add(linked.Broker__c);
+                Assert.areEqual(firm.Id, linked.Broker_Firm__c,
+                    'Every Lead the email mints carries the SAME firm — one email, one sender');
+            }
+            Assert.areEqual(1, distinctBrokers.size(),
+                'and the SAME broker Contact on all ten, from the one resolution');
+            Assert.isTrue(distinctBrokers.contains(broker.Id),
+                'and it is the Contact the sender actually matched, not some other row');
+        }
+
+        // ⚠ READ FROM THE STATICS CAPTURED INSIDE execute(), never from Limits.* after
+        // Test.stopTest() — stopTest restores the pre-test counters and the obvious assertion
+        // would be silently vacuous.
+        Assert.isTrue(ExtractAddressQueueable.lastRunQueryCount > 0,
+            'Sanity: the telemetry was captured INSIDE the async context');
+        Assert.isTrue(ExtractAddressQueueable.lastRunQueryCount <= QUERY_BUDGET,
+            'GOVERNOR HEADROOM, WS8: 10 properties consumed ' + ExtractAddressQueueable.lastRunQueryCount
+            + ' SOQL queries against the UNCHANGED budget of ' + QUERY_BUDGET + '. WS8 adds ONE query '
+            + 'per email; if this fails, it has become one per property.');
+        Assert.areEqual(DML_BUDGET, ExtractAddressQueueable.lastRunDmlCount,
+            'AND THE DML COUNT IS UNMOVED AT EXACTLY ' + DML_BUDGET + '. Both lookups are stamped in '
+            + 'the Lead insert that already existed — a second statement per property would read 55.');
+    }
+
+    @isTest
+    static void execute_hardGatedEmail_neverResolvesTheBrokerAndSpendsNoQuery() {
+        // 🔴 THE LAZY-RESOLUTION DECISION, ASSERTED. resolveBrokerLink is reached ONLY from
+        // createLead, so every branch that creates no Lead pays NOTHING — which matters because
+        // gated and pre-filtered email is the highest-volume traffic this pipeline sees, and
+        // because CFO_QUERY_BUDGET (60) and CFO_DML_BUDGET (8) are pinned on a sibling branch that
+        // likewise creates no Lead. If someone "simplifies" this by resolving eagerly in execute(),
+        // this fails.
+        Account firm = TestDataFactory.createAccount(true);
+        brokerContactWithEmail(firm.Id, 'gated.broker@brokerfirm.example.invalid');
+        Integer leadsBefore = [SELECT COUNT() FROM Lead];
+
+        Inbound_Email_Staging__c staging = insertStaging(
+            'gated.broker@brokerfirm.example.invalid', 'forwarder-ws8e@example.invalid',
+            'Weekly roundup | market newsletter', 'newsletter body',
+            'msg-ws8-gated@example.invalid', null, null);
+        Test.setMock(HttpCalloutMock.class, new LLMExtractionCalloutMock(200,
+            LLMExtractionCalloutMock.enrichedBody(new Map<String, Object>{
+                'email_category' => 'newsletter',
+                'is_acquisition_related' => false,
+                'confidence' => 0.97,
+                'broker_email' => 'gated.broker@brokerfirm.example.invalid'
+            }, new List<Map<String, Object>>{
+                new Map<String, Object>{ 'property_name' => 'Alpha Tower', 'property_address' => '' }
+            })));
+
+        Test.startTest();
+        System.enqueueJob(new ExtractAddressQueueable(staging.Id, null, null));
+        Test.stopTest();
+
+        Assert.areEqual(leadsBefore, [SELECT COUNT() FROM Lead],
+            'Precondition: the hard gate suppressed the Lead, so createLead was never reached');
+        Assert.areEqual(0, ExtractAddressQueueable.lastRunBrokerLookupCount,
+            'ZERO broker lookups on a branch that creates no Lead. The match is resolved LAZILY, '
+            + 'from createLead — a gated email must not spend a query populating a field nobody '
+            + 'will read');
+    }
+
+    @isTest
+    static void execute_brokerLookupFails_stillRoutesTheEmailAndRecordsTheFailure() {
+        // 🔴 THE FAIL-SOFT CONTRACT. The broker link is an OPTIONAL ENRICHMENT and this transaction
+        // owns the broker's Lead and their registry claim. A failure to resolve must cost THE LINK
+        // AND NOTHING ELSE — the same contract EmailToLeadService.applyExtractionScore and the
+        // routeCallForOffers try/catch already hold. Driven through the forceBrokerLookupFailure
+        // seam because under WITH SYSTEM_MODE the selector cannot throw on CRUD/FLS, so there is no
+        // naturally reachable failure to lean on (identical reasoning to forceRouteFailure).
+        Account firm = TestDataFactory.createAccount(true);
+        brokerContactWithEmail(firm.Id, 'failing.broker@brokerfirm.example.invalid');
+
+        Inbound_Email_Staging__c staging = insertStaging(
+            'failing.broker@brokerfirm.example.invalid', 'forwarder-ws8f@example.invalid',
+            'FW: 400 Failsoft Way', 'a forwarded broker email',
+            'msg-ws8-failsoft@example.invalid', null, null);
+        setMock(new Map<String, String>{
+            'broker_name' => 'Failing Broker',
+            'broker_email' => 'failing.broker@brokerfirm.example.invalid',
+            'property_address' => '400 Failsoft Way', 'sent_datetime' => ''
+        });
+
+        Test.startTest();
+        ExtractAddressQueueable.forceBrokerLookupFailure = true;
+        System.enqueueJob(new ExtractAddressQueueable(staging.Id, null, null));
+        Test.stopTest();
+        ExtractAddressQueueable.forceBrokerLookupFailure = false;
+
+        List<Lead> routed = [SELECT Id FROM Lead WHERE Property_Address__c = '400 Failsoft Way'];
+        Assert.areEqual(1, routed.size(),
+            '🔴 THE LEAD SURVIVES. If this is 0, the enrichment has been allowed to abort the '
+            + 'transaction that owns the broker\'s claim — the exact failure shape this repo lost '
+            + 'six days to once already');
+        Assert.areEqual(1, [
+            SELECT COUNT() FROM Property_Registry__c WHERE Winning_Lead__c = :routed[0].Id
+        ], 'and the registry claim was still registered — routing continued past the failure');
+
+        if (brokerLinkReadable()) {
+            Lead linked = [SELECT Broker__c FROM Lead WHERE Id = :routed[0].Id];
+            Assert.isNull(linked.Broker__c, 'The link is what was lost, and only the link');
+        }
+
+        Inbound_Email_Staging__c updated = [
+            SELECT Error__c FROM Inbound_Email_Staging__c WHERE Id = :staging.Id
+        ];
+        Assert.isFalse(String.isBlank(updated.Error__c),
+            'AND THE FAILURE IS NOT SWALLOWED. It is recorded on the SAME durable channel every '
+            + 'other isolated failure uses, so a silently-never-linking pipeline is visible rather '
+            + 'than merely quiet');
     }
 }

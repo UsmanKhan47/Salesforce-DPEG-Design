@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        WS1 (design-requirements.md §2/WS1, 2026-08-30). This field is what makes an email-born
+        Lead's First_Seen_Date__c the time the EMAIL ARRIVED rather than the time the async LLM
+        routing job happened to run. Read EmailToLeadHandler.parseRfc5322Date before changing it.
+
+        🔴 IT IS SELECTED BY InboundEmailStagingSelector.selectById, WHICH IS `WITH USER_MODE`
+        AND IS THE FIRST THING EVERY INBOUND BROKER EMAIL DOES. USER_MODE THROWS, IT DOES NOT
+        DEGRADE. A missing `Broker_Protection_Access` FLS grant on this field stops every broker
+        email being routed, with `System.QueryException: No such column` — an FLS denial wearing a
+        schema error. The fix for that is ALWAYS the permission set, NEVER `WITH SYSTEM_MODE`
+        (the selector's class header says so twice, at selectDroppedNotesById and
+        selectRoutingStateById). Grant shape: readable=true, editable=false — machine-written
+        only, matching Status__c's posture on this same object.
+
+        ⚠ NOT BACKFILLED. Every staging row written before this field deployed has it null, and
+        those rows resolve to CreatedDate through the fallback in ExtractAddressQueueable. That is
+        the intended, permanent state — there is no backfill job and none is wanted, because
+        CreatedDate is exactly what those rows' Leads already used.
+    -->
+    <fullName>Received_DateTime__c</fullName>
+    <externalId>false</externalId>
+    <label>Received Date/Time</label>
+    <description>The RFC `Date:` header of the inbound email. Falls back to this row's `CreatedDate` when the header is absent or unparseable. On an auto-forward this is when the forwarding rule fired; on a manual forward it is when the DPEG coordinator hit Fwd — the broker's true send time is `LLMExtractionResult.sentDatetime`. Chosen knowingly, 2026-08-30.</description>
+    <inlineHelpText>When this email was sent, read from its RFC Date header. Blank means the header was missing or unreadable and this row's Created Date was used instead. On a forwarded email this is when it was FORWARDED, not when the broker originally sent it.</inlineHelpText>
+    <required>false</required>
+    <trackFeedHistory>false</trackFeedHistory>
+    <type>DateTime</type>
+</CustomField>

@@ -430,6 +430,37 @@
  * the guard sentence that contains it. No signature, caller, parser, model, temperature,
  * token or cap change accompanies it.
  *
+ * ═══ WS7 PER-FIELD CONFIDENCE — 2026-08-30. ONE ENRICHED-BLOCK EDIT, +1,338 CHARACTERS ═══
+ * A new response key, `field_confidence`: an object mapping each key the model returned a value
+ * for to a 0–1 score for THAT VALUE. It becomes Lead.Field_Confidence_JSON__c, and the count of
+ * its entries below the WS5 medium threshold becomes Lead.Low_Confidence_Field_Count__c, which
+ * drives one Review Queue list-view filter. LEGACY_EXTRACTION_RULES and LEGACY_RESPONSE_FORMAT
+ * are untouched AGAIN; the edit is one new paragraph immediately above the response template plus
+ * `"field_confidence": {}` inside it.
+ *
+ * 🔴 THE THREE CONFIDENCE KEYS NOW IN THE SCHEMA ANSWER THREE DIFFERENT QUESTIONS AND MUST NOT
+ * BE COLLAPSED. `confidence` → is_acquisition_related (and it alone feeds the >= 0.85 hard
+ * suppression gate). `category_confidence` → email_category (parsed, gated on by nothing, per its
+ * own field's Javadoc). `field_confidence` → "did I read this value correctly", per value. The
+ * prompt paragraph says so explicitly because a model shown three confidence numbers will
+ * otherwise return one number three times, and a `field_confidence` that merely echoes
+ * `confidence` would produce a review queue that never disagrees with the band beside it.
+ *
+ * ⚠ NEITHER UNIT-TESTABLE NOR REGRESSION-GUARDED, and both halves of that matter. The model is
+ * mocked in every Apex test, so a green suite proves the PARSER handles the key and proves
+ * nothing about whether the model returns it or scores it sensibly. And WS5 removed the prompt's
+ * only automated backstop (ExtractionRegressionFixtureTest section 2) hours before this edit — so
+ * the mitigation named there is the ONLY one that applies here: run the two manual fixtures
+ * before and after, and diff `broker_email` and
+ * `PropertyMatchingService.normalizeAddress(property_address)` BY HAND. This edit adds a key and
+ * touches none of the four legacy values, so no claim should be re-keyed — "should" is the
+ * accurate word, because changing a response schema changes model behaviour everywhere in it,
+ * and that is precisely the risk the user accepted when the guard was retired.
+ *
+ * ⚠ ADD TO THE RECURRING UAT LIST: an email that states its NOI outright and merely IMPLIES the
+ * year built must come back with `noi` scored 0.9+ and `year_built` below 0.60 — one email, both
+ * directions, because a model that returns a flat 0.9 for everything satisfies either half alone.
+ *
  * @see LLMExtractionParser.cls (turns the response into typed values; never throws)
  * @see LLMExtractionResult.cls / PropertyExtraction.cls (the return types)
  * @see ExtractAddressQueueable.cls (the only caller; owns the degrade path)
@@ -443,8 +474,16 @@ public with sharing class LLMExtractionCalloutService {
      *  the callout is later re-homed onto an ASB LLM-extraction spoke. */
     private static final String ENDPOINT = 'callout:OpenAI_API/v1/chat/completions';
 
-    /** Vision-capable, low-cost model used for the extraction. UNCHANGED by the enrichment
-     *  on purpose — see protection 2 in the class header. */
+    /**
+     * Vision-capable, low-cost model used for the extraction. UNCHANGED by the enrichment
+     * on purpose — see protection 2 in the class header.
+     *
+     * ⚠ SINCE WS5 (2026-08-30) THIS IS THE FALLBACK, NOT THE LIVE VALUE. The live value
+     * is BrokerProtectionConfig.model(), which returns this string when the
+     * Broker_Protection_Config__mdt.Default record is absent or its Model__c is blank.
+     * Keeping the literal here means an org with no config record behaves exactly as it did
+     * before WS5.
+     */
     private static final String MODEL = 'gpt-4o-mini';
 
     /** Callout timeout in milliseconds. Raised from 30s: a ten-property extraction is
@@ -452,8 +491,13 @@ public with sharing class LLMExtractionCalloutService {
      *  The platform's per-callout ceiling is 120s, so this is comfortably inside it. */
     private static final Integer TIMEOUT_MS = 60000;
 
-    /** Upper bound on the model's response tokens. 512 -> 4096 (C-14) — see the class
-     *  header's RESPONSE SIZING note. Well inside gpt-4o-mini's 16k output ceiling. */
+    /**
+     * Upper bound on the model's response tokens. 512 -> 4096 (C-14) — see the class
+     * header's RESPONSE SIZING note. Well inside gpt-4o-mini's 16k output ceiling.
+     *
+     * ⚠ SINCE WS5 (2026-08-30) THIS IS THE FALLBACK, NOT THE LIVE VALUE — see MODEL above.
+     * The live value is BrokerProtectionConfig.maxTokens().
+     */
     private static final Integer MAX_TOKENS = 4096;
 
     /**
@@ -745,10 +789,26 @@ public with sharing class LLMExtractionCalloutService {
         'broker later submits the same property, and it leaves a visible record a human can ' +
         'find and correct. Bias is not licence: where the mass-send signals above are plainly ' +
         'present, classify call_for_offers.\n\n' +
+        'PER-FIELD CONFIDENCE: field_confidence is a JSON object reporting how certain you are ' +
+        'of EACH VALUE YOU RETURNED. It is a THIRD, separate judgement — confidence concerns ' +
+        'is_acquisition_related and category_confidence concerns email_category, and neither ' +
+        'says anything about whether you read the NOI or the year built correctly. Include one ' +
+        'entry per key you returned a non-empty value for, named exactly as it appears in the ' +
+        'shape below and with no prefix for the property-level keys ("noi", "year_built", ' +
+        '"cap_rate"), and give it a number from 0 to 1. OMIT any key you left empty or null: an ' +
+        'absent entry means "no value", never "a value I doubt". Score a value the email states ' +
+        'outright at 0.9 or above; score below 0.60 anything you inferred, converted, or read ' +
+        'from a table, a footnote or attached marketing material — 0.60 is the line below which ' +
+        'a person is asked to check the value by hand, so a guess scored high is a wrong answer ' +
+        'nobody is sent to look at. Where you return several properties, return ONE object for ' +
+        'the whole email and give each property-level key your LOWEST confidence for it across ' +
+        'them. THIS PARAGRAPH ONLY REPORTS ON VALUES YOU HAVE ALREADY DECIDED — it changes none ' +
+        'of them, it relaxes no rule above, and it is never a reason to return a value you would ' +
+        'otherwise have left empty.\n\n' +
         'Respond ONLY with a single JSON object in exactly this shape, with no other ' +
         'text:\n' +
         '{"email_category": "other", "is_acquisition_related": true, "confidence": 0.0, ' +
-        '"category_confidence": 0.0, ' +
+        '"category_confidence": 0.0, "field_confidence": {}, ' +
         '"broker_name": "", "broker_email": "", "broker_company": "", "broker_phone": "", ' +
         '"broker_mobile": "", "broker_title": "", "listing_broker_name": "", ' +
         '"listing_broker_email": "", "sent_datetime": "", "deal_summary": "", ' +
@@ -777,9 +837,77 @@ public with sharing class LLMExtractionCalloutService {
     /**
      * THE prompt — ONE constant, which is what makes the rollback described in the class
      * header a single-line change.
+     *
+     * ⚠ SINCE WS5 (2026-08-30) THIS IS THE FALLBACK, NOT NECESSARILY THE LIVE PROMPT.
+     * resolvePrompt() below returns Broker_Protection_Config__mdt.Default.Extraction_Prompt__c
+     * when that record exists and carries a non-blank value, and this constant otherwise.
+     * This composition is 20,592 characters — 19,254 as measured on 2026-08-30, plus the 1,338
+     * WS7 added later the same day — and it is exactly what
+     * scripts/load-broker-protection-config.apex writes into the record, so a freshly
+     * loaded org sends a byte-identical prompt to a never-loaded one.
+     *
+     * 🔴 THAT EQUIVALENCE IS NOT AUTOMATIC AFTER WS7 — THE LOADER MUST BE RE-RUN. An org whose
+     * record was seeded BEFORE the WS7 edit holds the 19,254-character prompt and will keep
+     * sending it, because resolvePrompt() prefers the record. Such an org returns no
+     * `field_confidence` at all, LLMExtractionParser degrades to an empty map without throwing,
+     * and every Lead is stamped `Low_Confidence_Field_Count__c = 0` — the feature is silently
+     * absent, not broken, and nothing logs it. Re-running the loader is what turns it on.
+     * ✅ scripts/load-broker-protection-config.apex's seed-length debug line was CORRECTED to
+     * 20592 in WS8 and now agrees with this block. (This paragraph used to say it was still
+     * stale — a to-do that had already been done. Left standing it would have sent the next
+     * reader to "fix" a line that was already right, or worse, to trust "19254" as current.)
      */
     private static final String EXTRACTION_INSTRUCTION =
         LEGACY_EXTRACTION_RULES + ENRICHED_EXTRACTION_RULES;
+
+    /**
+     * The prompt this CLASS ships — i.e. EXTRACTION_INSTRUCTION, the compile-time fallback.
+     *
+     * 🔴 THIS IS NOT THE LIVE PROMPT. The live prompt is resolvePrompt(), which prefers the
+     * Setup-configured Broker_Protection_Config__mdt.Default.Extraction_Prompt__c. Do not
+     * call this to find out what the org actually sends.
+     *
+     * WHY IT IS PUBLIC. It exists for exactly one caller:
+     * scripts/load-broker-protection-config.apex, which SEEDS the CMDT record. Seeding from
+     * this method rather than from a transcribed copy of the prompt is a correctness
+     * property, not a convenience — a hand-copied 20,592-character literal in the loader
+     * would be a SECOND copy of the exact text that keys the broker registry, and the first
+     * time someone edited the Apex constant and re-ran the loader the two would disagree
+     * silently. Sourcing the seed from here makes "the loaded record equals the shipped
+     * prompt" true by construction instead of by discipline.
+     *
+     * ⚠ It also means the loader must run AFTER this class is deployed. That ordering is
+     * stated in the loader's own header.
+     *
+     * @return LEGACY_EXTRACTION_RULES + ENRICHED_EXTRACTION_RULES (20,592 chars as of
+     *         2026-08-30, post-WS7); never null, never blank.
+     */
+    public static String shippedPrompt() {
+        return EXTRACTION_INSTRUCTION;
+    }
+
+    /**
+     * The extraction instruction actually sent on this callout.
+     *
+     * 🔴 THIS METHOD IS THE ENFORCEMENT POINT FOR BrokerProtectionConfig's ONE NULLABLE
+     * ACCESSOR. extractionPromptOverride() is documented to return null when there is no
+     * override, precisely because its default is the ~20KB constant above — a value that
+     * belongs to this class and must not be copied into the config accessor, where a second
+     * copy could silently drift and re-key the broker registry. Any future caller of
+     * extractionPromptOverride() must resolve the default the same way and must not invent
+     * a different one.
+     *
+     * ⚠ A BLANK Extraction_Prompt__c IS TREATED AS "NO OVERRIDE", NOT AS "SEND AN EMPTY
+     * PROMPT". An admin who clears the field in Setup gets the shipped prompt back, not a
+     * callout with no instructions — the latter would return unparseable output for every
+     * inbound email and silently stop the pipeline producing Leads.
+     *
+     * @return The configured prompt when one is set, otherwise EXTRACTION_INSTRUCTION.
+     */
+    private static String resolvePrompt() {
+        String configured = BrokerProtectionConfig.extractionPromptOverride();
+        return configured == null ? EXTRACTION_INSTRUCTION : configured;
+    }
 
     /**
      * Extract the broker identity, email classification and per-property deal fields from a
@@ -856,7 +984,7 @@ public with sharing class LLMExtractionCalloutService {
         String clippedText = InboundEmailFieldUtil.clip(textContent, MAX_INPUT_CHARS);
         Map<String, Object> textPart = new Map<String, Object>{
             'type' => 'text',
-            'text' => EXTRACTION_INSTRUCTION + '\n\n' + referenceDateLine() + '\n\n' +
+            'text' => resolvePrompt() + '\n\n' + referenceDateLine() + '\n\n' +
                 (clippedText == null ? '' : clippedText)
         };
 
@@ -871,9 +999,9 @@ public with sharing class LLMExtractionCalloutService {
         content.add(textPart);
 
         Map<String, Object> body = new Map<String, Object>{
-            'model' => MODEL,
-            'temperature' => 0,
-            'max_tokens' => MAX_TOKENS,
+            'model' => BrokerProtectionConfig.model(),
+            'temperature' => BrokerProtectionConfig.temperature(),
+            'max_tokens' => BrokerProtectionConfig.maxTokens(),
             'response_format' => new Map<String, Object>{ 'type' => 'json_object' },
             'messages' => new List<Object>{
                 new Map<String, Object>{ 'role' => 'user', 'content' => content }

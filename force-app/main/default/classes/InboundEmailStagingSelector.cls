@@ -27,12 +27,20 @@
  *   queryRoutingRetrySweep()   added 2026-08-08 — the ROUTING pipeline's work queue
  *
  * The two record reads that back a human's own inbound email — `selectById` and
- * `selectDroppedNotesById` — are `WITH USER_MODE` and are UNCHANGED.
+ * `selectDroppedNotesById` — are `WITH USER_MODE`. Their MODE is unchanged and must stay so.
+ *
+ * ⚠ `selectById`'s FIELD SET, however, is NOT unchanged: WS1 (2026-08-30) added
+ * `Received_DateTime__c` + `CreatedDate` to it, knowingly overriding the "never add a new
+ * custom field to selectById" pattern the two narrow methods above exist to enforce. The
+ * trade, the deploy-order obligation it creates, and the reason a third narrow method was
+ * rejected are all argued AT `selectById`'s own declaration — read it before adding a seventh
+ * field, and do not read the narrow methods' warnings as having been retracted.
  *
  * FIELD SET — deliberately WIDE: the queueable consumes almost the whole record
  * (body, subject, envelope addresses, all three RFC threading headers, the resolved
- * monitored inbox). Narrowing it would raise System.SObjectException on the first
- * unselected field read, so add to this list rather than trimming it.
+ * monitored inbox, and since WS1 the received timestamp). Narrowing it would raise
+ * System.SObjectException on the first unselected field read, so add to this list rather
+ * than trimming it — but see the WS1 warning above before adding a new CUSTOM field.
  *
  * NOT-FOUND CONTRACT — returns null, not an exception. A staging record can legitimately
  * be missing by the time the async job runs (hard-deleted during an admin cleanup), and
@@ -48,6 +56,36 @@ public with sharing class InboundEmailStagingSelector {
      * reads. Backs ExtractAddressQueueable's first step (load the payload it was enqueued
      * for) via InboundEmailStagingService.getStaging.
      *
+     * ═══ 🔴 WS1 (2026-08-30) — A NEW CUSTOM FIELD WAS ADDED HERE, DELIBERATELY, AGAINST THE
+     *     PATTERN THIS CLASS ARGUES FOR TWICE BELOW. READ THIS BEFORE ADDING A SEVENTH. ═══
+     * `selectDroppedNotesById` and `selectRoutingStateById` both exist as separate NARROW methods
+     * precisely so that a brand-new custom field never joins THIS query — because this query is
+     * `WITH USER_MODE` and is the FIRST thing every inbound broker email does, and USER_MODE
+     * THROWS rather than degrades. One missing FLS grant and every broker email stops being
+     * routed, reported as `System.QueryException: No such column` — an FLS denial wearing a
+     * schema error.
+     *
+     * `Received_DateTime__c` and `CreatedDate` were nonetheless added here (design §2/WS1,
+     * resolution W1-a) rather than behind a third narrow method, and the trade is explicit:
+     *   • A narrow `selectReceivedDateTimeById` would cost +1 SOQL on EVERY inbound email, which
+     *     pushes directly against `ExtractAddressQueueable`'s pinned QUERY_BUDGET (30 at N=1,
+     *     120 at N=10). The precedent methods above are on FAIL-SOFT paths where an extra query
+     *     is affordable and a denial costs only a note; this value is needed on the SUCCESS path
+     *     of every single email, so the same reasoning does not transfer.
+     *   • `CreatedDate` carries NO risk by construction: it is an audit field,
+     *     `isPermissionable() == false`, so zero `FieldPermissions` rows can exist for it and no
+     *     permission set is capable of denying it. It is USER_MODE-safe, always.
+     *   • Only `Received_DateTime__c` carries risk, and it is bought off with a MANDATORY
+     *     `Broker_Protection_Access` grant (readable=true, editable=false) shipped IN OR BEFORE
+     *     the same deploy. Metadata-API fields arrive with NO FLS for ANY profile, System
+     *     Administrator included — so this is not optional hardening, it is the deploy order.
+     *
+     * 🔴 IF THIS QUERY EVER THROWS `No such column 'Received_DateTime__c'`, THE FIX IS THE
+     * PERMISSION SET. DO NOT "FIX" IT BY SWITCHING THIS METHOD TO `WITH SYSTEM_MODE`. These two
+     * record reads are deliberately USER_MODE — they back a human's own inbound email, so a
+     * throw here is a REAL provisioning gap being reported, and silencing it hides the gap on
+     * every other field in this SELECT as well.
+     *
      * @param stagingId Inbound_Email_Staging__c Id to load; null returns null.
      * @return The staging record, or null when `stagingId` is null or no row matches.
      * @example
@@ -62,7 +100,11 @@ public with sharing class InboundEmailStagingSelector {
                    From_Address__c, From_Name__c, Forwarded_By__c,
                    Message_Id__c, In_Reply_To__c, References__c,
                    Has_Image__c, Image_Mime_Type__c, Attachment_Status__c,
-                   Status__c, Outcome__c, Result_Record_Id__c, Processed_DateTime__c, Error__c
+                   Status__c, Outcome__c, Result_Record_Id__c, Processed_DateTime__c, Error__c,
+                   // WS1 — the pair that resolves the Lead's First_Seen_Date__c. CreatedDate is
+                   // selected as the FALLBACK for the (normal) case where the email carried no
+                   // readable RFC `Date:` header; see the WS1 block in this method's Javadoc.
+                   Received_DateTime__c, CreatedDate
             FROM Inbound_Email_Staging__c
             WHERE Id = :stagingId
             WITH USER_MODE

@@ -237,6 +237,18 @@ public with sharing class InboundEmailStagingService {
         public String references;
         /** The monitored inbox that forwarded this email (header-resolved, else the From). */
         public String forwardedBy;
+        /**
+         * Received_DateTime__c — the RFC `Date:` header, parsed by
+         * `EmailToLeadHandler.parseRfc5322Date` (WS1, 2026-08-30). NULL is a NORMAL, expected
+         * value: the header may be absent, malformed, or carry a zone this pipeline refuses to
+         * guess at, and the parser degrades to null rather than throwing and losing the email.
+         *
+         * ⚠ A NULL HERE IS NOT AN ERROR AND MUST NOT BE TREATED AS ONE. `ExtractAddressQueueable`
+         * resolves the fallback to this row's `CreatedDate` — once, in one place — so a Lead
+         * never receives a null first-seen value. Do not add a second fallback here; two
+         * fallbacks in two layers is how they drift apart.
+         */
+        public Datetime receivedDateTime;
         /** MIME type of the first inline image, when the email carried one. */
         public String imageMimeType;
         /** True when an inline image was found and handed to the async extractor. */
@@ -293,6 +305,11 @@ public with sharing class InboundEmailStagingService {
             In_Reply_To__c = InboundEmailFieldUtil.clip(request.inReplyTo, LEN_TEXT),
             References__c = InboundEmailFieldUtil.clip(request.references, LEN_REFERENCES),
             Forwarded_By__c = InboundEmailFieldUtil.sanitizeEmail(request.forwardedBy),
+            // WS1 (2026-08-30). Written in the SAME insert as everything else, so recording when
+            // the email actually arrived costs ZERO extra SOQL and ZERO extra DML — the boundary's
+            // pinned 0 SOQL / 2 DML budget is unchanged. Null is written as null on purpose; the
+            // fallback to CreatedDate is resolved once, downstream, in ExtractAddressQueueable.
+            Received_DateTime__c = request.receivedDateTime,
             Image_Mime_Type__c = InboundEmailFieldUtil.clip(request.imageMimeType, LEN_TEXT),
             Has_Image__c = request.hasImage == true,
             // Attachment capture (2026-08-05). Written in the SAME insert as everything else,

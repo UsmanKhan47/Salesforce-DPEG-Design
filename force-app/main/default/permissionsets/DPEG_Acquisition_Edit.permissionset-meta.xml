@@ -561,6 +561,19 @@
         <field>Lead.BP_Expiry__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!-- Broker__c / Broker_Firm__c ADDED P8 HUB PASS (2026-08-30), WS8. Written by intake -
+         missing Edit here is pipeline-level, not cosmetic (analyst correction of a mis-parsed
+         broker identity is blocked without it). -->
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Lead.Broker__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Lead.Broker_Firm__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
         <field>Lead.Broker_First__c</field>
@@ -589,6 +602,13 @@
     <fieldPermissions>
         <editable>false</editable>
         <field>Lead.Days_in_System__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!-- Deal_Name__c ADDED P8 HUB PASS (2026-08-30), WS6. Formula, now a column on all five
+         Lead list views. Read-only: formula fields cannot carry an editable grant. -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Lead.Deal_Name__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -634,6 +654,28 @@
     <fieldPermissions>
         <editable>true</editable>
         <field>Lead.Fields_Missing_Count__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!-- Field_Confidence_JSON__c / Low_Confidence_Field_Count__c ADDED P8 HUB PASS (2026-08-30),
+         WS7, GATE D. 🔴 CONFLICT RESOLVED IN FAVOUR OF THE MEASUREMENT (hub-pass §1): the WS6
+         admin agent that authored this file originally declared these fields read-only, on the
+         field's own "machine-written, never hand-edited" description. The WS7 developer agent
+         then MEASURED that read-only silently disables the feature - EmailToLeadService.
+         applyFieldConfidence gates its write on a cached isCreateable() check, so without Edit
+         FLS the assignment is skipped with nothing logged, not merely invisible. EDITABLE, not
+         read-only, despite the field-level inline help text still saying "do not hand-edit" -
+         that text describes the intended HUMAN workflow, not the FLS requirement the pipeline's
+         own write path turned out to have. Low_Confidence_Field_Count__c is additionally the
+         Review Queue list view's filter field - unreadable, that list view returns nothing,
+         forever. -->
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Lead.Field_Confidence_JSON__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Lead.Low_Confidence_Field_Count__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -906,6 +948,13 @@
         <field>Opportunity.Asset_Type__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!-- BP_Expiry__c ADDED P8 HUB PASS (2026-08-30), WS2. Formula field. Read-only: formula
+         fields cannot carry an editable grant. -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Opportunity.BP_Expiry__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
         <field>Opportunity.Broker_First_Seen__c</field>
@@ -951,6 +1000,21 @@
         <field>Opportunity.Contract_Signed__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!-- Days_In_Stage__c ADDED Acquisitions gap-fix Item 2 (2026-08-31). Formula field (Number,
+         scale 0) over Stage_Entry_Date__c. Read-only: formula fields cannot carry an editable
+         grant. Capital-I casing is deliberate - see Stage_Entry_Date__c below. -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Opportunity.Days_In_Stage__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!-- Days_in_System__c ADDED P8 HUB PASS (2026-08-30), WS2. Formula field. Read-only: formula
+         fields cannot carry an editable grant. -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Opportunity.Days_in_System__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
         <field>Opportunity.Deal_Bucket__c</field>
@@ -984,6 +1048,13 @@
     <fieldPermissions>
         <editable>true</editable>
         <field>Opportunity.Development_Input_Needed__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!-- DPEG_First__c ADDED P8 HUB PASS (2026-08-30), WS2. Lookup - read+write, matching the
+         matrix's DPEG_Acquisition_Edit row. -->
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Opportunity.DPEG_First__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -1131,6 +1202,13 @@
         <field>Opportunity.Offer_Due_Date__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!-- Offer_Status__c ADDED Acquisitions gap-fix Item 5a (2026-08-30). Restricted picklist,
+         RW here (the person working the deal sets it), R-only in the View-only siblings. -->
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Opportunity.Offer_Status__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
         <field>Opportunity.OneDrive_Folder_URL__c</field>
@@ -1204,6 +1282,19 @@
     <fieldPermissions>
         <editable>true</editable>
         <field>Opportunity.Rejection_Reason__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!-- Stage_Entry_Date__c ADDED Acquisitions gap-fix Item 2 (2026-08-31). Date, stamped by Apex
+         (OpportunityStageEntryService) on every genuine stage transition; the write itself needs
+         no FLS since it happens in a before-trigger. Editable=true here to match the org's
+         standing convention for system-stamped dates on this same set (Broker_First_Seen__c,
+         Call_For_Offers_Received_Date__c, Contract_Executed_Date__c, LOI_Prep_Approval_Date__c
+         are all editable=true) and the direct precedent this field matches,
+         Lease_Inquiry__c.Stage_Start_Date__c (editable=true in DPEG_PropertyMgmt_Edit) - so an
+         Acquisitions Edit user can correct a bad stamp without an admin data fix. -->
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Opportunity.Stage_Entry_Date__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -1424,6 +1515,20 @@
     <fieldPermissions>
         <editable>true</editable>
         <field>Property__c.Monthly_Visits__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!-- Normalized_Address__c ADDED P8 HUB PASS (2026-08-30), WS3. 🔴 CONFLICT RESOLVED IN
+         FAVOUR OF THE MEASUREMENT (hub-pass §1): the admin agent that built this field declared
+         it read-only ("system-stamped, do not edit directly"). WS3 then MEASURED that
+         scripts/backfill-property-normalized-address.apex cannot run without Edit -
+         anonymous Apex cannot use SYSTEM_MODE at all, so editable=true here is the ONLY route
+         for the backfill to write this field (Property__c OWD is Private, so the runner also
+         needs Modify All Data - a separate precondition, not an FLS concern). EDITABLE despite
+         the field's own "system-stamped" framing, which describes the steady-state write path
+         (a trigger/service), not the one-time backfill this grant exists to unblock. -->
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Normalized_Address__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -1664,6 +1769,29 @@
     <fieldPermissions>
         <editable>true</editable>
         <field>Underwriting__c.Year_5_IRR__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!-- Total_Deals_Submitted__c / Deals_Won__c / Deals_Lost__c ADDED Acquisitions gap-fix
+         Item 6.1/FIX 4 (2026-08-30). Roll-up summaries on Account (broker firm). READ-ONLY BY
+         TYPE even on this Edit set - a roll-up summary can never carry editable=true, that
+         fails the deploy outright; there is no "Edit" grant to give. Added here because
+         BrokerFirmController reads these three fields to render the Broker Firm sidebar card
+         on the Opportunity record page, which this persona opens routinely - a live UI read
+         path, not only a report. Same three fields, same reasoning, also added this pass to
+         DPEG_Acquisition_View, DPEG_Opportunity_View, DPEG_Account_View and DPEG_Admin_Access. -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Account.Deals_Lost__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Account.Deals_Won__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Account.Total_Deals_Submitted__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <hasActivationRequired>false</hasActivationRequired>

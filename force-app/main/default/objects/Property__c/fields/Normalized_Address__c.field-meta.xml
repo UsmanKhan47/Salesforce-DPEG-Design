@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY — a comment ABOVE the root
+        breaks `sf` deploy at conversion with a misleading "unable to find matching parent
+        xml file" error.
+
+        WS3 (2026-08-30). This file is the FIELD only; the stamping logic lives in Apex.
+
+        ⚠ CORRECTED 2026-08-30 (WS8 review, W5). This block used to end "This field has no
+        writer of its own yet", written while a concurrent agent still owned that half. It
+        landed the same day: LeadConvertService.buildProperty stamps this field at conversion
+        (`p.Normalized_Address__c = ...`), PropertySelector.selectByNormalizedAddresses reads
+        it, and scripts/backfill-property-normalized-address.apex fills pre-existing rows. The
+        <description> below has said so since it was written — a reader who trusted this
+        comment over that description would have concluded the reuse lookup was dead code and
+        that nothing depended on the FLS grant this field needs.
+
+        externalId=true, JUSTIFIED: WS3's whole purpose is a bulk reuse lookup — ONE
+        PropertySelector.selectByNormalizedAddresses(Set<String>) call per LeadConvertService
+        invocation, and that service fires TWICE in one transaction on a 251-conversion batch
+        (LeadConvertServiceTest.bulkConversion251LeadsCreatesPropertiesAndStampsOpportunities
+        drives 251 conversions across two convertLead chunks). Without an index this is an
+        unindexed WHERE ... IN scan against a growing object, and Property__c is the root
+        object of the acquisition graph — it gets Yardi/CoStar sync writes and every seed run,
+        so its row count grows independently of conversions. Setting externalId=true is the
+        only declarative way to get a custom index on a Text field without also forcing
+        unique=true (a genuine Unique custom index requires unique=true, which is refused
+        below). This does NOT create a duplicate-detection rule and does NOT block insert.
+
+        unique=false, MANDATORY (not a default left alone): the org already contains
+        duplicate Properties — reconciling that is WS3's whole point. A unique constraint
+        would refuse the backfill script's UPDATE the moment two existing Property__c rows
+        normalize to the same key, which is the exact scenario WS3 exists to find and reuse
+        going forward. This mirrors Property_Registry__c.Normalized_Address__c (unique=false)
+        and deliberately does NOT mirror Property_Registry__c.Property_Key__c (unique=true) -
+        that field enforces a NEW claim key on a clean append-only registry; this field is
+        being retrofitted onto an object with years of pre-existing duplicates.
+
+        Length mirrors Property_Registry__c.Normalized_Address__c and Property_Key__c
+        (255) deliberately: both hold the output of the SAME method,
+        PropertyMatchingService.normalizeAddress, applied to the SAME upstream field length
+        (*.Property_Address__c / Street, all Text(255)). normalizeAddress only removes and
+        collapses characters, so its output can never exceed its input length - matching the
+        length exactly rules out a truncation mismatch turning the same address into two
+        different keys on the two objects.
+    -->
+    <fullName>Normalized_Address__c</fullName>
+    <caseSensitive>false</caseSensitive>
+    <externalId>true</externalId>
+    <label>Normalized Address</label>
+    <length>255</length>
+    <required>false</required>
+    <description>Lowercased, punctuation-stripped, whitespace-collapsed address key used to detect an existing Property for reuse on Lead conversion. The SOLE definition of the normalization is PropertyMatchingService.normalizeAddress - do not hand-derive this value anywhere else. Must resolve to the identical string Property_Registry__c.Property_Key__c would compute for the same address, so the two can never disagree. Populated by LeadConvertService at conversion (or by the WS3 backfill script for pre-existing rows); this field has no trigger of its own. Blank on any Property created outside LeadConvertService (hand-entry, seed scripts, future integrations) - such a Property is invisible to the reuse lookup and a duplicate may be created for it, which is bounded to today's existing behavior, not a new defect.</description>
+    <inlineHelpText>Do not edit directly. Populated at Lead conversion from the normalized property address; used only to detect an existing Property for reuse.</inlineHelpText>
+    <trackFeedHistory>false</trackFeedHistory>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>

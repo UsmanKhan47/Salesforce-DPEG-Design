@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY - a comment ABOVE the root
+        breaks `sf` deploy at conversion with a misleading "unable to find matching parent
+        xml file" error.
+
+        WS7 / GATE D (2026-08-30). THE REASON THIS FIELD EXISTS AT ALL: Field_Confidence_JSON__c
+        is a Long Text Area holding the LLM's per-field confidence map, and a Long Text Area
+        cannot be used in a list-view filter, a report filter, or a formula's CONTAINS(). This
+        field is the derived, FILTERABLE count - a plain Number - so the Review Queue list
+        view (and any future report) has something to filter/sort on that the JSON map cannot
+        provide directly.
+
+        NOT AI_Review_Status__c. That name was explicitly rejected - this field counts, it does
+        not classify or gate.
+
+        NOT a replacement for Parse_Confidence__c. Parse_Confidence__c is a single HIGH/MEDIUM/
+        LOW band over the whole-email is_acquisition_related question. This field counts
+        per-DEAL-FIELD confidence entries below the CMDT medium-confidence threshold
+        (Broker_Protection_Config__mdt.Default.Confidence_Medium_Min__c, WS5) - a different
+        question. The Review_Queue list view filter joins the two with
+        <booleanFilter>1 OR 2</booleanFilter> rather than replacing the existing
+        Parse_Confidence__c = LOW filter, because a whole-email-confident extraction can still
+        have individually weak fields, and replacing the first filter would silently narrow an
+        already-live queue.
+
+        Machine-written by the same pipeline that writes Field_Confidence_JSON__c, in the same
+        existing Lead insert (EmailToLeadService.createLeadFromExtracted) - zero new DML.
+    -->
+    <fullName>Low_Confidence_Field_Count__c</fullName>
+    <description>Count of extracted deal fields whose per-field confidence (Field_Confidence_JSON__c) falls below the configured medium-confidence threshold. Exists because a Long Text JSON map cannot be filtered in a list view - this is the filterable signal that drives the Review Queue. Machine-written only.</description>
+    <externalId>false</externalId>
+    <inlineHelpText>Number of extracted deal fields the model was not confident about. Drives the Review Queue list view alongside Parse Confidence. Machine-written - do not hand-edit.</inlineHelpText>
+    <label>Low Confidence Field Count</label>
+    <precision>2</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <trackFeedHistory>false</trackFeedHistory>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

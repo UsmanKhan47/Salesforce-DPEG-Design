@@ -1,6 +1,31 @@
 @IsTest
 private class BrokerPortalControllerTest {
 
+    /**
+     * Canned Cloudflare siteverify response. `submitDeal` became callout-bearing on 2026-08-30
+     * (WS4 / ARCHITECTURE.md §3.5), so EVERY test that reaches past validate() must install this
+     * or fail with "Methods defined as TestMethod do not support Web service callouts" — an error
+     * that names the test and says nothing about the cause.
+     *
+     * ⚠ The honeypot test deliberately installs NO mock. That absence is what pins the honeypot
+     * ahead of Turnstile; see BrokerPortalServiceTest for the full argument and for the
+     * policy-level CAPTCHA tests (refused / unreachable / broken credential), which belong on the
+     * service rather than here.
+     */
+    private class TurnstileMock implements HttpCalloutMock {
+        public HttpResponse respond(HttpRequest request) {
+            HttpResponse response = new HttpResponse();
+            response.setStatusCode(200);
+            response.setStatus('OK');
+            response.setBody('{"success":true,"error-codes":[]}');
+            return response;
+        }
+    }
+
+    private static void mockTurnstileVerified() {
+        Test.setMock(HttpCalloutMock.class, new TurnstileMock());
+    }
+
     private static BrokerPortalController.DealSubmission validInput() {
         BrokerPortalController.DealSubmission d = new BrokerPortalController.DealSubmission();
         d.firstName = 'Jane';
@@ -11,6 +36,7 @@ private class BrokerPortalControllerTest {
         d.propertyAddress = '123 Main St, Dallas TX';
         d.assetType = 'Retail';
         d.dealType = 'Retail';
+        d.turnstileToken = 'a-plausible-looking-turnstile-token';
         return d;
     }
 
@@ -42,6 +68,7 @@ private class BrokerPortalControllerTest {
     static void submitDeal_happyPath_insertsStampedLead() {
         BrokerPortalController.DealSubmission d = validInput();
 
+        mockTurnstileVerified();
         Test.startTest();
         BrokerPortalController.SubmitResult res = BrokerPortalController.submitDeal(d);
         Test.stopTest();
@@ -141,6 +168,7 @@ private class BrokerPortalControllerTest {
         broker.Broker_Priority__c = 'High';
         insert broker;
 
+        mockTurnstileVerified();
         Test.startTest();
         BrokerPortalController.submitDeal(validInput()); // same email as the broker contact
         Test.stopTest();
@@ -150,6 +178,7 @@ private class BrokerPortalControllerTest {
 
     @IsTest
     static void submitDeal_unknownBroker_defaultsToStandardPriority() {
+        mockTurnstileVerified();
         Test.startTest();
         BrokerPortalController.submitDeal(validInput());
         Test.stopTest();
@@ -169,6 +198,7 @@ private class BrokerPortalControllerTest {
         existing.LeadSource = 'Manual Entry';
         insert existing;
 
+        mockTurnstileVerified();
         Test.startTest();
         BrokerPortalController.submitDeal(validInput()); // same address
         Test.stopTest();
@@ -186,6 +216,7 @@ private class BrokerPortalControllerTest {
         existing.LeadSource = 'Manual Entry';
         insert existing;
 
+        mockTurnstileVerified();
         Test.startTest();
         BrokerPortalController.submitDeal(validInput()); // same address, but existing is closed
         Test.stopTest();
@@ -203,6 +234,7 @@ private class BrokerPortalControllerTest {
         existing.LeadSource = 'Manual Entry';
         insert existing;
 
+        mockTurnstileVerified();
         Test.startTest();
         BrokerPortalController.submitDeal(validInput()); // different address
         Test.stopTest();
@@ -275,6 +307,7 @@ private class BrokerPortalControllerTest {
         BrokerPortalService.cachedQueueId = notAValidOwner.Id;
 
         Boolean threw = false;
+        mockTurnstileVerified();
         Test.startTest();
         try {
             BrokerPortalController.submitDeal(validInput());
@@ -283,5 +316,39 @@ private class BrokerPortalControllerTest {
         }
         Test.stopTest();
         System.Assert.isTrue(threw, 'A failed Lead insert should surface as AuraHandledException');
+    }
+    /**
+     * The LWC boundary contract for a refused CAPTCHA: the service throws its typed, user-safe
+     * SubmissionException and the controller must surface that message VERBATIM as an
+     * AuraHandledException — not swallow it into the generic "could not save" text, which would
+     * leave the broker with no idea that a solvable widget is what stands between them and
+     * submitting.
+     */
+    @IsTest
+    static void submitDeal_turnstileRefused_surfacesTheUserSafeMessage() {
+        Test.setMock(HttpCalloutMock.class, new RefusingTurnstileMock());
+        String message;
+        Test.startTest();
+        try {
+            BrokerPortalController.submitDeal(validInput());
+        } catch (AuraHandledException e) {
+            message = e.getMessage();
+        }
+        Test.stopTest();
+        System.Assert.isNotNull(message, 'A refused CAPTCHA must reach the LWC as an AuraHandledException');
+        System.Assert.isTrue(message.contains('complete the verification'),
+            'The service\u0027s user-safe message must survive the controller boundary intact. Got: ' + message);
+        System.Assert.areEqual(0, [SELECT COUNT() FROM Lead], 'No Lead on a refused CAPTCHA');
+    }
+
+    /** Cloudflare answered and refused the token. */
+    private class RefusingTurnstileMock implements HttpCalloutMock {
+        public HttpResponse respond(HttpRequest request) {
+            HttpResponse response = new HttpResponse();
+            response.setStatusCode(200);
+            response.setStatus('OK');
+            response.setBody('{"success":false,"error-codes":["invalid-input-response"]}');
+            return response;
+        }
     }
 }

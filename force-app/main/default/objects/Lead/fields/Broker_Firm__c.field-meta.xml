@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY. A comment placed ABOVE
+        <CustomField> breaks `sf` deploy at source conversion with a misleading
+        "unable to find matching parent xml file" error.
+
+        =====================================================================================
+        WHAT THIS FIELD IS. The matched broker's firm (Account), derived from Broker__c at the
+        same email-match intake step. See Broker__c.field-meta.xml in this same folder for the
+        full USER DECISION writeup (match-only intake, blank is the normal state on most Leads,
+        conversion-time Contact/Account creation lives in LeadConvertMatchService).
+        =====================================================================================
+        This field is populated ONLY alongside Broker__c, by the same match; it is never
+        stamped independently of a resolved broker Contact. When Broker__c is blank, this field
+        is blank too, for the identical reason (no sender-email match found).
+
+        =====================================================================================
+        NAMING — ARCHITECTURE.md Section 1 relationship-field rule. CONFIRMED, WITH A DOCUMENTED
+        INTERPRETATION CALL — read this in full before assuming the rule was applied loosely.
+        =====================================================================================
+        The rule's literal text: "The field name is the target object's name. Exception:
+        role-named lookups to User / Contact take the role name — API names must be unique, so a
+        second User__c cannot exist." Read narrowly, that exception clause names only User and
+        Contact — this field references Account, which is not listed.
+
+        Read for its OWN stated reasoning rather than its example list, the exception exists
+        because a plain object-name field (e.g. "Account__c") cannot express a ROLE when one is
+        needed, and because API-name uniqueness means only one field on an object can ever be
+        literally named after the target object. Both of those reasons apply here exactly as
+        written, independent of which object is being referenced:
+          1. "Account__c" on Lead would be actively ambiguous — Lead already carries a distinct
+             concept of its own company (`Company`, standard Text), and Salesforce's own
+             standard Lead-to-Account CONVERSION already overloads "the Account" to mean "the
+             Account this Lead becomes." A field literally named Account__c would collide with
+             that conversion semantic on the very object where conversion happens. Broker_Firm__c
+             cannot be confused with either.
+          2. There is exactly ONE existing Account lookup in this repo today —
+             Receivables_Summary__c.Account__c — and it correctly uses the plain object name
+             because it IS the generic, non-role relationship the base rule describes ("the
+             Account this receivable summary is for," nothing more specific). It is not a
+             counter-precedent against role-naming; it is confirmation the base rule is still
+             correct for a GENERIC Account reference, and this is not one.
+
+        CONCLUSION: Broker_Firm__c is the correct name under the rule's own reasoning, but this
+        is the FIRST role-named Account lookup in the org, and ARCHITECTURE.md Section 1's
+        exception clause does not literally list Account. Recording this here rather than
+        silently extending the rule: a future ARCHITECTURE.md edit should probably widen the
+        exception's wording from "User / Contact" to "User / Contact / Account" (or drop the
+        object list entirely in favor of the reasoning above) so the next reader does not have to
+        re-derive this. Not changed here — ARCHITECTURE.md is out of scope for this task and is
+        owned elsewhere.
+
+        This field's exact API name was set by the concurrent developer agent building the
+        matching Apex against it; had the analysis above concluded a different name was required,
+        this file would not have been created and the conflict would have been raised instead.
+
+        COLLISION CHECK, MEASURED NOT ASSUMED. The only existing referenceTo=Account field in
+        this repo is Receivables_Summary__c.Account__c -> relationshipName Receivables_Summaries.
+        "Brokered_Leads" is unused on Account. (It is reused as the relationshipName on the
+        SIBLING Contact lookup Lead.Broker__c in this same change — that is not a collision:
+        relationshipName is scoped per PARENT object, Contact and Account are different parents,
+        and "Brokered Leads" reads correctly as a related-list label from either firm's or
+        either broker's Account/Contact page.)
+
+        =====================================================================================
+        NO lookupFilter ON THIS FIELD, DELIBERATELY — same reasoning as Broker__c.
+        =====================================================================================
+        This is a machine-derived field, not a human pick from a Lookup widget. An ACTIVE
+        non-optional lookupFilter (e.g. restricting to Account.RecordType.DeveloperName =
+        'Broker_Firm') is enforced on Apex DML in this org, not merely the UI — see
+        Broker__c.field-meta.xml's note on Opportunity.Broker__c. Filtering here would risk
+        turning a routine intake write into a hard failure whenever the matched broker
+        Contact's own Account did not carry the Broker_Firm record type for any data-quality
+        reason. No filter added.
+
+        =====================================================================================
+        deleteConstraint = SetNull, not Restrict, not Cascade — identical reasoning to Broker__c.
+        =====================================================================================
+        Advisory link to a firm Account that may later be deleted, merged, or reparented.
+        Restrict would block legitimate Account cleanup for as long as any Lead referenced the
+        firm. Cascade would delete Leads whenever a broker's firm Account was removed — active
+        data loss on the wrong object. SetNull is the only choice consistent with Broker__c and
+        with every Contact-lookup sibling cited there.
+
+        =====================================================================================
+        FLS — DECLARED HERE, NOT DEPLOYED HERE. This agent does not touch permission sets.
+        =====================================================================================
+        Same measured risk as Broker__c: an ungranted field on Lead throws System.DmlException
+        and fails the whole intake transaction, not merely hides the field.
+
+        Needed: DPEG_Acquisition_Edit — Read + EDIT on Lead.Broker_Firm__c, matching the
+        Read+Edit grant already given to Parse_Confidence__c / Deal_Notes__c / First_Seen_Date__c
+        on that same permission set, and matching the grant this change also asks for on the
+        sibling Broker__c field.
+
+        Measured: Broker_Protection_Access and DPEG_Admin_Access currently carry ZERO
+        FieldPermissions rows for those three sibling fields. Same recommendation as Broker__c:
+        add Read+Edit on Broker_Protection_Access (this is broker-identity data squarely inside
+        that set's domain); leave DPEG_Admin_Access to the P8 reviewer's judgment. Not decided
+        here.
+    -->
+    <fullName>Broker_Firm__c</fullName>
+    <label>Broker Firm</label>
+    <type>Lookup</type>
+    <referenceTo>Account</referenceTo>
+    <relationshipLabel>Brokered Leads</relationshipLabel>
+    <relationshipName>Brokered_Leads</relationshipName>
+    <required>false</required>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <description>The matched broker's firm, derived from Broker__c at the same email-match intake step. Blank whenever Broker__c is blank — no sender-email match found at intake, which is the expected state on most Leads. Never stamped independently of Broker__c. Contact/Account creation for a non-match happens later, at conversion, in LeadConvertMatchService.</description>
+    <inlineHelpText>Filled in automatically alongside Broker, from that broker Contact's Account. Stays blank whenever Broker is blank.</inlineHelpText>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+</CustomField>

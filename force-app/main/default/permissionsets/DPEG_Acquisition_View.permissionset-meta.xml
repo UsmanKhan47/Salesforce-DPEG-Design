@@ -451,6 +451,28 @@
         <field>Lead.CoStar_Link__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!-- Deal_Name__c ADDED P8 HUB PASS (2026-08-30), WS6. Formula, now a column on all five Lead
+         list views. -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Lead.Deal_Name__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!-- Field_Confidence_JSON__c / Low_Confidence_Field_Count__c ADDED P8 HUB PASS (2026-08-30),
+         WS7. Read-only on this View set, matching the matrix's DPEG_Acquisition_View row - the
+         mandatory EDIT grant lives on DPEG_Acquisition_Edit only (see that file's comment for the
+         read-only-breaks-the-write conflict this resolves). Low_Confidence_Field_Count__c is
+         additionally the Review Queue list view's filter field. -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Lead.Field_Confidence_JSON__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Lead.Low_Confidence_Field_Count__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
         <field>Lead.Days_in_System__c</field>
@@ -946,9 +968,29 @@
         <field>Opportunity.Asset_Type__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!-- BP_Expiry__c / Days_in_System__c ADDED P8 HUB PASS (2026-08-30), WS2. Both formula
+         fields. -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Opportunity.BP_Expiry__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
         <field>Opportunity.Broker_First_Seen__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!-- Days_In_Stage__c ADDED Acquisitions gap-fix Item 2 (2026-08-31). Formula field. Read-only
+         twin of the grant on DPEG_Acquisition_Edit; formula fields cannot carry an editable
+         grant. -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Opportunity.Days_In_Stage__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Opportunity.Days_in_System__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <!-- ADDED 2026-08-14, Acquisition Observations Phase 4. Read-only twin of the grant on
@@ -1021,6 +1063,12 @@
     <fieldPermissions>
         <editable>false</editable>
         <field>Opportunity.Development_Input_Needed__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!-- DPEG_First__c ADDED P8 HUB PASS (2026-08-30), WS2. -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Opportunity.DPEG_First__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -1177,6 +1225,13 @@
         <field>Opportunity.Offer_Due_Date__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!-- Offer_Status__c ADDED Acquisitions gap-fix Item 5a (2026-08-30). Read-only in this
+         View-only set. -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Opportunity.Offer_Status__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
         <field>Opportunity.OneDrive_Folder_URL__c</field>
@@ -1245,6 +1300,13 @@
     <fieldPermissions>
         <editable>false</editable>
         <field>Opportunity.Rejection_Reason__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!-- Stage_Entry_Date__c ADDED Acquisitions gap-fix Item 2 (2026-08-31). Read-only twin of the
+         editable grant on DPEG_Acquisition_Edit. -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Opportunity.Stage_Entry_Date__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -1415,6 +1477,14 @@
     <fieldPermissions>
         <editable>false</editable>
         <field>Property__c.Monthly_Visits__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!-- Normalized_Address__c ADDED P8 HUB PASS (2026-08-30), WS3. Read-only on this View set -
+         the mandatory EDIT grant needed to unblock the backfill lives on DPEG_Acquisition_Edit
+         only. -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Property__c.Normalized_Address__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -1732,8 +1802,54 @@
         <field>Property__c.Portfolio_Deal__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!-- Total_Deals_Submitted__c / Deals_Won__c / Deals_Lost__c ADDED Acquisitions gap-fix
+         Item 6.1/FIX 4 (2026-08-30). Roll-up summaries on Account (broker firm), read-only by
+         type. Added because BrokerFirmController reads these three fields to render the Broker
+         Firm sidebar card on the Opportunity record page - a live UI read path, not only a
+         report. Same three fields, same reasoning, also added this pass to
+         DPEG_Acquisition_Edit, DPEG_Opportunity_View, DPEG_Account_View and DPEG_Admin_Access. -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Account.Deals_Lost__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Account.Deals_Won__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Account.Total_Deals_Submitted__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!-- Property_Registry__c.Protection_Window_Days__c ADDED 2026-08-30, BA Gap-Closure C2
+         follow-up. This set previously granted NEITHER object- nor field-level access to
+         Property_Registry__c at all - Broker_Protection_Access was the only permission set
+         granting anything on this object. Added here, read-only, so a viewer settling a GATE A
+         dispute (the window in force when a claim was registered) can actually see the stamped
+         value; PropertyClaimService.stampResolvedWindow is the sole writer, on all three call
+         sites (registerWinner and both adopt() legs), and needs Read+Edit only on
+         Broker_Protection_Access, the intake principal - see that field's own description and
+         PropertyClaimService's header for the full mechanism. See the matching objectPermissions
+         block below (Property_Registry__c, read-only) - without it this field grant alone would
+         be inert. -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Property_Registry__c.Protection_Window_Days__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <hasActivationRequired>false</hasActivationRequired>
     <label>DPEG Acquisition View</label>
+    <objectPermissions>
+        <allowCreate>false</allowCreate>
+        <allowDelete>false</allowDelete>
+        <allowEdit>false</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>false</modifyAllRecords>
+        <object>Property_Registry__c</object>
+        <viewAllRecords>true</viewAllRecords>
+    </objectPermissions>
     <objectPermissions>
         <allowCreate>false</allowCreate>
         <allowDelete>false</allowDelete>

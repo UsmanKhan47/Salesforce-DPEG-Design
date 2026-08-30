@@ -19,7 +19,17 @@ public with sharing class LeadFunnelController {
         'Email-to-Lead', 'Broker Portal', 'Manual Entry'
     };
     // Broker protection window (days) measured from First Seen Date.
-    private static final Integer BP_WINDOW_DAYS = 90;
+    //
+    // ⚠ NOT A LITERAL SINCE WS5 (2026-08-30). Resolves from the one Setup-editable record,
+    // `Broker_Protection_Config__mdt.Default`, via BrokerProtectionConfig — the same
+    // accessor PropertyMatchingService.PROTECTION_WINDOW_DAYS and the Lead.BP_Expiry__c
+    // formula read, so this DISPLAY value can no longer drift from the ARBITRATION value
+    // that actually decides who owns a property. Drift between them was the defect the
+    // register in PropertyMatchingService's header existed to prevent by hand.
+    //
+    // static final on purpose: resolved once per transaction, so every row in one funnel
+    // response is computed against the same window.
+    private static final Integer BP_WINDOW_DAYS = BrokerProtectionConfig.protectionWindowDays();
     // Trailing window (days) for the recency-scoped Converted / Disqualified counts.
     private static final Integer OUTCOME_WINDOW_DAYS = 90;
     // Row cap for the recent-leads / review-queue list.

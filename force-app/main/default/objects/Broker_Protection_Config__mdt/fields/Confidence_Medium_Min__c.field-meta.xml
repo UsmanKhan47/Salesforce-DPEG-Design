@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY — see
+        Protection_Window_Days__c.field-meta.xml in this folder for why a comment above the
+        root breaks `sf` deploy at conversion.
+
+        Replaces LLMExtractionParser.CONFIDENCE_MEDIUM_MIN (currently 0.60). Values below
+        this band as LOW on Lead.Parse_Confidence__c. Also reused by WS7's per-field
+        low-confidence signal (design-requirements.md §2/WS7): a field's own confidence
+        below this same threshold counts toward the Lead's low-confidence field count, so
+        one number governs both judgements deliberately — see that workstream's admin/
+        developer prompts for the field this feeds (Gate D, not built by this task).
+
+        Not subject to GATE A (display/routing threshold, not a claim-arbitration
+        constant) and does NOT feed ExtractAddressQueueable's suppression hard gate — that
+        gate reads only Confidence_High_Min__c.
+    -->
+    <fullName>Confidence_Medium_Min__c</fullName>
+    <description>MEDIUM-confidence threshold for the top-level extraction &apos;confidence&apos; score (0-1); values below this band as LOW (Lead.Parse_Confidence__c). Replaces LLMExtractionParser.CONFIDENCE_MEDIUM_MIN (0.60). Also governs the per-field low-confidence signal: a field&apos;s own confidence below this value counts toward the Lead&apos;s low-confidence field count. Does NOT affect the ExtractAddressQueueable suppression hard gate — that reads only Confidence_High_Min__c.</description>
+    <externalId>false</externalId>
+    <fieldManageability>DeveloperControlled</fieldManageability>
+    <inlineHelpText>0-1. Below this = LOW confidence band; also the per-field low-confidence threshold (WS7).</inlineHelpText>
+    <label>Confidence Medium Min</label>
+    <precision>3</precision>
+    <required>false</required>
+    <scale>2</scale>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

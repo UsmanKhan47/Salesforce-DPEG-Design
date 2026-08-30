@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY — a comment ABOVE the root
+        breaks `sf` deploy at conversion with a misleading "unable to find matching parent
+        xml file" error.
+
+        ADDED 2026-08-30, BA Gap-Closure code-review pass (GATE A durable-audit follow-up,
+        user-approved). GATE A (see Broker_Protection_Config__mdt.Protection_Window_Days__c's
+        own header) made PropertyMatchingService log the RESOLVED protection window at WARN on
+        every claim run, so a disputed claim could be reconstructed from logs after the fact.
+        In practice that needs an active trace flag on an ASYNC context user at exactly the
+        right moment, which will typically not exist — a debug log is not a durable audit
+        trail. This field makes the audit durable by writing the value onto the record itself,
+        once, at the moment it mattered.
+
+        Matches Broker_Protection_Config__mdt.Protection_Window_Days__c's type exactly
+        (Number(3,0)) so the stamped value and the CMDT source can never disagree on shape.
+
+        🔴 A concurrent developer-agent workstream stamps this field from PropertyClaimService
+        at claim time under this EXACT API name — do not rename it.
+
+        🔴 CORRECTED 2026-08-30 (BA Gap-Closure follow-up) - THREE WRITE PATHS, NOT ONE. The
+        description below originally said "copied once... and never updated afterward", which
+        was accurate only against PropertyClaimService.registerWinner (the new-winner insert),
+        the sole path that existed when this field was written. PropertyClaimService.adopt()
+        also calls the same stampResolvedWindow helper, on BOTH of its callers - the orphan-
+        adoption leg and the expired-adoption leg (registerWinner's catch block and claim()'s
+        expired-registry check). adopt() already resets Registered_DateTime__c on every call,
+        because an adoption genuinely IS a fresh claim, not a continuation of the old one; RE-
+        stamping Protection_Window_Days__c alongside it is required by the same logic, not an
+        inconsistency - leaving the original insert's stamp in place would produce a row whose
+        Registered_DateTime__c and whose Protection_Window_Days__c came from two different
+        claims. That mismatch would be worst on exactly the expired-adoption leg, which is the
+        GATE A dispute scenario (a claim outliving its own window) this field exists to settle.
+        So: every write to Registered_DateTime__c is accompanied by a write to this field, on
+        all three call sites, each still a single write per property per transaction - this is
+        not a periodic or trigger-driven update.
+    -->
+    <fullName>Protection_Window_Days__c</fullName>
+    <description>The broker protection window (in days) that was IN FORCE THE LAST TIME THIS CLAIM WAS REGISTERED - written by automation on every path that sets Registered_DateTime__c (the new-winner insert and both adoption legs; an adoption is a fresh claim), never hand-edited. Copied from Broker_Protection_Config__mdt.Default.Protection_Window_Days__c. Exists so a disputed claim can be settled from this record rather than an expired debug log. The live configured value on the CMDT record may since have changed - that is expected and is the entire point of stamping it here.</description>
+    <externalId>false</externalId>
+    <inlineHelpText>Protection window in force when this claim was last registered. Written by automation, never hand-edited; the current configured value may differ.</inlineHelpText>
+    <label>Protection Window Days</label>
+    <precision>3</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

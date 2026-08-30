@@ -443,6 +443,108 @@ private class LeadSelectorTest {
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
+    // selectMatchKeysWithBrokerByIds  (WS8 intake broker link, 2026-08-30)
+    //
+    // The SAME query with three more columns, used by LeadConvertMatchService ONLY when a
+    // describe says the running user can read them. The separation is not stylistic: selecting
+    // `Broker__c` / `Broker_Firm__c` unguarded under USER_MODE throws for a principal with no
+    // FieldPermissions row, and that class's fail-soft turns the throw into an EMPTY MAP —
+    // silently disabling ALL matching. See the method's own ApexDoc.
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    @isTest
+    static void selectMatchKeysWithBrokerByIds_returnsTheMatchKeysAndTheBrokerLink() {
+        Account firm = TestDataFactory.createAccount(true);
+        Contact broker = TestDataFactory.createBrokerContacts(1, firm.Id, false)[0];
+        broker.Email = 'selector.ws8.broker@example.invalid';
+        TestDataFactory.insertAllowingDuplicates(new List<Contact>{ broker });
+
+        Lead l = TestDataFactory.createLead(false);
+        l.Email = 'selector.ws8.matchkey@example.invalid';
+        l.Company = 'Selector WS8 Co';
+        // ⚠ FLS-BRANCHED FIXTURE. Writing an ungranted Lead field throws DmlException and takes the
+        // whole class with it (measured 2026-08-30). Both branches below assert something real.
+        Boolean writable = Schema.SObjectType.Lead.fields.Broker__c.isCreateable()
+            && Schema.SObjectType.Lead.fields.Broker_Firm__c.isCreateable();
+        if (writable) {
+            l.Broker__c = broker.Id;
+            l.Broker_Firm__c = firm.Id;
+        }
+        insertWithDupBypass(new List<Lead>{ l });
+
+        Test.startTest();
+        List<Lead> rows = writable
+            ? LeadSelector.selectMatchKeysWithBrokerByIds(new Set<Id>{ l.Id })
+            : LeadSelector.selectMatchKeysByIds(new Set<Id>{ l.Id });
+        Test.stopTest();
+
+        Assert.areEqual(1, rows.size(), 'The requested Lead should be returned, in ONE query either way');
+        Assert.areEqual('selector.ws8.matchkey@example.invalid', rows[0].Email,
+            'Email is still selected — WS8 ADDS columns, it does not replace the 2026-08-02 contract');
+        Assert.areEqual('Selector WS8 Co', rows[0].Company, 'and Company likewise');
+        if (writable) {
+            Assert.areEqual(broker.Id, rows[0].Broker__c, 'The broker lookup is selected');
+            Assert.areEqual(firm.Id, rows[0].Broker_Firm__c, 'and the firm lookup');
+            Assert.areEqual(firm.Id, rows[0].Broker__r.AccountId,
+                '🔴 AND THE SPAN RESOLVES IN THE SAME STATEMENT. Broker__r.AccountId — not '
+                + 'Broker_Firm__c — is what the caller uses as the conversion Account, because it is '
+                + 'the Contact\'s OWN Account and therefore satisfies setContactId\'s constraint by '
+                + 'construction. If this ever comes back null on a linked Lead, the caller falls back '
+                + 'to the email match rather than handing convertLead a pair it refuses');
+        }
+    }
+
+    @isTest
+    static void selectMatchKeysWithBrokerByIds_nullOrEmptyInput_returnsEmptyWithoutQuerying() {
+        Test.startTest();
+        Integer before = Limits.getQueries();
+        List<Lead> forNull = LeadSelector.selectMatchKeysWithBrokerByIds(null);
+        List<Lead> forEmpty = LeadSelector.selectMatchKeysWithBrokerByIds(new Set<Id>());
+        Integer after = Limits.getQueries();
+        Test.stopTest();
+
+        Assert.areEqual(0, forNull.size(), 'A null Id set short-circuits to an empty list, not null');
+        Assert.areEqual(0, forEmpty.size(), 'An empty Id set short-circuits to an empty list, not null');
+        Assert.areEqual(0, after - before,
+            'Neither call spends a query — the empty-set guard runs before the SOQL, exactly as in '
+            + 'the twin above');
+    }
+
+    @isTest
+    static void selectMatchKeysWithBrokerByIds_251Leads_returnsAllInOneQuery() {
+        // Selector-layer bulk proof, per this repo's standing convention and independent of the
+        // SERVICE-level 251 proof in LeadConvertMatchServiceTest. The three extra columns must not
+        // turn one query into 251.
+        //
+        // 🔴 FLS-BRANCHED ON THE *READ*, AND THIS ONE WAS MEASURED THE HARD WAY (check-only
+        // 0Afiw000000TkVh): calling the broker-aware method unconditionally throws
+        // `System.QueryException: No such column 'Broker__c' on entity 'Lead'` when the field has
+        // no FieldPermissions row — which is the org's DEFAULT state on the day WS8 deploys. That
+        // is the very failure `LeadConvertMatchService.brokerLinkReadable()` exists to prevent, so
+        // a test that ignored it would fail on exactly the state the production guard survives.
+        Boolean readable = Schema.SObjectType.Lead.fields.Broker__c.isAccessible()
+            && Schema.SObjectType.Lead.fields.Broker_Firm__c.isAccessible()
+            && Schema.SObjectType.Contact.isAccessible();
+
+        List<Lead> leads = TestDataFactory.createLeads(BULK_N, false);
+        insertWithDupBypass(leads);
+        Set<Id> leadIds = new Map<Id, Lead>(leads).keySet();
+
+        Test.startTest();
+        Integer before = Limits.getQueries();
+        List<Lead> rows = readable
+            ? LeadSelector.selectMatchKeysWithBrokerByIds(leadIds)
+            : LeadSelector.selectMatchKeysByIds(leadIds);
+        Integer after = Limits.getQueries();
+        Test.stopTest();
+
+        Assert.areEqual(BULK_N, rows.size(), 'All 251 requested Leads must be returned');
+        Assert.areEqual(1, after - before,
+            'in EXACTLY ONE query. The spanned Broker__r.AccountId is a relationship traversal in '
+            + 'this same statement, not a second read');
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
     // HELPERS
     // ═══════════════════════════════════════════════════════════════════════════
 

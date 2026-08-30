@@ -116,6 +116,13 @@
         <field>Property__c.Market_Rent_PSF__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!-- Normalized_Address__c ADDED P8 HUB PASS (2026-08-30), WS3. Read-only, matching every
+         other field on this set. -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Property__c.Normalized_Address__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
         <field>Property__c.Monthly_Visits__c</field>

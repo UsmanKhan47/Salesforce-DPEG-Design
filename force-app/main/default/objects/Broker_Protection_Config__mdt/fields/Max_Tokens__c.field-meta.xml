@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY — see
+        Protection_Window_Days__c.field-meta.xml in this folder for why a comment above the
+        root breaks `sf` deploy at conversion.
+
+        Replaces LLMExtractionCalloutService.MAX_TOKENS (currently 4096). Precision(6,0)
+        covers up to 999,999, well beyond any realistic completion-token budget for this
+        callout, so the field never needs widening for a larger response cap.
+    -->
+    <fullName>Max_Tokens__c</fullName>
+    <description>Maximum completion tokens per extraction callout. Replaces LLMExtractionCalloutService.MAX_TOKENS (4096). See that class&apos;s header (&apos;RESPONSE SIZING — WHY MAX_TOKENS IS 4096 AND NOT 512&apos;) for why — a multi-property email&apos;s JSON response can be large, and too low a value truncates the response before it is parsed, losing properties silently.</description>
+    <externalId>false</externalId>
+    <fieldManageability>DeveloperControlled</fieldManageability>
+    <inlineHelpText>Max completion tokens per callout. Too low silently truncates a multi-property response.</inlineHelpText>
+    <label>Max Tokens</label>
+    <precision>6</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

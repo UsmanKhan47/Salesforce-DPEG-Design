@@ -59,11 +59,50 @@ public with sharing class LLMExtractionParser {
     /** Parse_Confidence__c value for confidence < 0.60, or missing/unparseable. */
     public static final String BAND_LOW = 'LOW';
 
-    /** Lower bound of the HIGH band — and the ONLY confidence at which the relevance gate
-     *  suppresses a Lead (design §2.3). Tuning the gate happens here, never in the prompt. */
-    public static final Decimal CONFIDENCE_HIGH_MIN = 0.85;
-    /** Lower bound of the MEDIUM band. */
-    public static final Decimal CONFIDENCE_MEDIUM_MIN = 0.60;
+    /**
+     * Lower bound of the HIGH band — and the ONLY confidence at which the relevance gate
+     * suppresses a Lead (design §2.3). Tuning the gate happens here, never in the prompt.
+     *
+     * ⚠ SINCE WS5 (2026-08-30) THIS RESOLVES FROM SETUP, NOT FROM A LITERAL. It reads
+     * BrokerProtectionConfig.confidenceHighMin(), which returns 0.85 when the
+     * Broker_Protection_Config__mdt.Default record is absent — so an org with no config
+     * record bands exactly as it did before WS5.
+     *
+     * ⚠ THAT ACCESSOR IS GUARDED AS OF WS8 (2026-08-30) and refuses a negative, a value
+     * above 1, or exactly 0, falling back to 0.85 with a WARN. Until then it was a bare
+     * null-coalesce and a `0` typed in Setup would have made the suppression gate below fire
+     * for EVERY non-acquisition extraction, silently. There is no `effective*` variant to
+     * read here: this value is never clamped, deliberately — see that accessor.
+     *
+     * 🔴 MAKING THIS EDITABLE MADE THE SUPPRESSION GATE EDITABLE. This value is not only a
+     * display band: ExtractAddressQueueable's HARD gate is
+     * "is_acquisition_related = false AND confidence >= this", and a suppressed email
+     * produces NO Lead and NO registry claim, with no exception and no log. Lowering it in
+     * Setup silently suppresses more email; raising it silently suppresses less. Restated
+     * in the CMDT field's own description, which is where an admin will actually read it.
+     *
+     * ⚠ static final on purpose: resolved once per transaction, so every property of a
+     * multi-property email is banded against the same threshold.
+     */
+    public static final Decimal CONFIDENCE_HIGH_MIN = BrokerProtectionConfig.confidenceHighMin();
+
+    /**
+     * Lower bound of the MEDIUM band.
+     *
+     * ⚠ SINCE WS5 (2026-08-30) THIS RESOLVES FROM SETUP — defaulting to 0.60. Same
+     * once-per-transaction resolution and same fresh-org equivalence as CONFIDENCE_HIGH_MIN
+     * above. Unlike that value, this one does NOT feed the suppression gate.
+     *
+     * 🔴 IT READS `effectiveConfidenceMediumMin()`, NOT `confidenceMediumMin()`, AND THE
+     * DIFFERENCE IS LOAD-BEARING (WS8, 2026-08-30). The raw accessor returns exactly what an
+     * admin typed; the effective one clamps it to at most CONFIDENCE_HIGH_MIN. Reading the raw
+     * accessor here would silently opt this class out of the `high >= medium` invariant that
+     * `toBand` below depends on — a MEDIUM floor above the HIGH floor makes the second
+     * comparison in `toBand` unreachable in one direction and makes `lowConfidenceFieldCount`
+     * flag fields the record itself displays as HIGH. `BrokerProtectionConfig
+     * .effectiveConfidenceMediumMin()` documents why the clamp moves MEDIUM and never HIGH.
+     */
+    public static final Decimal CONFIDENCE_MEDIUM_MIN = BrokerProtectionConfig.effectiveConfidenceMediumMin();
 
     /**
      * `email_category` closed set. An unrecognised value is coerced to 'other' rather than
@@ -118,6 +157,23 @@ public with sharing class LLMExtractionParser {
     private static final Integer LEN_PHONE = 40;
     private static final Integer LEN_URL = 255;
     private static final Integer LEN_DEAL_SUMMARY = 4000;
+
+    /**
+     * Upper bound on `field_confidence` entries (WS7, 2026-08-30). The response schema can
+     * produce at most 38 scoreable keys (14 email-level + 24 property-level), so 60 accepts
+     * every legitimate answer with room to spare.
+     *
+     * 🔴 IT IS A DML-SAFETY BOUND, NOT A TIDINESS ONE, AND IT MUST STAY BELOW 99. The count
+     * derived from this map lands in `Lead.Low_Confidence_Field_Count__c`, which is Number(2,0):
+     * 100 would throw at DML and roll back a committed claim, which is the precise failure mode
+     * every numeric ceiling in this class exists to prevent. Raising this above 99 requires
+     * widening that field first.
+     */
+    private static final Integer MAX_FIELD_CONFIDENCE_ENTRIES = 60;
+
+    /** Characters of the dropped-key list kept on the note — enough to diagnose, short enough
+     *  that a junk response cannot dominate Deal_Notes__c. */
+    private static final Integer LEN_DROPPED_KEY_NOTE = 200;
 
     /** Per-transaction cache of ACTIVE picklist values, keyed by field name. Describe calls
      *  are cheap but not free, and a 10-property email would otherwise re-describe 30 times. */
@@ -204,6 +260,14 @@ public with sharing class LLMExtractionParser {
         // purely so it lands in Extracted_JSON__c as tuning data — see
         // LLMExtractionResult.categoryConfidence for why that is a decision rather than dead code.
         result.categoryConfidence = toConfidence(root.get('category_confidence'));
+        // `field_confidence` (WS7, 2026-08-30) — the PER-FIELD map, and the count of its entries
+        // below the MEDIUM threshold. The count is derived HERE, once per email, rather than at
+        // the two call sites downstream: `ExtractAddressQueueable.createLead` runs once PER
+        // PROPERTY, so deriving it there would repeat the same arithmetic up to MAX_PROPERTIES
+        // times for an identical answer. Same reasoning, and the same shape, as `confidenceBand`
+        // three lines above: the MODEL returns numbers, APEX derives the signal.
+        result.fieldConfidence = toFieldConfidence(root.get('field_confidence'), result);
+        result.lowConfidenceFieldCount = lowConfidenceFieldCount(result.fieldConfidence);
 
         // The four legacy values travel untouched except for whitespace: broker_email and
         // property_address ARE the claim identity, and any "cleaning" here would change it.
@@ -707,6 +771,92 @@ public with sharing class LLMExtractionParser {
             }
         }
         return BAND_LOW;
+    }
+
+    /**
+     * Coerce `field_confidence` into a typed map. TOTAL — never throws, whatever the model sent.
+     *
+     * 🔴 EVERY DEGRADED SHAPE MUST YIELD AN EMPTY-BUT-VALID MAP, NOT AN EXCEPTION. This key is
+     * new, so the model is least reliable about it, and it is read on the SAME parse that
+     * produces `broker_email` and `property_address`. A throw here would abort the routing
+     * transaction and cost a broker a real claim over a review-queue nicety. Absent, null, a
+     * string, an array, an object of strings, an object of out-of-range numbers and an object of
+     * 5,000 keys are therefore all handled, and each lands on the empty map or a subset of it.
+     *
+     * PER-VALUE COERCION IS `toConfidence`, REUSED UNCHANGED — the same [0, 1] contract and the
+     * same never-clamped null the two other confidence keys already use. A second, subtly
+     * different numeric rule for the newest key is exactly how the three would drift apart.
+     *
+     * REJECTIONS ARE RECORDED ONCE, IN AGGREGATE, not per entry: the class contract says every
+     * rejection reaches a human, but 60 individual notes would consume the entire MAX_NOTES
+     * budget and push the parser's REAL rejections (a bad cap rate, an out-of-set asset type)
+     * off Deal_Notes__c. An ABSENT key produces no note at all, for the same reason
+     * `category_confidence` produces none: a legacy-shape response legitimately carries neither.
+     *
+     * @param raw    The raw `field_confidence` value.
+     * @param result Result to record the aggregate rejection note on.
+     * @return A map of lower-cased key to confidence, at most MAX_FIELD_CONFIDENCE_ENTRIES
+     *         entries; never null, frequently empty.
+     */
+    private static Map<String, Decimal> toFieldConfidence(Object raw, LLMExtractionResult result) {
+        Map<String, Decimal> scores = new Map<String, Decimal>();
+        if (raw == null) {
+            return scores;
+        }
+        if (!(raw instanceof Map<String, Object>)) {
+            result.addNote('field_confidence was not a JSON object and was ignored.');
+            return scores;
+        }
+        Map<String, Object> entries = (Map<String, Object>) raw;
+        List<String> dropped = new List<String>();
+        for (String key : entries.keySet()) {
+            String name = textOf(key);
+            Decimal score = toConfidence(entries.get(key));
+            if (name == null || score == null || scores.size() >= MAX_FIELD_CONFIDENCE_ENTRIES) {
+                dropped.add(name == null ? '(blank key)' : name);
+                continue;
+            }
+            scores.put(name.toLowerCase(), score);
+        }
+        if (!dropped.isEmpty()) {
+            result.addNote('field_confidence dropped ' + dropped.size()
+                + (dropped.size() == 1 ? ' unusable entry: ' : ' unusable entries: ')
+                + InboundEmailFieldUtil.clip(String.join(dropped, ', '), LEN_DROPPED_KEY_NOTE) + '.');
+        }
+        return scores;
+    }
+
+    /**
+     * Count the per-field scores sitting BELOW the MEDIUM threshold — the number of extracted
+     * values a human is being asked to check, and the whole content of
+     * `Lead.Low_Confidence_Field_Count__c`.
+     *
+     * 🔴 IT COMPARES AGAINST `CONFIDENCE_MEDIUM_MIN`, WHICH IS THE WS5 ACCESSOR, AND THERE IS
+     * DELIBERATELY NO SECOND LITERAL HERE. `Broker_Protection_Config__mdt.Default
+     * .Confidence_Medium_Min__c` is what makes a value MEDIUM rather than LOW on
+     * `Parse_Confidence__c`; the same number is what makes a FIELD worth reviewing. Writing
+     * `0.60` here instead would let an admin move one and not the other, producing a review
+     * queue that disagreed with the band shown on the record next to it.
+     *
+     * STRICTLY BELOW, matching `toBand` exactly: a value AT the threshold bands MEDIUM there and
+     * is not counted here, so the boundary case cannot be described two ways.
+     *
+     * @param scores The per-field confidence map; null and empty both yield 0.
+     * @return The count, 0 through MAX_FIELD_CONFIDENCE_ENTRIES.
+     * @example
+     * Integer toReview = LLMExtractionParser.lowConfidenceFieldCount(extraction.fieldConfidence);
+     */
+    public static Integer lowConfidenceFieldCount(Map<String, Decimal> scores) {
+        if (scores == null || scores.isEmpty()) {
+            return 0;
+        }
+        Integer count = 0;
+        for (Decimal score : scores.values()) {
+            if (score != null && score < CONFIDENCE_MEDIUM_MIN) {
+                count++;
+            }
+        }
+        return count;
     }
 
     /**

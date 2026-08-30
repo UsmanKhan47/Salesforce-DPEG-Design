@@ -139,7 +139,7 @@ private class EmailToLeadHandlerTest {
             header('Message-ID', '<msg-2@example.invalid>'),
             header('In-Reply-To', '<parent-2@example.invalid>'),
             header('References', '<root-2@example.invalid> <parent-2@example.invalid>'),
-            // Deliberately NOT one of the five headers the handler parses into a dedicated
+            // Deliberately NOT one of the six headers the handler parses into a dedicated
             // field, to prove Raw_Headers__c captures EVERYTHING, not just the parsed set.
             header('X-Forwarded-To', 'someone@example.invalid')
         };
@@ -850,5 +850,351 @@ private class EmailToLeadHandlerTest {
 
         Inbound_Email_Staging__c staging = [SELECT Status__c FROM Inbound_Email_Staging__c WHERE Message_Id__c = '<msg-enqueue-1@example.invalid>'];
         Assert.areEqual('Processed', staging.Status__c, 'By the time Test.stopTest() completes, the enqueued job should have run and stamped the staging row Processed');
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // WS1 (2026-08-30) — THE RFC `Date:` HEADER → Received_DateTime__c
+    //
+    // TWO TIERS, AND THE SECOND ONE IS THE IMPORTANT ONE.
+    //
+    //   Tier 1, through the boundary: the header is read, parsed and stamped on the staging row,
+    //   and — critically — an UNREADABLE header still stages the email. That is the claim that
+    //   matters. `parseRfc5322Date` sits inside `handleInboundEmail`'s try/catch ABOVE the
+    //   staging insert, so a throw there returns success=false and the email is BOUNCED, not
+    //   staged. The class header's 2026-08-06 outage writeup is what that costs.
+    //
+    //   Tier 2, direct on `@TestVisible parseRfc5322Date`: the grammar cases. They are direct
+    //   rather than boundary-driven for a reason beyond speed — each one is a statement about
+    //   the PARSER, and routing 20 malformed headers through the whole email boundary would
+    //   assert the same null 20 times while making it much harder to see which input produced
+    //   it. The never-throw contract is proved at BOTH tiers, because "returns null" and
+    //   "does not lose the email" are different claims.
+    //
+    // ⚠ NO 251-RECORD BULK TEST HERE, AND THAT IS NOT AN OVERSIGHT. This is a synchronous
+    // per-email boundary — `Messaging.InboundEmailHandler` is invoked once per email by the
+    // platform and there is no collection and no loop over records to bulkify. The volume
+    // dimension of this feature lives in ExtractAddressQueueableTest, where one email fans out
+    // to MAX_PROPERTIES Leads (see .claude/rules/bulk-test-rule.md's narrowed C-18 scope).
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    // ── Tier 1: through the boundary ──────────────────────────────────────────
+
+    @isTest
+    static void handleInboundEmail_rfcDateHeader_stampsReceivedDateTimeFromTheHeaderNotTheClock() {
+        setBenignMock();
+        Messaging.InboundEmail email = baseEmail();
+        email.headers = new List<Messaging.InboundEmail.Header>{
+            header('Message-ID', '<msg-ws1-1@example.invalid>'),
+            header('Date', 'Tue, 26 Aug 2026 14:03:22 -0500')
+        };
+
+        EmailToLeadHandler handler = new EmailToLeadHandler();
+        Test.startTest();
+        Messaging.InboundEmailResult result = handler.handleInboundEmail(email, new Messaging.InboundEnvelope());
+        Inbound_Email_Staging__c staging = [
+            SELECT Received_DateTime__c FROM Inbound_Email_Staging__c
+            WHERE Message_Id__c = '<msg-ws1-1@example.invalid>'
+        ];
+        Test.stopTest();
+
+        Assert.isTrue(result.success, 'A well-formed email carrying a Date header must still succeed');
+        // 14:03:22 at -0500 is 19:03:22 UTC. The EXACT value is asserted, not merely non-null:
+        // an off-by-the-offset bug is the whole failure mode of a timezone-bearing parser and a
+        // null-check would not see it.
+        Assert.areEqual(Datetime.newInstanceGmt(2026, 8, 26, 19, 3, 22), staging.Received_DateTime__c,
+            'Received_DateTime__c must be the RFC Date header converted to UTC (14:03:22 -0500 = 19:03:22Z), '
+            + 'not the processing clock');
+    }
+
+    @isTest
+    static void handleInboundEmail_uppercaseDateHeaderName_isStillMatched() {
+        setBenignMock();
+        Messaging.InboundEmail email = baseEmail();
+        email.headers = new List<Messaging.InboundEmail.Header>{
+            header('Message-ID', '<msg-ws1-2@example.invalid>'),
+            header('DATE', 'Wed, 27 Aug 2026 09:00:00 +0000')
+        };
+
+        EmailToLeadHandler handler = new EmailToLeadHandler();
+        Test.startTest();
+        handler.handleInboundEmail(email, new Messaging.InboundEnvelope());
+        Inbound_Email_Staging__c staging = [
+            SELECT Received_DateTime__c FROM Inbound_Email_Staging__c
+            WHERE Message_Id__c = '<msg-ws1-2@example.invalid>'
+        ];
+        Test.stopTest();
+
+        Assert.areEqual(Datetime.newInstanceGmt(2026, 8, 27, 9, 0, 0), staging.Received_DateTime__c,
+            'RFC 5322 header names are case-insensitive and relays disagree about casing, so DATE, Date '
+            + 'and date must all resolve — HEADER_DATE is matched lowercased for exactly this reason');
+    }
+
+    @isTest
+    static void handleInboundEmail_noDateHeader_leavesReceivedDateTimeNullAndStagesNormally() {
+        setBenignMock();
+        Messaging.InboundEmail email = baseEmail();
+        email.headers = new List<Messaging.InboundEmail.Header>{
+            header('Message-ID', '<msg-ws1-3@example.invalid>')
+        };
+
+        EmailToLeadHandler handler = new EmailToLeadHandler();
+        Test.startTest();
+        Messaging.InboundEmailResult result = handler.handleInboundEmail(email, new Messaging.InboundEnvelope());
+        Inbound_Email_Staging__c staging = [
+            SELECT Received_DateTime__c FROM Inbound_Email_Staging__c
+            WHERE Message_Id__c = '<msg-ws1-3@example.invalid>'
+        ];
+        Test.stopTest();
+
+        Assert.isTrue(result.success, 'An email with no Date header is ordinary, not an error');
+        Assert.isNull(staging.Received_DateTime__c,
+            'No Date header must leave Received_DateTime__c NULL — the CreatedDate fallback is resolved '
+            + 'downstream in ExtractAddressQueueable, deliberately not here, so there is only ever one '
+            + 'fallback rule to keep correct');
+    }
+
+    @isTest
+    static void handleInboundEmail_malformedDateHeader_stillStagesTheEmailAndDoesNotBounceIt() {
+        // 🔴 THE SINGLE MOST IMPORTANT TEST IN THIS WS1 SECTION. The parse runs inside
+        // handleInboundEmail's try/catch and ABOVE the staging insert: if it threw, this email
+        // would be reported success=false and BOUNCED, and the body, headers, Lead and registry
+        // claim would all be lost for the sake of a nice-to-have timestamp.
+        setBenignMock();
+        Messaging.InboundEmail email = baseEmail();
+        email.headers = new List<Messaging.InboundEmail.Header>{
+            header('Message-ID', '<msg-ws1-4@example.invalid>'),
+            header('Date', 'yesterday afternoon-ish, probably')
+        };
+
+        EmailToLeadHandler handler = new EmailToLeadHandler();
+        Test.startTest();
+        Messaging.InboundEmailResult result = handler.handleInboundEmail(email, new Messaging.InboundEnvelope());
+        List<Inbound_Email_Staging__c> staged = [
+            SELECT Received_DateTime__c, Raw_Body__c FROM Inbound_Email_Staging__c
+            WHERE Message_Id__c = '<msg-ws1-4@example.invalid>'
+        ];
+        Test.stopTest();
+
+        Assert.isTrue(result.success,
+            'AN UNREADABLE Date HEADER MUST NOT BOUNCE THE EMAIL. parseRfc5322Date never throws; if this '
+            + 'fails, a change has made it throw and the pipeline now loses every email a relay '
+            + 'mis-formats — see THE 2026-08-06 OUTAGE in EmailToLeadHandler.cls');
+        Assert.areEqual(1, staged.size(), 'The staging row — the pipeline durability guarantee — must exist');
+        Assert.areEqual('body', staged[0].Raw_Body__c, 'The email body must have survived intact');
+        Assert.isNull(staged[0].Received_DateTime__c,
+            'An unreadable header degrades to null; it must never guess a value');
+    }
+
+    @isTest
+    static void handleInboundEmail_emptyDateHeader_stillStagesTheEmail() {
+        setBenignMock();
+        Messaging.InboundEmail email = baseEmail();
+        email.headers = new List<Messaging.InboundEmail.Header>{
+            header('Message-ID', '<msg-ws1-5@example.invalid>'),
+            header('Date', '')
+        };
+
+        EmailToLeadHandler handler = new EmailToLeadHandler();
+        Test.startTest();
+        Messaging.InboundEmailResult result = handler.handleInboundEmail(email, new Messaging.InboundEnvelope());
+        Inbound_Email_Staging__c staging = [
+            SELECT Received_DateTime__c FROM Inbound_Email_Staging__c
+            WHERE Message_Id__c = '<msg-ws1-5@example.invalid>'
+        ];
+        Test.stopTest();
+
+        Assert.isTrue(result.success, 'A present-but-empty Date header must not bounce the email either');
+        Assert.isNull(staging.Received_DateTime__c, 'An empty header value is not a date');
+    }
+
+    // ── Tier 2: the parser's grammar, direct ──────────────────────────────────
+
+    @isTest
+    static void parseRfc5322Date_fullyFormedHeader_convertsTheOffsetToUtc() {
+        Datetime parsed = EmailToLeadHandler.parseRfc5322Date('Tue, 26 Aug 2026 14:03:22 -0500');
+        Assert.areEqual(Datetime.newInstanceGmt(2026, 8, 26, 19, 3, 22), parsed,
+            'localTime minus the zone offset is UTC: 14:03:22 at -0500 is 19:03:22Z');
+    }
+
+    @isTest
+    static void parseRfc5322Date_eastOfUtcOffset_subtractsRatherThanAdds() {
+        Datetime parsed = EmailToLeadHandler.parseRfc5322Date('Tue, 26 Aug 2026 14:03:22 +0530');
+        Assert.areEqual(Datetime.newInstanceGmt(2026, 8, 26, 8, 33, 22), parsed,
+            'A POSITIVE offset must move the UTC value BACK, not forward — this is the assertion that '
+            + 'catches a sign inversion, which a west-of-UTC-only test cannot');
+    }
+
+    @isTest
+    static void parseRfc5322Date_noDayOfWeekPrefix_isStillParsed() {
+        Datetime parsed = EmailToLeadHandler.parseRfc5322Date('26 Aug 2026 14:03:22 +0000');
+        Assert.areEqual(Datetime.newInstanceGmt(2026, 8, 26, 14, 3, 22), parsed,
+            'The day-of-week is OPTIONAL in RFC 5322 §3.3 and its absence must not break the parse');
+    }
+
+    @isTest
+    static void parseRfc5322Date_noSeconds_defaultsToZeroSeconds() {
+        Datetime parsed = EmailToLeadHandler.parseRfc5322Date('Tue, 26 Aug 2026 14:03 +0000');
+        Assert.areEqual(Datetime.newInstanceGmt(2026, 8, 26, 14, 3, 0), parsed,
+            'Seconds are OPTIONAL in the grammar and default to zero');
+    }
+
+    @isTest
+    static void parseRfc5322Date_trailingZoneComment_isIgnored() {
+        Datetime parsed = EmailToLeadHandler.parseRfc5322Date('Tue, 26 Aug 2026 14:03:22 +0000 (UTC)');
+        Assert.areEqual(Datetime.newInstanceGmt(2026, 8, 26, 14, 3, 22), parsed,
+            'A CFWS comment after the zone is legal and carries nothing the zone token does not — '
+            + 'Gmail and Outlook both emit it, so failing on it would reject most real email');
+    }
+
+    @isTest
+    static void parseRfc5322Date_obsoleteZoneName_usesTheMappedOffset() {
+        Datetime parsed = EmailToLeadHandler.parseRfc5322Date('Tue, 26 Aug 2026 14:03:22 EDT');
+        Assert.areEqual(Datetime.newInstanceGmt(2026, 8, 26, 18, 3, 22), parsed,
+            'EDT is -0400 per RFC 5322 §4.3; older clients still emit the alphabetic form');
+    }
+
+    @isTest
+    static void parseRfc5322Date_gmtZoneName_isUtc() {
+        Datetime parsed = EmailToLeadHandler.parseRfc5322Date('26 Aug 2026 14:03:22 GMT');
+        Assert.areEqual(Datetime.newInstanceGmt(2026, 8, 26, 14, 3, 22), parsed, 'GMT is offset zero');
+    }
+
+    @isTest
+    static void parseRfc5322Date_twoDigitYear_expandsPerTheObsoleteRule() {
+        Datetime parsed = EmailToLeadHandler.parseRfc5322Date('Tue, 26 Aug 26 14:03:22 +0000');
+        Assert.areEqual(Datetime.newInstanceGmt(2026, 8, 26, 14, 3, 22), parsed,
+            'RFC 5322 §4.3: a two-digit year below 50 is 20xx. Getting this wrong yields year 26, which '
+            + 'Salesforce rejects outright rather than storing wrong');
+    }
+
+    @isTest
+    static void parseRfc5322Date_foldedWhitespace_isCollapsed() {
+        Datetime parsed = EmailToLeadHandler.parseRfc5322Date('Tue,   26   Aug   2026   14:03:22   +0000');
+        Assert.areEqual(Datetime.newInstanceGmt(2026, 8, 26, 14, 3, 22), parsed,
+            'Header folding and runs of whitespace between tokens are legal, so tokenising on a single '
+            + 'literal space without collapsing first would produce empty tokens and a spurious null');
+    }
+
+    @isTest
+    static void parseRfc5322Date_colonSeparatedZone_isTolerated() {
+        Datetime parsed = EmailToLeadHandler.parseRfc5322Date('Tue, 26 Aug 2026 14:03:22 -05:00');
+        Assert.areEqual(Datetime.newInstanceGmt(2026, 8, 26, 19, 3, 22), parsed,
+            'Not RFC-conforming, but emitted by some clients; tolerating it costs one replace() and '
+            + 'recovers a timestamp that would otherwise be discarded');
+    }
+
+    @isTest
+    static void parseRfc5322Date_leapSecond_doesNotThrowAndRollsForward() {
+        Datetime parsed = EmailToLeadHandler.parseRfc5322Date('Tue, 31 Dec 2026 23:59:60 +0000');
+        Assert.areEqual(Datetime.newInstanceGmt(2027, 1, 1, 0, 0, 0), parsed,
+            'Second 60 is a legal leap second in the grammar. It is added to midnight rather than passed '
+            + 'to newInstanceGmt precisely so it rolls forward instead of throwing');
+    }
+
+    @isTest
+    static void parseRfc5322Date_hourTwentyFour_doesNotThrowAndRollsForward() {
+        Datetime parsed = EmailToLeadHandler.parseRfc5322Date('Tue, 26 Aug 2026 24:00:00 +0000');
+        Assert.areEqual(Datetime.newInstanceGmt(2026, 8, 27, 0, 0, 0), parsed,
+            'Hour 24 means end-of-day and is legal; same reason it is added rather than constructed');
+    }
+
+    @isTest
+    static void parseRfc5322Date_missingZone_returnsNull() {
+        Assert.isNull(EmailToLeadHandler.parseRfc5322Date('Tue, 26 Aug 2026 14:03:22'),
+            'The zone is REQUIRED and this parser refuses to assume UTC — assuming would silently move '
+            + 'the value by up to 12 hours, whereas null degrades to CreatedDate, which is within seconds '
+            + 'of the truth');
+    }
+
+    @isTest
+    static void parseRfc5322Date_militarySingleLetterZone_returnsNull() {
+        Assert.isNull(EmailToLeadHandler.parseRfc5322Date('Tue, 26 Aug 2026 14:03:22 M'),
+            'RFC 5322 §4.3 records that single-letter military zones were widely implemented with the '
+            + 'SIGN INVERTED and directs readers to treat them as unknown. A 50%-wrong answer is worse '
+            + 'than no answer');
+    }
+
+    @isTest
+    static void parseRfc5322Date_unknownZoneName_returnsNull() {
+        Assert.isNull(EmailToLeadHandler.parseRfc5322Date('Tue, 26 Aug 2026 14:03:22 XYZ'),
+            'An unrecognised alphabetic zone must reject the header rather than default to UTC');
+    }
+
+    @isTest
+    static void parseRfc5322Date_zoneOffsetBeyondTwentyFourHours_returnsNull() {
+        Assert.isNull(EmailToLeadHandler.parseRfc5322Date('Tue, 26 Aug 2026 14:03:22 +2500'),
+            'An offset past +/-24:00 is corruption, not a timezone — this is what MAX_ZONE_OFFSET_MINUTES '
+            + 'is for, and without it a garbage zone would shift the timestamp by days');
+    }
+
+    @isTest
+    static void parseRfc5322Date_zoneOffsetWithOutOfRangeMinutes_returnsNull() {
+        Assert.isNull(EmailToLeadHandler.parseRfc5322Date('Tue, 26 Aug 2026 14:03:22 +0099'),
+            'The minute half of a numeric offset is still a minute count; 99 is not one. Tested separately '
+            + 'from the hour overflow above because they are different guards');
+    }
+
+    @isTest
+    static void parseRfc5322Date_shortNumericZone_returnsNull() {
+        Assert.isNull(EmailToLeadHandler.parseRfc5322Date('Tue, 26 Aug 2026 14:03:22 +05'),
+            'A numeric zone must be exactly four digits; +05 is ambiguous between +0500 and +0005 and the '
+            + 'parser does not guess');
+    }
+
+    @isTest
+    static void parseRfc5322Date_timeWithoutColons_returnsNull() {
+        Assert.isNull(EmailToLeadHandler.parseRfc5322Date('Tue, 26 Aug 2026 140322 +0000'),
+            'The time token must carry at least hour:minute; a bare digit run is not a time');
+    }
+
+    @isTest
+    static void parseRfc5322Date_fullMonthName_returnsNull() {
+        Assert.isNull(EmailToLeadHandler.parseRfc5322Date('Tue, 26 August 2026 14:03:22 +0000'),
+            'The grammar allows ONLY the three-letter abbreviation; a full month name is not a date this '
+            + 'parser will guess at');
+    }
+
+    @isTest
+    static void parseRfc5322Date_nonNumericDay_returnsNull() {
+        Assert.isNull(EmailToLeadHandler.parseRfc5322Date('Tue, XX Aug 2026 14:03:22 +0000'),
+            'A non-numeric day must be rejected, not coerced');
+    }
+
+    @isTest
+    static void parseRfc5322Date_nonNumericTime_returnsNull() {
+        Assert.isNull(EmailToLeadHandler.parseRfc5322Date('Tue, 26 Aug 2026 aa:bb:cc +0000'),
+            'A non-numeric time must be rejected, not coerced');
+    }
+
+    @isTest
+    static void parseRfc5322Date_minuteOutOfRange_returnsNull() {
+        Assert.isNull(EmailToLeadHandler.parseRfc5322Date('Tue, 26 Aug 2026 14:99:22 +0000'),
+            'Minute 99 is corruption; the range guards exist so it never silently rolls into the next hour');
+    }
+
+    @isTest
+    static void parseRfc5322Date_truncatedHeader_returnsNull() {
+        Assert.isNull(EmailToLeadHandler.parseRfc5322Date('Tue, 26 Aug'),
+            'A truncated header has fewer than the five required tokens and must return null, not throw '
+            + 'an index-out-of-bounds that the boundary would turn into a bounced email');
+    }
+
+    @isTest
+    static void parseRfc5322Date_garbage_returnsNull() {
+        Assert.isNull(EmailToLeadHandler.parseRfc5322Date('()'),
+            'A header that is nothing but a CFWS comment reduces to an empty string after stripping; it '
+            + 'must reduce to null, not throw on the empty token list');
+    }
+
+    @isTest
+    static void parseRfc5322Date_nullInput_returnsNull() {
+        Assert.isNull(EmailToLeadHandler.parseRfc5322Date(null),
+            'A null header — the ordinary "the email carried no Date" case — must return null');
+    }
+
+    @isTest
+    static void parseRfc5322Date_blankInput_returnsNull() {
+        Assert.isNull(EmailToLeadHandler.parseRfc5322Date('   '),
+            'Whitespace-only is not a date. Tested separately from null per one-behaviour-per-method');
     }
 }

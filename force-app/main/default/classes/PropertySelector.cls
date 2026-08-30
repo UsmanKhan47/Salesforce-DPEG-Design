@@ -16,12 +16,19 @@
  *     re-keyed 2026-08-27 from 'Closed Won' entry to CLAIM-STAGE entry — see that class's
  *     CLAIM_STAGES. The QUERY is unchanged; only how often and how early it runs moved.)
  *   - DealFolderSweepBatch.start             -> queryFolderSweep         (added 2026-08-11)
+ *   - LeadConvertService.createProperties    -> selectByNormalizedAddresses (WS3, 2026-08-30)
  *
- * ⚠ ALL THREE METHODS ARE `WITH SYSTEM_MODE` INSIDE A `private without sharing` INNER CLASS, AND
- * THE TWO INNER CLASSES ARE DELIBERATELY SEPARATE — `AssetCreationReads` and
- * `FolderCreationReads`. They could be merged and must not be: each carries its own argument for
+ * ⚠ ALL FOUR METHODS ARE `WITH SYSTEM_MODE` INSIDE A `private without sharing` INNER CLASS, AND
+ * THE THREE INNER CLASSES ARE DELIBERATELY SEPARATE — `AssetCreationReads`, `FolderCreationReads`
+ * and `ReuseLookupReads`. They could be merged and must not be: each carries its own argument for
  * why it escapes sharing, and one shared class would let a future read borrow whichever argument
  * happened to be written first. Read the method's Javadoc, never the class's.
+ * ⚠ WS3 (2026-08-30) added the THIRD one rather than putting `byNormalizedAddresses` into
+ * `FolderCreationReads`, whose "under-read mints a duplicate" argument it superficially shares.
+ * The two duplicates are not the same object: `FolderCreationReads` prevents a duplicate SHAREPOINT
+ * FOLDER — an external, unrecoverable write — while this one prevents a duplicate `Property__c`
+ * row, which is a Salesforce record an admin can merge. Borrowing the stronger argument for the
+ * weaker case is exactly the drift the separation exists to stop.
  *
  * ── ⚠ WHY THIS CLASS EXISTS AT ALL, RATHER THAN A METHOD ON `OpportunitySelector` ──
  * The Tranche 5 design (§2.7 step 3) proposed reading the same two values through the
@@ -210,6 +217,84 @@ public with sharing class PropertySelector {
     }
 
     /**
+     * WS3 (2026-08-30) — THE PROPERTY-REUSE LOOKUP. Every existing `Property__c` whose stored
+     * normalized-address key matches one of the keys supplied, so `LeadConvertService` can LINK a
+     * converted deal to a building it already knows about instead of minting a second row for it.
+     *
+     * ⚠ THE KEY HAS EXACTLY ONE DEFINITION: `PropertyMatchingService.normalizeAddress`. Callers
+     * must pass its output and nothing else. Hand-deriving an equivalent string anywhere — in Apex,
+     * in a formula, in a script — is the defect this whole workstream exists to prevent: the same
+     * building would key two ways and the reuse would silently stop working with nothing to see.
+     * A formula field cannot reproduce it either (that method is regex; Salesforce formulas have no
+     * regex), which is why `Property__c.Normalized_Address__c` is a STORED Text field written by
+     * `LeadConvertService.buildProperty` and by `scripts/backfill-property-normalized-address.apex`.
+     *
+     * FIELD SET — deliberately TWO fields and no more. `Id` is the only value the caller consumes;
+     * `Normalized_Address__c` is selected because the caller must re-key the result BY the matched
+     * key (it asked about up to 251 buildings in one call and gets back an unordered list). This
+     * query runs on EVERY lead conversion in the org, so every extra field is a new way for a
+     * conversion to get more expensive; nothing else is needed and nothing else is selected.
+     *
+     * ORDER BY CreatedDate ASC, Id ASC — DETERMINISM, NOT COSMETICS. `Normalized_Address__c` is
+     * deliberately `unique = false` (the org already holds duplicate Properties — that is the bug
+     * being fixed — and a unique index would refuse the backfill), so two rows CAN share a key. The
+     * caller keeps the FIRST row per key, which this ordering makes the OLDEST Property: reuse
+     * converges on the original record rather than oscillating between duplicates run to run. `Id`
+     * breaks a same-millisecond tie so the answer is total, not merely usually-stable.
+     *
+     * BLANK KEYS ARE STRIPPED HERE AS WELL AS AT THE CALLER, AND THAT BELT-AND-BRACES IS
+     * DELIBERATE. `normalizeAddress('')` returns `''`, and an empty key would match every Property
+     * whose address was blank — collapsing every addressless deal in the org onto ONE building.
+     * That is the single worst outcome this method can produce, it is one careless caller away, and
+     * a stripped key costs nothing.
+     *
+     * ── MODE — `WITH SYSTEM_MODE`, justified here ──
+     * An AUTOMATION-PATH read in the ARCHITECTURE.md §2 sense: nobody asked for it. It happens on
+     * the converting user's behalf, inside a `Lead` after-update trigger, while the platform turns
+     * a qualified lead into a deal. `Normalized_Address__c` is created in THIS SAME CHANGE, and a
+     * Metadata-API-deployed custom field arrives with NO field permissions for ANY profile,
+     * **System Administrator included**. `WITH USER_MODE` does not degrade, it THROWS
+     * (`System.QueryException: No such column ...`, which is how the platform reports an FLS
+     * denial) — and from inside that after-update trigger the throw escapes as
+     * `CANNOT_INSERT_UPDATE_ACTIVATE_ENTITY` and **rolls back the conversion itself**. The user
+     * would be told their lead cannot be converted, by the very field the deploy just created.
+     * Verbatim the `TaskSelector.selectByTransactionDealIds` production incident.
+     *
+     * 🔴 ── AND SHARING, SEPARATELY — SEE THE `ReuseLookupReads` INNER CLASS ──
+     * `SYSTEM_MODE` lifts CRUD and FLS ONLY; it does NOT lift record sharing. `Property__c` is
+     * `sharingModel = Private`, so under `with sharing` this read returns zero rows for a converter
+     * who cannot see the earlier Property — and zero rows reads as "no such building", which mints
+     * the duplicate this feature exists to prevent. The sharing half is argued at that class.
+     *
+     * BULK read (Set&lt;String&gt;): called ONCE per `stampConvertedOpportunities` invocation
+     * regardless of how many Leads converted. 🔴 NEVER call it per Lead —
+     * `LeadConvertServiceTest.stampCostDoesNotScaleWithBatchSize` and
+     * `bulkConversion251LeadsCreatesPropertiesAndStampsOpportunities` both exist to fail if it is.
+     *
+     * @param normalizedAddresses `normalizeAddress` output keys to look up (bound with IN);
+     *                            null/empty-safe, and blank members are ignored.
+     * @return The matching rows with `Id` and `Normalized_Address__c` populated, oldest first; an
+     *         empty list when the input is null/empty/all-blank (never null).
+     * @example
+     * for (Property__c p : PropertySelector.selectByNormalizedAddresses(keys)) { ... }
+     */
+    public static List<Property__c> selectByNormalizedAddresses(Set<String> normalizedAddresses) {
+        if (normalizedAddresses == null || normalizedAddresses.isEmpty()) {
+            return new List<Property__c>();
+        }
+        Set<String> keys = new Set<String>();
+        for (String key : normalizedAddresses) {
+            if (String.isNotBlank(key)) {
+                keys.add(key);
+            }
+        }
+        if (keys.isEmpty()) {
+            return new List<Property__c>();
+        }
+        return new ReuseLookupReads().byNormalizedAddresses(keys);
+    }
+
+    /**
      * 🔴 THE CLOSED-WON ASSET-CREATION READ, WHICH MUST RUN **WITHOUT SHARING**.
      *
      * ═══ WHY — `WITH SYSTEM_MODE` IS NOT ENOUGH ═══
@@ -369,6 +454,83 @@ public with sharing class PropertySelector {
                 WITH SYSTEM_MODE
                 ORDER BY CreatedDate ASC
             ]);
+        }
+    }
+
+    /**
+     * 🔴 THE WS3 PROPERTY-REUSE LOOKUP, WHICH MUST RUN **WITHOUT SHARING** (2026-08-30).
+     *
+     * ═══ WHY — `WITH SYSTEM_MODE` IS NOT ENOUGH, AND THE TWO HALVES ARE SEPARATE QUESTIONS ═══
+     * `SYSTEM_MODE` lifts FLS and CRUD only; it does NOT lift record sharing. The mode half is
+     * argued at `selectByNormalizedAddresses` (a brand-new field, no FLS for anyone, `USER_MODE`
+     * throws rather than degrades, and the throw rolls back the conversion). This is the sharing
+     * half. Measured against this repo, unchanged since the two classes above were written:
+     *   - `objects/Property__c/Property__c.object-meta.xml` -> `sharingModel = Private`.
+     *   - `sharingRules/Property__c.sharingRules-meta.xml` holds ONE rule, an OWNER rule sharing
+     *     rows owned by the `Acquisition` QUEUE to `DPEG_Acquisitions_Team`. 🔴 THE ROWS THIS READ
+     *     LOOKS FOR ARE PRECISELY THE ONES THAT RULE CANNOT REACH: a Property created by
+     *     `LeadConvertService` is owned by whoever converted the FIRST Lead, never by the queue.
+     *   - `viewAllRecords = true` on `Property__c` comes from exactly four permission sets:
+     *     `DPEG_Acquisitions`, `DPEG_Acquisition_Edit`, `DPEG_Acquisition_View`,
+     *     `DPEG_Property_View`. A user can convert a Lead while holding none of them.
+     *
+     * ═══ 🔴 THE FAILURE THIS PREVENTS IS A **DUPLICATE**, NOT A SILENCE ═══
+     * This is the shape ARCHITECTURE.md §2 names explicitly: a `SYSTEM_MODE` automation read
+     * against a Private-OWD object used to decide WHETHER SOMETHING ALREADY EXISTS. *"A
+     * sharing-filtered read does not disable the feature, it inverts it into a duplicate-maker."*
+     * Concretely: broker A's deal creates "1400 Royal Lane"; broker B emails the same building to a
+     * different analyst; under `with sharing` that analyst's conversion sees ZERO ROWS, concludes
+     * the building is new, and creates a second `Property__c` — i.e. WS3 would deploy green and do
+     * nothing at all for exactly the population it was built for, since two brokers competing on
+     * one building is the scenario, not the edge case.
+     *
+     * ═══ WHAT THIS DOES NOT WIDEN ═══
+     * The query returns an Id and a machine-generated key, and BOTH are consumed inside
+     * `LeadConvertService`; neither is returned to a caller, rendered, or logged. What the running
+     * user gains is a LOOKUP VALUE on their own Opportunity, and the record behind it stays as
+     * unreadable to them as it was before — they get "insufficient privileges" on the Property tab.
+     * ⚠ THAT IS A REAL, NEW, USER-VISIBLE CONDITION and it is the accepted cost of the user's
+     * "reuse and change nothing" decision, not an oversight: see `LeadConvertService.createProperties`
+     * where it is stated in full, and the WS3 release note. The remedy is a permission-set grant
+     * (`DPEG_Property_View`), never a widening of this read.
+     *
+     * ═══ SCOPE — AS NARROW AS APEX ALLOWS ═══
+     * Inner classes do NOT inherit the outer class's sharing, so this is declared explicitly and
+     * `PropertySelector` itself STAYS `with sharing`. It is `private`, so the only way in is the
+     * public static wrapper above. It is deliberately SEPARATE from `FolderCreationReads` even
+     * though both prevent a duplicate: that one prevents a duplicate SharePoint folder — an
+     * external write nothing in Salesforce can undo — while this one prevents a duplicate
+     * `Property__c` row, which an admin can merge. Merging the classes would let this weaker case
+     * quietly borrow that stronger argument, which is the drift the separation exists to stop.
+     *
+     * ⚠ Apex forbids static methods on inner classes, hence the instance method and the
+     * `new ReuseLookupReads()` at the call site.
+     */
+    private without sharing class ReuseLookupReads {
+
+        /**
+         * The existing Properties for a set of normalized-address keys, read without sharing. See
+         * `selectByNormalizedAddresses` for the field set, the ordering contract and the
+         * `SYSTEM_MODE` justification, and the enclosing class for the sharing one.
+         *
+         * ⚠ CASE. `Normalized_Address__c` is `caseSensitive = false`, so `IN` matches case-blind at
+         * the index. That is a backstop, not the mechanism — `normalizeAddress` lowercases before
+         * it returns, so every key written and every key bound here is already lower-case. Do not
+         * rely on the flag to reconcile a differently-cased key from some other producer; there is
+         * no other producer, by design.
+         *
+         * @param normalizedAddresses The keys to look up; never null/empty/blank (the wrapper
+         *                            guards and strips).
+         * @return The matching rows, oldest first; empty when no key resolves.
+         */
+        private List<Property__c> byNormalizedAddresses(Set<String> normalizedAddresses) {
+            return [
+                SELECT Id, Normalized_Address__c
+                FROM Property__c
+                WHERE Normalized_Address__c IN :normalizedAddresses
+                WITH SYSTEM_MODE
+                ORDER BY CreatedDate ASC, Id ASC
+            ];
         }
     }
 }

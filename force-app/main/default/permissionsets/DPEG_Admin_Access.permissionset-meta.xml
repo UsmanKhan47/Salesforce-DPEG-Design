@@ -108,6 +108,39 @@
         deploy REPLACES its member list wholesale, so deploying the repo copy would silently
         revoke that access for every principal. No change in this cleanup deploys that group -
         but anyone who does, for any reason, must reconcile it first.
+
+        ══════════════════════════════════════════════════════════════════════════════════
+        P8 HUB PASS (2026-08-30) - §3 DECISION, RECORDED HERE ON PURPOSE. Lead.Parse_Confidence__c,
+        Lead.Deal_Notes__c and Lead.First_Seen_Date__c are measured at ZERO FieldPermissions rows
+        on this set (same as on Broker_Protection_Access). DELIBERATELY NOT BACKFILLED HERE,
+        unlike on Broker_Protection_Access where all but Parse_Confidence__c were backfilled.
+        WHY THE TWO SETS WERE TREATED DIFFERENTLY: every existing grant in THIS file traces to a
+        MEASURED failure - a deploy/test run that broke (the eight-fields block above, the
+        Call_For_Offers/Offer_Alert/NDA_Alert blocks) or an approval page that silently omitted a
+        field (Wire_Verification_Completed__c). None of these three fields has a measured failure
+        of that kind: the gap is a HUMAN VISIBILITY gap only (the columns render blank for an
+        administrator), which is real but is not the class of problem this set exists to solve -
+        widening its purpose to "administrator should see every Lead field" would make it a
+        second, competing copy of DPEG_Acquisition_View rather than the narrow deploy-unblocking
+        set it has been kept as through every prior addition. The hub-pass's own §3 recommendation
+        text names Broker_Protection_Access only ("backfill those three on Broker_Protection_Access
+        in the same pass") - it does not name this set, which agrees with the reasoning above
+        rather than being silent on it. If an administrator smoke-testing a Lead record ever
+        needs these three fields and cannot see them, that is the trigger to revisit this decision
+        specifically, not to re-apply it here speculatively now.
+
+        🔴 CORRECTED SAME DAY (BA Gap-Closure code-review pass, C2) - Lead.Parse_Confidence__c IS
+        NOW GRANTED BELOW, READ-ONLY, AND IS NO LONGER COVERED BY THE "no measured failure" REASONING
+        ABOVE. The premise changed hours after this decision was written: WS7 promoted the field
+        from a display column into a `Review_Queue` list-view FILTER term
+        (`Parse_Confidence__c = LOW OR Low_Confidence_Field_Count__c > 0`). This set's
+        applicationVisibilities restore the Acquisition app for this administrator, so the same
+        Review Queue list view is reachable here too - an unreadable filter field is now the same
+        class of MEASURED-adjacent gap this set exists to close (see the eight-fields comment
+        above), not a human-visibility nicety. Deal_Notes__c and First_Seen_Date__c are UNCHANGED
+        by this correction - they are plain display columns, not filter terms, so the original
+        reasoning still applies to them and they remain deliberately absent from this set.
+        ══════════════════════════════════════════════════════════════════════════════════
     -->
     <applicationVisibilities>
         <application>Acquisition</application>
@@ -203,6 +236,15 @@
       field definitions - a fieldPermissions entry for a field that does not exist yet fails the
       deploy.
     -->
+    <!-- Deal_Name__c ADDED P8 HUB PASS (2026-08-30), WS6. Formula, now a column on all five Lead
+         list views, including the ones this administrator's App Launcher exposes via the
+         applicationVisibilities restored on this set. Read-only: formula fields cannot carry an
+         editable grant. -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Lead.Deal_Name__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
         <field>Lead.Extraction_Score_Pct__c</field>
@@ -211,6 +253,32 @@
     <fieldPermissions>
         <editable>true</editable>
         <field>Lead.Fields_Captured_Count__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!-- Low_Confidence_Field_Count__c ADDED P8 HUB PASS (2026-08-30), WS7. Per the hub-pass
+         matrix this set needs read only, not edit - it is the Review Queue list view's filter
+         field, and this set's job is administrator VISIBILITY (see the eight-fields comment
+         above this block for why a WRITE-breaking grant lives here at all: it is only added when
+         a measured deploy/test/approval-page failure requires it, and none was measured for this
+         field). Unlike Field_Confidence_JSON__c/Low_Confidence_Field_Count__c's mandatory EDIT
+         grant on DPEG_Acquisition_Edit, EmailToLeadService.applyFieldConfidence's isCreateable()
+         guard means a missing Edit grant here does NOT fail the administrator's own Lead insert
+         (RunLocalTests) - it only silently skips populating the field for that run, which read
+         access does not fix either way. Read-only closes the filter/visibility gap without
+         widening this set beyond its established narrow purpose. -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Lead.Low_Confidence_Field_Count__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!-- Parse_Confidence__c ADDED 2026-08-30, BA Gap-Closure code-review pass, C2. Read-only,
+         same reasoning as Low_Confidence_Field_Count__c immediately above: both are the
+         Review Queue list view's filter fields (`Parse_Confidence__c = LOW OR
+         Low_Confidence_Field_Count__c > 0`), and this set's own §3 decision block (top of file)
+         records why this field was withheld until now and why it changed. -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Lead.Parse_Confidence__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -304,6 +372,22 @@
     <fieldPermissions>
         <editable>true</editable>
         <field>Opportunity.Offer_Alert_Last_Interval__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!-- Offer_Status__c ADDED Acquisitions gap-fix Item 5a/FIX 3 (2026-08-30). Same class of
+         gap, and same load-bearing-for-the-DEPLOY reasoning, as the
+         Call_For_Offers_Received_Date__c grant above: OpportunitySelector's Call for Offers
+         alert queries (queryCallForOffersAlerts, and the suppression predicate added in this
+         same tranche) run WITH USER_MODE, and this org has already been measured refusing the
+         WHOLE ROW - not degrading gracefully - on a single inaccessible field under USER_MODE.
+         RunLocalTests executes as the deploying administrator, who holds this set and nothing
+         else, so without this grant both call-for-offers surfaces (the alert query and any test
+         fixture that sets Offer_Status__c) break for the person shipping the change, not just
+         for an end user. EDITABLE, matching Call_For_Offers_Received_Date__c's precedent
+         immediately above and DPEG_Acquisition_Edit's grant on this same field. -->
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Opportunity.Offer_Status__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <!-- FSD Gap Tranche 1, code-review Fix 2 (W2), added 2026-08-16.
@@ -433,6 +517,46 @@
     <fieldPermissions>
         <editable>false</editable>
         <field>Opportunity.Property_Address__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!-- Total_Deals_Submitted__c / Deals_Won__c / Deals_Lost__c ADDED Acquisitions gap-fix
+         Item 6.1/FIX 4 (2026-08-30). Roll-up summaries on Account (broker firm), read-only by
+         type - a roll-up summary can never carry editable=true, that fails the deploy outright.
+         Granted here, not only on DPEG_Account_View, because BrokerFirmController now reads
+         these three fields to render the Broker Firm sidebar card on the Opportunity record
+         page - a live UI read path, not only a report - and this set is the one RunLocalTests
+         runs under (see the Call_For_Offers_Received_Date__c / Offer_Status__c comments above
+         for the fuller USER_MODE/RunLocalTests reasoning; BrokerFirmController's own selector
+         read is the same shape). Same three fields, same reasoning, also added this pass to
+         DPEG_Acquisition_Edit, DPEG_Acquisition_View and DPEG_Opportunity_View - every set whose
+         persona opens an Opportunity record page. -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Account.Deals_Lost__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Account.Deals_Won__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Account.Total_Deals_Submitted__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!-- Property_Registry__c.Protection_Window_Days__c ADDED 2026-08-30, BA Gap-Closure C2
+         follow-up. Read-only, no matching <objectPermissions> block - same convention as every
+         other object restored on this set (see the Portfolio_Deal__c note earlier in this file):
+         this set is assigned only where the System Administrator profile's own Modify All Data
+         already confers object-level access, so only the field-level grant is needed here.
+         Exists so an administrator settling a GATE A dispute (the protection window in force
+         when a claim was registered) can see the stamped value; PropertyClaimService.
+         stampResolvedWindow is the sole writer, and needs Read+Edit only on
+         Broker_Protection_Access, the intake principal - see that field's own description. -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Property_Registry__c.Protection_Window_Days__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <hasActivationRequired>false</hasActivationRequired>

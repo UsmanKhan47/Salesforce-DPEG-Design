@@ -1020,4 +1020,224 @@ private class PropertyClaimServiceTest {
             SELECT COUNT() FROM Competing_Broker_Submission__c WHERE Is_Winning_Submission__c = true
         ], 'Both the old and the new winning submissions are retained, each anchored on its own Lead');
     }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // GATE A DURABLE AUDIT TRAIL (WS8 code-review follow-up, 2026-08-30, W6)
+    //
+    // The user accepted a Setup-editable protection window — a value that can retroactively
+    // release live claims with no deploy — ON CONDITION that the window applied to a disputed
+    // claim stays recoverable. That condition was originally discharged by a
+    // System.debug(WARN), which needs an active trace flag on an async context user and
+    // expires in 24h, so in practice the evidence usually would not exist. The durable half is
+    // `Property_Registry__c.Protection_Window_Days__c`, stamped by
+    // PropertyClaimService.stampResolvedWindow on every path that (re)sets
+    // Registered_DateTime__c.
+    //
+    // 🔴 EVERY STAMP ASSERTION BELOW IS BRANCHED ON FLS, AND THAT IS THE FEATURE, NOT HEDGING.
+    // The field is brand-new and Metadata-API-deployed, so it arrives with FieldPermissions for
+    // NOBODY — System Administrator and the deploy-time test runner included
+    // (ARCHITECTURE.md §2). Measured twice in this build on other objects: an unguarded write
+    // to such a field throws `Operation failed due to fields being inaccessible` and takes the
+    // WHOLE statement with it — here that would be the claim itself. A test that asserted the
+    // stamp unconditionally would fail on exactly the org state the guard exists to survive,
+    // and would push the next reader toward deleting the guard to get green. The same applies
+    // to READING it: a plain SELECT of an ungranted field throws `No such column`, so the read
+    // helper below is guarded too. This mirrors EmailToLeadServiceTest's WS7 block exactly.
+    //
+    // ⚠ THE UNCONDITIONAL ASSERTION IN EACH TEST IS THE IMPORTANT ONE: THE CLAIM SUCCEEDED.
+    // The stamp is evidence about the claim; the claim is the product. If a provisioning gap
+    // ever costs the claim rather than the evidence, those lines go red.
+    //
+    // 🔴 AND THAT IS WHY THE TWO IN-MEMORY TESTS COME FIRST. Measured on `usman-dpeg`
+    // 2026-08-30 (validation 0Afiw000000TlrZCAS): in the CURRENT org state — field deployed,
+    // granted to nobody — both END-TO-END tests below PASS with their stamp assertions
+    // SKIPPED. Relying on them alone would have shipped the GATE A condition with its one
+    // load-bearing line never executed by anything. The in-memory pair proves the stamp
+    // without DML and therefore without a grant; the end-to-end pair proves the wiring and
+    // starts asserting the value the day `Protection_Window_Days__c` is granted. Neither pair
+    // replaces the other.
+    // ══════════════════════════════════════════════════════════════════════════
+
+    /** True when the running principal may write Protection_Window_Days__c — see the block above. */
+    private static Boolean windowStampWritable() {
+        return Schema.SObjectType.Property_Registry__c.fields.Protection_Window_Days__c.isCreateable();
+    }
+
+    /**
+     * The stamped window for a key, or null when the running principal cannot read the field.
+     * The SELECT lives behind the guard deliberately — see the block above.
+     *
+     * @param key The Property_Key__c to read.
+     * @return The stamped value, or null when the field is unreadable in this org.
+     */
+    private static Decimal storedWindowStamp(String key) {
+        if (!windowStampWritable()) {
+            return null;
+        }
+        return [
+            SELECT Protection_Window_Days__c FROM Property_Registry__c WHERE Property_Key__c = :key
+        ].Protection_Window_Days__c;
+    }
+
+    /**
+     * 🔴 THE STAMP ITSELF, PROVEN WITHOUT A GRANT AND WITHOUT DML.
+     *
+     * MEASURED (validation 0Afiw000000TlrZCAS, 2026-08-30): with the field deployed and no
+     * FieldPermissions row anywhere, the two end-to-end tests below PASSED and their stamp
+     * assertions were SKIPPED — leaving the assignment inside `stampResolvedWindow` as the
+     * only uncovered line in that method. A guard whose guarded branch no test can enter is a
+     * guard nobody has read, and the GATE A condition would have shipped on an untested claim.
+     *
+     * This test enters that branch by pre-seeding the per-transaction FLS cache, then asserts
+     * on an IN-MEMORY row. Field assignment on an unsaved sObject involves no DML and
+     * therefore no FLS, so this proves the RESOLUTION (it reads the live config, not a
+     * constant) with no dependence on provisioning. The end-to-end tests below prove the same
+     * thing through real DML and start doing so the day the grant lands.
+     */
+    @isTest
+    static void stampResolvedWindow_writesTheResolvedWindow_whenTheFieldIsWritable() {
+        BrokerProtectionConfig.overrideForTest(new Broker_Protection_Config__mdt(
+            Protection_Window_Days__c = 45,
+            Lookback_Days__c = 45));
+        PropertyClaimService.windowStampWritableCache = true;
+        Property_Registry__c row = new Property_Registry__c();
+
+        Test.startTest();
+        PropertyClaimService.stampResolvedWindow(row);
+        Test.stopTest();
+
+        Assert.areEqual(45, row.Protection_Window_Days__c,
+            'The stamp must be the window RESOLVED from Broker_Protection_Config__mdt (45 '
+            + 'here), never the shipped default of 90. A 90 would mean the audit trail records '
+            + 'a constant and can settle no dispute.');
+    }
+
+    /**
+     * 🔴 THE GUARD'S OTHER LEG, AND THE MORE IMPORTANT ONE. A missing grant must cost the
+     * AUDIT VALUE and nothing else — it must not throw, because this runs inside the claim's
+     * own DML and an exception here would abort the claim, the submission and the Lead. That
+     * exact blast radius was measured twice in this build on other objects.
+     */
+    @isTest
+    static void stampResolvedWindow_skipsSilently_whenTheFieldIsNotWritable() {
+        BrokerProtectionConfig.overrideForTest(new Broker_Protection_Config__mdt(
+            Protection_Window_Days__c = 45,
+            Lookback_Days__c = 45));
+        PropertyClaimService.windowStampWritableCache = false;
+        Property_Registry__c row = new Property_Registry__c();
+
+        Test.startTest();
+        PropertyClaimService.stampResolvedWindow(row);
+        Test.stopTest();
+
+        Assert.isNull(row.Protection_Window_Days__c,
+            'An ungranted field must be LEFT ALONE. Writing it anyway would make the enclosing '
+            + 'insert throw "fields being inaccessible" and take the whole claim with it.');
+    }
+
+    /**
+     * The new-winner INSERT path. The stamp must be the window RESOLVED AT CLAIM TIME, not a
+     * hardcoded default — which is why the injected window (45) is deliberately different from
+     * the shipped default (90). A stamp of 90 here would mean the code read a constant and the
+     * whole audit trail would be worthless the first time an admin changed the record.
+     */
+    @isTest
+    static void claim_firstWinner_stampsTheWindowResolvedAtClaimTime() {
+        BrokerProtectionConfig.overrideForTest(new Broker_Protection_Config__mdt(
+            Protection_Window_Days__c = 45,
+            Lookback_Days__c = 45));
+        Lead sourceLead = TestDataFactory.createLead(true);
+
+        Test.startTest();
+        PropertyClaimService.ClaimOutcome outcome = PropertyClaimService.claim(
+            sourceLead.Id, '906 stamped st', extractedFields(), Datetime.now(),
+            'forwarder.stamp@example.invalid', 'FW: 906 Stamped St'
+        );
+        Test.stopTest();
+
+        // Unconditional, and first: the claim itself must not depend on the audit field.
+        Assert.areEqual(PropertyClaimService.ClaimOutcome.WINNER, outcome,
+            'The claim must succeed whether or not Protection_Window_Days__c is grantable — a '
+            + 'missing grant costs the audit value and nothing else');
+        Assert.areEqual(sourceLead.Id, registryFor('906 stamped st').Winning_Lead__c,
+            'and the registry row must still name the winner');
+
+        if (windowStampWritable()) {
+            Assert.areEqual(45, storedWindowStamp('906 stamped st'),
+                'The stamp must be the window RESOLVED from Broker_Protection_Config__mdt at '
+                + 'claim time (45 here), never the shipped default of 90. If this reads 90 the '
+                + 'code is stamping a constant and the audit trail cannot settle any dispute.');
+        }
+    }
+
+    /**
+     * 🔴 THE ADOPTION PATH, AND THE SCENARIO GATE A WAS OPENED FOR. An admin LOWERING the
+     * window is what MAKES a row expired, so the adopted row must record the LOWERED value.
+     *
+     * `adopt()` resets Registered_DateTime__c — that is what makes an adoption a fresh claim —
+     * so leaving the original stamp standing would produce the one outcome worse than no audit
+     * trail: a row whose "registered" date and whose "window" came from two different claims,
+     * reading as authoritative and being wrong.
+     *
+     * ⚠ THE PRE-EXISTING VALUE (120) IS DELIBERATELY NOT THE DEFAULT AND NOT THE NEW VALUE, so
+     * the assertion distinguishes three outcomes that a single-value fixture would blur:
+     * re-stamped (45, correct), left alone (120, the bug), and blanked (null, also a bug).
+     *
+     * ⚠ This test also documents the contradiction with the field's own `description`, which
+     * says the value is "copied once ... and never updated afterward". That sentence was
+     * written against the insert path alone; see adopt()'s Javadoc for why the code is right
+     * and the description is the thing that needs amending.
+     */
+    @isTest
+    static void claim_expiredAdoption_reStampsTheWindowInForceNow() {
+        BrokerProtectionConfig.overrideForTest(new Broker_Protection_Config__mdt(
+            Protection_Window_Days__c = 45,
+            Lookback_Days__c = 45));
+
+        // ⚠ READ THE WINDOW BACK BEFORE BUILDING THE FIXTURE, AND ASSERT IT. Both
+        // PropertyMatchingService.PROTECTION_WINDOW_DAYS and PropertyClaimService's stamp
+        // resolve from the injected row, but the former is `static final` — resolved once, the
+        // first time that class is loaded in this transaction. If anything above ever loads it
+        // earlier, the fixture would be backdated against one window and arbitrated against
+        // another, and the failure would look like a claim-engine bug. This line turns that
+        // into a named control instead.
+        Integer window = windowDays();
+        Assert.areEqual(45, window,
+            'CONTROL — PropertyMatchingService must have resolved its window from the injected '
+            + 'row. A 90 here means the class was loaded before overrideForTest ran.');
+
+        Lead incumbent = TestDataFactory.createLead(true);
+        Property_Registry__c reg =
+            TestDataFactory.createPropertyRegistry('907 restamp st', incumbent.Id, true);
+        if (windowStampWritable()) {
+            // Rides the backdate UPDATE below — no extra statement.
+            reg.Protection_Window_Days__c = 120;
+        }
+        backdate(reg, window + 1);
+        Lead challenger = TestDataFactory.createLead(true);
+
+        Test.startTest();
+        PropertyClaimService.ClaimOutcome outcome = PropertyClaimService.claim(
+            challenger.Id, '907 restamp st', extractedFields(), Datetime.now(),
+            'forwarder.restamp@example.invalid', 'FW: 907 Restamp St'
+        );
+        Test.stopTest();
+
+        // Unconditional: the handover itself must be unaffected by the audit field's FLS.
+        Assert.areEqual(PropertyClaimService.ClaimOutcome.WINNER, outcome,
+            'A claim whose window has closed is adopted by the next broker regardless of the '
+            + 'audit field\'s grant state');
+        Property_Registry__c adopted = registryFor('907 restamp st');
+        Assert.areEqual(reg.Id, adopted.Id, 'The SAME row must be adopted — the key is unique');
+        Assert.areEqual(challenger.Id, adopted.Winning_Lead__c,
+            'and the winner anchor must have moved to the adopting broker');
+
+        if (windowStampWritable()) {
+            Assert.areEqual(45, storedWindowStamp('907 restamp st'),
+                'The adoption RE-registers this row (Registered_DateTime__c resets), so the '
+                + 'window stamp must move with it. Reading 120 means the stamp was left behind '
+                + 'and now describes a different claim than the date beside it; reading null '
+                + 'means the adoption path blanked it instead of re-stamping.');
+        }
+    }
 }

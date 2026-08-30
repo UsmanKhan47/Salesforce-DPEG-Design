@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>DPEG_First__c</fullName>
+    <description>Copied from Lead.DPEG_First__c at Conversion 1 by LeadConvertService.applyDealFields. Mirrors Lead.DPEG_First__c, which the Lead_Intake_Stamp flow's Assign_DPEG_First element populates from OwnerId. The first DPEG user to be assigned this deal, preserved across conversion.</description>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <label>DPEG First</label>
+    <referenceTo>User</referenceTo>
+    <relationshipLabel>DPEG First Opportunities</relationshipLabel>
+    <relationshipName>DPEG_First_Opportunities</relationshipName>
+    <required>false</required>
+    <trackFeedHistory>false</trackFeedHistory>
+    <type>Lookup</type>
+</CustomField>

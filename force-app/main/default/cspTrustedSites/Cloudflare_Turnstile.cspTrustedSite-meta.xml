@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CspTrustedSite xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        FIRST CspTrustedSite IN THIS REPO. Field list confirmed empirically on 2026-08-30 by a
+        Tooling API describe of the CspTrustedSite object against usman-dpeg (the
+        salesforce-api-context MCP is not configured in .mcp.json, so the org is the schema source
+        of truth — .claude/rules/salesforce-global-rule.md constraint 3 fallback).
+
+        ⚠ NOTE WHAT IS ABSENT: there is no isApplicableToScriptSrc element. script-src is what a
+        CSP Trusted Site grants BY DEFAULT; the booleans below only ADD further directives. Do not
+        go looking for a script-src flag and do not invent one.
+
+        ═══ WHY THESE TWO DIRECTIVES AND NOT THE OTHERS ═══
+        Cloudflare's own CSP reference requires exactly two:
+            script-src  https://challenges.cloudflare.com   (implicit — see above)
+            frame-src   https://challenges.cloudflare.com   (isApplicableToFrameSrc, below)
+        The widget is an IFRAME served from challenges.cloudflare.com, so without frame-src the
+        api.js script loads and then renders nothing — a blank space where the checkbox should be,
+        with a console error and no Apex-side symptom at all.
+        connect-src is enabled because the widget's challenge platform issues fetch/XHR calls back
+        to the same host while solving. img-src, style-src, font-src and media-src are left FALSE:
+        Turnstile's visual assets are inside its own iframe, which carries its own origin and its
+        own CSP, so granting them on the parent document buys nothing and widens the surface.
+        Camera and microphone are not requested; CanAccessCamera/CanAccessMicrophone exist on the
+        object and are deliberately omitted.
+
+        ═══ 🔴 THIS FILE IS NECESSARY AND NOT SUFFICIENT. GATE C. ═══
+        The DPEG Broker Portal is an LWR Experience site, and an LWR site ALSO has its own
+        "Security & Privacy" CSP level in Experience Builder. That setting lives in the networks/
+        and sites/ trees, which .forceignore excludes ENTIRELY (lines 509-522), so it cannot be
+        deployed from this repo and cannot be verified from source — the same class of trap as the
+        settings/** one already recorded against this project: a force-ignored tree never
+        reconciles, so a repo file describing it would be unverified fiction.
+        Relaxing it is therefore a MANUAL, POST-DEPLOY step owned by the portal administrator, and
+        it is written up in docs/runbooks/2026-08-30-turnstile-post-deploy.md.
+        🔴 ACCEPTANCE FOR THIS COMPONENT IS A BROWSER CHECK ON THE LIVE GUEST PAGE — the widget
+        must actually render and be solvable for an anonymous visitor. A green deploy of this file
+        proves only that the record exists.
+
+        Context is All rather than Communities so that the same trusted site also covers any
+        internal LEX preview of the component during troubleshooting; the endpoint is a single
+        first-party-to-Cloudflare host with no wildcard, so the wider context costs nothing.
+    -->
+    <context>All</context>
+    <description>Cloudflare Turnstile CAPTCHA on the public DPEG Broker Portal. Grants script-src (implicit) plus frame-src and connect-src. NOT sufficient alone - the LWR site CSP level is a manual Experience Builder step. See ARCHITECTURE.md 3.5.</description>
+    <endpointUrl>https://challenges.cloudflare.com</endpointUrl>
+    <isActive>true</isActive>
+    <isApplicableToConnectSrc>true</isApplicableToConnectSrc>
+    <isApplicableToFontSrc>false</isApplicableToFontSrc>
+    <isApplicableToFrameSrc>true</isApplicableToFrameSrc>
+    <isApplicableToImgSrc>false</isApplicableToImgSrc>
+    <isApplicableToMediaSrc>false</isApplicableToMediaSrc>
+    <isApplicableToStyleSrc>false</isApplicableToStyleSrc>
+</CspTrustedSite>

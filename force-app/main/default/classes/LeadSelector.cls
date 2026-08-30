@@ -17,7 +17,12 @@
  *     selectConversionById.
  *   - LeadConvertMatchService.matchForConversion (Smart Lead Conversion,
  *     2026-08-02: reads Email + Company as the attach-to-existing match keys).
- *     USER_MODE — selectMatchKeysByIds.
+ *     USER_MODE — selectMatchKeysByIds, OR selectMatchKeysWithBrokerByIds (WS8,
+ *     2026-08-30) when the running user can read the intake broker link. 🔴 THE
+ *     CALLER CHOOSES BETWEEN THEM WITH A DESCRIBE, and that choice is not
+ *     cosmetic — see selectMatchKeysWithBrokerByIds for why folding its three
+ *     extra columns into selectMatchKeysByIds would have silently disabled Smart
+ *     Lead Conversion for every user until the P8 FLS grant landed.
  *
  * ⚠ ADDED-METHOD NOTE (flagged to the orchestrator, accepted). The P4 cleanup-wave
  * task directed BrokerPortalController's Lead site to "reuse selectByIdsSystem".
@@ -430,6 +435,67 @@ public with sharing class LeadSelector {
         }
         return [
             SELECT Id, Email, Company
+            FROM Lead
+            WHERE Id IN :leadIds
+            WITH USER_MODE
+        ];
+    }
+
+    /**
+     * The match keys of the Leads about to be converted, PLUS the intake-time broker link — backs
+     * `LeadConvertMatchService.matchForConversion` (WS8, 2026-08-30) when, and only when, the
+     * running user can read that link.
+     *
+     * ═══ 🔴 WHY THIS IS A SECOND METHOD AND NOT THREE MORE FIELDS ON selectMatchKeysByIds ═══
+     * `Lead.Broker__c` and `Lead.Broker_Firm__c` are NEW Metadata-API-deployed fields, and such a
+     * field arrives with FLS for NOBODY — System Administrator included (ARCHITECTURE.md §2).
+     * `WITH USER_MODE` THROWS ON THE WHOLE ROW FOR ONE INACCESSIBLE FIELD, and this query's caller
+     * catches `QueryException` and DEGRADES TO NO-MATCH. So adding the two columns to the existing
+     * method would not have added a signal — between the WS8 deploy and the P8 permission-set
+     * pass it would have SILENTLY DISABLED SMART LEAD CONVERSION ENTIRELY, reintroducing the exact
+     * duplicate-Contact accumulation that class was built on 2026-08-02 to stop. That is the same
+     * "a green deploy proves nothing, the failure is runtime-only" shape recorded at
+     * `EmailToLeadService.jsonWritable()`.
+     *
+     * The caller therefore ASKS A DESCRIBE FIRST and picks the method. `selectMatchKeysByIds` above
+     * is byte-identical to what it has always been and remains the answer whenever the link is not
+     * readable, so the ungranted state costs the new preference and NOTHING ELSE.
+     *
+     * ═══ 🔴 `Broker__r.AccountId` IS SPANNED DELIBERATELY, AND IT IS NOT THE SAME AS Broker_Firm__c ═══
+     * The platform requires a specified conversion Contact to belong to the Account being converted
+     * into (`LeadConvert.setContactId` is valid only alongside a `setAccountId` for that Contact's
+     * OWN Account). `Broker_Firm__c` is a separate, independently editable lookup — a human can
+     * point it somewhere else, and then the pair would name a Contact that does not belong to the
+     * Account and `Database.convertLead` would throw, breaking a conversion that works today.
+     * Reading the Account THROUGH the Contact makes the invariant true BY CONSTRUCTION, which is
+     * the identical technique `ContactSelector.selectByEmails` uses (`AccountId != null` in the
+     * query, `match.accountId = matchedContact.AccountId` in the service). `Broker_Firm__c` is
+     * still selected — it is the caller's lower-precedence FIRM-ONLY signal, where no Contact is
+     * being specified and the invariant does not arise.
+     *
+     * ⚠ THE SPAN COSTS NO EXTRA QUERY (it is a relationship traversal in this same statement) but
+     * it DOES require Contact read. That is folded into the caller's describe gate, because a user
+     * with no Contact access converting an EMAIL-LESS Lead would otherwise degrade where today
+     * they match an Account by name — a narrow but real regression. See the caller.
+     *
+     * USER_MODE: internal, user-initiated path — identical justification to the method above, and
+     * the same `@throws` contract. Left to propagate; the caller owns the fail-soft.
+     *
+     * @param leadIds The Leads about to be converted; null/empty returns an empty list WITHOUT
+     *                querying.
+     * @return Leads with Id, Email, Company, Broker__c, Broker__r.AccountId and Broker_Firm__c
+     *         populated; an empty list when the input is null or empty (never null).
+     * @throws System.QueryException when the running user lacks read on Lead.Email, on either
+     *         broker lookup, or on Contact.
+     * @example
+     * List<Lead> keys = LeadSelector.selectMatchKeysWithBrokerByIds(new Set<Id>{ leadId });
+     */
+    public static List<Lead> selectMatchKeysWithBrokerByIds(Set<Id> leadIds) {
+        if (leadIds == null || leadIds.isEmpty()) {
+            return new List<Lead>();
+        }
+        return [
+            SELECT Id, Email, Company, Broker__c, Broker__r.AccountId, Broker_Firm__c
             FROM Lead
             WHERE Id IN :leadIds
             WITH USER_MODE

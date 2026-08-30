@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY — see
+        Protection_Window_Days__c.field-meta.xml in this folder for why a comment above the
+        root breaks `sf` deploy at conversion.
+
+        Replaces LLMExtractionParser.CONFIDENCE_HIGH_MIN (currently 0.85). Precision(3,2)
+        allows -9.99..9.99; the extraction "confidence" score is always 0-1, so this leaves
+        headroom without inviting an out-of-range value to silently half-apply.
+
+        🔴 NOT SUBJECT TO GATE A — this is a display/routing threshold (Lead.Parse_Confidence__c
+        banding), not a claim-arbitration constant like Protection_Window_Days__c /
+        Lookback_Days__c. It carries a DIFFERENT risk instead: ExtractAddressQueueable's
+        suppression hard gate (lines 39, 1221, 3097) reads this exact value —
+        `is_acquisition_related = false AND confidence >= Confidence_High_Min__c` — so this
+        is simultaneously a display band AND a suppression-gate threshold. See the
+        <description> and design-requirements.md §2/WS5 for what changing it does to each.
+    -->
+    <fullName>Confidence_High_Min__c</fullName>
+    <description>HIGH-confidence threshold for the top-level extraction &apos;confidence&apos; score (0-1). Replaces LLMExtractionParser.CONFIDENCE_HIGH_MIN (0.85). 🔴 NOT ONLY A DISPLAY BAND: ExtractAddressQueueable&apos;s suppression HARD GATE uses this exact value — an email is silently gated (no Lead, no registry claim) when is_acquisition_related = false AND confidence &gt;= this threshold. Raising it gates FEWER emails (some marginal non-deals slip through as Leads); lowering it gates MORE emails (some genuine deals may be silently suppressed — no exception, no log). Change this with the care of a code deploy, not a routine Setup tweak.</description>
+    <externalId>false</externalId>
+    <fieldManageability>DeveloperControlled</fieldManageability>
+    <inlineHelpText>0-1. Also drives ExtractAddressQueueable's silent-suppression gate, not only display banding. See field description before changing.</inlineHelpText>
+    <label>Confidence High Min</label>
+    <precision>3</precision>
+    <required>false</required>
+    <scale>2</scale>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

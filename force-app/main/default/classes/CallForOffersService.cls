@@ -45,11 +45,17 @@
  * ═══════════════════════════════════════════════════════════════════════════
  * 2. ONE LADDER SERVES THE BADGE AND THE ALERT — `dueInterval` IS THE JOIN
  * ═══════════════════════════════════════════════════════════════════════════
- * `ALERT_INTERVALS` = {7, 3, 1, 0} is the notification ladder the design names (7 / 3 / 1 days
- * before, and on the day). `dueInterval` on the result is the SMALLEST interval `i` for which
- * `daysRemaining <= i`, or null above 7 days out. The urgency BAND the UI colours off is computed
- * from the same two numbers in the same function, so the badge, the pill and the alert are one
- * derivation rather than three lists that happen to agree today.
+ * The notification ladder is {7, 3, 1, 0} — 7 / 3 / 1 days before, and on the day. `dueInterval` on
+ * the result is the SMALLEST interval `i` for which `daysRemaining <= i`, or null above 7 days out.
+ * The urgency BAND the UI colours off is computed from the same two numbers in the same function,
+ * so the badge, the pill and the alert are one derivation rather than three lists that happen to
+ * agree today.
+ *
+ * ⚠ THE LADDER'S VALUES MOVED TO CUSTOM METADATA ON 2026-08-30 (`CFO_Alert_Rung__mdt`). This
+ * paragraph said `ALERT_INTERVALS` = {7, 3, 1, 0}; that constant is now
+ * `DEFAULT_ALERT_INTERVALS`, the FALLBACK, and the live values come from Setup via
+ * `alertIntervals()`. 🔴 ONLY THE VALUES MOVED — four rungs, same numbers on day one, no stored
+ * `Offer_Alert_Last_Interval__c` marker invalidated. See that constant's own header.
  *
  * ⚠ THEY ARE NOT THE SAME POPULATION, AND THIS SECTION USED TO SAY THEY WERE. The retracted
  * sentence, verbatim: *"a deal the batch is about to alert on and a deal the panel paints red are
@@ -61,13 +67,25 @@
  * like an emergency); only the claim was wrong.
  *
  * ⚠ AND THE COUPLING IS ENFORCED BY A TEST, NOT BY CONSTRUCTION. `CRITICAL_DAYS` (3) and
- * `APPROACHING_DAYS` (7) are declared SEPARATELY from `ALERT_INTERVALS` and merely happen to equal
- * two of its entries; nothing in the code derives one from the other, so editing `ALERT_INTERVALS`
- * alone compiles and silently decouples the bell from the badge. What actually holds them together
+ * `APPROACHING_DAYS` (7) are declared SEPARATELY from the ladder and merely happen to equal two of
+ * its entries; nothing in the code derives one from the other, so changing the ladder alone
+ * compiles and silently decouples the bell from the badge. What actually holds them together
  * is `CallForOffersServiceTest.everyRungOfTheLadderMapsToExactlyOneBand`, which walks every
  * boundary day (8/7, 4/3, 1/0, 0/-1) and asserts the band AND the interval at each. 🔴 That test is
  * the guarantee — if you change any of these three constants, it is the thing that must stay green,
  * and it is the reason not to "tidy" the three declarations into one.
+ *
+ * 🔴 AND THAT GUARANTEE GOT WEAKER ON 2026-08-30, WHICH IS THE REAL COST OF MAKING THE RUNGS
+ * SETUP-EDITABLE. A test pin was sufficient while the ladder was an Apex literal: the only way to
+ * break the coupling was a deploy, and the deploy went red. An admin editing `CFO_Alert_Rung__mdt`
+ * in Setup changes the ladder with NO deploy and NO test run, and `CRITICAL_DAYS` /
+ * `APPROACHING_DAYS` — the BADGE's thresholds — stay where they are. So the bell and the badge CAN
+ * now be decoupled by a Setup edit that nothing here can see or refuse.
+ * ⚠ THAT IS ACCEPTED, NOT OVERLOOKED. The badge bands are a DISPLAY decision (what a human should
+ * see as urgent) and the rungs are a NOTIFICATION decision (when to interrupt someone); the design
+ * (Q5) chose to make only the second tunable. The two were never derived from each other. What
+ * this note buys is that the next reader diagnosing "the badge says amber but the bell fired" looks
+ * at the CMDT rows FIRST, instead of at code that has not changed.
  *
  * ⚠ Do not add a threshold anywhere else. If a fourth consumer needs one, it calls `evaluate`.
  *
@@ -116,6 +134,25 @@
  * in practice the chain was ALWAYS the `CreatedDate` leg — the Opportunity RECORD's creation
  * moment, which for a converted deal is when a human clicked Convert.
  *
+ * 🔴 THE SENTENCE IMMEDIATELY ABOVE — *"nothing in this repo writes `Broker_First_Seen__c` at
+ * all"* — WAS TRUE WHEN WRITTEN (2026-08-14) AND IS FALSE AS OF 2026-08-30 (WS2). It is left
+ * standing, quoted and retracted here rather than deleted, because the ARGUMENT it supports is
+ * unaffected and a future reader who only sees the conclusion would not know the premise moved.
+ * `LeadConvertService.applyDealFields` now copies `Lead.First_Seen_Date__c` into
+ * `Broker_First_Seen__c` on EVERY conversion, and the field's type changed `Date` -> `DateTime` in
+ * the same change (hence the `.date()` at the assignment below). Three consequences, all intended:
+ *   1. `dealArrivedDate` now takes its FIRST leg for every newly converted deal, so
+ *      `c/callForOffersList` starts rendering "Deal arrived <date>" as the broker-first-seen date
+ *      instead of the Opportunity's creation date. A VISIBLE change in this module, caused by a
+ *      change in another one. Deals converted BEFORE 2026-08-30 keep the `CreatedDate` leg, so the
+ *      column is legitimately mixed for a while.
+ *   2. The demotion decision itself is REINFORCED, not weakened: a populated
+ *      `Broker_First_Seen__c` is exactly the "months adrift from any email" value the paragraph
+ *      above describes, and it is now real rather than hypothetical. `receivedDate` must still
+ *      never coalesce onto it.
+ *   3. The RETIREMENT note below is unaffected — `dealArrivedDate` is still a migration
+ *      affordance with a defined end; it now simply carries a more meaningful value until then.
+ *
  * SO WHY IS IT STILL COMPUTED? Because the real field is stamped only when a call-for-offers email
  * MATCHES A CONVERTED WINNER, and `ExtractAddressQueueable`'s own header records that most registry
  * winners are unconverted at any given time — while a deal's `Offer_Due_Date__c` can equally have
@@ -149,20 +186,87 @@
  * DML (the alert marker stamp belongs to the batch, which owns the transaction). `upcoming()` and
  * `forOpportunity()` are **1 SOQL each, CONSTANT in the number of deals returned**, pinned at 251.
  *
+ * ⚠ `CFO_Alert_Rung__mdt.getAll()` IS NOT SOQL AND NEEDS NO SELECTOR. It is the platform's custom
+ * metadata accessor and costs ZERO governor queries — measured on this project for the sibling type
+ * (`BrokerProtectionConfig`'s header, `Limits.getQueries() == 0`). Adding
+ * `[SELECT ... FROM CFO_Alert_Rung__mdt]` to a selector would ADD a query this class does not
+ * currently pay and would break the pinned budget above. `.claude/rules/apex-layering-rule.md`'s
+ * "all SOQL lives in a selector" is satisfied vacuously: there is no SOQL here to own.
+ *
  * @see force-app/main/default/classes/CallForOffersAlertBatch.cls  (the alert consumer + SCOPE)
  * @see force-app/main/default/classes/CallForOffersController.cls  (the two LWC boundaries)
  * @see force-app/main/default/classes/CallForOffersStampService.cls (the only writer of Offer_Due_Date__c)
+ * @see CFO_Alert_Rung__mdt (the ladder's values; structure deploys, ROWS DO NOT)
+ * @see scripts/load-cfo-alert-rungs.apex (creates the four rungs — a required post-deploy step)
  * @see force-app/main/default/classes/DispositionTractionService.cls (the shape this copies)
  */
 public with sharing class CallForOffersService {
 
     /**
-     * The notification ladder: alert at 7, 3 and 1 days before the due date, and on the day.
-     * DESCENDING and it must stay descending — `intervalFor` returns the first entry the countdown
-     * is still inside, which is only the SMALLEST such entry when the list is ordered this way.
+     * The notification ladder's SHIPPED DEFAULT: alert at 7, 3 and 1 days before the due date, and
+     * on the day.
+     *
+     * ═══ ⚠ IT WAS `ALERT_INTERVALS`, THE LIVE LADDER, UNTIL 2026-08-30 ═══
+     * RETRACTED, verbatim, from the declaration this replaces:
+     *     "The notification ladder: alert at 7, 3 and 1 days before the due date, and on the day.
+     *      DESCENDING and it must stay descending — `intervalFor` returns the first entry the
+     *      countdown is still inside, which is only the SMALLEST such entry when the list is
+     *      ordered this way."
+     * The VALUES now live in `CFO_Alert_Rung__mdt` so an admin can retune the ladder without a
+     * deploy (design Item 5(d), user decision Q5 = option (i)). 🔴 ONLY THE VALUES MOVED. The
+     * ladder is still FOUR RUNGS, still `{7, 3, 1, 0}` on day one — seeded byte-identically by
+     * `scripts/load-cfo-alert-rungs.apex` — so every `Offer_Alert_Last_Interval__c` marker already
+     * stored on a live deal stays valid and NO deal changes behaviour. The ladder was NOT
+     * collapsed to a single interval and must not be.
+     *
+     * 🔴 THE DESCENDING RULE DID NOT MOVE WITH THE VALUES — IT GOT MORE IMPORTANT. It is now
+     * enforced by `resolveRungs`, which sorts explicitly, because `getAll()` returns a `Map` and
+     * **a Map's iteration order is not guaranteed**. Getting that wrong does not error; it changes
+     * which rung fires, silently. See `resolveRungs`.
+     *
+     * WHY THE LITERALS SURVIVE HERE AT ALL: this is the FALLBACK when the type carries no rows,
+     * i.e. every org where `scripts/load-cfo-alert-rungs.apex` has not been run — which is every
+     * freshly built org and every test run made before it. A CustomMetadata RECORD cannot be
+     * deployed in this repo (`.forceignore` excludes the tree; file-based record deploy throws
+     * UNKNOWN_EXCEPTION), so "no rows" is a REACHABLE state, not a hypothetical. Without this
+     * fallback the deploy would ship a working feature and silently kill it until a manual script
+     * was remembered. Exactly the shape, and exactly the reasoning, of `BrokerProtectionConfig`'s
+     * per-accessor defaults.
+     *
+     * ✅ `CallForOffersAlertBatch`'s rule — "If you find yourself writing 7 or 3 in this file,
+     * stop" — is UNAFFECTED AND STRENGTHENED. It is a rule about THAT file. The values live here
+     * and in Setup; the batch still contains no literal and no logic moved into it.
      */
     @TestVisible
-    private static final List<Integer> ALERT_INTERVALS = new List<Integer>{ 7, 3, 1, 0 };
+    private static final List<Integer> DEFAULT_ALERT_INTERVALS = new List<Integer>{ 7, 3, 1, 0 };
+
+    /**
+     * The widest rung `OpportunitySelector.queryCallForOffersAlerts`'s locator will read.
+     *
+     * ⚠ THIS IS A MIRROR OF A LITERAL IN ANOTHER FILE AND IT EXISTS ONLY TO WARN. That selector
+     * bounds its work queue at `TODAY + 7` and its own header explains why the number cannot be
+     * read from here: "A `Database.QueryLocator` cannot bind an Apex collection, so the ladder's
+     * widest rung cannot be read from `CallForOffersService`." That was a safe duplication while
+     * the ladder was an Apex constant — the two could only diverge through a deploy, which a
+     * reviewer sees.
+     *
+     * 🔴 MAKING THE RUNGS SETUP-EDITABLE CREATED A NEW SILENT FAILURE, AND THIS IS THE MITIGATION.
+     * An admin can now add a `Days_Before_Due__c = 14` rung in Setup, with no deploy and no
+     * review. The locator will never read a deal 14 days out, so that rung fires for nobody and
+     * NOTHING reports it. `resolveRungs` logs a WARN when the widest ACTIVE rung exceeds this, so
+     * the misconfiguration is diagnosable rather than invisible. The warn is not enforcement: the
+     * real fix is to widen the locator's ceiling in the same change that adds the rung.
+     */
+    private static final Integer LOCATOR_CEILING_DAYS = 7;
+
+    /** Cached resolved ladder — see `alertIntervals()` for why the cache is a correctness property. */
+    private static List<Integer> cachedRungs;
+
+    /** Separate from `cachedRungs` because an EMPTY resolved ladder is a meaningful cached value. */
+    private static Boolean rungsLoaded = false;
+
+    /** One WARN per transaction per condition, so a 251-deal chunk does not emit 251 identical lines. */
+    private static Set<String> rungWarnings = new Set<String>();
 
     /**
      * Days out at or below which the UI paints the deal red. Numerically equal to the ladder's
@@ -221,7 +325,10 @@ public with sharing class CallForOffersService {
         @AuraEnabled public Date receivedDate;
         /**
          * When the DEAL arrived — `Broker_First_Seen__c` falling back to the Opportunity's own
-         * created date. ⚠ THIS IS NOT AN EMAIL TIMESTAMP AND IS NOT A FALLBACK FOR ONE. It is a
+         * created date. ⚠ STAYS A `Date` DELIBERATELY (WS2, 2026-08-30). Both sources are now
+         * `Datetime` and both are truncated with `.date()` at the assignment; this member is a
+         * live UI column and widening it would change that column's shape for no requirement.
+         * ⚠ THIS IS NOT AN EMAIL TIMESTAMP AND IS NOT A FALLBACK FOR ONE. It is a
          * separate fact, carried under a separate name so a consumer must choose it deliberately;
          * `c/callForOffersList` renders it as the words "Deal arrived <date>" and only when
          * `receivedDate` is null. Header §4 records when to delete it.
@@ -251,6 +358,23 @@ public with sharing class CallForOffersService {
         @AuraEnabled public String listingBrokerEmail;
         /** `Deal_Room_Link__c`. */
         @AuraEnabled public String dealRoomLink;
+        /**
+         * `Opportunity.Offer_Status__c` VERBATIM — `Open` / `Submitted` / `Closed`, or NULL.
+         *
+         * 🔴 NULL IS A REAL AND COMMON VALUE, NOT A DEFECT, AND IT MUST NOT BE COALESCED TO
+         * `'Open'` HERE. A picklist `<default>` applies on INSERT ONLY, so every deal that existed
+         * before 2026-08-30 carries null and always will unless something writes it. Defaulting it
+         * in this DTO would tell the panel and the table that a deal whose campaign nobody has
+         * touched is definitively "Open" — a claim the data does not support — and would hide the
+         * backfill gap from the only two surfaces that could reveal it. Both consumers render the
+         * row/column only when this is populated.
+         *
+         * ⚠ IT IS NOT WHAT SUPPRESSES THE ALERT. The suppression is a WHERE clause in
+         * `OpportunitySelector.queryCallForOffersAlerts` — a suppressed deal never reaches the
+         * batch — and that query deliberately does not even select this field. This member exists
+         * purely so a human can SEE the status that is doing the suppressing.
+         */
+        @AuraEnabled public String offerStatus;
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -343,13 +467,172 @@ public with sharing class CallForOffersService {
         return evaluate(dueDate, Date.today());
     }
 
+    // ═══════════════════════════════════════════════════════════════════════
+    // THE LADDER'S VALUES — read from Custom Metadata, resolved once per transaction
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /**
+     * The live notification ladder, DESCENDING.
+     *
+     * ⚠ A CUSTOM METADATA READ IS NOT SOQL. `CFO_Alert_Rung__mdt.getAll()` is the platform's
+     * metadata accessor and costs ZERO governor queries — the same fact `BrokerProtectionConfig`'s
+     * header records as measured (`Limits.getQueries() == 0`). This class's pinned budget ("1 SOQL
+     * for `upcoming()`, CONSTANT in the number of deals") is therefore untouched, which is what
+     * makes it safe to call this from inside `evaluate`.
+     *
+     * 🔴 THE CACHE IS A CORRECTNESS PROPERTY, NOT A SPEED TRICK, AND THAT MATTERS MORE HERE THAN
+     * IT DID FOR THE CONFIG RECORD. `CallForOffersAlertBatch` evaluates a whole chunk against ONE
+     * `asOf` specifically so two deals in one run cannot straddle midnight. The ladder deserves the
+     * same treatment: without the cache, an admin saving a rung mid-chunk could give deal 3 a
+     * four-rung ladder and deal 190 a three-rung one, and the marker written for each would be
+     * measured against a different ladder. Resolve once, per transaction.
+     *
+     * @return The active rungs, largest first. Never null; may be empty (see `resolveRungs`).
+     */
+    @TestVisible
+    private static List<Integer> alertIntervals() {
+        if (!rungsLoaded) {
+            cachedRungs = resolveRungs(CFO_Alert_Rung__mdt.getAll().values());
+            rungsLoaded = true;
+        }
+        return cachedRungs;
+    }
+
+    /**
+     * Turn CMDT rows into the ladder: active only, de-duplicated, DESCENDING.
+     *
+     * ═══ 🔴 THE SORT IS THE WHOLE POINT OF THIS METHOD ═══
+     * `intervalFor` walks the list and keeps the LAST entry the countdown is still inside. That
+     * only yields "the smallest rung the deal is inside" when the list is in DESCENDING order. The
+     * old Apex constant was hand-written descending, so the property was free.
+     * **`getAll()` RETURNS A `Map`, AND A MAP HAS NO GUARANTEED ITERATION ORDER.** Relying on it
+     * would make the ladder's behaviour depend on an unspecified detail: with `{0, 7, 3, 1}` the
+     * last match for a deal 2 days out is `1`, not `3` — the wrong rung, fired one day early, for
+     * every deal, with no error anywhere. `rungsAreSortedDescendingRegardlessOfSourceOrder` in the
+     * test class injects a deliberately scrambled row set and is the falsifier.
+     *
+     * ═══ THREE DEGENERATE INPUTS, THREE DIFFERENT ANSWERS, ON PURPOSE ═══
+     *   • NO ROWS AT ALL -> fall back to `DEFAULT_ALERT_INTERVALS` and WARN. The type ships empty
+     *     (records are script-loaded, not deployed), so this is the fresh-org and pre-loader state.
+     *     "The loader was never run" must not silently disable a shipped, working feature.
+     *   • ROWS EXIST BUT NONE IS ACTIVE -> an EMPTY ladder is HONOURED, and warned about. That is
+     *     an admin deliberately switching the alerts off by unchecking `Is_Active__c`, and
+     *     overriding it with the default would make that intent unexpressible. 🔴 THE DISTINCTION
+     *     FROM THE CASE ABOVE IS THE ENTIRE REASON THIS METHOD LOOKS AT ROW COUNT AND ACTIVE COUNT
+     *     SEPARATELY — do not collapse them into one `isEmpty()` test.
+     *   • A ROW WITH A NULL `Days_Before_Due__c` -> skipped and warned. It is an incomplete record,
+     *     not an instruction, and a null cannot participate in a `<=` comparison.
+     *
+     * ⚠ NEGATIVE RUNGS ARE ALLOWED AND ARE NOT A MISTAKE. `-2` means "two days AFTER the deadline",
+     * which the marker handles correctly (it is strictly smaller than 0, so it fires exactly once).
+     * The locator has no lower bound, so overdue deals are still read. Do not add a `>= 0` filter.
+     *
+     * @param rows Every `CFO_Alert_Rung__mdt` row in the org; null-safe.
+     * @return The active rungs, largest first, de-duplicated. Never null.
+     */
+    @TestVisible
+    private static List<Integer> resolveRungs(List<CFO_Alert_Rung__mdt> rows) {
+        if (rows == null || rows.isEmpty()) {
+            warnOnce('no-rows',
+                'CFO_Alert_Rung__mdt HAS NO ROWS. Falling back to the shipped ladder '
+                + DEFAULT_ALERT_INTERVALS + '. This is expected in a fresh org: the rungs are '
+                + 'created by scripts/load-cfo-alert-rungs.apex, NOT by a deploy. Run it.');
+            return DEFAULT_ALERT_INTERVALS.clone();
+        }
+        Set<Integer> unique = new Set<Integer>();
+        for (CFO_Alert_Rung__mdt row : rows) {
+            if (row == null || row.Is_Active__c != true) {
+                continue;
+            }
+            if (row.Days_Before_Due__c == null) {
+                warnOnce('null-days',
+                    'CFO_Alert_Rung__mdt row "' + row.DeveloperName + '" is active but has a blank '
+                    + 'Days_Before_Due__c and was SKIPPED. Set a value or deactivate the row.');
+                continue;
+            }
+            unique.add(row.Days_Before_Due__c.intValue());
+        }
+        if (unique.isEmpty()) {
+            warnOnce('none-active',
+                'CFO_Alert_Rung__mdt has rows but NONE is active. The call-for-offers alert ladder '
+                + 'is EMPTY, so no deal will ever be notified and no urgency rung is derived. If '
+                + 'that is not intended, activate at least one rung in Setup.');
+            return new List<Integer>();
+        }
+
+        // Ascending, then walked backwards — Apex has no List.reverse().
+        List<Integer> ascending = new List<Integer>(unique);
+        ascending.sort();
+        List<Integer> descending = new List<Integer>();
+        for (Integer i = ascending.size() - 1; i >= 0; i--) {
+            descending.add(ascending[i]);
+        }
+
+        if (descending[0] > LOCATOR_CEILING_DAYS) {
+            warnOnce('above-ceiling',
+                'CFO_Alert_Rung__mdt has an active rung of ' + descending[0] + ' days, which is '
+                + 'WIDER than OpportunitySelector.queryCallForOffersAlerts\'s TODAY+'
+                + LOCATOR_CEILING_DAYS + ' work-queue ceiling. Deals that far out are never read, '
+                + 'so that rung fires for NOBODY. Widen the locator ceiling in the same change.');
+        }
+        return descending;
+    }
+
+    /**
+     * Log a rung misconfiguration once per transaction per condition.
+     *
+     * @param key     Condition key, so a 251-deal chunk emits one line, not 251.
+     * @param message The WARN text.
+     */
+    private static void warnOnce(String key, String message) {
+        if (rungWarnings.contains(key)) {
+            return;
+        }
+        rungWarnings.add(key);
+        System.debug(LoggingLevel.WARN, message);
+    }
+
+    /**
+     * Test seam. Installs a rung set (in whatever order the test likes) and resets the
+     * once-per-transaction WARN guards.
+     *
+     * Exists because **a test cannot insert a `__mdt` row via DML**, and the rows are script-loaded
+     * rather than deployed — so an org running the suite may legitimately have none. Injecting the
+     * rows is the only way to prove the sort, the de-duplication, the active filter and the two
+     * degenerate cases. Same seam, same reason, as `BrokerProtectionConfig.overrideForTest`.
+     *
+     * @param rows The rows to serve; an EMPTY list simulates "the loader was never run".
+     */
+    @TestVisible
+    private static void overrideRungsForTest(List<CFO_Alert_Rung__mdt> rows) {
+        rungWarnings = new Set<String>();
+        cachedRungs = resolveRungs(rows);
+        rungsLoaded = true;
+    }
+
+    /**
+     * Test seam. Drops the injected ladder so the next read resolves from the org's own CMDT.
+     */
+    @TestVisible
+    private static void clearRungOverrideForTest() {
+        cachedRungs = null;
+        rungsLoaded = false;
+        rungWarnings = new Set<String>();
+    }
+
     /**
      * The alert rung a countdown sits in: the SMALLEST configured interval the deal is still inside.
      *
-     * Pure. Null above the widest rung, so a deal 30 days out is not "in the 7-day window".
+     * Pure with respect to the database and the clock. Null above the widest rung, so a deal 30
+     * days out is not "in the 7-day window" — and null for EVERY countdown when the ladder is empty
+     * (an admin has deactivated every rung), which correctly means nothing is ever owed an alert.
+     *
+     * ⚠ IT NO LONGER READS AN APEX CONSTANT. `alertIntervals()` resolves the ladder from
+     * `CFO_Alert_Rung__mdt` once per transaction and GUARANTEES DESCENDING ORDER — which this loop
+     * depends on and cannot itself verify. See `resolveRungs`.
      *
      * @param daysRemaining Whole days to the due date; negative once overdue.
-     * @return 7, 3, 1, 0 or null.
+     * @return The rung (7, 3, 1 or 0 with the shipped ladder), or null.
      */
     @TestVisible
     private static Integer intervalFor(Integer daysRemaining) {
@@ -357,7 +640,7 @@ public with sharing class CallForOffersService {
             return null;
         }
         Integer chosen = null;
-        for (Integer interval : ALERT_INTERVALS) {
+        for (Integer interval : alertIntervals()) {
             if (daysRemaining <= interval) {
                 chosen = interval;
             }
@@ -429,13 +712,24 @@ public with sharing class CallForOffersService {
             // A DIFFERENT FACT UNDER A DIFFERENT NAME — when the DEAL arrived. Kept while the
             // stamped field's coverage grows; the UI labels it in words rather than showing it as
             // if it were the line above.
+            // ⚠ `.date()` ADDED 2026-08-30 (WS2). `Broker_First_Seen__c` changed Date -> DateTime
+            // in that change, and Datetime does not implicitly convert to Date in Apex — without
+            // this call the class does not COMPILE. Both legs now truncate the same way, in the
+            // running user's time zone (`Datetime.date()`, never `dateGMT()`), so the two branches
+            // cannot disagree about which calendar day they mean. 🔴 The DTO member stays `Date`
+            // on purpose — see the header §4 and `receivedDateIsTheStampedFieldAndNeverTheProxy`;
+            // widening it to Datetime would change a live UI column's shape, which WS2 does not ask
+            // for and this class's own retirement note argues against.
             c.dealArrivedDate = (deal.Broker_First_Seen__c != null)
-                ? deal.Broker_First_Seen__c
+                ? deal.Broker_First_Seen__c.date()
                 : (deal.CreatedDate == null ? null : deal.CreatedDate.date());
             c.saleProcess = deal.Sale_Process__c;
             c.listingBrokerName = deal.Listing_Broker_Name__c;
             c.listingBrokerEmail = deal.Listing_Broker_Email__c;
             c.dealRoomLink = deal.Deal_Room_Link__c;
+            // VERBATIM, null included — see the member's own header for why a `?? 'Open'` here
+            // would be a false claim about every deal created before 2026-08-30.
+            c.offerStatus = deal.Offer_Status__c;
             results.add(c);
         }
         return results;

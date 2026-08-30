@@ -230,6 +230,17 @@ private class OpportunitySelectorTest {
         Assert.areEqual(opp.Id, result.Id, 'Should return the requested Opportunity');
         Assert.areEqual(acct.Id, result.AccountId, 'AccountId must be populated for the sidebar');
         Assert.areEqual(acct.Name, result.Account.Name, 'Account.Name must be populated for the firm name');
+
+        // 🔴 THE THREE ROLL-UPS ARE PART OF THIS QUERY'S CONTRACT AS OF 2026-08-30 (Item 6.1).
+        // `BrokerFirmController` stopped computing the firm-level counts and now READS them from
+        // here, so a query that dropped one would not blank a number — it would throw
+        // SObjectException deep inside the controller and take the whole sidebar card down with
+        // the generic "could not be loaded" message. Touching each field is the assertion: reading
+        // an unselected field throws. The VALUES are asserted where they belong, in
+        // BrokerFirmControllerTest.
+        result.Account.Total_Deals_Submitted__c?.intValue();
+        result.Account.Deals_Won__c?.intValue();
+        result.Account.Deals_Lost__c?.intValue();
     }
 
     @isTest
@@ -247,7 +258,71 @@ private class OpportunitySelectorTest {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // selectNdaGateById  (OpportunityApprovalService — the signed-NDA submission gate)
+    //
+    // ⚠ FOUR FIELDS AND A NOT-FOUND CONTRACT, AND THE CONTRACT IS THE LOAD-BEARING HALF. This
+    // method returns NULL for a miss rather than throwing, DELIBERATELY unlike its fetch-for-use
+    // neighbours, so that the gate cannot change WHERE an unexpected failure originates. See the
+    // method's own header.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @isTest
+    static void selectNdaGateById_selectsEveryFieldTheGateReads() {
+        Opportunity deal = TestDataFactory.createOpportunity(null, true);
+        TestDataFactory.signPrimaryNda(deal);
+
+        Opportunity row = OpportunitySelector.selectNdaGateById(deal.Id);
+
+        Assert.isNotNull(row, 'A live deal resolves');
+        // A field the query did not select throws SObjectException on access, so reading each one
+        // is the assertion. The SPANNING field is the one that matters most: the gate's whole
+        // decision hangs off it, and dropping the traversal would surface as a null-parent NPE
+        // inside the service rather than as a failure here.
+        Assert.areEqual(deal.Id, row.Id, 'Id');
+        Assert.isNotNull(row.StageName, 'StageName — the gate applies only at LOI');
+        Assert.isNotNull(row.Primary_NDA__c, 'Primary_NDA__c — the blank-lookup half of the gate');
+        Assert.isTrue(row.Primary_NDA__r.NDA_Signed__c,
+            'Primary_NDA__r.NDA_Signed__c — the signed half. TestDataFactory.signPrimaryNda just '
+            + 'signed it, so a false here means the traversal is reading the wrong record');
+    }
+
+    @isTest
+    static void selectNdaGateById_isNullSafeAndReturnsNullForAMiss() {
+        // 🔴 THE CONTRACT THE GATE DEPENDS ON, AND IT IS NOT COSMETIC. If this threw
+        // QueryException for a dead Id, the gate would throw BEFORE Approval.process and
+        // OpportunityApprovalServiceTest.unexpectedFailurePropagatesRawNotWrapped would start
+        // measuring a different exception raised in a different place — the "unexpected failure
+        // propagates RAW from the submit" contract would be quietly relocated.
+        Assert.isNull(OpportunitySelector.selectNdaGateById(null), 'A null Id returns null');
+        Assert.isNull(OpportunitySelector.selectNdaGateById(ghostOpportunityId()),
+            'An unresolvable Id returns null rather than throwing QueryException');
+    }
+
+    @isTest
+    static void selectNdaGateById_returnsANullParentForADealWithNoPrimaryNda() {
+        // The other half of the gate's input space. `OpportunityReviewService.ensureNda` stamps a
+        // primary NDA on insert, so this state has to be created deliberately — and it must come
+        // back as a ROW WITH A NULL LOOKUP, not as a missing row, or the gate cannot tell "no NDA"
+        // (refuse) from "cannot evaluate" (skip).
+        Opportunity deal = TestDataFactory.createOpportunity(null, true);
+        update new Opportunity(Id = deal.Id, Primary_NDA__c = null);
+
+        Opportunity row = OpportunitySelector.selectNdaGateById(deal.Id);
+
+        Assert.isNotNull(row, 'The deal still resolves — only its lookup is blank');
+        Assert.isNull(row.Primary_NDA__c, 'and the lookup really is blank');
+        Assert.isNull(row.Primary_NDA__r,
+            'A null lookup yields a NULL PARENT, not an empty record. This is why the service '
+            + 'tests Primary_NDA__c FIRST and short-circuits — reading the spanning field here '
+            + 'would be a null dereference');
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // countByStageForAccount  (BrokerFirmController — firm-level deal counts)
+    //
+    // ⚠ ITS PRODUCTION CALLER WAS REPOINTED ONTO THE ACCOUNT ROLL-UPS ON 2026-08-30 (Item 6.1).
+    // The method and this test are KEPT deliberately — two class headers cite the aggregate by
+    // name, and it is the only per-stage breakdown available. See the method's own header.
     // ─────────────────────────────────────────────────────────────────────────
 
     @isTest
@@ -455,9 +530,20 @@ private class OpportunitySelectorTest {
         open.Offer_Due_Date__c = Date.today().addDays(3);
         update open;
 
-        // Closed at INSERT so no ISCHANGED(StageName) rule is involved in the fixture.
+        // ⚠ RETRACTED 2026-08-30, verbatim: "Closed at INSERT so no ISCHANGED(StageName) rule is
+        // involved in the fixture." That was true until `Rejection_Reason_Required_On_Dead` was
+        // tightened to fire on insert as well. Inserting at a closed stage is still the right
+        // shape — it keeps this fixture out of the BACKWARD-stage rules, which remain
+        // ISCHANGED-gated — it just no longer exempts the reason.
         Opportunity closed = TestDataFactory.createOpportunity(null, false);
         closed.StageName = 'Dead/Pass';
+        // ⚠ REQUIRED AS OF 2026-08-30. `Rejection_Reason_Required_On_Dead` fires on INSERT as
+        // well as on a stage change, so "closed at INSERT so no ISCHANGED rule is involved" is no
+        // longer a way around it — see the retraction on that comment above. 'Wrong Market' is
+        // present on BOTH surviving Opportunity record types — Land and Retail (Commercial was
+        // deleted 2026-08-30; re-verified against the surviving files). This fixture sets no
+        // RecordTypeId, so Master applies.
+        closed.Rejection_Reason__c = 'Wrong Market';
         insert closed;
         update new Opportunity(Id = closed.Id, Offer_Due_Date__c = Date.today().addDays(3));
 
@@ -489,11 +575,22 @@ private class OpportunitySelectorTest {
             // Added 2026-08-14. It is the field the "Received" column actually renders now, so a
             // read that dropped it would blank that column on BOTH surfaces at once.
             row.Call_For_Offers_Received_Date__c?.day();
+            // ⚠ Broker_First_Seen__c changed Date -> DateTime on 2026-08-30 (WS2). `day()` exists
+            // on BOTH types, so this line compiles either way and its intent is unchanged: the
+            // point of the call is that TOUCHING an unselected field throws SObjectException, so
+            // any member access at all is the assertion. It was re-read at the type change rather
+            // than assumed — a `.date()` or `.addDays()` here would have been type-specific and
+            // would have needed repointing.
             row.Broker_First_Seen__c?.day();
             String unusedProcess = row.Sale_Process__c;
             String unusedBroker = row.Listing_Broker_Name__c;
             String unusedEmail = row.Listing_Broker_Email__c;
             String unusedLink = row.Deal_Room_Link__c;
+            // Added 2026-08-30 (Item 5f). It is rendered as a row on the record-page panel and as a
+            // column in the Lead Funnel table, so a read that dropped it would break one of the two
+            // surfaces at runtime and neither at compile time — which is exactly what this loop
+            // over BOTH methods exists to catch.
+            String unusedStatus = row.Offer_Status__c;
         }
     }
 
@@ -513,6 +610,13 @@ private class OpportunitySelectorTest {
         // deal is not something to chase. Do not "harmonise" the two.
         Opportunity closed = TestDataFactory.createOpportunity(null, false);
         closed.StageName = 'Dead/Pass';
+        // ⚠ REQUIRED AS OF 2026-08-30. `Rejection_Reason_Required_On_Dead` fires on INSERT as
+        // well as on a stage change, so "closed at INSERT so no ISCHANGED rule is involved" is no
+        // longer a way around it — see the retraction on that comment above. 'Wrong Market' is
+        // present on BOTH surviving Opportunity record types — Land and Retail (Commercial was
+        // deleted 2026-08-30; re-verified against the surviving files). This fixture sets no
+        // RecordTypeId, so Master applies.
+        closed.Rejection_Reason__c = 'Wrong Market';
         insert closed;
         update new Opportunity(Id = closed.Id, Offer_Due_Date__c = Date.today().addDays(3));
 
@@ -573,6 +677,97 @@ private class OpportunitySelectorTest {
         rows[0].Offer_Alert_Due_Date__c?.day();
         Assert.isNotNull(rows[0].Name, 'and Name, which the notification body uses');
         String unusedBroker = rows[0].Listing_Broker_Name__c;
+    }
+
+    @isTest
+    static void queryCallForOffersAlerts_excludesSubmittedAndClosed() {
+        // Once offers are in, or the campaign is closed, there is nothing left to chase. Both
+        // suppressing values are asserted, not just one — they are separate entries in a NOT IN
+        // list and dropping either is a one-character edit.
+        Opportunity open = TestDataFactory.createOpportunity(null, true);
+        Opportunity submitted = TestDataFactory.createOpportunity(null, true);
+        Opportunity closedCampaign = TestDataFactory.createOpportunity(null, true);
+        open.Offer_Due_Date__c = Date.today().addDays(3);
+        open.Offer_Status__c = 'Open';
+        submitted.Offer_Due_Date__c = Date.today().addDays(3);
+        submitted.Offer_Status__c = 'Submitted';
+        closedCampaign.Offer_Due_Date__c = Date.today().addDays(3);
+        closedCampaign.Offer_Status__c = 'Closed';
+        update new List<Opportunity>{ open, submitted, closedCampaign };
+
+        Set<Id> selected = new Map<Id, Opportunity>(drainLocator()).keySet();
+
+        Assert.isTrue(selected.contains(open.Id),
+            'An Open campaign is still owed its alerts');
+        Assert.isFalse(selected.contains(submitted.Id),
+            'A Submitted campaign must be suppressed — the offers are already in');
+        Assert.isFalse(selected.contains(closedCampaign.Id),
+            'and so must a Closed one');
+    }
+
+    @isTest
+    static void queryCallForOffersAlerts_stillIncludesNullStatus() {
+        // 🔴 THE FALSIFIER FOR THE SOQL NULL TRAP, AND THE MORE VALUABLE OF THIS PAIR.
+        //
+        // The obvious way to write the suppression is
+        //     AND Offer_Status__c NOT IN ('Submitted', 'Closed')
+        // and it is CATASTROPHICALLY WRONG. SOQL evaluates `NOT IN` against NULL as UNKNOWN, and
+        // an UNKNOWN row is EXCLUDED. `Offer_Status__c` is new, and a picklist <default> applies on
+        // INSERT ONLY — it does not backfill — so on day one EVERY EXISTING DEAL IN THE ORG carries
+        // null. That single-legged predicate would return ZERO ROWS, `finish()` would log a
+        // perfectly healthy all-zeros summary, and the entire call-for-offers alert feature would
+        // be dead with nothing anywhere reporting it. The two-legged
+        //     AND (Offer_Status__c = NULL OR Offer_Status__c NOT IN (...))
+        // is what this test pins.
+        //
+        // ⚠ THE SUBMITTED CONTROL IS NOT PADDING. Without it, a predicate that had simply been
+        // DELETED would also pass this test.
+        Opportunity legacy = TestDataFactory.createOpportunity(null, true);
+        legacy.Offer_Due_Date__c = Date.today().addDays(3);
+        update legacy;
+        Assert.isNull([SELECT Offer_Status__c FROM Opportunity WHERE Id = :legacy.Id].Offer_Status__c,
+            'Fixture precondition: the status must really be NULL, or this test proves nothing. '
+            + 'If this ever fails, someone gave the field a backfill or a before-save default and '
+            + 'the trap this test guards has changed shape');
+
+        Opportunity suppressed = TestDataFactory.createOpportunity(null, true);
+        suppressed.Offer_Due_Date__c = Date.today().addDays(3);
+        suppressed.Offer_Status__c = 'Submitted';
+        update suppressed;
+
+        Set<Id> selected = new Map<Id, Opportunity>(drainLocator()).keySet();
+
+        Assert.isTrue(selected.contains(legacy.Id),
+            'A deal with a NULL Offer_Status__c must STILL be alerted. This is the entire existing '
+            + 'population on day one');
+        Assert.isFalse(selected.contains(suppressed.Id),
+            'and the suppression is genuinely still in force, so the assertion above is not '
+            + 'passing because the filter was removed');
+    }
+
+    @isTest
+    static void queryCallForOffersAlerts_doesNotSelectTheOfferStatus() {
+        // ⚠ AN ABSENCE, ASSERTED ON PURPOSE — the same shape, and the same reason, as the
+        // received-date test below it. The locator FILTERS on Offer_Status__c and deliberately
+        // does not SELECT it: a suppressed deal never reaches the chunk, so the batch makes no
+        // decision from the value and reading it in there would be meaningless. Selecting it would
+        // imply to the next reader that the ladder consults the status.
+        Opportunity deal = TestDataFactory.createOpportunity(null, true);
+        deal.Offer_Due_Date__c = Date.today().addDays(3);
+        deal.Offer_Status__c = 'Open';
+        update deal;
+
+        List<Opportunity> rows = drainLocator();
+        Assert.areEqual(1, rows.size(), 'Precondition: the deal is in the work queue');
+
+        try {
+            String unused = rows[0].Offer_Status__c;
+            Assert.fail('The alert locator must NOT select Offer_Status__c — it filters on it. '
+                + 'Got: ' + unused);
+        } catch (System.SObjectException e) {
+            Assert.isTrue(e.getMessage().contains('Offer_Status__c'),
+                'and the platform names the unselected field: ' + e.getMessage());
+        }
     }
 
     @isTest
@@ -673,6 +868,8 @@ private class OpportunitySelectorTest {
         ranked[1].Amount = 99000000;
         ranked[2].Name = 'DeadGiant';
         ranked[2].StageName = 'Dead/Pass';
+        // ⚠ REQUIRED AS OF 2026-08-30 (Rejection_Reason_Required_On_Dead now fires on insert too).
+        ranked[2].Rejection_Reason__c = 'Wrong Market';
         ranked[2].Asking_Price__c = 98000000;
         ranked[2].Amount = 98000000;
         insert ranked;

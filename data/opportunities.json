@@ -17,7 +17,7 @@
       "Market_Cap_Rate__c": 6.5,
       "Deal_Status__c": "LOI Signed",
       "Deal_Category__c": "Live",
-      "Broker_First_Seen__c": "2026-04-01"
+      "Broker_First_Seen__c": "2026-04-01T12:00:00.000Z"
     },
     {
       "attributes": {
@@ -36,7 +36,7 @@
       "Market_Cap_Rate__c": 6.8,
       "Deal_Status__c": "Evaluating",
       "Deal_Category__c": "Live",
-      "Broker_First_Seen__c": "2026-04-01"
+      "Broker_First_Seen__c": "2026-04-01T12:00:00.000Z"
     },
     {
       "attributes": {
@@ -55,7 +55,7 @@
       "Market_Cap_Rate__c": 6.6,
       "Deal_Status__c": "Working",
       "Deal_Category__c": "Live",
-      "Broker_First_Seen__c": "2026-04-01"
+      "Broker_First_Seen__c": "2026-04-01T12:00:00.000Z"
     },
     {
       "attributes": {
@@ -74,7 +74,7 @@
       "Market_Cap_Rate__c": 6.1,
       "Deal_Status__c": "Working",
       "Deal_Category__c": "Live",
-      "Broker_First_Seen__c": "2026-04-01"
+      "Broker_First_Seen__c": "2026-04-01T12:00:00.000Z"
     },
     {
       "attributes": {
@@ -93,7 +93,7 @@
       "Market_Cap_Rate__c": 7.2,
       "Deal_Status__c": "Countered",
       "Deal_Category__c": "Live",
-      "Broker_First_Seen__c": "2026-04-01"
+      "Broker_First_Seen__c": "2026-04-01T12:00:00.000Z"
     },
     {
       "attributes": {
@@ -112,7 +112,7 @@
       "Market_Cap_Rate__c": 7,
       "Deal_Status__c": "LOI Signed",
       "Deal_Category__c": "Live",
-      "Broker_First_Seen__c": "2026-04-01"
+      "Broker_First_Seen__c": "2026-04-01T12:00:00.000Z"
     },
     {
       "attributes": {
@@ -131,7 +131,7 @@
       "Market_Cap_Rate__c": 6.3,
       "Deal_Status__c": "Contract Signed",
       "Deal_Category__c": "Live",
-      "Broker_First_Seen__c": "2026-04-01"
+      "Broker_First_Seen__c": "2026-04-01T12:00:00.000Z"
     },
     {
       "attributes": {
@@ -150,7 +150,7 @@
       "Market_Cap_Rate__c": 6.5,
       "Deal_Status__c": "Asset Under Management",
       "Deal_Category__c": "Closed",
-      "Broker_First_Seen__c": "2026-04-01"
+      "Broker_First_Seen__c": "2026-04-01T12:00:00.000Z"
     },
     {
       "attributes": {
@@ -169,7 +169,7 @@
       "Market_Cap_Rate__c": 7.9,
       "Deal_Status__c": "Killed",
       "Deal_Category__c": "Dead",
-      "Broker_First_Seen__c": "2026-04-01",
+      "Broker_First_Seen__c": "2026-04-01T12:00:00.000Z",
       "Rejection_Reason__c": "Bad Anchor Tenant"
     },
     {
@@ -189,7 +189,7 @@
       "Market_Cap_Rate__c": 6.7,
       "Deal_Status__c": "Evaluating",
       "Deal_Category__c": "Live",
-      "Broker_First_Seen__c": "2026-04-01"
+      "Broker_First_Seen__c": "2026-04-01T12:00:00.000Z"
     }
   ]
 }

@@ -61,6 +61,38 @@
  * real firm name, e.g. Company = 'Marcus & Millichap'. Their new Contact lands under the existing
  * firm Account instead of creating a second one.
  *
+ * ── WS8 (2026-08-30) — THE INTAKE BROKER LINK IS NOW THE FIRST THING ASKED ────────────────
+ * `EmailToLeadService` stamps `Lead.Broker__c` / `Lead.Broker_Firm__c` AT INTAKE when the inbound
+ * email's sender resolves to an existing broker Contact. This class now PREFERS that link over
+ * re-deriving one from `Lead.Email`, so the full precedence is:
+ *
+ *     1. `Broker__c` + `Broker__r.AccountId`   — the link the Lead was born with   (WS8)
+ *     2. `Contact.Email = Lead.Email`          — the D1a email match                (unchanged)
+ *     3. `Broker_Firm__c`                      — an explicit firm lookup            (WS8)
+ *     4. `Account.Name = Lead.Company`         — the D1b name match                 (unchanged)
+ *
+ * 🔴 THIS STRENGTHENS THE GUARD ABOVE — IT DOES NOT BYPASS IT. Steps 2 and 4 are untouched and
+ * still run whenever 1 and 3 are absent, so a Lead with no link behaves byte-identically to
+ * before. Step 1 is a HIGHER-PRECEDENCE SOURCE FOR THE SAME ANSWER: intake resolved the sender
+ * with the same predicate, the same `Contact.Broker` record-type scope, the same
+ * `AccountId != null` filter and the same oldest-wins order this class's own selector uses. Where
+ * it adds coverage is where the email match CANNOT reach — a Contact renamed, or a `Lead.Email`
+ * hand-edited after intake — which is exactly the DUPLICATES_DETECTED shape the incident was.
+ * The full argument, including why the Account is spanned through the Contact rather than read
+ * from `Broker_Firm__c`, is at `preferredBrokerMatch`.
+ *
+ * ⚠ D1a IS UNAMENDED. The person NAME is still not a match key, in either direction. Step 1 is
+ * not a name match — it is an Id someone else already resolved by EMAIL.
+ *
+ * ⚠ STILL EXACTLY 3 SOQL. Step 1 and step 3 read columns added to the EXISTING first query, and
+ * the choice between the two column sets is a cached DESCRIBE, not a second read. The 251-Lead
+ * query-delta pin below is unchanged and still load-bearing.
+ *
+ * 🔴 AND IT IS GATED ON A DESCRIBE, WHICH IS NOT OPTIONAL — `brokerLinkReadable()`. Both lookups
+ * are new Metadata-API-deployed fields with FLS for nobody on day one; selecting them
+ * unguarded under USER_MODE would throw, land in the fail-soft below, and silently disable ALL
+ * matching — the opposite of strengthening. See that method.
+ *
  * ── D1c — NO LeadSource FILTER ───────────────────────────────────────────────────────────
  * Every Lead converted through the action is matched. Duplicates are not a Broker-Protection-only
  * problem, and a LeadSource filter would give one button two different behaviours that nobody
@@ -192,7 +224,15 @@ public with sharing class LeadConvertMatchService {
 
         try {
             // ── SOQL 1 of 3 — the match keys of the Leads being converted.
-            List<Lead> leads = LeadSelector.selectMatchKeysByIds(uniqueLeadIds);
+            //
+            // WS8 (2026-08-30): the SAME single query, with three more columns, WHEN AND ONLY WHEN
+            // the running user can read them. Still 1 SOQL either way — the choice is a describe,
+            // not a second read — so the 3-query contract and its 251-Lead pin are untouched.
+            // brokerLinkReadable() carries the whole argument for why this is a branch rather than
+            // three extra fields on the existing method.
+            List<Lead> leads = brokerLinkReadable()
+                ? LeadSelector.selectMatchKeysWithBrokerByIds(uniqueLeadIds)
+                : LeadSelector.selectMatchKeysByIds(uniqueLeadIds);
             if (leads.isEmpty()) {
                 return matches;
             }
@@ -325,11 +365,28 @@ public with sharing class LeadConvertMatchService {
     ) {
         ConversionMatch match = new ConversionMatch();
 
+        // ── PRECEDENCE 1 (WS8) — THE INTAKE-TIME BROKER LINK. See preferredBrokerMatch.
+        ConversionMatch preferred = preferredBrokerMatch(l);
+        if (preferred != null) {
+            return preferred;
+        }
+
         String emailKey = normalizeKey(l.Email);
         Contact matchedContact = (emailKey == null) ? null : contactByEmail.get(emailKey);
         if (matchedContact != null) {
             match.contactId = matchedContact.Id;
             match.accountId = matchedContact.AccountId;   // invariant; non-null by the selector filter
+            return match;
+        }
+
+        // ── PRECEDENCE 3 (WS8) — an explicit FIRM lookup, ahead of a firm NAME string.
+        // Reachable only when no Contact was specified or matched, so no invariant arises: an
+        // accountId with a null contactId is the legitimate firm-only match this class has always
+        // produced. It sits ABOVE the name match because a lookup someone chose is better evidence
+        // than a Company string an LLM read off a signature block, and BELOW the email match
+        // because a Contact hit DICTATES the Account (a Salesforce constraint, not a preference).
+        if (brokerLinkReadable() && l.Broker_Firm__c != null) {
+            match.accountId = l.Broker_Firm__c;
             return match;
         }
 
@@ -341,6 +398,103 @@ public with sharing class LeadConvertMatchService {
         }
 
         return null;
+    }
+
+    /**
+     * WS8 (2026-08-30) — PREFER THE BROKER LINK THIS LEAD WAS BORN WITH, over re-deriving one from
+     * its Email at conversion time.
+     *
+     * ═══ 🔴 THIS STRENGTHENS THE 2026-08-02 GUARD. IT DOES NOT BYPASS IT. ═══════════════════
+     * Read this class's "WHY THIS EXISTS" section first. The guard exists because converting a
+     * Lead whose broker ALREADY EXISTED as a Contact failed live with `DUPLICATES_DETECTED` — the
+     * platform tried to mint a second Contact for the same person and the org's duplicate rule
+     * blocked the entire conversion. Everything below makes that MORE likely to be caught, never
+     * less:
+     *   • It is a HIGHER-PRECEDENCE SOURCE FOR THE SAME ANSWER, not a different answer. Intake
+     *     resolved the sender against `Contact.Email` on the `Contact.Broker` record type with
+     *     `AccountId != null`, ordered oldest-first — the SAME predicate, the SAME record-type
+     *     scope and the SAME total order `ContactSelector.selectByEmails` uses here. When both
+     *     fire they agree; this one simply also fires in cases the email match cannot.
+     *   • THE EMAIL MATCH IS UNCHANGED AND STILL RUNS whenever this returns null. Nothing is
+     *     removed, no branch is skipped, and a Lead with no link behaves byte-identically to
+     *     before WS8.
+     *   • It CLOSES a hole rather than opening one: a broker whose Contact was renamed, or whose
+     *     `Lead.Email` was edited by a human after intake, no longer silently falls through to
+     *     "create a new Contact" — which is precisely the duplicate the incident was about.
+     *
+     * ═══ 🔴 THE ACCOUNT COMES FROM THE CONTACT, NOT FROM `Broker_Firm__c` ══════════════════
+     * `match.accountId` is `Broker__r.AccountId` — the Contact's OWN Account, spanned in the same
+     * query. It is NOT `l.Broker_Firm__c`, even though intake writes the two from one row. The
+     * class invariant on `ConversionMatch` ("contactId != null implies accountId is that Contact's
+     * own AccountId") is what `Database.convertLead` itself enforces, and `Broker_Firm__c` is an
+     * independently editable lookup: a human who repoints it would otherwise produce a pair the
+     * platform REFUSES, turning a working conversion into a hard failure. Deriving it through the
+     * relationship makes the invariant true by construction — the identical technique
+     * `contactsByEmail` relies on (`selectByEmails` filters `AccountId != null`).
+     *
+     * ⚠ AN ACCOUNT-LESS `Broker__c` IS DELIBERATELY NOT USED AS A CONTACT TARGET. It cannot be —
+     * see above — so this returns null and the ordinary email match runs. Intake's selector already
+     * excludes account-less Contacts, so this state is only reachable by hand-editing; handling it
+     * by falling through rather than by throwing keeps a hand-edit from breaking conversion. The
+     * firm-only branch in resolveMatch may still use `Broker_Firm__c` afterwards.
+     *
+     * ⚠ NULL-SAFE ON THE UNREADABLE PATH. When `brokerLinkReadable()` is false the Lead came from
+     * `selectMatchKeysByIds`, which does not select these fields at all — reading them off that
+     * SObject would throw `SObjectException: SObject row was retrieved via SOQL without querying
+     * the requested field`. The guard is checked FIRST for that reason, not merely for tidiness.
+     *
+     * @param l The Lead being converted.
+     * @return The preferred match, or null when there is no usable link and the email/company
+     *         matching below should proceed exactly as it always has.
+     */
+    private static ConversionMatch preferredBrokerMatch(Lead l) {
+        if (!brokerLinkReadable() || l.Broker__c == null || l.Broker__r == null
+                || l.Broker__r.AccountId == null) {
+            return null;
+        }
+        ConversionMatch match = new ConversionMatch();
+        match.contactId = l.Broker__c;
+        match.accountId = l.Broker__r.AccountId;   // invariant, by construction — never Broker_Firm__c
+        return match;
+    }
+
+    /** Per-transaction answer for brokerLinkReadable(); null until first asked. */
+    private static Boolean brokerLinkReadableCache;
+
+    /**
+     * Can the running user READ the intake broker link — both Lead lookups AND the Contact side of
+     * the `Broker__r.AccountId` span?
+     *
+     * 🔴 THIS IS A REGRESSION GUARD, NOT A FEATURE FLAG, AND IT IS THE REASON WS8 COULD BE ADDED
+     * TO THIS CLASS AT ALL. `Lead.Broker__c` and `Lead.Broker_Firm__c` are new Metadata-API-deployed
+     * fields, which arrive with FLS for NOBODY, System Administrator included (ARCHITECTURE.md §2).
+     * `WITH USER_MODE` throws on the whole row for ONE inaccessible field, and this class's
+     * fail-soft turns a `QueryException` into an EMPTY MAP — so an unguarded read would not have
+     * degraded the new preference, it would have DISABLED SMART LEAD CONVERSION COMPLETELY between
+     * the WS8 deploy and the P8 permission-set pass, silently reintroducing the duplicate-Contact
+     * accumulation described in this class's header. Read the fail-soft section: a degrade here is
+     * invisible, and its only production symptom is duplicates reappearing.
+     *
+     * ⚠ CONTACT ACCESS IS PART OF THE QUESTION, and omitting it would be a real (if narrow)
+     * regression. The span makes query 1 touch Contact UNCONDITIONALLY, whereas today Contact is
+     * only read when at least one Lead has an Email. A user without Contact access converting an
+     * EMAIL-LESS Lead matches an Account by name today and would have degraded to nothing.
+     *
+     * ⚠ ALL FOUR TERMS ARE DESCRIBES, NOT QUERIES, and the answer is cached per transaction — so
+     * the "exactly 3 SOQL regardless of input size" contract in the class header, and the 251-Lead
+     * test that pins it, are both unaffected.
+     *
+     * @return True when the WS8 broker link may be selected and read.
+     */
+    private static Boolean brokerLinkReadable() {
+        if (brokerLinkReadableCache == null) {
+            brokerLinkReadableCache =
+                Schema.SObjectType.Lead.fields.Broker__c.isAccessible()
+                && Schema.SObjectType.Lead.fields.Broker_Firm__c.isAccessible()
+                && Schema.SObjectType.Contact.isAccessible()
+                && Schema.SObjectType.Contact.fields.AccountId.isAccessible();
+        }
+        return brokerLinkReadableCache;
     }
 
     /**

@@ -91,7 +91,7 @@ DPEG follows the **Service / Selector / Domain / Trigger-handler** separation. C
 
 ### 3.1 Avanza Service Bus (ASB) — Central Integration Hub
 
-**All external integrations route through ASB. No direct peer-to-peer integrations between Salesforce and external systems** — except the two standing, user-acknowledged exceptions in §3.3 and §3.4 below, each of which exists only because the corresponding ASB spoke does not.
+**All external integrations route through ASB. No direct peer-to-peer integrations between Salesforce and external systems** — except the three standing, user-acknowledged exceptions in §3.3, §3.4 and §3.5 below, each of which exists only because the corresponding ASB spoke does not.
 
 Salesforce holds a **single Named Credential pointing to the ASB endpoint only** — not to Plaid, Yardi, CoStar, or any external system directly. All external API credentials (Yardi, Plaid, CoStar, Placer.ai) are stored in ASB's secrets vault.
 
@@ -134,10 +134,89 @@ opaque Azure error). It is created by hand in Setup; only the Named Credential a
 `SharePoint_Integration_Access` are deployed, and that permission set will not deploy until the
 hand-built credential exists.
 
-🔴 **Two exceptions is the review threshold.** Every external callout this application makes is
-currently direct — there are no ASB-routed implementations. A **third** exception requires explicit
-user acknowledgement, as §3.3 and §3.4 each received, and should instead trigger a review of whether
-§3.1 or the reality needs to change.
+### 3.5 Standing exception — direct Cloudflare Turnstile callout (Broker Portal CAPTCHA)
+
+The public DPEG Broker Portal verifies its CAPTCHA by calling Cloudflare Turnstile's
+`/turnstile/v0/siteverify` **directly**, via the `Cloudflare_Turnstile` Named Credential +
+`Turnstile_Credential` External Credential, bypassing §3.1. Same justification as §3.3 and §3.4:
+**no ASB CAPTCHA-verification spoke exists**, so there is nothing on the bus to route to. Routing it
+through ASB would also add a second network hop to a *synchronous* page interaction a broker is
+waiting on, and Turnstile tokens are short-lived and single-use, so latency here is correctness, not
+just comfort.
+
+Scoped and reversible because **one class owns the boundary** — `TurnstileVerificationService`, which
+holds the single `Http.send` and the single endpoint constant
+(`callout:Cloudflare_Turnstile/turnstile/v0/siteverify`). Retiring the exception changes that constant
+and the credential; the public `verify(String token, String remoteIp)` signature and its one caller
+(`BrokerPortalService.submitDeal`) stay identical. The secret key lives only in the External
+Credential's `Secret_Key` authentication parameter under the `Turnstile_Principal` named principal,
+entered in Setup post-deploy — never in metadata or source. The **sitekey** is separate, public by
+design, and set per-environment as an Experience Builder property on `brokerDealIntakeForm`.
+
+⚠ **This exception is user-facing in a way the other two are not.** Verification **fails closed**: if
+Cloudflare is unreachable, times out, or the credential is wrong, the submission is refused. A
+Cloudflare outage therefore takes the public broker form down. That is deliberate — a CAPTCHA that
+fails open is not a CAPTCHA — and is argued in full in `BrokerPortalService.verifyHuman`'s header,
+which also explains why `LeadConvertMatchService` correctly fails *open* and is not inconsistent with
+this.
+
+🟢 **GATE B IS PROVEN — AND THIS IS THE FIRST WORKING PRECEDENT IN THIS REPO FOR A `$Credential`
+MERGE FIELD IN A REQUEST *BODY*. Do not re-discover it.**
+Turnstile authenticates by a form field in the POST body (`secret=...&response=...`), not by a
+header, so neither §3.3's nor §3.4's shape transfers: `OpenAI_API` sets
+`<allowMergeFieldsInBody>false</allowMergeFieldsInBody>` and authenticates via a custom `AuthHeader`.
+The shape needed here — a `Custom` External Credential parameter referenced as
+`{!$Credential.Turnstile_Credential.Secret_Key}` **inside the body**, with
+`<allowMergeFieldsInBody>true</allowMergeFieldsInBody>` on the Named Credential — was exercised
+nowhere in this repo. §3.4 records what happens when that kind of shape is guessed: the SharePoint
+OAuth credential could not be confirmed at 67.0 and had to be hand-built in Setup.
+
+It was therefore **measured, not assumed**, against `usman-dpeg` at API 67.0 on 2026-08-30, with a
+control so the discriminator could not pass vacuously:
+
+| Probe | Body | Result |
+| --- | --- | --- |
+| A — merge field | `secret={!$Credential.Turnstile_Credential.Secret_Key}&response=<invalid token>` | **HTTP 200** `{"success":true,...,"metadata":{"result_with_testing_key":true}}` — the merge field **resolved** |
+| B — control, literal secret | `secret=this-is-not-a-real-turnstile-secret&response=<same invalid token>` | **HTTP 400** `{"success":false,"error-codes":["invalid-input-secret"]}` — an unresolved secret **is** detectable |
+
+Consequences worth carrying forward:
+
+- ✅ The External Credential **is** shipped as metadata here. The §3.4 hand-built fallback was
+  pre-approved but is **not needed** and was not used.
+- 🔴 **A green deploy proves nothing about this.** With the flag false, the literal merge string is
+  sent as the secret and Cloudflare answers a well-formed `invalid-input-secret` — HTTP 400, no
+  exception, nothing thrown — and every broker submission is refused with a message no log explains.
+  Anyone changing `allowMergeFieldsInBody`, renaming `Secret_Key`, or re-homing the endpoint must
+  re-run the two probes above. An `HttpCalloutMock` cannot substitute: it intercepts the request
+  before substitution matters and answers identically either way.
+- ⚠ Cloudflare returns **HTTP 400 with a parseable JSON body** for a bad secret, so response parsing
+  must not be gated on a 2xx status or the one diagnostic field is discarded.
+- ⚠ A running user with no External Credential Principal Access gets
+  `System.CalloutException: We couldn't access the credential(s)... might not exist` — which names a
+  missing credential as its first hypothesis and sends diagnosis down the wrong path. Measured here:
+  the credential existed, the `Turnstile_Integration_Access` assignment did not.
+
+⚠ **The browser half of this feature is NOT deployable and NOT verifiable from source (GATE C).** The
+widget loads `https://challenges.cloudflare.com/turnstile/v0/api.js`, which needs both the deployable
+`Cloudflare_Turnstile` `CspTrustedSite` record **and** the LWR site's own CSP/security level relaxed
+in Experience Builder. The latter lives in `sites/**` + `networks/**`, excluded entirely by
+`.forceignore` (lines 509-522) — the same class of trap as the `settings/**` one: a force-ignored tree
+never reconciles, so a repo file describing it would be unverified fiction. It is a **manual
+post-deploy step**, and this feature's acceptance criterion is a **browser check on the live guest
+page**, never a deploy result. Runbook: `docs/runbooks/2026-08-30-turnstile-post-deploy.md`.
+
+🔴 **THREE exceptions, and the threshold has now been crossed once. The next one is not routine.**
+§3.4 previously read "two exceptions is the review threshold" and required explicit user
+acknowledgement for a third. That acknowledgement **was given, for Turnstile, on 2026-08-30** — so the
+rule worked as designed and this section is its record, not a bypass of it.
+
+What has not changed is the underlying fact, which is now starker: **every external callout this
+application makes is direct. There are still zero ASB-routed implementations — 3 of 3.** §3.1
+describes an architecture the code does not yet have anywhere. A **fourth** exception should not be
+sought and would not be a judgement call about that integration; it is the point at which §3.1 is
+provably aspirational and the honest response is to change the document or build the bus, not to add
+another row here. Anyone reaching for a fourth: raise the ASB-spoke question first, and treat "no
+spoke exists" as the problem to fix rather than as the justification.
 
 ---
 

@@ -27,6 +27,23 @@
  * resolveMonitoredInbox reads the headers first and falls back to From, so
  * Forwarded_By__c means "the monitored inbox this reached us through" in both shapes.
  *
+ * ═══ WS1 (2026-08-30) — THE `Date:` HEADER IS THE SIXTH HEADER THIS BOUNDARY PARSES ═══
+ * `parseRfc5322Date` turns it into `Received_DateTime__c`, which `ExtractAddressQueueable`
+ * later carries onto the Lead's `First_Seen_Date__c`. Before this, an email-born Lead's
+ * first-seen stamp was `Datetime.now()` inside the ASYNC routing job — i.e. when the LLM
+ * callout finished, not when the broker emailed. The 90-day protection window therefore
+ * started late by however long extraction took.
+ *
+ * ⚠ THE ONE THING THAT IS NOT TRUE OF IT. On a forwarded email this is the FORWARD's date,
+ * not the broker's original send date (see the AUTO/MANUAL split above). That was chosen
+ * knowingly: it is the arrival time, which is what the window is meant to start from, and the
+ * broker's own send time remains separately available as `LLMExtractionResult.sentDatetime`.
+ *
+ * 🔴 AND IT COSTS NOTHING. The parse is in-memory and happens BEFORE the staging insert; the
+ * value rides that EXISTING insert. The 0 SOQL / 2 DML budget below and the "EXACTLY TWO
+ * THINGS MAY SIT BETWEEN createStaging AND THIS RETURN" rule in handleInboundEmail are both
+ * UNCHANGED by it.
+ *
  * ═══ 🔴 THE 2026-08-06 OUTAGE, AND WHY THIS BOUNDARY LOOKS THE WAY IT DOES ═══
  * `InboundEmailAttachmentService.persist` was called HERE from 2026-08-05 until 2026-08-06 and
  * it DESTROYED EVERY INBOUND EMAIL CARRYING AN ATTACHMENT in this org. The evidence is direct,
@@ -151,9 +168,40 @@ global with sharing class EmailToLeadHandler implements Messaging.InboundEmailHa
     private static final String HEADER_REFERENCES = 'references';
     private static final String HEADER_X_FORWARDED_FOR = 'x-forwarded-for';
     private static final String HEADER_DELIVERED_TO = 'delivered-to';
+    /** WS1 (2026-08-30) — the RFC 5322 origination date; see parseRfc5322Date. */
+    private static final String HEADER_DATE = 'date';
 
     /** Raw_Headers__c / Raw_Body__c are 131072-char LongTextAreas. */
     private static final Integer LEN_RAW = 131072;
+
+    /** RFC 5322 §3.3 month names, lowercased. The grammar allows ONLY these three-letter
+     *  abbreviations — a full month name ('August') is not a valid RFC date and is rejected. */
+    private static final Map<String, Integer> RFC_MONTHS = new Map<String, Integer>{
+        'jan' => 1, 'feb' => 2, 'mar' => 3, 'apr' => 4, 'may' => 5, 'jun' => 6,
+        'jul' => 7, 'aug' => 8, 'sep' => 9, 'oct' => 10, 'nov' => 11, 'dec' => 12
+    };
+
+    /**
+     * RFC 5322 §4.3 obsolete zone names, in MINUTES east of UTC. Modern senders write a numeric
+     * `+0000` offset, but relays and older clients still emit these, and a Date header this
+     * parser cannot read is a Date header the pipeline silently discards.
+     *
+     * ⚠ Single-letter MILITARY zones are deliberately ABSENT. RFC 5322 §4.3 records that they
+     * were defined with the wrong sign in an earlier standard and were widely implemented that
+     * way, so it directs that they "SHOULD be considered equivalent to -0000" — i.e. unknown.
+     * They fall through to the unknown-zone branch in parseZoneMinutes, which rejects the
+     * header rather than guessing a value that has a 50% chance of being backwards.
+     */
+    private static final Map<String, Integer> RFC_OBSOLETE_ZONES = new Map<String, Integer>{
+        'ut' => 0, 'utc' => 0, 'gmt' => 0, 'z' => 0,
+        'est' => -300, 'edt' => -240,
+        'cst' => -360, 'cdt' => -300,
+        'mst' => -420, 'mdt' => -360,
+        'pst' => -480, 'pdt' => -420
+    };
+
+    /** The widest offset RFC 5322 permits in practice (±24:00). Anything beyond it is corrupt. */
+    private static final Integer MAX_ZONE_OFFSET_MINUTES = 1440;
 
     /** Address matcher used to mine forwarding headers, which carry free-form text. */
     private static final Pattern EMAIL_PATTERN =
@@ -251,6 +299,24 @@ global with sharing class EmailToLeadHandler implements Messaging.InboundEmailHa
             request.messageId = firstHeader(email, HEADER_MESSAGE_ID);
             request.inReplyTo = firstHeader(email, HEADER_IN_REPLY_TO);
             request.references = firstHeader(email, HEADER_REFERENCES);
+            // ═══ WS1 (2026-08-30) — WHEN THE EMAIL ARRIVED, NOT WHEN WE GOT AROUND TO IT ═══
+            // The sixth header this boundary parses. It becomes Received_DateTime__c on the
+            // staging row, and from there ExtractAddressQueueable carries it onto the Lead's
+            // First_Seen_Date__c — so a broker's 90-day protection window starts when they
+            // emailed, not when the LLM callout happened to finish.
+            //
+            // 🔴 THIS DOES NOT BREACH THE 0 SOQL / 2 DML BUDGET PINNED IN THE CLASS HEADER, AND
+            // IT DOES NOT BREACH THE "EXACTLY TWO THINGS MAY SIT BETWEEN createStaging AND THIS
+            // RETURN" RULE BELOW. Both are about what happens AFTER the staging insert. This is
+            // a pure in-memory header read that happens BEFORE it, and the value rides the
+            // EXISTING insert — zero new SOQL, zero new DML, zero new statements after the
+            // insert. Read the two comments together before recording this as a violation.
+            //
+            // parseRfc5322Date NEVER THROWS: an absent, empty, malformed or exotic-zone header
+            // degrades to null, and null resolves to the staging row's CreatedDate downstream.
+            // That contract is not stylistic — an exception raised here escapes into the catch
+            // below, returns success=false, and the email is lost. See THE 2026-08-06 OUTAGE.
+            request.receivedDateTime = parseRfc5322Date(firstHeader(email, HEADER_DATE));
             // Manual forwards carry no forwarding header, and there the envelope From IS the
             // internal person who forwarded — so From is the correct fallback, not a guess.
             request.forwardedBy = (monitoredInbox != null) ? monitoredInbox : email.fromAddress;
@@ -502,7 +568,7 @@ global with sharing class EmailToLeadHandler implements Messaging.InboundEmailHa
      * Every RFC header the platform exposed, rendered one 'Name: Value' per line, clipped to
      * Raw_Headers__c's 131072 characters.
      *
-     * This is captured WHOLE and unparsed on purpose. The pipeline extracts five headers by
+     * This is captured WHOLE and unparsed on purpose. The pipeline extracts six headers by
      * name today, but header-driven diagnosis (spam filtering, forwarding-chain reconstruction,
      * DKIM/SPF questions, working out which relay mangled a Message-ID) always needs the ones
      * nobody thought to extract — and by the time the question is asked the
@@ -545,6 +611,182 @@ global with sharing class EmailToLeadHandler implements Messaging.InboundEmailHa
             }
         }
         return null;
+    }
+
+    /**
+     * The inbound email's RFC 5322 `Date:` header as a Datetime — WS1, 2026-08-30.
+     *
+     * 🔴 THIS METHOD MUST NEVER THROW, AND THAT IS THE WHOLE POINT OF ITS SHAPE. Its caller sits
+     * ABOVE the staging insert inside `handleInboundEmail`'s try/catch: an exception here is
+     * caught, returns `success = false`, and the email is bounced rather than staged. The class
+     * header's 2026-08-06 outage writeup is the record of what "the email is simply gone" costs.
+     * A first-seen timestamp is a nice-to-have; the email is not. So EVERY unreadable input —
+     * null, blank, truncated, a full month name, a garbage zone, a non-numeric day — returns
+     * `null`, and the whole body is additionally wrapped in a catch-all as a second line of
+     * defence against a shape this parser did not anticipate.
+     *
+     * WHAT IT ACCEPTS (RFC 5322 §3.3, plus the obsolete forms §4.3 still requires readers to
+     * handle, because real relays still emit them):
+     *
+     *     [ day-of-week "," ] day month year hour ":" minute [ ":" second ] zone [ comment ]
+     *     Tue, 26 Aug 2026 14:03:22 -0500
+     *     26 Aug 2026 14:03 GMT
+     *     Tue, 26 Aug 2026 19:03:22 +0000 (UTC)
+     *     Tue, 26 Aug 26 14:03:22 -0500        <- obsolete 2-digit year (§4.3)
+     *
+     * WHAT IT REFUSES, DELIBERATELY:
+     *   • A MISSING ZONE ('26 Aug 2026 14:03:22'). The grammar requires one, and assuming UTC
+     *     would silently move the timestamp by up to 12 hours. `null` is the better answer
+     *     because it degrades to `CreatedDate`, which is within seconds of the truth.
+     *   • A SINGLE-LETTER MILITARY ZONE ('A'..'Z'). RFC 5322 §4.3 records that these were
+     *     implemented with the sign inverted and directs readers to treat them as unknown.
+     *   • Anything else it does not fully understand. This parser never guesses.
+     *
+     * ⚠ WHAT THE VALUE MEANS, WHICH IS NOT ALWAYS "WHEN THE BROKER SENT IT". On an AUTO-forward
+     * the outer Date header is when the forwarding rule fired; on a MANUAL forward it is when the
+     * DPEG coordinator hit Fwd. Both are still far closer to "when this reached DPEG" than the
+     * async routing job's clock, which is what this replaces, and both are the arrival time the
+     * protection window is meant to start from. The broker's own send time, when the LLM can find
+     * it in the quoted body, is separately available as `LLMExtractionResult.sentDatetime` — this
+     * field is NOT that and must not be switched to it (decision, 2026-08-30).
+     *
+     * @param rawHeader The raw `Date:` header value, or null when the email carried none.
+     * @return The header as a Datetime, or null when it is absent or cannot be read with
+     *         certainty. Never throws.
+     */
+    @TestVisible
+    private static Datetime parseRfc5322Date(String rawHeader) {
+        if (String.isBlank(rawHeader)) {
+            return null;
+        }
+        try {
+            String value = rawHeader;
+
+            // CFWS — a trailing comment such as ' (UTC)' or ' (GMT-05:00)' is legal and carries
+            // no information the zone token does not already give us.
+            Integer commentStart = value.indexOf('(');
+            if (commentStart >= 0) {
+                value = value.substring(0, commentStart);
+            }
+            // The optional day-of-week is decorative and the grammar terminates it with a comma.
+            Integer comma = value.indexOf(',');
+            if (comma >= 0) {
+                value = value.substring(comma + 1);
+            }
+            // Header folding (CRLF + WSP) and runs of spaces are both legal between tokens.
+            value = value.trim().replaceAll('\\s+', ' ');
+
+            List<String> parts = value.split(' ');
+            if (parts.size() < 5) {
+                // day, month, year, time, zone. Fewer than five means the zone is missing (or
+                // the header is truncated), and this parser does not guess a zone.
+                return null;
+            }
+
+            Integer day = toPositiveInt(parts[0]);
+            Integer month = RFC_MONTHS.get(parts[1].toLowerCase());
+            Integer year = toPositiveInt(parts[2]);
+            Integer zoneMinutes = parseZoneMinutes(parts[4]);
+            if (day == null || month == null || year == null || zoneMinutes == null) {
+                return null;
+            }
+
+            // Obsolete two- and three-digit years (RFC 5322 §4.3): 0-49 are 2000s, 50-999 1900s.
+            if (year < 50) {
+                year += 2000;
+            } else if (year < 1000) {
+                year += 1900;
+            }
+
+            List<String> hms = parts[3].split(':');
+            if (hms.size() < 2) {
+                return null;
+            }
+            Integer hour = toPositiveInt(hms[0]);
+            Integer minute = toPositiveInt(hms[1]);
+            Integer second = (hms.size() > 2) ? toPositiveInt(hms[2]) : 0;
+            if (hour == null || minute == null || second == null) {
+                return null;
+            }
+
+            // Range guards. `hour == 24` and `second == 60` are both legal (end-of-day and a
+            // leap second) and are why the time is ADDED to midnight below rather than passed
+            // to newInstanceGmt, which has no obligation to accept either.
+            if (day < 1 || day > 31 || hour > 24 || minute > 59 || second > 60
+                    || year < 1971 || year > 3999) {
+                return null;
+            }
+
+            Datetime midnightUtc = Datetime.newInstanceGmt(year, month, day, 0, 0, 0);
+            Integer secondsIntoDay = (hour * 3600) + (minute * 60) + second;
+            // localTime - zoneOffset = UTC. A '-0500' header at 14:03 is 19:03 UTC.
+            return midnightUtc.addSeconds(secondsIntoDay - (zoneMinutes * 60));
+        } catch (Exception e) {
+            // THE SECOND LINE OF DEFENCE, and it is not decoration: the guards above cover every
+            // malformation anticipated, and this covers the ones that were not. Losing the
+            // timestamp costs a fallback to CreatedDate; losing the email costs the email.
+            System.debug(LoggingLevel.WARN,
+                'EmailToLeadHandler.parseRfc5322Date: unreadable Date header "' + rawHeader
+                + '" (' + e.getMessage() + '); falling back to the staging row CreatedDate.');
+            return null;
+        }
+    }
+
+    /**
+     * One RFC 5322 zone token as MINUTES east of UTC, or null when it cannot be read.
+     *
+     * Numeric `+HHMM` / `-HHMM` is the modern form and the only one the grammar actually
+     * requires; the obsolete alphabetic names are accepted from RFC_OBSOLETE_ZONES because real
+     * relays still emit them. Anything else — including the single-letter military zones, whose
+     * sign RFC 5322 §4.3 declares untrustworthy — returns null, which rejects the whole header.
+     *
+     * @param rawZone The zone token, e.g. '-0500', '+0000', 'GMT', 'EDT'.
+     * @return Minutes east of UTC (negative west), or null when unrecognized.
+     */
+    private static Integer parseZoneMinutes(String rawZone) {
+        if (String.isBlank(rawZone)) {
+            return null;
+        }
+        String zone = rawZone.trim();
+        if (zone.startsWith('+') || zone.startsWith('-')) {
+            Boolean isWest = zone.startsWith('-');
+            // Some non-conforming clients write '-05:00' instead of '-0500'.
+            String digits = zone.substring(1).replace(':', '');
+            if (!Pattern.matches('[0-9]{4}', digits)) {
+                return null;
+            }
+            Integer hours = Integer.valueOf(digits.substring(0, 2));
+            Integer minutes = Integer.valueOf(digits.substring(2, 4));
+            if (minutes > 59) {
+                return null;
+            }
+            Integer offset = (hours * 60) + minutes;
+            if (offset > MAX_ZONE_OFFSET_MINUTES) {
+                return null;
+            }
+            // '-0000' is RFC-legal and means UTC, so the negation of zero is correct and inert.
+            return isWest ? -offset : offset;
+        }
+        // A miss returns null from the map, which is exactly the reject signal the caller wants.
+        return RFC_OBSOLETE_ZONES.get(zone.toLowerCase());
+    }
+
+    /**
+     * A token as a non-negative Integer, or null when it is not made purely of ASCII digits.
+     *
+     * ⚠ THE ASCII CHECK IS NOT PARANOIA ABOUT `Integer.valueOf` THROWING — the caller catches
+     * that. It is about `String.isNumeric()`, which is TRUE for non-ASCII digit characters that
+     * `Integer.valueOf` then rejects; matching `[0-9]+` explicitly keeps the accept and the
+     * convert agreeing about what a digit is.
+     *
+     * @param token The candidate token.
+     * @return The parsed value, or null when the token is blank or not all-digits.
+     */
+    private static Integer toPositiveInt(String token) {
+        if (String.isBlank(token) || !Pattern.matches('[0-9]+', token)) {
+            return null;
+        }
+        return Integer.valueOf(token);
     }
 
     /**

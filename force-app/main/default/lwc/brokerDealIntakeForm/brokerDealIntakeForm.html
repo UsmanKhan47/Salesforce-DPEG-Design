@@ -51,9 +51,21 @@
                     <input tabindex="-1" autocomplete="off" data-field="website" value={website} onchange={handleChange} />
                 </div>
 
+                <!--
+                    Cloudflare Turnstile mounts its iframe into this div. It must be a plain
+                    element with a stable data-id, not a base component: turnstile.render() is
+                    handed the raw DOM node and appends to it directly.
+                -->
+                <div class="turnstile">
+                    <div data-id="turnstile" class="turnstile__widget"></div>
+                    <template lwc:if={turnstileError}>
+                        <div class="form__error" role="alert">{turnstileError}</div>
+                    </template>
+                </div>
+
                 <div class="form__actions">
                     <lightning-button label="Submit Deal" variant="brand" onclick={handleSubmit}
-                        disabled={submitting}></lightning-button>
+                        disabled={submitDisabled}></lightning-button>
                     <template lwc:if={submitting}>
                         <lightning-spinner alternative-text="Submitting" size="small"></lightning-spinner>
                     </template>

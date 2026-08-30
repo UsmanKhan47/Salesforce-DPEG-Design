@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY — see
+        Protection_Window_Days__c.field-meta.xml in this folder for why a comment above the
+        root breaks `sf` deploy at conversion.
+
+        WHAT THIS STORES. Measured, not guessed. RE-MEASURED 2026-08-30 (WS8 review, W2):
+        this said 596 + 18,658 = 19,254, which was the PRE-WS7 prompt; WS7 added 1,338
+        characters to ENRICHED_EXTRACTION_RULES the same day. Concatenating
+        LLMExtractionCalloutService.LEGACY_EXTRACTION_RULES (596 chars) and
+        ENRICHED_EXTRACTION_RULES (19,996 chars) — i.e. the current
+        EXTRACTION_INSTRUCTION constant — is 20,592 characters, matching
+        shippedPrompt()'s documented length and the loader's own seed-length check.
+        length=131072 (the
+        LongTextArea ceiling) leaves ~6.8x headroom over the measured size, which this
+        prompt has already grown into repeatedly per its own class-header revision log
+        (LLMExtractionCalloutService.cls's header documents at least 8 dated prompt
+        revisions). LEGACY_RESPONSE_FORMAT (166 chars) is DELIBERATELY EXCLUDED — see below.
+
+        WHY LEGACY_RESPONSE_FORMAT STAYS IN APEX (P4, design-requirements.md §1). Its own
+        Javadoc (LLMExtractionCalloutService.cls:500-503): "kept ONLY as the rollback lever
+        described in the class header. Nothing references it on the enriched path." Putting
+        a rollback lever in editable Setup config defeats the lever — if the enriched prompt
+        ever needs rolling back, that rollback must not itself depend on Setup data staying
+        untouched. This was a scope decision made after the design doc, not an oversight.
+
+        THREE NEW FAILURE MODES THIS FIELD CREATES (design-requirements.md §2/WS5,
+        restated here because this is where an editor will actually be looking):
+          1. The prompt text hardcodes "at most " + MAX_PROPERTIES_IN_PROMPT (10,
+             LLMExtractionCalloutService) as English prose. MAX_PROPERTIES_IN_PROMPT stays
+             an Apex constant (out of scope per this build's brief). Editing the prose
+             without also changing that constant lets the stated limit and the enforced
+             limit silently diverge.
+          2. The prompt text hardcodes the restricted picklist value lists for
+             asset_type, deal_type, sale_process and listing_status. LLMExtractionParser
+             describe-validates the model's answer against the LIVE picklist — a prompt
+             value that is not an active picklist/record-type value makes the parser drop
+             it SILENTLY (no exception, no log), and the resulting Lead/Opportunity gets no
+             deal type and therefore no record type. See LLMExtractionCalloutService.cls
+             lines 765-772 for the D3/D4 migration incident this already caused once.
+          3. Editing ANY part of this prompt re-keys the broker registry:
+             broker_email and property_address are Property_Registry__c's claim key, and
+             this text is what determines how the model extracts both. There is NO
+             automated regression guard on this text (ExtractionRegressionFixtureTest never
+             pinned ENRICHED_EXTRACTION_RULES — see P3, design-requirements.md §1 — and its
+             LEGACY_EXTRACTION_RULES / LEGACY_RESPONSE_FORMAT pins were removed as part of
+             this same workstream). The only mitigation available: re-run the two manual
+             fixtures LLMExtractionCalloutService's header names ("RE-RUN BOTH AFTER ANY
+             MODEL-VERSION CHANGE and after any edit to this block") before and after any
+             edit here, and diff the normalised addresses by hand.
+
+        RECORD LOADING. This field's value is loaded by
+        scripts/load-broker-protection-config.apex (not built by this task — see the parent
+        object file's comment and this build's handoff for the exact string the loader must
+        write and why an Apex string-literal complexity limit forces it to be built by
+        chunked concatenation, not one big literal).
+    -->
+    <fullName>Extraction_Prompt__c</fullName>
+    <description>The full extraction instruction sent to the model on every callout (LEGACY_EXTRACTION_RULES + ENRICHED_EXTRACTION_RULES concatenated; ~19,250 characters as of 2026-08-30). 🔴 EDITING THIS RE-KEYS THE BROKER REGISTRY: broker_email and property_address are the Property_Registry__c claim key, so changing these instructions changes claim outcomes with no deploy and no review. 🔴 Hardcodes MAX_PROPERTIES_IN_PROMPT (10) and the restricted picklist values for deal_type / sale_process / listing_status — drift from the matching Apex constant or picklist silently loses properties or drops the deal type, with no exception and no log. Run the two manual regression fixtures named in LLMExtractionCalloutService&apos;s header before and after any edit, and diff the normalised addresses by hand. EXCLUDES LEGACY_RESPONSE_FORMAT (stays hardcoded, a deliberately inert rollback lever). See the in-root XML comment for full detail.</description>
+    <fieldManageability>DeveloperControlled</fieldManageability>
+    <inlineHelpText>🔴 Re-keys the broker registry claim key when edited. Re-run the two manual regression fixtures before and after any change. See description.</inlineHelpText>
+    <label>Extraction Prompt</label>
+    <length>131072</length>
+    <required>false</required>
+    <type>LongTextArea</type>
+    <visibleLines>20</visibleLines>
+</CustomField>

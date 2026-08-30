@@ -21,9 +21,20 @@
         VERIFY AFTER EVERY DEPLOY of this permission set:
             SELECT SobjectType, COUNT(Id) FROM FieldPermissions
             WHERE Parent.Name = 'Broker_Protection_Access' GROUP BY SobjectType
-        must return Lead 32, Task 6, Contact 1, Inbound_Email_Staging__c 24,
-        Competing_Broker_Submission__c 10, Property_Registry__c 3 (plus platform-managed Event
+        must return Lead 38, Task 6, Contact 1, Inbound_Email_Staging__c 25,
+        Competing_Broker_Submission__c 10, Property_Registry__c 4 (plus platform-managed Event
         mirrors of the Task/Activity rows).
+        ⚠ Lead moved 32 -> 37 and Inbound_Email_Staging__c moved 24 -> 25 on 2026-08-30 with the
+        P8 Hub Pass (BA Gap Closure WS1/WS6/WS8): Received_DateTime__c (mandatory, WS1),
+        Broker__c/Broker_Firm__c (WS8), Deal_Name__c (WS6), and Deal_Notes__c/First_Seen_Date__c
+        (§3 decision, backfilling this set's own domain fields). A count of 32/24 after this
+        change means the P8 pass's grants did not land - see agent-output/ba-gap-closure-p8-hub-pass.md.
+        ⚠ Lead moved 37 -> 38 and Property_Registry__c moved 3 -> 4 on 2026-08-30 with the SAME-DAY
+        BA Gap-Closure code-review fix pass: Lead.Parse_Confidence__c (C2 - it is now a
+        `Review_Queue` list-view filter term, see the asymmetry note above) and
+        Property_Registry__c.Protection_Window_Days__c (the GATE A claim-time audit stamp, editable
+        so PropertyClaimService's isCreateable()-guarded write actually lands). A count of 37/3
+        after this change means these two grants did not land.
         ⚠ Lead moved 28 -> 32 on 2026-08-14 with the Acquisition Observations Phase 1 intake
         fields: Listing_Status__c, Extraction_Score_Pct__c, Fields_Captured_Count__c and
         Fields_Missing_Count__c. A count of 28 after that change means the four new fields' FLS
@@ -32,11 +43,20 @@
         to every human on this permission set. That is the harder failure to spot: the extraction
         score exists to tell an analyst which leads need chasing, and a blank score reads as
         "nothing to chase" rather than as "you cannot see this".
-        ⚠ Note an asymmetry that is deliberate and should not be "corrected": Parse_Confidence__c
-        is NOT granted on this set, while the three new score fields ARE. They are different
-        things (see the fields' own descriptions) and the score fields were named for this set
-        explicitly by the design. Do not add Parse_Confidence__c here to make them match, and do
-        not remove the score fields to make them match either.
+        ⚠ THIS ASYMMETRY NOTE WAS CORRECTED ON 2026-08-30 (BA GAP-CLOSURE C2) — READ BEFORE
+        RE-APPLYING IT. It used to read "Parse_Confidence__c is NOT granted on this set, while
+        the three new score fields ARE... do not add Parse_Confidence__c here." That reasoning
+        predates WS7: Parse_Confidence__c was a display-only signal when this note was written,
+        and is now ALSO a `Review_Queue` list-view FILTER term (`Parse_Confidence__c = LOW OR
+        Low_Confidence_Field_Count__c > 0`, `booleanFilter` 1 OR 2). A filter naming a field this
+        set cannot read is a different, and worse, class of gap than a blank column — it risks
+        the whole queue silently returning nothing for this persona, not just one hidden value.
+        Parse_Confidence__c IS now granted below (read-only — it is machine-written, matching
+        `DPEG_Acquisition_View`'s existing read-only grant on the same field). The remaining
+        asymmetry — the three score fields are NOT on this set at all — is unrelated and still
+        deliberate: they were named for `DPEG_Acquisition_View`/`_Edit` by the design, not for
+        this set, and adding them here would still be scope creep. Do not remove the score-field
+        absence to "fully match"; only the filter-field gap was the defect.
         ⚠ Competing_Broker_Submission__c moved 9 -> 10 on 2026-08-03 with Winning_Opportunity__c,
         the post-conversion winner anchor. A count of 9 after this change means the new field's
         FLS did not land, and the inbound pipeline will read a null anchor on every
@@ -288,6 +308,16 @@
         <field>Inbound_Email_Staging__c.Processed_DateTime__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!-- Received_DateTime__c ADDED P8 HUB PASS (2026-08-30). 🔴 MANDATORY, WS1.
+         InboundEmailStagingSelector.selectById is WITH USER_MODE and is the FIRST thing every
+         inbound email touches - a missing grant here throws before any routing logic runs,
+         which measured as ~105 unrelated test failures across the tree today. Read-only: this
+         is a system-stamped receipt timestamp, never hand-edited. -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Inbound_Email_Staging__c.Received_DateTime__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
         <field>Inbound_Email_Staging__c.Raw_Body__c</field>
@@ -498,6 +528,58 @@
         <field>Lead.Zoning__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!-- Broker__c / Broker_Firm__c ADDED P8 HUB PASS (2026-08-30), WS8. Written by intake -
+         broker identity is squarely this set's domain (recommended by the hub-pass matrix over
+         and above the mandatory DPEG_Acquisition_Edit grant). Editable, matching the pipeline's
+         existing pattern of human-correctable fields it also writes. -->
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Lead.Broker__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Lead.Broker_Firm__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!-- Deal_Name__c ADDED P8 HUB PASS (2026-08-30), WS6. Formula field, now a column on all
+         five Lead list views this persona uses (New/Under Review/Qualified/Dead/Review Queue).
+         Read-only: formula fields cannot carry an editable grant. -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Lead.Deal_Name__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!-- Deal_Notes__c / First_Seen_Date__c ADDED P8 HUB PASS (2026-08-30), §3 decision. Measured
+         zero FieldPermissions rows on this set for these two fields (Parse_Confidence__c was
+         ALSO zero at the time and, at the time, deliberately NOT backfilled - see the asymmetry
+         note near the top of this file, corrected same day by C2 below).
+         This set is named for the Broker Protection feature; First_Seen_Date__c is the field
+         that STARTS the 90-day protection window it exists to enforce, so a set that cannot read
+         it is a trap for the next person on this persona. Both read-only: First_Seen_Date__c is
+         documented Immutable on the field itself, and Deal_Notes__c closes a visibility gap only
+         - no measured write need on this persona, unlike the pipeline-written fields above. -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Lead.Deal_Notes__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Lead.First_Seen_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!-- Parse_Confidence__c ADDED 2026-08-30, BA Gap-Closure code-review pass, C2. See the
+         asymmetry note near the top of this file for the full history: it was deliberately
+         withheld from this set until WS7 promoted it into a `Review_Queue` list-view FILTER
+         term, which this set's persona uses. Read-only, matching the machine-written pattern
+         and `DPEG_Acquisition_View`'s existing grant on the same field - nothing on this persona
+         edits it directly. -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Lead.Parse_Confidence__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
         <field>Lead.Description</field>
@@ -516,6 +598,20 @@
     <fieldPermissions>
         <editable>true</editable>
         <field>Property_Registry__c.Normalized_Address__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!-- Protection_Window_Days__c ADDED 2026-08-30, BA Gap-Closure GATE A audit stamp. Editable,
+         not read-only, matching the other three fields on this object here: PropertyClaimService
+         (`with sharing`, called from ExtractAddressQueueable) performs the ONLY insert against
+         this object and stamps this field once at claim time; it guards the write with an
+         isCreateable() check, so a missing Edit grant does not fail the claim itself, it only
+         silently skips populating the audit field for whichever principal that queueable runs
+         as - which, per ARCHITECTURE.md sec 1, is why the grant lives here rather than being
+         skipped as "cosmetic". This is the only permission set that grants any Property_Registry__c
+         field, so there is nowhere else this needs to be added. -->
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property_Registry__c.Protection_Window_Days__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>

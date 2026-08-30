@@ -120,3 +120,19 @@ lightning-button {
         grid-template-columns: 1fr;
     }
 }
+
+/* Cloudflare Turnstile widget. The iframe sizes itself; this only spaces it from the
+   fields above and the submit row below, using SLDS 2 spacing tokens.
+
+   min-height is a DELIBERATE hardcoded value and the one new SLDS-linter warning this
+   feature adds (27 warnings before, 28 after, 0 errors both ways). It reserves the
+   Cloudflare iframe's fixed 65px height so the Submit button does not jump downwards when
+   the widget finishes loading — a layout shift directly under a button the broker is about
+   to click. There is no SLDS sizing hook for "a third party's fixed iframe height", and the
+   linter's advice to simply remove the value would reintroduce the shift. */
+.turnstile {
+    margin-top: var(--slds-g-spacing-4, 16px);
+}
+.turnstile__widget {
+    min-height: 65px;
+}

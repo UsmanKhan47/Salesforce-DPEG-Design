@@ -10,19 +10,31 @@
         precedent, Contract_Signed_Before_Closed_Won.
 
         =====================================================================
-        WHAT IT DOES AND WHY THIS FIELD, NOT THE ONE THE FSD NAMED.
+        WHAT IT DOES AND WHY THIS FIELD, NOT ONLY THE ONE THE FSD NAMED.
         =====================================================================
         FSD Gap Tranche 1 §26 asks for "Broker First-Seen Timestamp is system-set and cannot be
         edited". The FSD names Opportunity.Broker_First_Seen__c. Repo-wide grep (2026-08-16)
         found NOTHING writes that field - no Apex writer, no Flow writer - so a rule built there
-        would permanently lock an already-blank field and remove the only way it could ever be
-        populated (a human typing it), which is strictly worse than no rule at all.
+        at that time would have permanently locked an already-blank field and removed the only
+        way it could ever be populated (a human typing it), which is strictly worse than no rule
+        at all.
 
-        Lead.First_Seen_Date__c is the field the FSD's intent actually runs on: it drives
-        Lead.BP_Expiry__c (First_Seen_Date__c + 90, the 90-day broker-protection window),
-        Days_in_System__c, LeadSelector ordering, LeadFunnelController and the Lead Funnel Path.
-        This is a deliberate USER-APPROVED RE-TARGET (Gate 1, Q3.3 = accept), not a substitution
-        made unilaterally by this agent.
+        🔴 AMENDED 2026-08-30 (WS2) — THAT PREMISE IS NOW FALSE. LeadConvertService.applyDealFields
+        now copies Lead.First_Seen_Date__c into Opportunity.Broker_First_Seen__c on every
+        conversion, so the Opportunity field has a real writer for the first time. WS2 built the
+        sibling rule Opportunity.Broker_First_Seen_Is_System_Set to protect it directly - see that
+        file's header for its own full account. THIS rule was NOT retired: it still protects
+        Lead.First_Seen_Date__c for every Lead that is never converted or is still mid-funnel, and
+        the Opportunity rule only starts protecting a record from the moment of conversion onward.
+        The two rules are complementary, not a replacement of one by the other, despite the
+        original wording below implying a permanent substitution.
+
+        Lead.First_Seen_Date__c is the field the FSD's intent actually ran on before conversion
+        existed as a writer: it drives Lead.BP_Expiry__c (First_Seen_Date__c + the configured
+        protection window - a literal 90 before WS5, now Broker_Protection_Config__mdt.Default.
+        Protection_Window_Days__c), Days_in_System__c, LeadSelector ordering, LeadFunnelController
+        and the Lead Funnel Path. This was a deliberate USER-APPROVED RE-TARGET (Gate 1, Q3.3 =
+        accept) at the time, not a substitution made unilaterally by this agent.
 
         =====================================================================
         THE FORMULA AND WHY EACH WRITER IS OR IS NOT CAUGHT.
@@ -69,11 +81,11 @@
     -->
     <fullName>Broker_First_Seen_Is_System_Set</fullName>
     <active>true</active>
-    <description>Blocks changing First_Seen_Date__c once stamped by Lead_Intake_Stamp. Starts the 90-day broker protection window; must not be hand-edited afterward. See the XML comment for full rationale and why this replaces the FSD-named Opportunity field.</description>
+    <description>Blocks changing First_Seen_Date__c once stamped by Lead_Intake_Stamp. Starts the broker protection window (length on Broker_Protection_Config__mdt); must not be hand-edited afterward. Complementary to the Opportunity sibling rule (WS2) - see XML comment.</description>
     <errorConditionFormula>AND(
     ISCHANGED(First_Seen_Date__c),
     NOT(ISBLANK(PRIORVALUE(First_Seen_Date__c)))
 )</errorConditionFormula>
     <errorDisplayField>First_Seen_Date__c</errorDisplayField>
-    <errorMessage>First Seen Date is set automatically the first time this lead is seen and cannot be changed afterward. It drives the 90-day broker protection window.</errorMessage>
+    <errorMessage>First Seen Date is set automatically the first time this lead is seen and cannot be changed afterward. It drives the broker protection window.</errorMessage>
 </ValidationRule>

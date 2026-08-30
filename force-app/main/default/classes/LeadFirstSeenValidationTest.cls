@@ -18,6 +18,16 @@
  * would be strictly worse than no rule. `CallForOffersService`'s own header records the same
  * finding independently. The full argument lives in the rule's own XML comment.
  *
+ * 🔴 **THAT PREMISE EXPIRED ON 2026-08-30 (WS2), AND THE RE-TARGET DECISION DID NOT.**
+ * `LeadConvertService.applyDealFields` now copies `Lead.First_Seen_Date__c` into
+ * `Opportunity.Broker_First_Seen__c` on every conversion, so the FSD-named field has a real writer
+ * and is no longer permanently blank. A sibling rule now exists there —
+ * `Opportunity/validationRules/Broker_First_Seen_Is_System_Set` — built ALONGSIDE this one, not
+ * instead of it. The paragraph above is left standing and retracted here rather than deleted,
+ * because without it a reader finds two identically-named rules on two objects and no record of
+ * why the Lead one came first. THIS class still tests only the LEAD rule; the Opportunity rule is
+ * covered by the conversion tests in `LeadConvertServiceTest`, where its one legitimate writer is.
+ *
  * ── 🔴 ONE BRANCH OF THE FORMULA IS UNREACHABLE IN THIS ORG, AND SAYING SO IS PART OF THE
  *      COVERAGE ────────────────────────────────────────────────────────────
  * The `NOT(ISBLANK(PRIORVALUE(...)))` clause exists to exempt `Lead_Intake_Stamp`, the before-save

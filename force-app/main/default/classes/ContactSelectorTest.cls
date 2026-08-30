@@ -485,6 +485,154 @@ private class ContactSelectorTest {
             'An account-less Contact must never be returned — Database.LeadConvert.setContactId requires an Account');
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // selectBrokerByEmailForIntake  (WS8 intake broker match, 2026-08-30)
+    //
+    // The AUTOMATION twin of selectByEmails above. Same question, different trust model:
+    // SYSTEM_MODE because the caller is the Email Service context user inside a Queueable that
+    // owns the broker's Lead and registry claim, where a USER_MODE throw would not degrade a
+    // button click — it would abort the transaction. Singular + LIMIT 1, because the sender is
+    // ONE email-level fact resolved ONCE per email.
+    //
+    // ⚠ NO 251-ROW TEST HERE, DELIBERATELY, AND FOR THE SAME REASON THE BULK_N TESTS ABOVE ARE
+    // SHAPED AS THEY ARE: this method takes a SINGLE address and returns AT MOST ONE ROW by
+    // construction (`LIMIT 1`). There is no collection to bulkify and no batch boundary to cross,
+    // so 251 rows would exercise no additional code path. Its VOLUME contract — one query per
+    // EMAIL at MAX_PROPERTIES properties — lives where the loop is, in
+    // ExtractAddressQueueableTest.execute_tenPropertyEmail_resolvesTheBrokerExactlyOnceAndMovesNoBudget.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @isTest
+    static void selectBrokerByEmailForIntake_exactMatchWithAccount_returnsTheContactAndItsAccount() {
+        Account firm = TestDataFactory.createAccount(true);
+        Contact broker = TestDataFactory.createBrokerContacts(1, firm.Id, false)[0];
+        broker.Email = 'intake.broker@firm.invalid';
+        TestDataFactory.insertAllowingDuplicates(new List<Contact>{ broker });
+
+        Test.startTest();
+        List<Contact> rows = ContactSelector.selectBrokerByEmailForIntake('intake.broker@firm.invalid');
+        Test.stopTest();
+
+        Assert.areEqual(1, rows.size(), 'The exactly-matching broker Contact with an Account is returned');
+        Assert.areEqual(broker.Id, rows[0].Id, 'and it is the right row');
+        Assert.areEqual(firm.Id, rows[0].AccountId,
+            '🔴 AccountId IS SELECTED, AND THAT IS WHY THIS FEATURE COSTS ONE QUERY RATHER THAN TWO. '
+            + 'The firm is resolved by this same statement; no AccountSelector round trip exists or '
+            + 'is wanted');
+    }
+
+    /**
+     * 🔴 THE ACCOUNT-LESS CONTACT, EXCLUDED BY PREDICATE RATHER THAN BY SHARING.
+     *
+     * Two independent reasons, both recorded at the method: (1) an orphan cannot be a conversion
+     * target, so stamping it into `Lead.Broker__c` would hand `Database.convertLead` a pair it
+     * refuses; (2) a Contact with no AccountId is visible only to its OWNER whatever the OWD says
+     * (Contact OWD is ControlledByParent and a parentless Contact has no parent), so under
+     * `with sharing` the same broker email would link for one principal and not another. The
+     * filter converts that coin-flip into a rule.
+     *
+     * ⚠ THE FIXTURE IS OWNED BY THE TEST-RUNNING USER AND IS THEREFORE VISIBLE TO IT — so sharing
+     * cannot be what makes this pass. Only the `AccountId != null` predicate can.
+     */
+    @isTest
+    static void selectBrokerByEmailForIntake_accountLessBroker_isExcluded() {
+        Contact orphan = TestDataFactory.createBrokerContacts(1, null, false)[0];
+        orphan.Email = 'intake.orphan@firm.invalid';
+        TestDataFactory.insertAllowingDuplicates(new List<Contact>{ orphan });
+        Assert.isNull(orphan.AccountId, 'Precondition: the fixture really is account-less');
+
+        Test.startTest();
+        List<Contact> rows = ContactSelector.selectBrokerByEmailForIntake('intake.orphan@firm.invalid');
+        Test.stopTest();
+
+        Assert.areEqual(0, rows.size(),
+            'An account-less broker Contact never matches at intake — deterministically, for every '
+            + 'principal, rather than depending on who owns the row');
+    }
+
+    /**
+     * RECORD-TYPE SCOPE, identical to selectByEmails (IR segregation, 2026-08-10). One email
+     * address shared between a broker and an investor must never attach an acquisition Lead to an
+     * IR Contact.
+     */
+    @isTest
+    static void selectBrokerByEmailForIntake_nonBrokerRecordType_isExcluded() {
+        // 🔴 THE PARENT ACCOUNT MUST BE Investor_Entity, NOT THE FACTORY'S DEFAULT Broker_Firm.
+        // MEASURED 2026-08-30 (check-only 0Afiw000000TkTr): parenting an Investor Contact to a
+        // Broker_Firm Account throws FIELD_CUSTOM_VALIDATION_EXCEPTION on the
+        // `Record_Type_Matches_Account` rule — which is a SECURITY rule, not hygiene (Contact OWD
+        // is ControlledByParent, so a mismatched parent leaks the Contact to the wrong team).
+        //
+        // ⚠ AND THE FIXTURE MUST HAVE AN ACCOUNT AT ALL, or this test would go VACUOUS: an
+        // account-less Contact is already excluded by the `AccountId != null` filter, so it would
+        // pass for the wrong reason and stop proving anything about the RECORD TYPE.
+        Account entity = TestDataFactory.createAccounts(1, false)[0];
+        entity.RecordTypeId = Schema.SObjectType.Account
+            .getRecordTypeInfosByDeveloperName().get('Investor_Entity').getRecordTypeId();
+        insert entity;
+        Contact investor = TestDataFactory.createNonBrokerContacts(1, entity.Id, false)[0];
+        investor.Email = 'intake.investor@firm.invalid';
+        TestDataFactory.insertAllowingDuplicates(new List<Contact>{ investor });
+        Assert.isNotNull([SELECT AccountId FROM Contact WHERE Id = :investor.Id].AccountId,
+            'Precondition: the fixture HAS an Account, so only the record-type filter can exclude it');
+
+        Test.startTest();
+        List<Contact> rows = ContactSelector.selectBrokerByEmailForIntake('intake.investor@firm.invalid');
+        Test.stopTest();
+
+        Assert.areEqual(0, rows.size(),
+            'A Contact that is not on the Contact.Broker record type must not be linked to an '
+            + 'acquisition Lead, even when the email matches exactly');
+    }
+
+    /** SOQL Email comparison is case-insensitive by default — the same platform behaviour
+     *  selectByEmails relies on, re-proven here because this method uses `=` not `IN`. */
+    @isTest
+    static void selectBrokerByEmailForIntake_caseInsensitiveMatch_stillReturnsTheContact() {
+        Account firm = TestDataFactory.createAccount(true);
+        Contact broker = TestDataFactory.createBrokerContacts(1, firm.Id, false)[0];
+        broker.Email = 'Intake.Mixed.Case@Firm.Invalid';
+        TestDataFactory.insertAllowingDuplicates(new List<Contact>{ broker });
+
+        Test.startTest();
+        List<Contact> rows = ContactSelector.selectBrokerByEmailForIntake('intake.mixed.case@firm.invalid');
+        Test.stopTest();
+
+        Assert.areEqual(1, rows.size(),
+            'A differently-cased sender address must still match — do NOT add LOWER(), which is '
+            + 'invalid on this field and unnecessary');
+    }
+
+    /**
+     * ⚠ THE EMPTY-LIST CONTRACT IS LOAD-BEARING, NOT TIDINESS. The caller's fail-soft catches
+     * broadly; if this method were ever refactored to a single-row assignment
+     * (`Contact c = [SELECT ...];`), the ORDINARY no-match case would throw QueryException, be
+     * swallowed as a failure, and turn "this broker is new" into a permanently, invisibly disabled
+     * feature. Blank input must also short-circuit WITHOUT querying — a blank sender address is a
+     * normal state on an unaddressable email.
+     */
+    @isTest
+    static void selectBrokerByEmailForIntake_noMatchOrBlankInput_returnsEmptyWithoutThrowing() {
+        Test.startTest();
+        Integer before = Limits.getQueries();
+        List<Contact> blank = ContactSelector.selectBrokerByEmailForIntake('   ');
+        List<Contact> nullInput = ContactSelector.selectBrokerByEmailForIntake(null);
+        Integer afterShortCircuit = Limits.getQueries();
+        List<Contact> noMatch =
+            ContactSelector.selectBrokerByEmailForIntake('nobody.at.all@firm.invalid');
+        Test.stopTest();
+
+        Assert.areEqual(0, blank.size(), 'A blank address returns an EMPTY LIST, never null, never a throw');
+        Assert.areEqual(0, nullInput.size(), 'and so does null');
+        Assert.areEqual(before, afterShortCircuit,
+            'and NEITHER costs a query — the short-circuit is above the SOQL, so an unaddressable '
+            + 'sender spends nothing against a PINNED per-email query budget');
+        Assert.areEqual(0, noMatch.size(),
+            'A genuine no-match is an EMPTY LIST too. If this method is ever rewritten as a '
+            + 'single-row assignment it will throw here instead, and the caller will silently '
+            + 'record a permanent degrade');
+    }
+
     /** SOQL Email comparison is case-insensitive by default; see AccountSelector's identical note. */
     @isTest
     static void selectByEmails_caseInsensitiveMatch_stillReturnsTheContact() {

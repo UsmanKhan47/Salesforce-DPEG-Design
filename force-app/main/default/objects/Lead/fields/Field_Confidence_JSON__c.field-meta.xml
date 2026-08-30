@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY - a comment ABOVE the root
+        breaks `sf` deploy at conversion with a misleading "unable to find matching parent
+        xml file" error.
+
+        WS7 (2026-08-30). Per-field extraction confidence, e.g.
+        {"noi":0.92,"year_built":0.4}. Machine-written by LLMExtractionParser at Lead
+        creation via EmailToLeadService's existing insert - never hand-edited, and this
+        field is never assigned FLS edit access to any human persona.
+
+        NOT A LIST-VIEW-FILTERABLE SIGNAL, AND THAT IS WHY Low_Confidence_Field_Count__c
+        EXISTS AS A SEPARATE FIELD (GATE D). A Long Text Area cannot be used in a list-view
+        filter, a report filter, or a formula's CONTAINS(). Low_Confidence_Field_Count__c is
+        the derived, filterable Number that drives the Review Queue list view; this field is
+        the raw map that Low_Confidence_Field_Count__c is counted FROM. Do not attempt to
+        reconstruct or duplicate that count from this field in a list view - it cannot be
+        done here.
+
+        NOT Parse_Confidence__c and NOT categoryConfidence. Parse_Confidence__c is a single
+        HIGH/MEDIUM/LOW band over the whole-email is_acquisition_related question and feeds
+        the existing Review_Queue filter unchanged. This field answers a different, narrower
+        question - per-DEAL-FIELD confidence - which is why the Review Queue filter joins the
+        two with OR rather than replacing one with the other.
+
+        Malformed or absent per-field confidence from the model yields an empty map here,
+        never a thrown exception - the inbound email pipeline must never be made to throw
+        (see LLMExtractionParser's own "unexpected response shape yields an empty-but-valid
+        result" contract).
+    -->
+    <fullName>Field_Confidence_JSON__c</fullName>
+    <description>Per-field extraction confidence as a JSON map, e.g. {"noi":0.92,"year_built":0.4}. Written by LLMExtractionParser at Lead creation. Machine-written only, never hand-edited. Not filterable - the filterable signal derived from this map is Low_Confidence_Field_Count__c.</description>
+    <inlineHelpText>Raw per-field confidence JSON from the LLM extraction. Machine-written - do not hand-edit. Use Low_Confidence_Field_Count__c to filter or sort.</inlineHelpText>
+    <label>Field Confidence JSON</label>
+    <length>32768</length>
+    <trackFeedHistory>false</trackFeedHistory>
+    <type>LongTextArea</type>
+    <visibleLines>6</visibleLines>
+</CustomField>

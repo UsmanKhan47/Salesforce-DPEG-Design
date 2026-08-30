@@ -502,6 +502,168 @@ private class EmailToLeadServiceTest {
             'The soft gate is expressed as Parse_Confidence__c = LOW, which is what feeds the existing Review_Queue list view');
     }
 
+    // ── per-field confidence (WS7, 2026-08-30) ──────────────────────────────
+    //
+    // ⚠ ASSERTIONS ARE ON THE PARSED MAP, NEVER ON THE STORED STRING BYTE-FOR-BYTE.
+    // Field_Confidence_JSON__c is a LongTextArea, and this org strips trailing whitespace from
+    // long text on save — so a test that compared a composed JSON literal against the round-tripped
+    // value would be asserting a platform behaviour rather than this class's. Deserializing and
+    // asserting the MAP is what the consumer actually cares about anyway.
+    //
+    // 🔴 AND EVERY ONE OF THESE TESTS BRANCHES ON FLS, WHICH IS NOT HEDGING — IT IS THE FEATURE.
+    // MEASURED 2026-08-30 (check-only 0Afiw000000TjplCAC): with these two fields deployed and no
+    // FieldPermissions row anywhere, an UNGUARDED write made `insert lead` throw and 42 of this
+    // class's 45 methods fail. applyFieldConfidence therefore skips a field the running principal
+    // cannot write, so the Lead and the broker's claim survive a provisioning gap. A test that
+    // asserted the stamp unconditionally would fail on exactly the org state this guard exists to
+    // survive — and, worse, would push the next reader toward deleting the guard to make it green.
+    // Each test below asserts the RIGHT thing on both sides of that branch, and the NOT-writable
+    // side is the more important assertion: THE INSERT STILL SUCCEEDED.
+
+    /** True when the running principal may write Field_Confidence_JSON__c — see the block above. */
+    private static Boolean jsonWritable() {
+        return Schema.SObjectType.Lead.fields.Field_Confidence_JSON__c.isCreateable();
+    }
+
+    /** True when the running principal may write Low_Confidence_Field_Count__c. */
+    private static Boolean countWritable() {
+        return Schema.SObjectType.Lead.fields.Low_Confidence_Field_Count__c.isCreateable();
+    }
+
+    /**
+     * The stored JSON, or null when the running principal cannot READ the field.
+     *
+     * ⚠ THE SELECT LIVES BEHIND THE GUARD, AND IT HAS TO. Measured 2026-08-30 (check-only
+     * 0Afiw000000TjwDCAS): with no FieldPermissions row, a plain
+     * `SELECT Field_Confidence_JSON__c FROM Lead` throws
+     * `System.QueryException: No such column 'Field_Confidence_JSON__c' on entity 'Lead'` — an FLS
+     * denial wearing a schema error, exactly as ARCHITECTURE.md §2 describes. A test that ran the
+     * query unconditionally would fail on the org state the production guard exists to survive,
+     * and would send the next reader hunting for a missing field that is right there.
+     *
+     * @param leadId The Lead to read.
+     * @return The stored value, or null when unreadable.
+     */
+    private static String storedFieldConfidence(Id leadId) {
+        if (!Schema.SObjectType.Lead.fields.Field_Confidence_JSON__c.isAccessible()) {
+            return null;
+        }
+        return [SELECT Field_Confidence_JSON__c FROM Lead WHERE Id = :leadId].Field_Confidence_JSON__c;
+    }
+
+    /** The stored count, or null when the running principal cannot READ the field. */
+    private static Decimal storedLowConfidenceCount(Id leadId) {
+        if (!Schema.SObjectType.Lead.fields.Low_Confidence_Field_Count__c.isAccessible()) {
+            return null;
+        }
+        return [SELECT Low_Confidence_Field_Count__c FROM Lead WHERE Id = :leadId].Low_Confidence_Field_Count__c;
+    }
+
+    @isTest
+    static void createLeadFromExtracted_fieldConfidence_isStampedAsJsonInTheSameInsert() {
+        EmailToLeadService.LeadRequest request = enrichedRequest();
+        request.fieldConfidence = new Map<String, Decimal>{ 'noi' => 0.92, 'year_built' => 0.40 };
+        request.lowConfidenceFieldCount = 1;
+
+        Test.startTest();
+        Id leadId = EmailToLeadService.createLeadFromExtracted(request);
+        Test.stopTest();
+
+        Assert.isNotNull(leadId,
+            '🔴 THE ASSERTION THAT HOLDS EITHER WAY: the Lead exists. A field the principal cannot '
+            + 'write must cost the review signal and NOTHING ELSE — never the Lead, never the claim');
+        String storedJson = storedFieldConfidence(leadId);
+        if (jsonWritable()) {
+            Map<String, Object> stored = (Map<String, Object>) JSON.deserializeUntyped(storedJson);
+            Assert.areEqual(2, stored.size(), 'Both scores must survive the round trip');
+            Assert.areEqual(0.92, Decimal.valueOf(String.valueOf(stored.get('noi'))),
+                'and the value must be readable as a number, not as prose');
+        } else {
+            Assert.isNull(storedJson,
+                'Not writable, so the guard skipped it — and skipping means leaving it blank, never '
+                + 'half-writing it. Grant Field_Confidence_JSON__c on DPEG_Acquisition_Edit to turn '
+                + 'the feature on; nothing else about this Lead changes');
+        }
+        if (countWritable()) {
+            Assert.areEqual(1, storedLowConfidenceCount(leadId),
+                'The count is the FILTERABLE half — a LongTextArea cannot appear in a list-view '
+                + 'filter at all, which is the entire reason this second field exists');
+        } else {
+            Assert.isNull(storedLowConfidenceCount(leadId), 'Not writable, so blank');
+        }
+        Assert.isNull([SELECT Parse_Confidence__c FROM Lead WHERE Id = :leadId].Parse_Confidence__c,
+            '🔴 AND THE WHOLE-EMAIL BAND IS UNTOUCHED BY IT, WRITABLE OR NOT. Parse_Confidence__c is '
+            + 'set only from request.parseConfidence, which this request never populated. WS7 must '
+            + 'not have acquired a second writer for the field driving the >= 0.85 suppression gate');
+    }
+
+    @isTest
+    static void createLeadFromExtracted_emptyFieldConfidence_leavesTheJsonBlank() {
+        EmailToLeadService.LeadRequest request = enrichedRequest();
+        request.fieldConfidence = new Map<String, Decimal>();
+        request.lowConfidenceFieldCount = 0;
+
+        Test.startTest();
+        Id leadId = EmailToLeadService.createLeadFromExtracted(request);
+        Test.stopTest();
+
+        Assert.isNull(storedFieldConfidence(leadId),
+            'An empty map writes NOTHING, not the literal "{}", and this holds whether or not the '
+            + 'field is writable. A blank field reads as "no per-field signal"; "{}" reads as data '
+            + 'that says nothing and would show up as content in every report and detail page');
+        if (countWritable()) {
+            Assert.areEqual(0, storedLowConfidenceCount(leadId),
+                'while the count is still written as 0, which correctly keeps this Lead out of the '
+                + 'per-field review queue (> 0) rather than leaving an unexplained blank');
+        }
+    }
+
+    @isTest
+    static void createLeadFromExtracted_nullFieldConfidence_doesNotThrowAndLeavesBothBlank() {
+        // The LLM-down and legacy-shape paths, and every caller written before WS7 — including
+        // BrokerPortalService, which does not use these members at all.
+        EmailToLeadService.LeadRequest request = enrichedRequest();
+
+        Test.startTest();
+        Id leadId = EmailToLeadService.createLeadFromExtracted(request);
+        Test.stopTest();
+
+        Assert.isNotNull(leadId, 'A null map must not throw');
+        Assert.isNull(storedFieldConfidence(leadId), 'and must write nothing');
+        Assert.isNull(storedLowConfidenceCount(leadId),
+            'and a null count leaves the field blank — additive and nullable, so every pre-WS7 caller '
+            + 'behaves byte-identically');
+    }
+
+    @isTest
+    static void createLeadFromExtracted_fieldConfidence_addsNoDmlAndNoSoql() {
+        // 🔴 THE BRIEF'S HARD CONSTRAINT, ASSERTED RATHER THAN COMMENTED: zero new DML, zero new
+        // SOQL. Both fields land in the SAME insert as everything else on this Lead.
+        //
+        // ⚠ THE REQUEST IS BUILT BEFORE THE COUNTERS ARE READ, deliberately. A governor assertion
+        // that brackets its own fixture setup measures the fixture, not the method — the counters
+        // are captured immediately either side of the one call under test and nothing else.
+        EmailToLeadService.LeadRequest request = enrichedRequest();
+        request.fieldConfidence = new Map<String, Decimal>{ 'noi' => 0.92, 'year_built' => 0.40 };
+        request.lowConfidenceFieldCount = 1;
+
+        Test.startTest();
+        Integer dmlBefore = Limits.getDmlStatements();
+        Integer soqlBefore = Limits.getQueries();
+        EmailToLeadService.createLeadFromExtracted(request);
+        Integer dmlUsed = Limits.getDmlStatements() - dmlBefore;
+        Integer soqlUsed = Limits.getQueries() - soqlBefore;
+        Test.stopTest();
+
+        Assert.areEqual(1, dmlUsed,
+            'EXACTLY ONE DML STATEMENT — the Lead insert. If this is 2, someone has added an update '
+            + 'to carry the confidence pair, which at N properties per email becomes N extra '
+            + 'statements against ExtractAddressQueueable\'s pinned 45-statement budget');
+        Assert.areEqual(0, soqlUsed,
+            'and NO query. Serializing a map the caller already holds needs no read; a describe or a '
+            + 'config re-read here would cost one per property');
+    }
+
     // ── property package (2026-08-17, Decision C1) ──────────────────────────
 
     /**
@@ -822,5 +984,292 @@ private class EmailToLeadServiceTest {
         Assert.isNull(subAfter.Source_Lead__c,
             'Deleting the racer\'s Lead should clear Source_Lead__c on its submission via the lookup\'s SetNull delete constraint');
         Assert.areEqual(0, [SELECT COUNT() FROM Lead WHERE Id = :racer.Id], 'The racer\'s Lead must be gone');
+    }
+
+    // ══ WS1 (2026-08-30) — LeadRequest.firstSeenDateTime → Lead.First_Seen_Date__c ══
+    //
+    // TWO BEHAVIOURS, AND THE SECOND IS THE ONE THAT IS EASY TO BREAK BY ACCIDENT.
+    //   1. A supplied value is written AND SURVIVES. The `Lead_Intake_Stamp` flow stamps
+    //      First_Seen_Date__c whenever it IsNull — so "the field equals what I passed" is
+    //      simultaneously the assertion that the flow left it alone. That is the whole
+    //      mechanism, and it is why this test asserts an EXACT value rather than "not null".
+    //   2. A null LEAVES THE FLOW IN CHARGE. Every non-email caller passes nothing, and their
+    //      behaviour must be byte-identical to before WS1. A "helpful" `Datetime.now()` default
+    //      in this class would be invisible in test 1 and would quietly duplicate the flow's job.
+    //
+    // ⚠ These tests do NOT re-prove the CreatedDate fallback. That belongs to
+    // ExtractAddressQueueable, which resolves it once at the staging load precisely so this class
+    // has no fallback of its own to test. See ExtractAddressQueueableTest's WS1 section.
+
+    @isTest
+    static void createLeadFromExtracted_firstSeenDateTimeSupplied_isStampedAndTheFlowLeavesItAlone() {
+        Datetime received = Datetime.newInstanceGmt(2026, 8, 26, 19, 3, 22);
+        EmailToLeadService.LeadRequest request = enrichedRequest();
+        request.firstSeenDateTime = received;
+
+        Test.startTest();
+        Id leadId = EmailToLeadService.createLeadFromExtracted(request);
+        Test.stopTest();
+
+        Lead created = [SELECT First_Seen_Date__c FROM Lead WHERE Id = :leadId];
+        Assert.areEqual(received, created.First_Seen_Date__c,
+            'First_Seen_Date__c must be the supplied arrival time. This assertion is doing double duty: '
+            + 'Lead_Intake_Stamp only stamps when the field IsNull, so an EXACT match also proves the '
+            + 'flow did not overwrite it with Datetime.now()');
+    }
+
+    @isTest
+    static void createLeadFromExtracted_nullFirstSeenDateTime_leavesTheFlowToStampIt() {
+        // ⚠ A ±5 MINUTE WINDOW, NOT `>= Datetime.now()` CAPTURED JUST BEFORE THE INSERT. MEASURED
+        // 2026-08-30: the strict form FAILS. `Lead_Intake_Stamp` assigns `$Flow.CurrentDateTime`,
+        // which is the TRANSACTION START time, and Apex's `Datetime.now()` called later in the
+        // same method is strictly after it — so the flow's stamp is legitimately a few
+        // milliseconds in the "past" relative to the local. The window keeps the assertion
+        // meaningful (it still rejects any invented past/future value, which is all it ever
+        // claimed to do) without pinning it to an ordering the platform does not guarantee.
+        Datetime windowStart = Datetime.now().addMinutes(-5);
+        EmailToLeadService.LeadRequest request = enrichedRequest();
+        request.firstSeenDateTime = null;
+
+        Test.startTest();
+        Id leadId = EmailToLeadService.createLeadFromExtracted(request);
+        Test.stopTest();
+
+        Lead created = [SELECT First_Seen_Date__c FROM Lead WHERE Id = :leadId];
+        Assert.isNotNull(created.First_Seen_Date__c,
+            'With nothing supplied, Lead_Intake_Stamp must still stamp the field — this is the UNCHANGED '
+            + 'behaviour every non-email channel (portal, manual entry) depends on, and WS1 must not have '
+            + 'disturbed it');
+        Assert.isTrue(created.First_Seen_Date__c > windowStart
+                && created.First_Seen_Date__c < Datetime.now().addMinutes(5),
+            'The stamp must be the CURRENT time, i.e. the intake-time semantics this channel has always '
+            + 'had. ⚠ Be honest about what this half proves: a Datetime.now() default hidden inside '
+            + 'createLeadFromExtracted would satisfy it too. The test that discriminates between the flow '
+            + 'and a hidden Apex default is the SUPPLIED-value one above, which such a default would '
+            + 'break by overriding the email channel\'s arrival time');
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════════════════
+    // WS8 (2026-08-30) — THE BROKERAGE FIRM NAME, AND THE INTAKE BROKER LINK
+    //
+    // ⚠ BULK VOLUME: THIS CLASS DELIBERATELY HAS NO 251-RECORD TEST, AND THAT IS RECORDED IN
+    // `.claude/rules/bulk-test-rule.md` RATHER THAN DECIDED HERE. `createLeadFromExtracted` is
+    // called once per PROPERTY by `ExtractAddressQueueable`, capped at MAX_PROPERTIES = 10, and a
+    // literal 251 is not merely pointless here but UNREACHABLE — `System.enqueueJob` caps at 50
+    // calls per transaction and 251 properties in one email would exhaust the SOQL limit at
+    // roughly 14-24 properties. The rule's replacement obligations (MAX_PROPERTIES-volume,
+    // truncation, governor headroom against a NAMED budget, mixed outcomes, ordering) are met in
+    // `ExtractAddressQueueableTest`, which is where the loop actually lives. What THIS class owes
+    // is the per-call behaviour, below — including a zero-SOQL pin, because the single most likely
+    // future regression is someone moving the broker lookup into this per-property method.
+    // ══════════════════════════════════════════════════════════════════════════════════════
+
+    /** True when the running principal may write Lead.Broker__c. */
+    private static Boolean brokerLinkWritable() {
+        return Schema.SObjectType.Lead.fields.Broker__c.isCreateable();
+    }
+
+    /** True when the running principal may write Lead.Broker_Firm__c. */
+    private static Boolean brokerFirmLinkWritable() {
+        return Schema.SObjectType.Lead.fields.Broker_Firm__c.isCreateable();
+    }
+
+    /**
+     * The stored broker link, or null when the running principal cannot READ the two lookups.
+     *
+     * ⚠ THE SELECT LIVES BEHIND THE GUARD FOR THE SAME MEASURED REASON `storedFieldConfidence`
+     * above does: with no FieldPermissions row a plain `SELECT Broker__c FROM Lead` throws
+     * `System.QueryException: No such column` — an FLS denial wearing a schema error. A test that
+     * queried unconditionally would fail on exactly the org state the production guard exists to
+     * survive, and would push the next reader toward deleting the guard to get green.
+     *
+     * @param leadId The Lead to read.
+     * @return The Lead with both lookups populated, or null when they are not readable.
+     */
+    private static Lead storedBrokerLink(Id leadId) {
+        if (!Schema.SObjectType.Lead.fields.Broker__c.isAccessible()
+                || !Schema.SObjectType.Lead.fields.Broker_Firm__c.isAccessible()) {
+            return null;
+        }
+        return [SELECT Broker__c, Broker_Firm__c FROM Lead WHERE Id = :leadId];
+    }
+
+    @isTest
+    static void createLeadFromExtracted_brokerCompanyPresent_alsoStampsBrokerFirst() {
+        // THE CARRIED-OVER GAP FIX. Before WS8 this class had ZERO references to Broker_First__c,
+        // so it was blank on every genuinely email-born Lead while the portal channel populated
+        // it — and WS6 has just made it the "Broker" column on five Lead list views.
+        EmailToLeadService.LeadRequest request = enrichedRequest();
+        request.brokerCompany = 'Brokerfirm LLC';
+
+        Test.startTest();
+        Id leadId = EmailToLeadService.createLeadFromExtracted(request);
+        Test.stopTest();
+
+        Lead created = [SELECT Company, Broker_First__c FROM Lead WHERE Id = :leadId];
+        Assert.areEqual('Brokerfirm LLC', created.Broker_First__c,
+            'Broker_First__c holds the brokerage FIRM NAME and must come from the same extracted '
+            + 'value that feeds Company, so the two can never disagree');
+        Assert.areEqual(created.Company, created.Broker_First__c,
+            'and when a real firm name WAS extracted the two are identical. ⚠ This half alone would '
+            + 'still pass if someone simplified the write to mirror Company unconditionally — the '
+            + 'BLANK test below is the one that forbids it');
+    }
+
+    @isTest
+    static void createLeadFromExtracted_brokerCompanyBlank_leavesBrokerFirstBlankNotThePlaceholder() {
+        // 🔴 THE LOAD-BEARING HALF OF THE FIX. `lead.Company` is REQUIRED and therefore falls back
+        // to COMPANY_PLACEHOLDER; Broker_First__c is a DISPLAY field on five list views and must
+        // not. If this ever reads 'Unknown - Via Email', the guard at the assignment has been
+        // removed and the org's PRIMARY intake channel is printing a placeholder into a broker
+        // column on every firm-unknown email.
+        Test.startTest();
+        Id leadId = EmailToLeadService.createLeadFromExtracted(enrichedRequest());
+        Test.stopTest();
+
+        Lead created = [SELECT Company, Broker_First__c FROM Lead WHERE Id = :leadId];
+        Assert.areEqual(EmailToLeadService.COMPANY_PLACEHOLDER, created.Company,
+            'Precondition: Company still falls back to the placeholder, because it is required');
+        Assert.isNull(created.Broker_First__c,
+            'BUT Broker_First__c MUST STAY BLANK. A blank cell says "we do not know the firm"; the '
+            + 'placeholder says it in a way that sorts, filters and reports as though it were a firm '
+            + 'name. The literal is read from the constant, so rewording it cannot make this vacuous');
+    }
+
+    @isTest
+    static void createLeadFromExtracted_whitespaceOnlyBrokerCompany_leavesBrokerFirstBlank() {
+        // `String.isNotBlank`, not `!= null` — a signature block that yielded only whitespace must
+        // behave exactly like no firm at all, on BOTH fields.
+        EmailToLeadService.LeadRequest request = enrichedRequest();
+        request.brokerCompany = '   ';
+
+        Test.startTest();
+        Id leadId = EmailToLeadService.createLeadFromExtracted(request);
+        Test.stopTest();
+
+        Lead created = [SELECT Company, Broker_First__c FROM Lead WHERE Id = :leadId];
+        Assert.areEqual(EmailToLeadService.COMPANY_PLACEHOLDER, created.Company,
+            'A whitespace-only firm is not a firm — Company falls back to the placeholder');
+        Assert.isNull(created.Broker_First__c,
+            'and Broker_First__c stays blank rather than storing three spaces that render as a '
+            + 'populated-looking cell');
+    }
+
+    @isTest
+    static void createLeadFromExtracted_brokerLink_isStampedInTheSameInsert() {
+        Account firm = TestDataFactory.createAccount(true);
+        Contact broker = TestDataFactory.createBrokerContact(firm.Id, true);
+
+        EmailToLeadService.LeadRequest request = enrichedRequest();
+        request.brokerContactId = broker.Id;
+        request.brokerFirmAccountId = firm.Id;
+
+        Test.startTest();
+        Id leadId = EmailToLeadService.createLeadFromExtracted(request);
+        Test.stopTest();
+
+        // ⚠ ASSERTED UNCONDITIONALLY AND FIRST: whatever the FLS state, THE LEAD MUST EXIST. That
+        // is the entire point of the isCreateable() guard — a missing grant costs the link and
+        // nothing else. If this line ever fails, the guard has been removed and every inbound
+        // broker email is dying at the insert (measured shape, 2026-08-30, WS7's two fields).
+        Assert.isNotNull(leadId, 'The Lead is inserted whether or not the two lookups are writable');
+
+        Lead created = storedBrokerLink(leadId);
+        if (created != null && brokerLinkWritable()) {
+            Assert.areEqual(broker.Id, created.Broker__c,
+                'The matched broker Contact is stamped at INTAKE, in the insert that already existed');
+        }
+        if (created != null && brokerFirmLinkWritable()) {
+            Assert.areEqual(firm.Id, created.Broker_Firm__c,
+                'and their brokerage Account alongside it, from the SAME matched Contact row — which '
+                + 'is what makes the pair impossible to contradict each other');
+        }
+    }
+
+    @isTest
+    static void createLeadFromExtracted_noBrokerMatch_leavesBothLookupsBlankAndStillInserts() {
+        // 🔴 THE USER DECISION, ASSERTED RATHER THAN COMMENTED: MATCH ONLY. An unmatched sender
+        // leaves both lookups BLANK. Nothing is created, and no firm is invented from the email
+        // domain. If a future change starts minting a Contact or an Account at intake, the two
+        // COUNT assertions below fail.
+        Integer accountsBefore = [SELECT COUNT() FROM Account];
+        Integer contactsBefore = [SELECT COUNT() FROM Contact];
+
+        Test.startTest();
+        Id leadId = EmailToLeadService.createLeadFromExtracted(enrichedRequest());
+        Test.stopTest();
+
+        Assert.isNotNull(leadId, 'An unmatched broker still gets a Lead — the link is an enrichment');
+        Lead created = storedBrokerLink(leadId);
+        if (created != null) {
+            Assert.isNull(created.Broker__c,
+                'No match means BLANK — not a newly created Contact, not a placeholder');
+            Assert.isNull(created.Broker_Firm__c,
+                'and blank on the firm too. A firm is NEVER derived from the sender email domain');
+        }
+        Assert.areEqual(accountsBefore, [SELECT COUNT() FROM Account],
+            'INTAKE CREATES NO ACCOUNT. Creation stays at conversion; this count is the permanent '
+            + 'falsifier for anyone who adds a "create the firm if missing" branch here');
+        Assert.areEqual(contactsBefore, [SELECT COUNT() FROM Contact],
+            'and no Contact either — same decision, same reason');
+    }
+
+    @isTest
+    static void createLeadFromExtracted_brokerLink_addsNoDmlAndNoSoql() {
+        // 🔴 THE BRIEF'S HARD CONSTRAINT AT THIS LAYER: ZERO NEW DML, ZERO NEW SOQL. The two
+        // lookups ride the EXISTING insert, and the query that produced their Ids ran once per
+        // EMAIL in ExtractAddressQueueable, not here.
+        //
+        // ⚠ THE FIXTURE IS BUILT BEFORE THE COUNTERS ARE READ, deliberately — a governor assertion
+        // that brackets its own setup measures the setup. Same shape as the WS7 test above.
+        Account firm = TestDataFactory.createAccount(true);
+        Contact broker = TestDataFactory.createBrokerContact(firm.Id, true);
+        EmailToLeadService.LeadRequest request = enrichedRequest();
+        request.brokerCompany = 'Brokerfirm LLC';
+        request.brokerContactId = broker.Id;
+        request.brokerFirmAccountId = firm.Id;
+
+        Test.startTest();
+        Integer dmlBefore = Limits.getDmlStatements();
+        Integer soqlBefore = Limits.getQueries();
+        EmailToLeadService.createLeadFromExtracted(request);
+        Integer dmlUsed = Limits.getDmlStatements() - dmlBefore;
+        Integer soqlUsed = Limits.getQueries() - soqlBefore;
+        Test.stopTest();
+
+        Assert.areEqual(1, dmlUsed,
+            'EXACTLY ONE DML STATEMENT — the Lead insert. A 2 here means someone added an update to '
+            + 'carry the broker link, which at N properties per email becomes N extra statements '
+            + 'against a PINNED equality of 45 in ExtractAddressQueueableTest');
+        Assert.areEqual(0, soqlUsed,
+            'AND ZERO SOQL. If this reads 1, the broker lookup has been moved INTO this method — '
+            + 'which runs once per PROPERTY — turning one query per email into ten. The sender is an '
+            + 'EMAIL-level fact and must be resolved once, by the caller; see '
+            + 'ExtractAddressQueueable.resolveBrokerLink');
+    }
+
+    @isTest
+    static void resolveBrokerEmail_prefersASanitizingExtractedAddressOverTheEnvelope() {
+        // The rule promoted out of an inline expression by WS8. It is PUBLIC because
+        // ExtractAddressQueueable keys the broker lookup on it, and the reason it was promoted
+        // rather than copied is the SECOND assertion below.
+        Assert.areEqual('jane@brokerfirm.example.invalid',
+            EmailToLeadService.resolveBrokerEmail(
+                'jane@brokerfirm.example.invalid', 'fwd@dpeg.example.invalid'),
+            'A sanitizing extracted broker_email beats the envelope — on a manually forwarded email '
+            + 'the envelope names DPEG own coordinator, not the broker');
+        Assert.areEqual('fwd@dpeg.example.invalid',
+            EmailToLeadService.resolveBrokerEmail('Jane at Acme', 'fwd@dpeg.example.invalid'),
+            '🔴 AND A DISPLAY NAME IS NOT AN ADDRESS. This is the case that makes a SHARED rule '
+            + 'necessary rather than a copy: ExtractAddressQueueable senderEmail member would take '
+            + '"Jane at Acme" (it only tests isNotBlank) while Lead.Email falls back to the envelope. '
+            + 'Keying the Contact lookup on the former would let intake and conversion disagree '
+            + 'about who the broker is, since LeadConvertMatchService matches Contact.Email = Lead.Email');
+        Assert.areEqual('fwd@dpeg.example.invalid',
+            EmailToLeadService.resolveBrokerEmail(null, 'fwd@dpeg.example.invalid'),
+            'A null extraction falls back to the envelope');
+        Assert.isNull(EmailToLeadService.resolveBrokerEmail('   ', 'also not an address'),
+            'and when neither side sanitizes the answer is null — no key, no lookup, and a blank '
+            + 'Lead.Email, which is the pre-existing behaviour this refactor had to preserve exactly');
     }
 }

@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY. A comment placed ABOVE
+        <CustomField> breaks `sf` deploy at source conversion with a misleading
+        "unable to find matching parent xml file" error.
+
+        =====================================================================================
+        WHAT THIS FIELD IS. The sending broker for this Lead, resolved by matching the
+        inbound email's sender address against existing broker Contacts AT INTAKE.
+        =====================================================================================
+        USER DECISION: intake is MATCH-ONLY. When the sender email matches no Contact, this
+        field (and Broker_Firm__c) stay BLANK — nothing is created at intake. Contact/Account
+        creation remains at conversion, in LeadConvertMatchService. A blank value on this field
+        is therefore the EXPECTED state on most Leads, not a bug and not a sign the matcher
+        failed to run.
+
+        =====================================================================================
+        NAMING — ARCHITECTURE.md Section 1 relationship-field rule, confirmed against the rule
+        text, not assumed.
+        =====================================================================================
+        The rule: "The field name is the target object's name. Exception: role-named lookups to
+        User / Contact take the role name." This field references Contact and is a role lookup
+        (the SUBMITTING/sending broker, not "the Contact this Lead is about" — Lead has no such
+        generic Contact relationship), so it falls squarely inside the stated exception. No
+        interpretation stretch required, unlike the sibling Broker_Firm__c field (see that file's
+        own naming note).
+
+        COLLISION CHECK, MEASURED NOT ASSUMED. Every referenceTo=Contact field in this repo as of
+        2026-08-30 and its relationshipName:
+            Broker_Assignment__c.Broker__c              -> Broker_Assignments
+            BOV_Broker_Change__c.Incoming_Broker__c      -> Incoming_Broker_Changes
+            BOV_Broker_Change__c.Outgoing_Broker__c      -> Outgoing_Broker_Changes
+            BOV_Submission__c.Broker__c                  -> Brokered_BOV_Submissions
+            Disposition_Offer__c.Broker__c               -> Brokered_Disposition_Offers
+            Disposition_Offer__c.Buyer__c                -> Buyer_Disposition_Offers
+            Disposition__c.Broker__c                     -> Brokered_Dispositions
+            Lease_Inquiry__c.Broker__c                   -> Lease_Inquiries
+            NDA__c.Broker__c                             -> Brokered_NDAs
+            NDA__c.Buyer__c                               -> Buyer_NDAs
+            Opportunity.Broker__c                        -> Brokered_Opportunities
+            Release_Materials_Response__c.Broker__c      -> Brokered_Release_Materials_Responses
+        None of these is "Brokered_Leads" or "Leads". Lead itself has no existing custom lookup
+        to Contact (checked every Lead/fields/*.field-meta.xml with type Lookup). Chosen name
+        "Brokered_Leads" follows the org's own "Brokered_<ObjectPlural>" convention used for every
+        OTHER deal-object Broker__c (Dispositions, Opportunities, BOV Submissions, Release
+        Materials Responses) rather than the bare-plural convention (Broker_Assignments,
+        Lease_Inquiries), because — same reasoning those files already give — Lead is not itself
+        a "broker object," so the role has to be carried by the relationship name.
+
+        =====================================================================================
+        NO lookupFilter ON THIS FIELD, DELIBERATELY. Precedent is Opportunity.Broker__c, not the
+        four manual-pick siblings.
+        =====================================================================================
+        Six of the twelve Contact lookups above (Broker_Assignment__c, Disposition__c,
+        Lease_Inquiry__c, BOV_Submission__c, and both BOV_Broker_Change__c fields) carry an
+        ACTIVE, NON-OPTIONAL lookupFilter restricting selection to Contact.RecordType.
+        DeveloperName = 'Broker'. Those are all human-driven picks from a Lookup widget.
+
+        This field is not. It is written by an automated intake process matching on email —
+        exactly the same shape as Opportunity.Broker__c, which LeadConvertService stamps
+        programmatically at conversion. That field's own header states explicitly: "Opportunity.
+        Broker__c has NO lookupFilter element at all... that field is machine-stamped... and a
+        non-optional filter would make lead conversion fail hard." The same risk applies here:
+        an ACTIVE non-optional lookupFilter is enforced on Apex DML in this org (not merely the
+        UI widget), so if the matched Contact were ever missing the Broker record type for any
+        data-quality reason, a filter would turn a routine intake write into a hard failure
+        instead of a value that is merely worth reviewing. No filter is added, matching
+        Opportunity.Broker__c's precedent rather than the four manual-pick fields' precedent.
+
+        =====================================================================================
+        deleteConstraint = SetNull, not Restrict, not Cascade.
+        =====================================================================================
+        This is an advisory link to a broker who may later be deleted or merged, not a required
+        relationship. Restrict would block legitimate Contact cleanup (dedup merges, offboarding
+        a departed broker) for as long as any Lead still referenced them — an unacceptable
+        constraint on unrelated Contact housekeeping. Cascade would delete Leads themselves
+        whenever a broker Contact was deleted — active data loss on the wrong object for what is
+        a display/matching convenience field. SetNull matches every one of the twelve siblings
+        listed above without exception.
+
+        =====================================================================================
+        FLS — DECLARED HERE, NOT DEPLOYED HERE. This agent does not touch permission sets.
+        =====================================================================================
+        🔴 MEASURED LIVE 2026-08-30: a check-only run proved that writing an UNGRANTED field on
+        Lead throws System.DmlException ("fields being inaccessible on Sobject Lead") and fails
+        the whole intake transaction — not merely hides the field. This is a pipeline-breaking
+        risk, not a cosmetic one, if the P8 hub pass misses it.
+
+        Needed: DPEG_Acquisition_Edit — Read + EDIT (not read-only) on Lead.Broker__c, matching
+        the grant shape already given to the sibling intake fields Parse_Confidence__c,
+        Deal_Notes__c and First_Seen_Date__c on that same permission set (all three are Read+Edit
+        there today).
+
+        Measured: Broker_Protection_Access and DPEG_Admin_Access currently carry ZERO
+        FieldPermissions rows for any of those three sibling fields. Broker_Protection_Access's
+        own header records that Parse_Confidence__c's exclusion there is DELIBERATE (an LLM
+        confidence field, not part of that set's scope) — but this field is a broker-IDENTITY
+        field, not a confidence score, so that specific exclusion rationale does not transfer.
+        Recommendation for the P8 pass: add Read+Edit on Broker_Protection_Access too; leave
+        DPEG_Admin_Access as-is unless a reviewer decides the bare-admin persona needs it. Not
+        decided here — flagged for the pass that owns permission sets.
+    -->
+    <fullName>Broker__c</fullName>
+    <label>Broker</label>
+    <type>Lookup</type>
+    <referenceTo>Contact</referenceTo>
+    <relationshipLabel>Brokered Leads</relationshipLabel>
+    <relationshipName>Brokered_Leads</relationshipName>
+    <required>false</required>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <description>The sending broker for this Lead, matched by email against existing broker Contacts at intake. Blank on most Leads — a blank means no Contact matched the sender's email, not an error, and nothing is created here on a non-match. Contact/Account creation happens later, at conversion, in LeadConvertMatchService. Not the listing broker named in the offering memorandum — see Listing_Broker_Name__c / Listing_Broker_Email__c for that.</description>
+    <inlineHelpText>Filled in automatically when the sender's email matches an existing broker Contact. Stays blank otherwise — that is expected, not a bug.</inlineHelpText>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+</CustomField>

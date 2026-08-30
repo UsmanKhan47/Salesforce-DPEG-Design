@@ -68,6 +68,56 @@ private class InboundEmailStagingSelectorTest {
             + 'ExtractAddressQueueable.execute relies on exactly this to handle an admin cleanup gracefully');
     }
 
+    // ── WS1 (2026-08-30) — the received-time PAIR must both be in selectById ──
+
+    @isTest
+    static void selectById_returnsReceivedDateTimeAndCreatedDate() {
+        // 🔴 THIS IS A FIELD-SET PIN, NOT A VALUE TEST, AND IT FAILS LOUDLY BY DESIGN. Reading a
+        // field a selector did not SELECT does not return null — Apex throws
+        // `System.SObjectException: SObject row was retrieved via SOQL without querying the
+        // requested field`. So if a future change "tidies" either field out of selectById to keep
+        // that USER_MODE query narrow (which the selector's own header argues for in general, and
+        // explicitly overrides for these two), this test throws rather than passing vacuously.
+        //
+        // BOTH halves matter and for different reasons:
+        //   • Received_DateTime__c is the value.
+        //   • CreatedDate is the FALLBACK. Losing it does not produce a wrong timestamp, it
+        //     produces a NULL first-seen on every header-less email, which the Lead_Intake_Stamp
+        //     flow then silently fills with Datetime.now() — i.e. WS1 quietly reverts, with no
+        //     error anywhere. That is the failure this half of the assertion exists to catch.
+        Datetime received = Datetime.newInstanceGmt(2026, 8, 26, 19, 3, 22);
+        Inbound_Email_Staging__c staging = insertStaging('ws1');
+        staging.Received_DateTime__c = received;
+        update staging;
+
+        Test.startTest();
+        Inbound_Email_Staging__c found = InboundEmailStagingSelector.selectById(staging.Id);
+        Test.stopTest();
+
+        Assert.isNotNull(found, 'Sanity: the row must be returned at all, or the pins below are vacuous');
+        Assert.areEqual(received, found.Received_DateTime__c,
+            'Received_DateTime__c must be in selectById — ExtractAddressQueueable reads it off this '
+            + 'exact row and has no second query to fall back on');
+        Assert.isNotNull(found.CreatedDate,
+            'CreatedDate must be in selectById too: it is the fallback for every email whose RFC Date '
+            + 'header was absent or unreadable, and it is USER_MODE-safe by construction because an '
+            + 'audit field is not permissionable and therefore cannot be denied by any permission set');
+    }
+
+    @isTest
+    static void selectById_nullReceivedDateTime_returnsNullWithoutThrowing() {
+        // The ordinary shape: no readable Date header. The row must still load — this is the read
+        // every inbound email performs, so a null in this column must be completely unremarkable.
+        Inbound_Email_Staging__c staging = insertStaging('ws1-null');
+
+        Test.startTest();
+        Inbound_Email_Staging__c found = InboundEmailStagingSelector.selectById(staging.Id);
+        Test.stopTest();
+
+        Assert.isNotNull(found, 'A row with no received time is an ordinary row');
+        Assert.isNull(found.Received_DateTime__c, 'An unstamped row reads null, and that is not an error');
+    }
+
     // ── selectDroppedNotesById ────────────────────────────────────────────────
 
     @isTest

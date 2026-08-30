@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY — a comment ABOVE the root
+        breaks `sf` deploy at conversion with a misleading "unable to find matching parent
+        xml file" error. Same convention as Lead/validationRules/
+        Broker_First_Seen_Is_System_Set and Inbound_Email_Staging__c/fields/Outcome__c.
+
+        GATE A MITIGATION (design-requirements.md §0), FULL TEXT — the <description> below
+        restates this in substance but is capped at 1000 characters, so the complete
+        rationale lives here:
+
+        PropertyMatchingService.cls (lines 68-72) originally REFUSED to make this
+        configurable: "CONFIGURABILITY WAS CONSIDERED AND REFUSED (design §1.7). This is a
+        claim-ARBITRATION constant, so lowering it in Setup retroactively re-decides who
+        owns properties that are already claimed — every claim between the new and old
+        value releases at once, and the next email on any of them mints a new winner, with
+        no deploy, no review and no audit. That is a data migration wearing a checkbox.
+        Change it by deploy."
+
+        The user OVERRULED that refusal on 2026-08-30 (GATE A, decision A1: "Make the
+        window configurable as asked, and accept the retroactive-release risk"), on the
+        condition that the mitigation below ships WITH the configurability, not after it:
+          1. THIS field's description restates the warning above, so the risk is visible to
+             whoever edits the record in Setup, not only to a reader of Apex.
+          2. PropertyMatchingService MUST log the RESOLVED window value at WARN on every
+             claim run, so the value in force at the time of a disputed claim is
+             reconstructible from logs after the fact. (That half is Apex — the developer/
+             technical-architect step that builds BrokerProtectionConfig.cls owns it. This
+             field only needs to EXIST and be readable for that logging to be possible.)
+        A lowered value here is still an un-audited, retroactive bulk release of live
+        broker claims. It is now an accepted operational risk, not an unaddressed one.
+
+        Replaces PropertyMatchingService.PROTECTION_WINDOW_DAYS (currently 90) and is one of
+        the five "90 is hardcoded" sites named in that class's own header comment; also
+        replaces LeadFunnelController.BP_WINDOW_DAYS (90) and is read by the
+        Lead.BP_Expiry__c / Opportunity.BP_Expiry__c display formulas via
+        $CustomMetadata.Broker_Protection_Config__mdt.Default.Protection_Window_Days__c —
+        see design-requirements.md §2/WS5 for the fallback if that formula shape does not
+        validate at API 67.0 (keep the literal 90 in the formulas and assert equality in an
+        Apex test instead).
+    -->
+    <fullName>Protection_Window_Days__c</fullName>
+    <description>Days after First Seen a broker&apos;s claim on a property releases, so a later broker can win it (PropertyMatchingService.PROTECTION_WINDOW_DAYS). Also drives the Lead.BP_Expiry__c / Opportunity.BP_Expiry__c display formulas. 🔴 CLAIM-ARBITRATION CONSTANT: lowering this value in Setup retroactively RE-DECIDES who owns properties already claimed — every claim between the old and new value releases AT ONCE, and the next email on any of them mints a new winner, with NO deploy, NO review and NO undo. That is a data migration wearing a checkbox, not a display tweak. MUST stay &lt;= Lookback_Days__c (the accessor clamps this at runtime and logs WARN if violated — do not rely on this field alone). PropertyMatchingService logs the RESOLVED value at WARN on every claim run so the value in force at a disputed claim&apos;s time is reconstructible from logs. See PropertyMatchingService.cls (GATE A, decision A1, 2026-08-30).</description>
+    <externalId>false</externalId>
+    <fieldManageability>DeveloperControlled</fieldManageability>
+    <inlineHelpText>🔴 Claim-arbitration constant. Lowering this retroactively releases live broker claims, all at once, with no undo. See field description before changing.</inlineHelpText>
+    <label>Protection Window Days</label>
+    <precision>3</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

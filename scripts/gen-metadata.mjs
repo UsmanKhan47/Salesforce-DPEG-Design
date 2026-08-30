@@ -223,7 +223,10 @@ const standardFields = {
     { name: 'My_Price__c', label: 'My Price', type: 'Currency' },
     { name: 'My_Cap_Rate__c', label: 'My Cap Rate', type: 'Percent' },
     { name: 'Market_Cap_Rate__c', label: 'Market Cap Rate', type: 'Percent' },
-    { name: 'Broker_First_Seen__c', label: 'Broker First Seen', type: 'Date', description: 'Copied from Lead at Conversion 1 - drives 90-day protection' },
+    // WS2 (2026-08-30): DateTime, NOT Date. It mirrors Lead.First_Seen_Date__c, which is a
+    // DateTime despite its Date-suffixed name. Reverting this to 'Date' regenerates the field at
+    // the old type and silently breaks LeadConvertService.applyDealFields and CallForOffersService.
+    { name: 'Broker_First_Seen__c', label: 'Broker First Seen', type: 'DateTime', description: 'Copied from Lead.First_Seen_Date__c at Conversion 1 - drives 90-day protection' },
     { name: 'Contract_Executed_Date__c', label: 'Contract Executed Date', type: 'DateTime', description: 'Day 0 trigger field' },
     { name: 'Loan_Required__c', label: 'Loan Required', type: 'Checkbox' },
     { name: 'OneDrive_Folder_URL__c', label: 'OneDrive Folder URL', type: 'Url' },

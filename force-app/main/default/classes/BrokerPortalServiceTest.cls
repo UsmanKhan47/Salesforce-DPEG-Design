@@ -21,7 +21,57 @@ private class BrokerPortalServiceTest {
         d.propertyAddress = '123 Main St, Dallas TX';
         d.assetType = 'Retail';
         d.dealType = 'Retail';
+        d.turnstileToken = SOLVED_TOKEN;
         return d;
+    }
+
+    private static final String SOLVED_TOKEN = 'a-plausible-looking-turnstile-token';
+
+    /**
+     * Canned Cloudflare siteverify response.
+     *
+     * 🔴 A mock CANNOT prove the credential works. It intercepts the request before the platform
+     * would substitute `{!$Credential.Turnstile_Credential.Secret_Key}` into the body, so it
+     * answers identically whether or not the merge field resolves. That was proven separately by a
+     * live two-probe read-back on 2026-08-30 — see TurnstileVerificationService's class header.
+     * What these tests DO prove is this service's policy: what it does with each answer.
+     */
+    private class TurnstileMock implements HttpCalloutMock {
+        private final Integer status;
+        private final String body;
+
+        private TurnstileMock(Integer status, String body) {
+            this.status = status;
+            this.body = body;
+        }
+
+        public HttpResponse respond(HttpRequest request) {
+            HttpResponse response = new HttpResponse();
+            response.setStatusCode(this.status);
+            response.setStatus(this.status == 200 ? 'OK' : 'Bad Request');
+            response.setBody(this.body);
+            return response;
+        }
+    }
+
+    /** Cloudflare cannot be reached at all — transport failure or timeout. */
+    private class UnreachableMock implements HttpCalloutMock {
+        public HttpResponse respond(HttpRequest request) {
+            throw new CalloutException('Read timed out');
+        }
+    }
+
+    /** Cloudflare confirms the token. Install this in ANY test that reaches past validate(). */
+    private static void mockTurnstileVerified() {
+        Test.setMock(HttpCalloutMock.class, new TurnstileMock(200, '{"success":true,"error-codes":[]}'));
+    }
+
+    /** Cloudflare refuses the token — the ordinary "unsolved or replayed" case. */
+    private static void mockTurnstileRefused() {
+        Test.setMock(
+            HttpCalloutMock.class,
+            new TurnstileMock(200, '{"success":false,"error-codes":["invalid-input-response"]}')
+        );
     }
 
     /** Asserts the submission is rejected with a SubmissionException and inserts no Lead. */
@@ -40,6 +90,7 @@ private class BrokerPortalServiceTest {
 
     @IsTest
     static void submitDeal_happyPath_insertsStampedLead() {
+        mockTurnstileVerified();
         Test.startTest();
         BrokerPortalController.SubmitResult res = BrokerPortalService.submitDeal(validInput());
         Test.stopTest();
@@ -73,15 +124,151 @@ private class BrokerPortalServiceTest {
 
     // ---- Honeypot ----
 
+    /**
+     * 🔴 NOTE THE ABSENCE OF A MOCK. THAT IS THE POINT OF THIS TEST, NOT AN OMISSION.
+     *
+     * The honeypot must short-circuit BEFORE Turnstile, for two independent reasons, and this test
+     * pins both. If verification ever moved ahead of the honeypot, this test would fail with
+     * "Methods defined as TestMethod do not support Web service callouts" — the absence of a mock
+     * is what makes the ordering assertion enforceable at all.
+     *   1. A caught bot must still receive the SAME benign success it always did, so it learns
+     *      nothing about which field betrayed it. A verification error would tell it plenty.
+     *   2. A caught bot must burn NO CALLOUT. This is an unauthenticated public endpoint; if a
+     *      scripted flood could make each request spend one of the org's 100 synchronous callouts,
+     *      the honeypot would become the attack rather than the defence.
+     */
     @IsTest
-    static void submitDeal_honeypotFilled_skipsInsert() {
+    static void submitDeal_honeypotFilled_skipsInsertAndSpendsNoCallout() {
         BrokerPortalController.DealSubmission d = validInput();
         d.website = 'http://spam.example';
         Test.startTest();
         BrokerPortalController.SubmitResult res = BrokerPortalService.submitDeal(d);
+        Integer callouts = Limits.getCallouts();
         Test.stopTest();
         System.Assert.isTrue(res.success, 'Honeypot returns benign success so bots learn nothing');
         System.Assert.areEqual(0, [SELECT COUNT() FROM Lead], 'Honeypot blocks the insert');
+        System.Assert.areEqual(0, callouts,
+            'The honeypot must short-circuit BEFORE Turnstile — a bot must not be able to make the '
+            + 'public form spend a callout per request');
+    }
+
+    // ---- Turnstile (WS4) ----
+
+    /**
+     * The ordinary refusal: Cloudflare answered and said no (unsolved, expired, replayed, forged).
+     * The broker gets an actionable message and NO Lead is created.
+     */
+    @IsTest
+    static void submitDeal_turnstileRefused_rejectsAndInsertsNothing() {
+        mockTurnstileRefused();
+        Test.startTest();
+        assertRejected(validInput(), 'Cloudflare refused the token');
+        Test.stopTest();
+    }
+
+    @IsTest
+    static void submitDeal_turnstileRefused_tellsTheBrokerToRetryTheWidget() {
+        mockTurnstileRefused();
+        String message;
+        Test.startTest();
+        try {
+            BrokerPortalService.submitDeal(validInput());
+        } catch (BrokerPortalService.SubmissionException e) {
+            message = e.getMessage();
+        }
+        Test.stopTest();
+        System.Assert.isNotNull(message, 'A refused token must raise a user-safe SubmissionException');
+        System.Assert.isTrue(message.contains('complete the verification'),
+            'A REFUSED token is recoverable by the human — the message must say how. Got: ' + message);
+    }
+
+    /**
+     * 🔴 FAIL CLOSED. A Cloudflare outage takes the public form down, and that is the accepted
+     * trade: a CAPTCHA that waves everything through whenever the verifier is unreachable hands an
+     * attacker a one-step bypass. If this test is ever "fixed" to assert a successful submission,
+     * the control has been removed, not repaired.
+     */
+    @IsTest
+    static void submitDeal_turnstileUnreachable_failsClosed() {
+        Test.setMock(HttpCalloutMock.class, new UnreachableMock());
+        Test.startTest();
+        assertRejected(validInput(), 'Cloudflare unreachable');
+        Test.stopTest();
+    }
+
+    @IsTest
+    static void submitDeal_turnstileUnreachable_doesNotBlameTheBroker() {
+        Test.setMock(HttpCalloutMock.class, new UnreachableMock());
+        String message;
+        Test.startTest();
+        try {
+            BrokerPortalService.submitDeal(validInput());
+        } catch (BrokerPortalService.SubmissionException e) {
+            message = e.getMessage();
+        }
+        Test.stopTest();
+        System.Assert.isTrue(message.contains('try again in a few minutes'),
+            'When the VERIFIER is down, telling the broker to "complete the verification" would '
+            + 'send them into a loop doing the one thing that cannot help. Got: ' + message);
+    }
+
+    /**
+     * Our own credential is broken — the case that arrives as an ordinary HTTP response and that
+     * no exception handler would ever see. It must still fail closed, and with the
+     * "unavailable" message rather than the "solve it again" one, because the broker cannot fix it.
+     */
+    @IsTest
+    static void submitDeal_turnstileCredentialBroken_failsClosedAsUnavailable() {
+        Test.setMock(
+            HttpCalloutMock.class,
+            new TurnstileMock(400, '{"success":false,"error-codes":["invalid-input-secret"]}')
+        );
+        String message;
+        Test.startTest();
+        try {
+            BrokerPortalService.submitDeal(validInput());
+        } catch (BrokerPortalService.SubmissionException e) {
+            message = e.getMessage();
+        }
+        Test.stopTest();
+        System.Assert.isTrue(message.contains('try again in a few minutes'),
+            'A broken secret is not the broker\'s fault and they cannot clear it. Got: ' + message);
+        System.Assert.areEqual(0, [SELECT COUNT() FROM Lead],
+            'A misconfigured credential must not let submissions through');
+    }
+
+    /**
+     * A client that omits the token entirely (a scripted POST straight at the @AuraEnabled method,
+     * bypassing the widget) is refused WITHOUT a callout. The LWC's disabled button is a courtesy;
+     * this is the actual gate.
+     */
+    @IsTest
+    static void submitDeal_missingToken_rejectedWithoutCallout() {
+        BrokerPortalController.DealSubmission d = validInput();
+        d.turnstileToken = null;
+        mockTurnstileVerified(); // installed but must never be reached
+        Test.startTest();
+        assertRejected(d, 'no Turnstile token supplied');
+        Integer callouts = Limits.getCallouts();
+        Test.stopTest();
+        System.Assert.areEqual(0, callouts,
+            'A blank token is refused locally — no point relaying nothing to Cloudflare');
+    }
+
+    /**
+     * Ordering proof from the other side: a submission that fails VALIDATION must never reach the
+     * callout either. No mock is installed, so if validate() stopped running first this would fail
+     * with the unsupported-callout error rather than a SubmissionException.
+     */
+    @IsTest
+    static void submitDeal_invalidForm_neverReachesTurnstile() {
+        BrokerPortalController.DealSubmission d = validInput();
+        d.email = 'not-an-email';
+        Test.startTest();
+        assertRejected(d, 'invalid form must be refused before any callout');
+        Integer callouts = Limits.getCallouts();
+        Test.stopTest();
+        System.Assert.areEqual(0, callouts, 'validate() runs before the callout');
     }
 
     // ---- Validation branches ----
@@ -238,6 +425,7 @@ private class BrokerPortalServiceTest {
         BrokerPortalService.queueResolved = true;
         BrokerPortalService.cachedQueueId = null;
 
+        mockTurnstileVerified();
         Test.startTest();
         assertRejected(validInput(), 'routing queue not configured');
         Test.stopTest();
@@ -255,6 +443,7 @@ private class BrokerPortalServiceTest {
         existing.LeadSource = 'Manual Entry';
         insert existing;
 
+        mockTurnstileVerified();
         Test.startTest();
         BrokerPortalService.submitDeal(validInput()); // same address
         Test.stopTest();
@@ -272,6 +461,7 @@ private class BrokerPortalServiceTest {
         existing.LeadSource = 'Manual Entry';
         insert existing;
 
+        mockTurnstileVerified();
         Test.startTest();
         BrokerPortalService.submitDeal(validInput()); // same address, but existing is closed
         Test.stopTest();
@@ -289,6 +479,7 @@ private class BrokerPortalServiceTest {
         existing.LeadSource = 'Manual Entry';
         insert existing;
 
+        mockTurnstileVerified();
         Test.startTest();
         BrokerPortalService.submitDeal(validInput()); // different address
         Test.stopTest();
@@ -307,6 +498,7 @@ private class BrokerPortalServiceTest {
         broker.Broker_Priority__c = 'High';
         insert broker;
 
+        mockTurnstileVerified();
         Test.startTest();
         BrokerPortalService.submitDeal(validInput()); // same email as the broker contact
         Test.stopTest();
@@ -318,6 +510,7 @@ private class BrokerPortalServiceTest {
 
     @IsTest
     static void submitDeal_createdLeadCarriesTheAcquisitionRecordType() {
+        mockTurnstileVerified();
         Test.startTest();
         BrokerPortalService.submitDeal(validInput());
         Test.stopTest();
@@ -362,6 +555,7 @@ private class BrokerPortalServiceTest {
         BrokerPortalService.cachedQueueId = notAValidOwner.Id;
 
         Boolean threwDml = false;
+        mockTurnstileVerified();
         Test.startTest();
         try {
             BrokerPortalService.submitDeal(validInput());
