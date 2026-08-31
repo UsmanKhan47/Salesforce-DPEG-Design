@@ -390,6 +390,49 @@
         <field>Opportunity.Offer_Status__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!-- Stage_Alert_Last_Sent_Date__c / Stage_Alert_Stage__c ADDED Acquisitions gap-fix Item 4
+         (2026-08-31). Same class of gap as Offer_Alert_Due_Date__c/Offer_Alert_Last_Interval__c
+         and NDA_Alert_Expiry_Date__c/NDA_Alert_Last_Interval__c below: Metadata-API-deployed
+         custom fields arrive with NO field permissions for ANY profile, System Administrator
+         included, and this org has already been measured REFUSING a plain system-mode insert
+         that merely assigns a brand-new field. RunLocalTests executes as the deploying
+         administrator, who holds this set and nothing else, so without these two grants any test
+         fixture that sets either marker directly (StageDelayAlertBatchTest, following the
+         established CallForOffersAlertBatchTest / NdaExpiryAlertBatchTest pattern of pre-setting
+         markers to test idempotency) breaks the deploy for the person shipping the change.
+         EDITABLE, matching the Offer_Alert_*/NDA_Alert_* precedent in this set - NOT the
+         read-only grant these two fields carry on DPEG_Acquisition_Edit/View and
+         DPEG_Opportunity_View, which is a deliberate, separately-reasoned divergence for
+         end-user-facing sets (see DPEG_Acquisition_Edit's own comment on these fields). -->
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Opportunity.Stage_Alert_Last_Sent_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Opportunity.Stage_Alert_Stage__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!-- Deals_Lost__c / First_Submission_DateTime__c ADDED Acquisitions gap-fix Item 6.2/6.4
+         (2026-08-31). Same RunLocalTests-deploying-administrator reasoning as the Opportunity
+         marker fields immediately above and the Account roll-ups below: BrokerCounterRecalcBatch
+         is the maintainer, and any test fixture that pre-sets a starting count directly (the
+         reset-to-zero test named in design-requirements.md §2 ITEM 6.2/6.4 needs a Contact with
+         an existing nonzero count as its starting fixture) needs this grant to deploy cleanly.
+         EDITABLE here, UNLIKE the read-only grant on DPEG_Contact_Edit/View - see that set's
+         comment for why the divergence is deliberate. See Deals_Lost__c.field-meta.xml for the
+         population caveat both fields carry. -->
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Contact.Deals_Lost__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Contact.First_Submission_DateTime__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <!-- FSD Gap Tranche 1, code-review Fix 2 (W2), added 2026-08-16.
          NDA_Alert_Last_Interval__c / NDA_Alert_Expiry_Date__c are the direct NDA__c sibling of
          the Opportunity.Offer_Alert_* markers two entries above, which this set already grants -

@@ -27,10 +27,15 @@ jest.mock(
 );
 
 /**
- * ⚠ `saleProcess`, `listingBrokerName` and `listingBrokerEmail` are STILL IN THIS FIXTURE ON PURPOSE.
- * The server still returns them (`c/callForOffersList` and `CallForOffersAlertBatch` share the DTO),
- * so the fixture must keep them for the absence tests below to mean anything: a payload that omitted
- * them would let a re-added row pass by rendering an em dash.
+ * ⚠ `saleProcess` and `listingBrokerEmail` are STILL IN THIS FIXTURE ON PURPOSE. The server still
+ * returns them (`c/callForOffersList` and `CallForOffersAlertBatch` share the DTO), so the fixture
+ * must keep them for the absence tests below to mean anything: a payload that omitted them would
+ * let a re-added row pass by rendering an em dash.
+ *
+ * ⚠ `listingBrokerName` MOVED FROM THE ABSENCE SIDE TO THE PRESENCE SIDE ON 2026-08-30. It is now
+ * RENDERED (design Item 5(b)/5(f), Q8 — see the component header for why that reverses part of the
+ * 2026-08-17 decision), so the test that pinned it absent was split: sale process and the mailto
+ * stay pinned ABSENT, the broker name is now pinned PRESENT.
  */
 const CRITICAL = {
     opportunityId: '006000000000001AAA',
@@ -49,7 +54,8 @@ const CRITICAL = {
     saleProcess: 'Call for Offers',
     listingBrokerName: 'Jane Broker',
     listingBrokerEmail: 'jane.broker@example.invalid',
-    dealRoomLink: 'https://example.invalid/dealroom'
+    dealRoomLink: 'https://example.invalid/dealroom',
+    offerStatus: 'Open'
 };
 
 const NO_DEADLINE = {
@@ -114,16 +120,31 @@ describe('c-call-for-offers-panel', () => {
         expect(element.shadowRoot.querySelector('.card-title').textContent.trim()).toBe(
             'Call for Offers'
         );
-        // Three rows here (deadline + received + deal room), each with an icon chip.
-        expect(element.shadowRoot.querySelectorAll('.row')).toHaveLength(3);
-        expect(element.shadowRoot.querySelectorAll('.row-icon')).toHaveLength(3);
+        // FIVE rows with this fully-populated fixture — deadline + offer status + received +
+        // listing broker + deal room — each with an icon chip.
+        // ⚠ WAS THREE UNTIL 2026-08-30; offer status and the listing broker were added then
+        // (design Item 5f / Q8). The COUNT is not the point of this test and never was: the
+        // invariant is that every row carries a chip and that the dividers are `rows - 1`, i.e.
+        // between rows and never trailing. A sixth row must update all three numbers together.
+        expect(element.shadowRoot.querySelectorAll('.row')).toHaveLength(5);
+        expect(element.shadowRoot.querySelectorAll('.row-icon')).toHaveLength(5);
         // A divider BETWEEN rows, never trailing: rows - 1.
-        expect(element.shadowRoot.querySelectorAll('.divider')).toHaveLength(2);
+        expect(element.shadowRoot.querySelectorAll('.divider')).toHaveLength(4);
     });
 
     it('never ends on a trailing divider when the optional rows are absent', async () => {
+        // ⚠ ALL FOUR optional facts must be nulled, not just the two that existed before
+        // 2026-08-30. Every divider in this card lives INSIDE the branch it precedes, so the
+        // deadline row alone must produce one `.row` and zero `.divider`s — and a future fifth
+        // optional row that forgot that rule would show up here as a trailing rule under nothing.
         const element = build();
-        getForOpportunity.emit({ ...CRITICAL, receivedDate: null, dealRoomLink: null });
+        getForOpportunity.emit({
+            ...CRITICAL,
+            receivedDate: null,
+            dealRoomLink: null,
+            offerStatus: null,
+            listingBrokerName: null
+        });
         await flush();
 
         expect(element.shadowRoot.querySelectorAll('.row')).toHaveLength(1);
@@ -140,8 +161,19 @@ describe('c-call-for-offers-panel', () => {
         expect(element.shadowRoot.querySelectorAll('dd')).toHaveLength(0);
     });
 
-    it('does NOT render the sale process or the listing broker name', async () => {
-        // The falsifier for re-adding either field to this panel. Both are present in the payload.
+    it('saleProcessAndTheMailtoStayRemoved — the 2026-08-30 reversal was NARROW', async () => {
+        // 🔴 THE SURVIVING HALF OF THE 2026-08-17 ABSENCE TEST, AND THE PRESENCE CONTROL THAT
+        // MAKES IT NON-VACUOUS.
+        //
+        // That test asserted sale process AND the listing broker name were both absent. The broker
+        // name is now RENDERED (Q8 — see the component header), so pinning it absent would be
+        // wrong. But simply DELETING the old test would leave sale process and the mailto pinned by
+        // nothing, and both are one line away from coming back with the row that just did.
+        //
+        // ⚠ THE `listingBrokerName` ASSERTION AT THE END IS NOT DECORATION. Without it this test
+        // passes trivially if the whole payload stops rendering — every `not.toContain` is
+        // satisfied by an empty card. The presence assertion is what proves the absences are
+        // measured against a card that IS painting this fixture.
         //
         // ⚠ `saleProcess` is overridden to a DISTINCTIVE value here on purpose: the fixture's real
         // value is the literal string "Call for Offers", which is also the card's own title, so
@@ -153,17 +185,12 @@ describe('c-call-for-offers-panel', () => {
         const text = textOf(element);
         expect(text).not.toContain('Sealed Bid Auction');
         expect(text).not.toContain('Sale process');
-        expect(text).not.toContain('Jane Broker');
-        expect(text).not.toContain('Listing broker');
-    });
-
-    it('does NOT render an "Email listing broker" mailto link', async () => {
-        const element = build();
-        getForOpportunity.emit(CRITICAL);
-        await flush();
-
+        // The mailto went with it and did NOT come back with the name.
         expect(element.shadowRoot.querySelector('a[href^="mailto:"]')).toBeNull();
-        expect(textOf(element)).not.toContain('Email listing broker');
+        expect(text).not.toContain('Email listing broker');
+        expect(text).not.toContain('jane.broker@example.invalid');
+        // The control: the card really is rendering this payload.
+        expect(text).toContain('Jane Broker');
     });
 
     it('does NOT render the raw day count — the countdown reaches the user only via the badge', async () => {
@@ -209,6 +236,64 @@ describe('c-call-for-offers-panel', () => {
         expect(element.shadowRoot.querySelector('.cfo-received')).toBeNull();
         expect(textOf(element)).not.toContain('Received');
         expect(textOf(element)).not.toContain('Jul 1, 2026');
+    });
+
+    it('renders the offer status when the campaign has one', async () => {
+        const element = build();
+        getForOpportunity.emit({ ...CRITICAL, offerStatus: 'Submitted' });
+        await flush();
+
+        expect(element.shadowRoot.querySelector('.cfo-offer-status').textContent.trim()).toBe(
+            'Submitted'
+        );
+        expect(textOf(element)).toContain('Offer Status');
+    });
+
+    it('🔴 OMITS the offer status entirely when it is blank — it never assumes "Open"', async () => {
+        // THE FALSIFIER FOR THE MOST TEMPTING ONE-LINE EDIT IN THIS COMPONENT.
+        // `Offer_Status__c` carries a picklist `<default>` of `Open`, and a default applies on
+        // INSERT ONLY — it does not backfill. So every deal that existed before 2026-08-30 sends
+        // null here, and a `|| 'Open'` in the getter would paint a confident, wrong campaign state
+        // onto the entire legacy population while looking like sensible defensive code. The symptom
+        // would be invisible: a plausible value in a plausible place.
+        const element = build();
+        getForOpportunity.emit({ ...CRITICAL, offerStatus: null });
+        await flush();
+
+        expect(element.shadowRoot.querySelector('.cfo-offer-status')).toBeNull();
+        const text = textOf(element);
+        expect(text).not.toContain('Offer Status');
+        expect(text).not.toContain('Open');
+        // Control: the card is rendering, so the absences above are real and not an empty shadow
+        // root satisfying every assertion at once.
+        expect(text).toContain('Due in 3 days');
+    });
+
+    it('renders the listing broker as TEXT, never as a mailto', async () => {
+        // The 2026-08-30 reversal restored the NAME only. Asserting the anchor's absence in the
+        // same test as the name's presence is what stops "surface the broker" being read next time
+        // as licence to make it clickable again.
+        const element = build();
+        getForOpportunity.emit(CRITICAL);
+        await flush();
+
+        expect(element.shadowRoot.querySelector('.cfo-listing-broker').textContent.trim()).toBe(
+            'Jane Broker'
+        );
+        expect(textOf(element)).toContain('Listing Broker');
+        expect(element.shadowRoot.querySelector('a[href^="mailto:"]')).toBeNull();
+    });
+
+    it('omits the listing broker row when the deal records none', async () => {
+        const element = build();
+        getForOpportunity.emit({ ...CRITICAL, listingBrokerName: null });
+        await flush();
+
+        expect(element.shadowRoot.querySelector('.cfo-listing-broker')).toBeNull();
+        const text = textOf(element);
+        expect(text).not.toContain('Listing Broker');
+        // Control, as above.
+        expect(text).toContain('Due in 3 days');
     });
 
     it('NEVER falls back to dealArrivedDate for the received line', async () => {

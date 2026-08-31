@@ -23,6 +23,14 @@
  *     cosmetic — see selectMatchKeysWithBrokerByIds for why folding its three
  *     extra columns into selectMatchKeysByIds would have silently disabled Smart
  *     Lead Conversion for every user until the P8 FLS grant landed.
+ *   - BrokerCounterRecalcBatch.execute (the nightly Contact broker-counter
+ *     recalculation, 2026-08-31: MIN(First_Seen_Date__c) GROUP BY ConvertedContactId).
+ *     SYSTEM_MODE + without sharing — aggregateFirstSeenByConvertedContact, delegating
+ *     to the `BrokerFirstSeenReads` nested class. 🔴 THE ESCAPE IS MEASURED, NOT
+ *     STYLISTIC: `Lead` InternalSharingModel = `Private` (Tooling API, usman-dpeg,
+ *     2026-08-31), and the caller is a RESET WRITER — under sharing it would not
+ *     under-report, it would ERASE the counter for every broker nightly. Read that
+ *     method's ApexDoc before narrowing it.
  *
  * ⚠ ADDED-METHOD NOTE (flagged to the orchestrator, accepted). The P4 cleanup-wave
  * task directed BrokerPortalController's Lead site to "reuse selectByIdsSystem".
@@ -32,6 +40,13 @@
  * relocating the SOQL out of the controller (the wave's primary goal: 0 inline SOQL)
  * required this one additive method. selectByIdsSystem and every other method are
  * unchanged.
+ *
+ * ⚠ SHARING — TWO nested `without sharing` classes now exist and they are NOT variants of
+ * one decision. `GuestReads` (below) is the unauthenticated anti-abuse dedup described in
+ * the next paragraph. `BrokerFirstSeenReads` (2026-08-31) is the nightly broker-counter
+ * aggregate, escaped for a completely different, MEASURED reason argued at
+ * `aggregateFirstSeenByConvertedContact`. Neither justifies the other, and a third read
+ * needing an escape needs its own inner class and its own measurement.
  *
  * ⚠ SHARING — the dedup read is BEHAVIOR-PRESERVING WITHOUT SHARING (see the nested
  * `GuestReads` class). The outer LeadSelector stays `with sharing`; only the guest
@@ -585,6 +600,130 @@ public with sharing class LeadSelector {
                 WHERE Property_Address__c = :trimmedAddress AND Status NOT IN :closedStatuses
                 WITH SYSTEM_MODE
                 LIMIT 1
+            ];
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // NIGHTLY BROKER-COUNTER READ (BrokerCounterRecalcBatch) — SYSTEM_MODE + WITHOUT SHARING
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * The earliest moment each broker Contact was ever seen — `MIN(First_Seen_Date__c)` grouped
+     * by `ConvertedContactId`. Backs `BrokerCounterRecalcBatch`, which writes it to
+     * `Contact.First_Submission_DateTime__c` (design §2 ITEM 6.2/6.4).
+     *
+     * ═══ 🔴 WHY THE JOIN IS `ConvertedContactId` AND **NOT** `Broker_First__c` ═══
+     * The originating brief pointed at `Lead.Broker_First__c`. **It is the wrong field and
+     * using it would have produced a plausible, wrong answer rather than an error.**
+     * `Broker_First__c` is `Text(255)` mirroring the brokerage **FIRM NAME** — `BrokerPortalService`
+     * sets `l.Company` and `l.Broker_First__c` to the same `input.brokerageFirm`, and two tests
+     * assert "Broker_First mirrors firm". Grouping on it would collapse every broker at CBRE into
+     * one bucket and could not be joined to a Contact Id at all. It is not a broker-identity link.
+     * `ConvertedContactId` IS one, and it is the same value `LeadConvertService` stamps onto
+     * `Opportunity.Broker__c` — so this aggregate and `OpportunitySelector.aggregateDealCountsByBroker`
+     * key on the identical Id by construction, with no matching step between them.
+     *
+     * ⚠ `First_Seen_Date__c` IS A DATETIME DESPITE ITS `Date` SUFFIX — a naming violation
+     * `LeadConvertService` documents and deliberately refuses to rename (a rename is a
+     * delete-and-create). `Contact.First_Submission_DateTime__c` is a DateTime for exactly this
+     * reason, so the instant maps straight across with no `.date()` truncation. Do not "fix"
+     * either name here.
+     *
+     * ⚠ IT ANSWERS "FIRST SEEN", NOT "FIRST CONVERTED". A broker's earliest Lead may have been
+     * disqualified; `MIN` still returns it, which is the intended meaning of a *first submission*
+     * date. Rows with a null `First_Seen_Date__c` are excluded at the query so they cannot drag
+     * the minimum, and a broker whose every Lead lacks the stamp is simply ABSENT from the result.
+     *
+     * ═══ 🔴 TWO KEYWORDS, TWO SEPARATE QUESTIONS — AND HERE, UNLIKE THE OPPORTUNITY HALF, THE
+     *     SHARING ANSWER IS "ESCAPE" ═══
+     *
+     * ▸ MODE = `WITH SYSTEM_MODE` (API 67), automation path (ARCHITECTURE.md §2): a nightly
+     *   scheduler reads this on the team's behalf, nobody asks for it, and `First_Seen_Date__c` is
+     *   a custom field whose FLS for the scheduling principal nobody controls.
+     *
+     * ▸ SHARING = **`without sharing`, via `BrokerFirstSeenReads`, AND IT IS LOAD-BEARING —
+     *   MEASURED, NOT ARGUED.** `Lead.InternalSharingModel` was queried via the Tooling API
+     *   (`SELECT InternalSharingModel FROM EntityDefinition WHERE DeveloperName = 'Lead'`) against
+     *   `usman-dpeg` on **2026-08-31** and returned **`Private`**. `SYSTEM_MODE` lifts CRUD and FLS
+     *   and NEVER sharing, so a `with sharing` read here returns only the Leads the SCHEDULING
+     *   PRINCIPAL happens to own.
+     *
+     *   🔴 AND THE CALLER IS A **RESET WRITER**, WHICH IS WHAT MAKES THIS DESTRUCTIVE RATHER THAN
+     *   MERELY INCOMPLETE. `BrokerCounterRecalcBatch` writes EVERY Contact in scope — a broker
+     *   absent from this aggregate is written back to NULL, not left alone. Under sharing, a
+     *   scheduler who owns no Leads would therefore **erase `First_Submission_DateTime__c` across
+     *   the whole broker roster, every night, silently**, and an all-nulls result is
+     *   indistinguishable from "no broker has ever been seen". This is the
+     *   `InboundEmailStagingSelector.RoutingReads` failure shape, and it was checked BEFORE the
+     *   method was written for that reason.
+     *
+     *   ⚠ THIS IS THE OPPOSITE CONCLUSION FROM THE OPPORTUNITY HALF OF THE SAME BATCH, ON PURPOSE.
+     *   `OpportunitySelector.aggregateDealCountsByBroker` stays `with sharing` because Opportunity
+     *   measured `ReadWrite`. Two objects, two measurements, two answers — do not make them
+     *   "consistent"; the inconsistency IS the evidence.
+     *
+     * ⚠ TESTED FROM `BrokerCounterRecalcBatchTest` (methods named
+     * `selector_aggregateFirstSeenByConvertedContact_*`) rather than `LeadSelectorTest`, to keep a
+     * shared test file out of a parallel-wave merge. See the matching note on
+     * `OpportunitySelector.aggregateDealCountsByBroker`.
+     *
+     * @param convertedContactIds Broker Contact Ids to aggregate over (bound with IN);
+     *                            null/empty-safe.
+     * @return AggregateResult rows with aliases `contactId` (ConvertedContactId) and `firstSeen`
+     *         (MIN(First_Seen_Date__c)); an empty list when the input is null/empty or no
+     *         converted Lead carries a first-seen stamp for any of them (never null). A broker
+     *         with no such Lead is ABSENT — it is not returned as a null row.
+     * @example
+     * for (AggregateResult ar : LeadSelector.aggregateFirstSeenByConvertedContact(chunkIds)) {
+     *     Id contactId = (Id) ar.get('contactId');
+     *     Datetime firstSeen = (Datetime) ar.get('firstSeen');
+     * }
+     */
+    public static List<AggregateResult> aggregateFirstSeenByConvertedContact(Set<Id> convertedContactIds) {
+        if (convertedContactIds == null || convertedContactIds.isEmpty()) {
+            return new List<AggregateResult>();
+        }
+        return new BrokerFirstSeenReads().firstSeenByConvertedContact(convertedContactIds);
+    }
+
+    /**
+     * 🔴 THE SHARING ESCAPE FOR THE NIGHTLY BROKER FIRST-SUBMISSION READ, AND NOTHING ELSE.
+     *
+     * `without sharing` is confined to this inner class so it applies to ONE query. The enclosing
+     * `LeadSelector` stays `with sharing` and must: it backs the internal Lead-Funnel reads whose
+     * entire job is to respect what the running user may see. This is the
+     * `OpportunitySelector.NdaGateReads` / `InboundEmailStagingSelector.RoutingReads` shape
+     * ARCHITECTURE.md §2 prescribes, and it is deliberately a SECOND, separate inner class rather
+     * than a method added to `GuestReads` — that class's escape was argued for an UNAUTHENTICATED
+     * anti-abuse dedup, which has nothing to do with this one.
+     *
+     * The full justification — including the 2026-08-31 `Lead = Private` measurement and why the
+     * failure it prevents ERASES rather than degrades — is at
+     * `aggregateFirstSeenByConvertedContact`'s own declaration. Read it before touching this.
+     *
+     * ⚠ DO NOT ADD A SECOND METHOD HERE. Every query that lands in this class silently inherits an
+     * escape argued for a different one. A new read that needs the same treatment needs its OWN
+     * inner class and its OWN measurement — that is the point of keeping these narrow.
+     */
+    private without sharing class BrokerFirstSeenReads {
+
+        /**
+         * The first-seen minimum per converted broker Contact, read without sharing so a
+         * Private-OWD Lead owned by someone other than the scheduling principal still counts.
+         *
+         * @param convertedContactIds Contact Ids to group over; never null/empty (the wrapper
+         *                            guards it).
+         * @return Aggregate rows with aliases `contactId` and `firstSeen`; never null.
+         */
+        private List<AggregateResult> firstSeenByConvertedContact(Set<Id> convertedContactIds) {
+            return [
+                SELECT ConvertedContactId contactId, MIN(First_Seen_Date__c) firstSeen
+                FROM Lead
+                WHERE ConvertedContactId IN :convertedContactIds
+                  AND First_Seen_Date__c != NULL
+                WITH SYSTEM_MODE
+                GROUP BY ConvertedContactId
             ];
         }
     }

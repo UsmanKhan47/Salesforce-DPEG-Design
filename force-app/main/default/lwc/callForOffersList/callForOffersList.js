@@ -2,7 +2,8 @@
  * c-call-for-offers-list — the call-for-offers table for the ACQUISITION app's Lead Funnel tab.
  *
  * Lists the MATCHED OPPORTUNITIES — deals that already carry a call-for-offers due date — with
- * property name, due date and days remaining, property name linking to the deal.
+ * property name, due date, urgency and (since 2026-08-30) offer status, property name linking to
+ * the deal.
  * It deliberately does NOT list gated `Inbound_Email_Staging__c` rows: those are emails the pipeline
  * declined to make a Lead from, and a table of them would answer a different question.
  *
@@ -129,7 +130,27 @@ const COLUMNS = [
         type: 'pill',
         initialWidth: 170,
         typeAttributes: { wrapStyle: { fieldName: 'pillWrap' }, dotStyle: { fieldName: 'pillDot' } }
-    }
+    },
+    // ── `Offer Status` — ADDED 2026-08-30 (design Item 5f) ──────────────────────────────────
+    // `Opportunity.Offer_Status__c`: Open / Submitted / Closed, or blank.
+    //
+    // 🔴 IT IS PLAIN TEXT AND MUST STAY PLAIN TEXT. The instinct on a table already carrying a
+    // coloured pill is to make this one too — do not. The pill beside it encodes URGENCY, a
+    // continuum this component's `URGENCY` map deliberately splits into "ahead of you" (orange)
+    // and "you have run out of time" (red). A second coloured cell in the same row competes with
+    // that read and, worse, would need its own three-value palette invented from nothing: there is
+    // no honest colour for "Submitted", which is neither good nor bad.
+    //
+    // 🔴 THE BLANKS ARE REAL AND ARE NOT FILLED IN. A picklist `<default>` applies on INSERT ONLY
+    // and does not backfill, so every deal that predates the field shows an EMPTY cell here. That
+    // is correct: the alternative is painting "Open" onto records that assert no such thing, which
+    // would also hide how much of the table is un-backfilled. Unlike `dueLabel` this deliberately
+    // gets no em-dash treatment — an em dash in a status column reads as a value.
+    //
+    // ⚠ DISPLAY ONLY. The suppression this column describes happens in
+    // `OpportunitySelector.queryCallForOffersAlerts`'s WHERE clause — a Submitted or Closed deal
+    // never reaches the alert batch. Nothing in this file may branch on the string.
+    { label: 'Offer Status', fieldName: 'offerStatus', type: 'text', initialWidth: 130 }
 ];
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -226,6 +247,9 @@ export default class CallForOffersList extends NavigationMixin(LightningElement)
                 dueLabel: formatDate(r.dueDate),
                 // The SERVER's label, never a client-side day count — see the class header.
                 countdown: r.label,
+                // Verbatim, blanks included — see the column definition for why no default and no
+                // em dash. `|| ''` only stops `undefined` reaching the cell as a string.
+                offerStatus: r.offerStatus || '',
                 pillWrap: pillWrap(bg),
                 pillDot: pillDot(dot)
             };

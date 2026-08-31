@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Offer_Status__c</fullName>
+    <description>Status of the Call for Offers on this deal. Open by default; stamped Submitted/Closed by the team. Suppresses the T-minus-due-date alert ladder once Submitted or Closed (OpportunitySelector.queryCallForOffersAlerts). Also stamped Open by CallForOffersStampService when Offer_Due_Date__c first appears on an existing deal, since the picklist &lt;default&gt; only applies on insert.</description>
+    <inlineHelpText>Open = offer not yet sent. Submitted = your offer has gone out. Closed = the Call for Offers window is done (won, lost, or withdrawn). Submitted/Closed stop the due-date reminder.</inlineHelpText>
+    <label>Offer Status</label>
+    <required>false</required>
+    <trackFeedHistory>false</trackFeedHistory>
+    <trackTrending>false</trackTrending>
+    <type>Picklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>Open</fullName>
+                <label>Open</label>
+            </value>
+            <value>
+                <fullName>Submitted</fullName>
+                <default>false</default>
+                <label>Submitted</label>
+            </value>
+            <value>
+                <fullName>Closed</fullName>
+                <default>false</default>
+                <label>Closed</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>

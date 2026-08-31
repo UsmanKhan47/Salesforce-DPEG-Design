@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY - a comment ABOVE the root breaks
+        `sf` deploy at conversion with a misleading parent-xml error.
+
+        Acquisitions gap-fix, Item 6.2/6.4 (2026-08-31, agent-output/design-requirements.md §2
+        ITEM 6, §0.5 Q9). 🔴 NAMED First_Submission_DateTime__c, NOT ..._Date__c, on purpose -
+        DateTime per ARCHITECTURE.md §1's suffix-discipline rule. The source value,
+        Lead.First_Seen_Date__c, is ITSELF a DateTime despite its Date suffix (a recorded
+        pre-existing ARCHITECTURE.md violation LeadConvertService documents and refuses to rename
+        because that would mean delete-and-recreate). This field does not repeat that mistake:
+        it is a straight MIN(Lead.First_Seen_Date__c) GROUP BY ConvertedContactId, so a DateTime
+        target lets the instant map across with no `.date()` truncation.
+
+        🔴 READ Deals_Lost__c.field-meta.xml's header (this same folder) for the full
+        metric-inversion warning - it applies here identically. This field covers only brokers
+        who have a Contact (Lead converted); brokerLeaderboard remains authoritative for "first
+        submission" across the WHOLE broker population, winners and losers, Contact or not.
+
+        THE JOIN IS Lead.ConvertedContactId - NOT Lead.Broker_First__c, which is a Text(255)
+        mirror of the brokerage FIRM NAME (BrokerPortalService sets it identically to
+        input.brokerageFirm) and carries no broker-identity link at all. Maintained nightly by
+        BrokerCounterRecalcBatch, batched over Contact, system mode. READ-ONLY in every
+        user-facing permission set; DPEG_Admin_Access carries an editable grant matching this
+        org's established pattern for batch-maintained fields whose test fixtures may set them
+        directly (see Deals_Lost__c's header for the RunLocalTests reasoning).
+    -->
+    <fullName>First_Submission_DateTime__c</fullName>
+    <description>Earliest Lead.First_Seen_Date__c (itself a DateTime) among Leads converted to this Contact, i.e. this broker's first-ever submission DPEG has record of. Covers ONLY brokers who have a Contact (Lead converted) - see Deals_Lost__c for the full population caveat. Authoritative population: brokerLeaderboard / BrokerLeaderboardService. Maintained nightly by BrokerCounterRecalcBatch.</description>
+    <externalId>false</externalId>
+    <label>First Submission DateTime</label>
+    <required>false</required>
+    <trackFeedHistory>false</trackFeedHistory>
+    <trackTrending>false</trackTrending>
+    <type>DateTime</type>
+</CustomField>

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY - a comment ABOVE the root
+        breaks `sf` deploy at conversion with a misleading parent-xml error.
+
+        FULLER HISTORY (moved out of <description> 2026-08-31, FIX 9: description has a
+        1000-char cap and the original text measured 1214 - the deploy actually failed on it,
+        "Value too long for field: Description maximum length is:1000"). Earlier in this build,
+        BrokerFirmController computed dealsSubmitted live in Apex, via
+        OpportunitySelector.countByStageForAccount, for the Broker Firm sidebar card on the
+        Opportunity record page. That live computation was DELETED on 2026-08-30 - a deliberate
+        user decision, not a silent scope expansion - and BrokerFirmController.getFirmSummary
+        was repointed to READ this roll-up instead, specifically so the sidebar card and the
+        Broker_Leaderboard report can never independently drift apart on the same fact. If you
+        are reading BrokerFirmController and wondering where dealsSubmitted now comes from: it
+        comes from here, not from Apex.
+    -->
+    <fullName>Total_Deals_Submitted__c</fullName>
+    <description>Count of every Opportunity on this Account (broker firm), any stage. THIS ROLL-UP IS THE SINGLE SOURCE OF TRUTH FOR THIS NUMBER - maintained natively by the platform, always current. BrokerFirmController.getFirmSummary READS this field to render the "Total Deals Submitted" stat on the Broker Firm sidebar card on the Opportunity record page; it no longer computes this number itself. The prior live Apex computation was DELETED 2026-08-30 by deliberate user decision, so the sidebar card and the Broker_Leaderboard report can never drift apart. See the XML comment for the fuller history.</description>
+    <inlineHelpText>Every Opportunity ever created for this firm, regardless of outcome. Counts every Opportunity on the Account, not only broker-introduced ones. Source of truth for BrokerFirmController's sidebar card.</inlineHelpText>
+    <label>Total Deals Submitted</label>
+    <summaryForeignKey>Opportunity.AccountId</summaryForeignKey>
+    <summaryOperation>count</summaryOperation>
+    <trackTrending>false</trackTrending>
+    <type>Summary</type>
+</CustomField>

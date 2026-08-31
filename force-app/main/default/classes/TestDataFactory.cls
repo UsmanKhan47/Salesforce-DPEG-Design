@@ -2694,6 +2694,101 @@ public with sharing class TestDataFactory {
 
     /**
      * ══════════════════════════════════════════════════════════════════════════════════════════
+     * 🔴 THE LOI SUBMITTER WHO CANNOT SEE THE NDA. ADDED 2026-08-30 FOR THE SIGNED-NDA GATE.
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * A user who can see EVERY Opportunity, owns NONE of them, and has **no access whatsoever to
+     * `NDA__c`** — no object permission, no `viewAllRecords`, and no ownership. Modelled on
+     * `DPEG_Opportunity_View`, the Transactions team's Opportunity subset, which grants
+     * `Opportunity` read + viewAllRecords and — verified in the file, 2026-08-30 — exactly ONE
+     * NDA-related line in the entire set: `Opportunity.Primary_NDA__c` FLS. There is no
+     * `objectPermissions` block for `NDA__c` at all.
+     *
+     * ── 🔴 WHY THIS FIXTURE HAD TO EXIST ────────────────────────────────────────────────────
+     * `OpportunityApprovalService`'s signed-NDA gate reads `Primary_NDA__r.NDA_Signed__c` through
+     * `OpportunitySelector.selectNdaGateById`, which is `WITH SYSTEM_MODE`. SYSTEM_MODE lifts
+     * CRUD/FLS and **NEVER sharing**, and `NDA__c` OWD is `Private` (verified in
+     * objects/NDA__c/NDA__c.object-meta.xml). If the spanning read were sharing-filtered on the
+     * PARENT, a submitter who cannot see the NDA would get a null parent and the gate would REFUSE
+     * a deal whose NDA IS signed — the gate INVERTING into a false block rather than degrading.
+     *
+     * Every gate test written before this fixture ran as the admin test-running user, who OWNS both
+     * the Opportunity and the trigger-created NDA. Owner == submitter in 5 of 5, so record-level
+     * sharing was never consulted and the defect was unreachable by construction — the exact shape
+     * of this repo's recorded SYSTEM_MODE-does-not-lift-sharing production incident. **A test that
+     * cannot fail on a defect is not a test of it.**
+     *
+     * ── 🔴 WHY `Minimum Access - Salesforce` AND NOT `Standard User` ──────────────────────────
+     * Per `.claude/rules` and `denial-tests-need-minimum-access-profile`: `Standard User` carries
+     * broad standard-object grants that mask a denial and make the test pass for the wrong reason.
+     * Everything this persona can do must come from an assigned permission set a real DPEG
+     * principal also holds.
+     *
+     * ⚠ THIS USER HAS NO ROLE, DELIBERATELY — a role would expose the fixture to "Grant Access
+     * Using Hierarchies" and could hand it read on the NDA for a reason unrelated to the code under
+     * test. The `UserRecordAccess` precondition the caller asserts is what detects that if it ever
+     * changes.
+     *
+     * ⚠ MIXED_DML. `User` and `PermissionSetAssignment` are SETUP objects and callers always have
+     * non-setup fixture DML in the same transaction, so both inserts run inside
+     * `System.runAs(currentUser)` — the workaround used throughout this suite.
+     *
+     * @param aliasSeed 1-4 lowercase characters identifying the calling test, so a failure names
+     *                  which fixture produced the user. Required.
+     * @return The inserted User. 🔴 THE CALLER MUST ASSERT `UserRecordAccess` ITSELF — a plain SOQL
+     *         probe inside `System.runAs` proves nothing here, because an Apex test class carries no
+     *         sharing keyword and therefore runs `without sharing`.
+     * @example
+     * User submitter = TestDataFactory.createNonOwnerLoiSubmitter('nasl');
+     */
+    public static User createNonOwnerLoiSubmitter(String aliasSeed) {
+        if (String.isBlank(aliasSeed)) {
+            throw new TestDataFactoryException('aliasSeed is required and cannot be blank.');
+        }
+        Profile minimumAccess = [
+            SELECT Id FROM Profile WHERE Name = 'Minimum Access - Salesforce' LIMIT 1
+        ];
+        List<PermissionSet> sets = [
+            SELECT Id, Name
+            FROM PermissionSet
+            WHERE Name IN ('DPEG_Base_Access', 'DPEG_Opportunity_View')
+        ];
+        if (sets.size() != 2) {
+            throw new TestDataFactoryException(
+                'FIXTURE PRECONDITION FAILED: expected DPEG_Base_Access and DPEG_Opportunity_View '
+                + 'to exist in this org; found ' + sets.size() + '. Deploy the permission sets '
+                + 'first — without them this persona cannot read an Opportunity at all and every '
+                + 'test built on it fails for a reason that is not the code under test.');
+        }
+        String unique = aliasSeed + String.valueOf(DateTime.now().getTime())
+            + String.valueOf(Math.abs(Crypto.getRandomInteger()));
+        User submitter = new User(
+            FirstName = 'NonOwner',
+            LastName = 'Submitter',
+            Alias = aliasSeed,
+            Email = 'dpeg.submitter@example.invalid',
+            Username = unique + '@example.invalid.dpeg',
+            ProfileId = minimumAccess.Id,
+            TimeZoneSidKey = 'America/Chicago',
+            LocaleSidKey = 'en_US',
+            EmailEncodingKey = 'UTF-8',
+            LanguageLocaleKey = 'en_US'
+        );
+        System.runAs(new User(Id = UserInfo.getUserId())) {
+            insert submitter;
+            List<PermissionSetAssignment> assignments = new List<PermissionSetAssignment>();
+            for (PermissionSet ps : sets) {
+                assignments.add(new PermissionSetAssignment(
+                    AssigneeId = submitter.Id,
+                    PermissionSetId = ps.Id
+                ));
+            }
+            insert assignments;
+        }
+        return submitter;
+    }
+
+    /**
+     * ══════════════════════════════════════════════════════════════════════════════════════════
      * 🔴 THE RECORD-TYPE-BLIND PRINCIPAL. ADDED 2026-08-25 FOR THE `DISP-0025` STAMP DEFECT.
      * ══════════════════════════════════════════════════════════════════════════════════════════
      * A user for whom `LOI__c.Disposition_LOI`, `NDA__c.Disposition_NDA` and

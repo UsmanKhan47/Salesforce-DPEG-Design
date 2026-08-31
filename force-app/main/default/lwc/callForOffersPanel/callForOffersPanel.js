@@ -18,8 +18,31 @@
  * the `detail` sentence said "Offers are due Aug 20, 2026." (= Offers due). So the list went with
  * them rather than being restyled, and the due date became the deadline row's meta line.
  *
+ * ── 🔴 2026-08-30: THE LISTING BROKER NAME IS BACK, AND `Offer Status` IS NEW ────
+ * PARTIAL REVERSAL OF THE PARAGRAPH ABOVE, which is quoted rather than edited so the earlier
+ * decision and its date survive. A later user decision (design Items 5(b) / 5(f), Q8) restored the
+ * LISTING BROKER NAME. The reasoning is not "we changed our minds": Q8 refused to create a
+ * `Source_Broker__c` field for the call-for-offers issuer on the grounds that
+ * `Listing_Broker_Name__c` ALREADY HOLDS EXACTLY THAT — and that is only a valid refusal if the
+ * existing field is surfaced somewhere. This panel is where.
+ *
+ * 🔴 THE REVERSAL IS NARROW AND THE REST OF THE 2026-08-17 DECISION STANDS UNCHANGED:
+ *   • `saleProcess` is STILL NOT RENDERED.
+ *   • The "Email listing broker" MAILTO is STILL GONE. The name is a plain label + value; it is
+ *     not a link. `listingBrokerEmail` remains on the DTO and remains unrendered here.
+ *   • `daysRemaining` is still never rendered as a bare number (see the next section).
+ * `saleProcessAndTheMailtoStayRemoved` in the Jest suite is the surviving half of the original
+ * absence test and is what makes re-adding either go red.
+ *
+ * `Offer Status` (`Offer_Status__c`) is a NEW field on the same change. Both new rows follow the
+ * existing "absent, not blank" grammar: they render only when the server sends a value, because
+ * every deal created before 2026-08-30 legitimately has no offer status (a picklist `<default>`
+ * applies on insert and does not backfill) and plenty of deals have no listing broker recorded.
+ * ⚠ THE STATUS IS DISPLAY ONLY. The alert suppression it describes is a WHERE clause in
+ * `OpportunitySelector.queryCallForOffersAlerts`; no client logic keys on this string.
+ *
  * 🔴 THE SERVER CONTRACT DID NOT CHANGE AND MUST NOT BE "TIDIED" TO MATCH. `CallForOffersService`
- * still returns `saleProcess`, `listingBrokerName` and `listingBrokerEmail`, and
+ * still returns `saleProcess` and `listingBrokerEmail` (and, since 2026-08-30, `offerStatus`), and
  * `OpportunitySelector.selectCallForOffersById` still selects them — because `c/callForOffersList`
  * and `CallForOffersAlertBatch` share that DTO and that query. Removing a field from either because
  * THIS component stopped reading it would break the other two surfaces. This was a client-only
@@ -241,6 +264,46 @@ export default class CallForOffersPanel extends LightningElement {
 
     get receivedDateFormatted() {
         return formatDate(this.state && this.state.receivedDate);
+    }
+
+    /**
+     * `Opportunity.Offer_Status__c` — `Open` / `Submitted` / `Closed`, or nothing at all.
+     *
+     * 🔴 NO DEFAULT TO 'Open'. A picklist `<default>` applies on INSERT ONLY, so every deal that
+     * predates the field carries null and always will. Substituting "Open" here would assert a
+     * campaign state the record does not hold, on the one screen a human might use to notice the
+     * gap. Absent, not blank, and not guessed.
+     *
+     * @returns {boolean} True when the server sent a status.
+     */
+    get hasOfferStatus() {
+        return !!(this.state && this.state.offerStatus);
+    }
+
+    /** @returns {string} The status verbatim, or '' so nothing can render the word "undefined". */
+    get offerStatus() {
+        return (this.state && this.state.offerStatus) || '';
+    }
+
+    /**
+     * `Opportunity.Listing_Broker_Name__c` — the broker who ISSUED this call for offers.
+     *
+     * ⚠ NOT the submitting broker. `LeadConvertService` states the distinction explicitly ("This is
+     * the SUBMITTING broker; the OM's listing broker is a different person … Do not merge the
+     * two"), and this panel is about the CAMPAIGN, so the listing broker is the right one here.
+     *
+     * 🔴 IT IS RENDERED AS TEXT, NEVER AS A MAILTO. The "Email listing broker" link was removed on
+     * 2026-08-17 and that half of the decision was NOT reversed — see the class header.
+     *
+     * @returns {boolean} True when the deal records a listing broker.
+     */
+    get hasListingBroker() {
+        return !!(this.state && this.state.listingBrokerName);
+    }
+
+    /** @returns {string} The listing broker's name, or '' rather than undefined. */
+    get listingBrokerName() {
+        return (this.state && this.state.listingBrokerName) || '';
     }
 
     get dealRoomLink() {

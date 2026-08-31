@@ -139,6 +139,21 @@ private class DealFolderServiceTest {
     private static void moveTo(List<Opportunity> opps, String stage) {
         for (Opportunity o : opps) {
             o.StageName = stage;
+            // ⚠ Rejection_Reason__c BECAME MANDATORY ON Dead/Pass ON 2026-08-30
+            // (Opportunity/validationRules/Rejection_Reason_Required_On_Dead). Without this,
+            // `aStageMoveThatIsNotAClaimStage_costsNothing` — the suite's ONLY proof that a stage
+            // move outside CLAIM_STAGES is free — fails on the fixture rather than on its subject.
+            // It is set HERE, in the shared helper, so any future Dead/Pass move through `moveTo`
+            // is covered too; every other stage is untouched.
+            //
+            // ⚠ 'Wrong Market' is present on BOTH surviving Opportunity record types — Land and
+            // Retail (Commercial was deleted 2026-08-30). Re-verified that day in
+            // objects/Opportunity/recordTypes/*.recordType-meta.xml). These fixtures set no
+            // RecordTypeId, so the Master set applies — but the restricted picklist IS enforced by
+            // DML in this org, so a value valid everywhere is the only safe choice in a helper.
+            if (stage == DEAD_PASS) {
+                o.Rejection_Reason__c = 'Wrong Market';
+            }
         }
         update opps;
     }

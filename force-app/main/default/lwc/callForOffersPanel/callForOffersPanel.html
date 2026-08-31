@@ -58,6 +58,34 @@
                 </div>
 
                 <!--
+                  ⚠ THE CAMPAIGN'S STATE — `Offer_Status__c`, ADDED 2026-08-30 (design Item 5f).
+                  ABSENT, NOT BLANK, and absent is the DEFAULT case for anything created before
+                  that date: a picklist `<default>` applies on INSERT ONLY and does not backfill,
+                  so an untouched deal legitimately has no status. Rendering "—" or assuming "Open"
+                  would state a fact the data does not carry — and would hide the backfill gap on
+                  the one surface that could show it. The server sends the value verbatim; this
+                  branch is the whole of the handling.
+
+                  🔴 IT IS DISPLAY ONLY. What actually suppresses the alert is a WHERE clause in
+                  `OpportunitySelector.queryCallForOffersAlerts` — a Submitted/Closed deal never
+                  reaches the batch at all. Do not add client logic keyed on this string.
+                -->
+                <template if:true={hasOfferStatus}>
+                    <div class="divider"></div>
+                    <div class="row">
+                        <div class="row-head">
+                            <span class="row-left">
+                                <span class="row-icon row-icon--status">
+                                    <lightning-icon icon-name="utility:task" size="x-small"></lightning-icon>
+                                </span>
+                                <span class="row-name row-name--muted">Offer Status</span>
+                            </span>
+                        </div>
+                        <div class="row-meta cfo-offer-status">{offerStatus}</div>
+                    </div>
+                </template>
+
+                <!--
                   ⚠ ABSENT, NOT BLANK, AND ABSENT IS THE COMMON CASE. This is
                   `Call_For_Offers_Received_Date__c` verbatim — the day a call-for-offers email
                   actually reached DPEG. `CallForOffersStampService` stamps it only when such an email
@@ -82,6 +110,43 @@
                             </span>
                         </div>
                         <div class="row-meta cfo-received">{receivedDateFormatted}</div>
+                    </div>
+                </template>
+
+                <!--
+                  ═══ 🔴 THE LISTING BROKER IS BACK — A DELIBERATE, DATED REVERSAL ═══
+                  RETRACTED, verbatim, from this bundle's JS header (2026-08-17): "Sale process and
+                  the broker (BOTH the row and the mailto link) were dropped as unwanted on this
+                  surface". THE BROKER NAME WAS RESTORED ON 2026-08-30 by a later user decision
+                  (design Item 5(b)/5(f), Q8): a call for offers is ISSUED BY the seller's listing
+                  broker, so on a panel about the call-for-offers campaign, naming that person is
+                  the panel's own subject rather than incidental broker data. The question was
+                  re-opened because Q8 rejected creating a `Source_Broker__c` field on the grounds
+                  that `Listing_Broker_Name__c` already holds exactly this — which is only an
+                  answer if the existing field is actually surfaced somewhere.
+
+                  🔴 ONLY THE NAME CAME BACK. `saleProcess` STAYS REMOVED and so does the
+                  "Email listing broker" MAILTO — both were rejected on their own merits and
+                  neither was re-opened. `saleProcessAndTheMailtoStayRemoved` in the Jest suite is
+                  the pin; it is the surviving half of the 2026-08-17 absence test.
+
+                  ⚠ IT IS NOT A LINK. `Listing_Broker_Email__c` is still on the DTO and is still
+                  deliberately unrendered here, so this row must stay a plain label + value in the
+                  `row-name--muted` grammar. Turning the name into a mailto reinstates exactly what
+                  was rejected.
+                -->
+                <template if:true={hasListingBroker}>
+                    <div class="divider"></div>
+                    <div class="row">
+                        <div class="row-head">
+                            <span class="row-left">
+                                <span class="row-icon row-icon--broker">
+                                    <lightning-icon icon-name="utility:user" size="x-small"></lightning-icon>
+                                </span>
+                                <span class="row-name row-name--muted">Listing Broker</span>
+                            </span>
+                        </div>
+                        <div class="row-meta cfo-listing-broker">{listingBrokerName}</div>
                     </div>
                 </template>
 

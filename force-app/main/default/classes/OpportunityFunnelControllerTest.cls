@@ -9,6 +9,21 @@ private class OpportunityFunnelControllerTest {
     private static Opportunity newOpp(String stage) {
         Opportunity o = TestDataFactory.createOpportunity(null, false);
         o.StageName = stage;
+        // ⚠ REQUIRED AS OF 2026-08-30. `Rejection_Reason_Required_On_Dead` was tightened to fire
+        // on INSERT as well as on a stage change, and this class builds Dead/Pass deals straight
+        // at that stage. Set in the SHARED helper so every current and future Dead/Pass fixture in
+        // this class is covered; no other stage is touched.
+        //
+        // ⚠ 'Wrong Market' is present on BOTH surviving Opportunity record types — Land and
+        // Retail. ⚠ THERE WERE THREE UNTIL 2026-08-30: a concurrent session deleted Commercial
+        // that day, so any comment in this repo still claiming "all three" is stale. Re-verified in
+        // objects/Opportunity/recordTypes/*.recordType-meta.xml). The fixture sets no
+        // RecordTypeId, so Master applies — but the picklist is RESTRICTED and record-type
+        // restriction IS enforced by DML in this org, so a universally-valid value is the only
+        // safe choice in a helper that does not know its caller's record type.
+        if (stage == 'Dead/Pass') {
+            o.Rejection_Reason__c = 'Wrong Market';
+        }
         return o;
     }
 
@@ -116,6 +131,9 @@ private class OpportunityFunnelControllerTest {
         closedWon.StageName = 'Closed Won';
         Opportunity closedLost = TestDataFactory.createOpportunity(null, false);
         closedLost.StageName = 'Dead/Pass';
+        // ⚠ REQUIRED AS OF 2026-08-30 — see `newOpp`. This site builds its deal inline rather than
+        // through that helper, so it needs the reason of its own.
+        closedLost.Rejection_Reason__c = 'Wrong Market';
 
         List<Opportunity> openDeals = new List<Opportunity>();
         openDeals.addAll(openCommercial);

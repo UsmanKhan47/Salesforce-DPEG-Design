@@ -1,7 +1,18 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY - a comment ABOVE the root breaks
+        `sf` deploy at conversion with a misleading parent-xml error.
+
+        Description reworded 2026-08-31 (Acquisitions gap-fix, Item 6.2/6.4,
+        design-requirements.md §1/§2 ITEM 6) to state the field's POPULATION explicitly. See
+        Deals_Lost__c.field-meta.xml (this folder) for the full metric-inversion reasoning this
+        wording protects against: this field, like its three siblings (Deals_Won__c,
+        Deals_Lost__c, First_Submission_DateTime__c), counts only brokers who have a Contact.
+        Type and maintenance mechanism are unchanged by this edit.
+    -->
     <fullName>Deals_Submitted__c</fullName>
-    <description>Number of deals this individual broker has submitted to DPEG. Populated by automation (not a native roll-up, since Leads are not master-detail children of Contact).</description>
+    <description>Count of this broker's Opportunities, any stage. Covers ONLY brokers who have a Contact (Lead converted) - see Deals_Lost__c for the full population caveat. Authoritative population: brokerLeaderboard / BrokerLeaderboardService. Maintained nightly by BrokerCounterRecalcBatch. Not a native roll-up (Leads are not master-detail children of Contact).</description>
     <externalId>false</externalId>
     <label>Deals Submitted</label>
     <precision>18</precision>

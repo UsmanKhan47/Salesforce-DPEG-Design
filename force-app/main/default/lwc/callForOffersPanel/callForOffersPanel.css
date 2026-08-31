@@ -97,6 +97,24 @@
 }
 
 /*
+ * The two rows added 2026-08-30 (Offer Status, Listing Broker) DELIBERATELY KEEP `.row-icon`'s
+ * NEUTRAL chip and take only a neutral icon colour, rather than being given tints of their own.
+ *
+ * 🔴 THAT IS A DECISION, NOT AN OMISSION. The tints above are SEMANTIC: warning-amber for the
+ * deadline (the thing that can go wrong) and success-green for a received email (the thing that
+ * has happened). Neither new row carries a state a colour could honestly encode — "Submitted" is
+ * not better or worse than "Open", and a broker's name is not a state at all — so inventing a
+ * third and fourth tint would be decoration that READS as meaning. The stylesheet header's warning
+ * applies with extra force here: a `var(--slds-g-*, <literal>)` fallback describes only what
+ * renders when the hook is UNDEFINED, nothing in this pipeline verifies what a hook actually
+ * resolves to, and the one time this bundle guessed at a token it shipped an ellipse.
+ */
+.row-icon--status,
+.row-icon--broker {
+    --slds-c-icon-color-foreground-default: var(--slds-g-color-neutral-base-50, #747474);
+}
+
+/*
  * The deal room keeps `.row-icon`'s NEUTRAL chip and takes only a brand-blue icon, so the icon
  * matches the blue "Deal Room" link beside it. ⚠ An earlier draft paired a purple BACKGROUND token
  * with a brand-blue ICON token, which reads as a mistake whichever way the two resolve.

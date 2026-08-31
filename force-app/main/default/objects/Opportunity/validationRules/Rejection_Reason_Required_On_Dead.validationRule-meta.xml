@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        Acquisitions gap-fix, Item 1A (2026-08-30, agent-output/design-requirements.md §2
+        ITEM 1). Requires Rejection_Reason__c to be populated on the save that a deal ARRIVES
+        at Dead/Pass. The picklist value is literally 'Dead/Pass' - stored as Dead%2FPass in
+        picklist/BusinessProcess/RecordType metadata only, never at formula runtime. TEXT() is
+        used on Rejection_Reason__c only to normalize a blank picklist to an empty string for
+        ISBLANK(); StageName is compared with ISPICKVAL(), matching this org's own
+        Specific-Function-Guideline that ISPICKVAL() is required for picklist equality.
+
+        =====================================================================================
+        🔴 AMENDED 2026-08-30 (same day, later decision): INSERT-TIME ENFORCEMENT ADDED.
+        =====================================================================================
+        The rule originally gated on ISCHANGED(StageName) alone, so a deal created directly AT
+        Dead/Pass (never having been at any other stage) escaped it entirely - ISCHANGED() is
+        always false on insert. The user decided this is a real gap, not an accepted one: a
+        deal created straight into Dead/Pass with no reason must be blocked too. The gate is
+        now OR(ISNEW(), ISCHANGED(StageName)) - ISNEW() is a standard formula function
+        supported in validation rules at this API version (67.0), returning TRUE only on the
+        record's very first save.
+
+        🔴 THE OBVIOUS SIMPLER FIX WAS CONSIDERED AND REJECTED: dropping ISCHANGED() entirely
+        to leave AND(ISPICKVAL(StageName,'Dead/Pass'), ISBLANK(TEXT(Rejection_Reason__c)))
+        would fire on EVERY SUBSEQUENT SAVE of an already-Dead/Pass record that has no reason -
+        making every historical reasonless Dead/Pass deal permanently uneditable, including the
+        9 rows scripts/seed-pipeline.apex creates (that script has been updated separately, by
+        the developer agent, to set Rejection_Reason__c at insert so it stays green under the
+        NEW insert-time gate - but records seeded before this rule existed, or by any other
+        historical process, must NOT be locked out of ordinary edits by this rule).
+
+        THREE CASES, STATED SO A FUTURE EDIT CAN SELF-CHECK AGAINST THEM. Do not "tighten" this
+        formula without re-verifying all three:
+          - INSERT at Dead/Pass, reason blank                              -> BLOCK (new)
+          - UPDATE moving INTO Dead/Pass, reason blank                     -> BLOCK (unchanged)
+          - UPDATE of a record ALREADY AT Dead/Pass, reason blank, stage
+            UNCHANGED                                                     -> ALLOW, DELIBERATELY.
+        The third case is the one a "tightening" edit is most likely to break by mistake (e.g.
+        by simplifying OR(ISNEW(), ISCHANGED(StageName)) down to something that fires on every
+        save regardless of transition). It is allowed ON PURPOSE so every historical
+        already-Dead/Pass record without a reason stays editable for unrelated field changes -
+        the rule's job is to gate the ARRIVAL at Dead/Pass, not to retroactively police records
+        that arrived there before this rule (or its insert-time amendment) existed.
+
+        WHY THIS IS A SEPARATE RULE FROM No_Backward_Stage_Movement, NOT A CLAUSE ADDED TO IT:
+        the two rules need different errorDisplayFields (this one points at
+        Rejection_Reason__c; No_Backward_Stage_Movement points at StageName) and different
+        error messages. Folding this logic into that rule's single errorConditionFormula would
+        force one generic message to serve two unrelated failure reasons. See also
+        Dead_Pass_Not_Allowed_From_Closed_Won.validationRule-meta.xml, which is the OTHER new
+        rule in this same tranche and is NOT related to this one beyond sharing the object.
+    -->
+    <fullName>Rejection_Reason_Required_On_Dead</fullName>
+    <active>true</active>
+    <description>Requires a Rejection Reason when a deal ARRIVES at Dead/Pass - on insert or a stage change into it. Does not fire on a later save of a record already at Dead/Pass, stage unchanged, so historical reasonless records stay editable. See the XML comment.</description>
+    <errorConditionFormula>AND(
+    OR(ISNEW(), ISCHANGED(StageName)),
+    ISPICKVAL(StageName, &apos;Dead/Pass&apos;),
+    ISBLANK(TEXT(Rejection_Reason__c))
+)</errorConditionFormula>
+    <errorDisplayField>Rejection_Reason__c</errorDisplayField>
+    <errorMessage>Choose a Rejection Reason when a deal is set to Dead/Pass.</errorMessage>
+</ValidationRule>

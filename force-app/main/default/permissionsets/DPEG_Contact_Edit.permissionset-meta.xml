@@ -46,14 +46,41 @@
         <field>Contact.Closed_Volume__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!-- Deals_Submitted__c / Deals_Won__c changed editable=true -> false 2026-08-31 (code review
+         fix on Acquisitions gap-fix Item 6.2/6.4). Both fields' OWN <description> now says
+         "Maintained nightly by BrokerCounterRecalcBatch" - this wave is what put these two under
+         batch maintenance for the first time, and that removed the hand-correct workflow the
+         prior editable=true grant assumed. A user-facing edit here would not be wrong, just
+         TEMPORARY: BrokerCounterRecalcBatch recomputes and overwrites both fields from
+         Opportunity/Lead every night, so a hand correction silently reverts within 24 hours -
+         worse than not offering the edit at all, because it looks like it worked. All four
+         Deals_*/First_Submission_DateTime__c fields on Contact are therefore read-only here now,
+         with no asymmetry between the pre-existing two and the two added by this same change. -->
     <fieldPermissions>
-        <editable>true</editable>
+        <editable>false</editable>
         <field>Contact.Deals_Submitted__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
-        <editable>true</editable>
+        <editable>false</editable>
         <field>Contact.Deals_Won__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!-- Deals_Lost__c / First_Submission_DateTime__c ADDED Acquisitions gap-fix Item 6.2/6.4
+         (2026-08-31, design-requirements.md §7 GATE PS-1). Read-only, same as
+         Deals_Submitted__c / Deals_Won__c immediately above (see that comment for why all four
+         are read-only, not just these two) - all four are maintained ONLY by
+         BrokerCounterRecalcBatch (nightly, system mode), and this design offers no supported
+         end-user "correct it by hand" workflow for any of them. See Deals_Lost__c.field-meta.xml
+         for the population caveat all four fields carry. -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Contact.Deals_Lost__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Contact.First_Submission_DateTime__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>

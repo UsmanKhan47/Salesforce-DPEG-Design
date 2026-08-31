@@ -7,6 +7,40 @@
         repo-only and is never sent to the Metadata API, so it can be as long as it needs to
         be. Do not paste this back into <description>.
 
+        =====================================================================================
+        🔴 AMENDED 2026-08-30 (Acquisitions gap-fix, Item 1). TWO PASSAGES BELOW ARE NOW FALSE
+        FOR CLOSED WON AND ARE RETRACTED HERE. See
+        Dead_Pass_Not_Allowed_From_Closed_Won.validationRule-meta.xml for the full decision
+        record (the 2026-08-30 override, its date, and why it was reaffirmed after the
+        consequence was stated) - that file, not this one, is the CURRENT decision on whether
+        Dead/Pass is reachable from Closed Won.
+        =====================================================================================
+        RETRACTED (for Closed Won only - unchanged for every other stage): "That two-save
+        round trip through Dead/Pass IS the actual recovery procedure for a mistakenly
+        advanced deal, and it is far less drastic than deactivating this validation rule
+        org-wide; deactivating the rule is NOT the remedy and should not be used."
+        RETRACTED (for Closed Won only): "This is an unavoidable consequence of the
+        user-required invariant that Dead/Pass stay reachable from every stage, not a defect
+        to be fixed."
+
+        WHY RETRACTED, NOT DELETED: both sentences are still TRUE for ranks 1-7 - Dead/Pass
+        remains reachable, and the two-save round trip remains the real recovery procedure,
+        from every stage except Closed Won. Deleting them would erase correct reasoning for
+        the seven stages it still applies to. A new sibling rule,
+        Dead_Pass_Not_Allowed_From_Closed_Won, now blocks exactly the Closed Won case these
+        sentences describe; a deal that reaches Closed Won by mistake has NO in-app recovery
+        route and needs an admin data fix instead. This rule's own errorConditionFormula
+        (below) is UNCHANGED - it still permits entering Dead/Pass from Closed Won at the rank
+        level, because rank-based blocking was never what stops that transition; the new
+        sibling rule stops it. Only this rule's errorMessage (below) and this header comment
+        change in this pass.
+
+        THE RANK-MAP PARAGRAPH FURTHER DOWN ALSO CONTAINS A NOW-STALE PARENTHETICAL -
+        "(Dead/Pass always reachable, per invariant)" - which described the SAME invariant
+        this block retracts. Read it as "reachable from every stage except Closed Won" from
+        2026-08-30 onward; it is not repeated as a second retraction because it is the same
+        underlying claim addressed once here.
+
         Decision 4: a deal cannot be moved back to an earlier stage. ABSOLUTE for users,
         there is deliberately NO bypass permission and NO other admin/data-fix escape hatch
         beyond the two named carve-outs below. Do not reintroduce a bypass custom permission;
@@ -200,5 +234,5 @@
     ))
 )</errorConditionFormula>
     <errorDisplayField>StageName</errorDisplayField>
-    <errorMessage>A deal cannot be moved back to an earlier stage. To stop work on this deal, move it to Dead/Pass instead.</errorMessage>
+    <errorMessage>A deal cannot be moved back to an earlier stage. To stop work on this deal, move it to Dead/Pass instead. If this deal is Closed Won, it cannot be moved to Dead/Pass - contact your administrator.</errorMessage>
 </ValidationRule>

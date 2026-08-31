@@ -56,6 +56,19 @@
         <field>Contact.Deals_Won__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!-- Deals_Lost__c / First_Submission_DateTime__c ADDED Acquisitions gap-fix Item 6.2/6.4
+         (2026-08-31, design-requirements.md §7 GATE PS-1). Read-only twin of the same grants on
+         DPEG_Contact_Edit - see that set for the full reasoning. -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Contact.Deals_Lost__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Contact.First_Submission_DateTime__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
         <field>Contact.Email</field>

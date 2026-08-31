@@ -1,6 +1,27 @@
 /**
- * Trigger handler for Opportunity. Routes the after-insert and after-update contexts to
- * FIVE service calls — two review concerns and three STAGE-KEYED HANDOFFS to other modules:
+ * Trigger handler for Opportunity. Routes FOUR trigger contexts — before insert, before update,
+ * after insert and after update — to SIX service calls in total.
+ *
+ * ⚠ AMENDED 2026-08-31 — THE TWO SENTENCES THIS HEADER OPENED WITH ARE NOW BOTH WRONG, AND ARE
+ * RETRACTED HERE RATHER THAN QUIETLY DELETED. It said, verbatim:
+ *     "Routes the after-insert and after-update contexts to FIVE service calls"
+ * and then enumerated five calls, all of them after-context. Both statements were exactly true
+ * until this handler acquired the BEFORE contexts for stage-entry date stamping (design §2
+ * ITEM 2). The count is now six and the context list is now four. Everything else the old header
+ * said — in particular the opposite-failure-contracts warning further down — is UNCHANGED and
+ * still load-bearing; it is about the after-context services and none of them moved.
+ *
+ * ── BEFORE INSERT / BEFORE UPDATE — ONE CALL ────────────────────────────────────────────────
+ *   - OpportunityStageEntryService.stampStageEntryDates stamps `Stage_Entry_Date__c` on every
+ *     record whose stage THIS SAVE is changing (an insert counts as entry into whatever stage the
+ *     deal is created at). Zero SOQL and zero DML at any record count — that property is the
+ *     entire reason the before contexts could be added to a trigger already routing five
+ *     services, and it is asserted by governor counters captured INSIDE this trigger context.
+ *     It must run BEFORE the save so the value is written by the user's own DML with no second
+ *     statement; see that class's header for why a Flow and an after-context update both lose.
+ *
+ * ── AFTER INSERT / AFTER UPDATE — FIVE CALLS ────────────────────────────────────────────────
+ * Two review concerns and three STAGE-KEYED HANDOFFS to other modules:
  *
  *   - OpportunityReviewService.createReviewRecords opens the matching feasibility /
  *     Contract Review / Underwriting / LOI child when the Opp enters (or flips an input
@@ -42,12 +63,40 @@
  * routing after-insert with a null prior-map and after-update with the real
  * oldMap. The service methods themselves decide what each context means.
  *
- * All business logic lives in the FOUR services listed at the top of this header; this handler
+ * All business logic lives in the FIVE services listed at the top of this header; this handler
  * holds none of its own and only wires the trigger contexts to them. (It said "OpportunityReviewService"
  * alone until 2026-08-27 — accurate when this handler was extracted, and wrong ever since
- * ContractExecutionService, PropertyAssetService and DealFolderService joined `route()`.)
+ * ContractExecutionService, PropertyAssetService and DealFolderService joined `route()`. It said
+ * FOUR until 2026-08-31, when OpportunityStageEntryService joined on the before contexts.)
  */
 public with sharing class OpportunityReviewTriggerHandler extends TriggerHandler {
+
+    /**
+     * Before insert. `oldMap` does not exist in this context, so the prior-stage map is null and
+     * every record is treated as ENTERING the stage it is being created at — the same convention
+     * `route()` uses below, so the before and after halves cannot disagree about which saves are
+     * a stage entry.
+     */
+    protected override void beforeInsert() {
+        OpportunityStageEntryService.stampStageEntryDates((List<Opportunity>) newList, null);
+    }
+
+    /**
+     * Before update. The real `oldMap` is passed, so only a record whose `StageName` actually
+     * differs from its database value is stamped; every other save (amount, owner, close date,
+     * an approval field update that does not touch the stage) leaves the date alone.
+     *
+     * ⚠ This runs AFTER the two RecordBeforeSave Flows on this object, which is why it is here
+     * rather than in a third Flow: it observes the FINAL StageName that
+     * `Opportunity_Initiate_Underwriting` may have just rewritten, while `oldMap` still holds the
+     * true prior DATABASE value.
+     */
+    protected override void beforeUpdate() {
+        OpportunityStageEntryService.stampStageEntryDates(
+            (List<Opportunity>) newList,
+            (Map<Id, Opportunity>) oldMap
+        );
+    }
 
     protected override void afterInsert() {
         route((List<Opportunity>) newList, null);
@@ -58,8 +107,11 @@ public with sharing class OpportunityReviewTriggerHandler extends TriggerHandler
     }
 
     /**
-     * Routes one trigger context through the five service CALLS listed in the class header, in
-     * order. They span FOUR services — `OpportunityReviewService` is called twice.
+     * Routes one AFTER trigger context through the five service CALLS listed under "AFTER INSERT
+     * / AFTER UPDATE" in the class header, in order. They span FOUR services —
+     * `OpportunityReviewService` is called twice. The before contexts do not come through here:
+     * they route a single service directly, above, precisely because it must stay the only thing
+     * running there.
      *
      * @param opps      The Opportunities in the current trigger context.
      * @param priorById The old-map on update; null on insert.

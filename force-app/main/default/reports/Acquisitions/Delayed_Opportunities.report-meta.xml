@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Report xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY - a comment ABOVE the root breaks
+        `sf` deploy at conversion with a misleading parent-xml error.
+
+        RESIDUAL-4 (design-requirements.md §8): the 14-day threshold in this report's filter is a
+        LITERAL, disconnected from Stage_Threshold_Def__mdt - a report filter cannot read a CMDT
+        row. Retuning a per-stage threshold in Setup does not retune this report; only a metadata
+        edit here does. See design-requirements.md §2 ITEM 4.
+
+        FIX D (2026-08-31, code review): <description> was trimmed from 269 to under 255 chars
+        (the real cap for Report - NOT the 1000-char cap that applies to CustomField.description).
+        This comment carries the fuller RESIDUAL-4 explanation the trimmed description no longer
+        states in full.
+    -->
+    <columns>
+        <field>Opportunity.Days_In_Stage__c</field>
+    </columns>
+    <description>Open deals over 14 days in current stage. Unbounded on Close Date (matches StageDelayAlertBatch). Uses IsClosed=false, not named stages, to track the batch. 14 is a literal here (RESIDUAL-4) - see this file&apos;s XML comment.</description>
+    <filter>
+        <criteriaItems>
+            <column>Opportunity.IsClosed</column>
+            <columnToColumn>false</columnToColumn>
+            <isUnlocked>false</isUnlocked>
+            <operator>equals</operator>
+            <value>false</value>
+        </criteriaItems>
+        <criteriaItems>
+            <column>Opportunity.Days_In_Stage__c</column>
+            <columnToColumn>false</columnToColumn>
+            <isUnlocked>false</isUnlocked>
+            <operator>greaterThan</operator>
+            <value>14</value>
+        </criteriaItems>
+    </filter>
+    <format>Summary</format>
+    <groupingsDown>
+        <dateGranularity>Day</dateGranularity>
+        <field>STAGE_NAME</field>
+        <sortOrder>Asc</sortOrder>
+    </groupingsDown>
+    <name>Delayed Opportunities</name>
+    <params>
+        <name>open</name>
+        <value>all</value>
+    </params>
+    <params>
+        <name>probability</name>
+        <value>&gt;0</value>
+    </params>
+    <params>
+        <name>co</name>
+        <value>1</value>
+    </params>
+    <reportType>Opportunity</reportType>
+    <scope>organization</scope>
+    <showDetails>false</showDetails>
+    <showGrandTotal>true</showGrandTotal>
+    <showSubTotals>true</showSubTotals>
+</Report>

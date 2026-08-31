@@ -5,16 +5,32 @@
         Lead remains a segregated boundary (2026-08-10). This set gives read-only Account
         access to personas that previously had none (Transaction, Property Management), so
         object CRUD stops being a hard ceiling for them. Deliberately NO viewAllRecords -
-        record visibility still comes from OWD/sharing, not from this permission set. Field
-        list mirrors DPEG_IR_View's already-deployed, dry-run-validated Account field set
-        (standard fields only - Account carries no custom fields in this org). Both
-        Broker_Firm and Investor_Entity record types are visible, since both populations are
-        now shared reference data rather than segregated by persona.
+        record visibility still comes from OWD/sharing, not from this permission set. Standard
+        field list mirrors DPEG_IR_View's already-deployed, dry-run-validated Account field
+        set. Both Broker_Firm and Investor_Entity record types are visible, since both
+        populations are now shared reference data rather than segregated by persona.
+
+        🔴 "Account carries no custom fields in this org" STOPPED BEING TRUE 2026-08-30
+        (Acquisitions gap-fix, Item 6.1). Total_Deals_Submitted__c / Deals_Won__c /
+        Deals_Lost__c are the first three custom fields on Account - roll-up summaries over
+        Opportunity, READ-ONLY BY TYPE (a roll-up summary is never user-editable; an
+        editable=true grant on one fails the deploy). Granted here, not in DPEG_Acquisition_*,
+        because this is the one set every persona with Account read access already has.
     -->
-    <description>Read-only access to Account (all record types), full FLS on standard fields. Shared reference data - no longer a security boundary. No viewAllRecords.</description>
+    <description>Read-only access to Account (all record types), full FLS on standard fields + 3 roll-up summaries. Shared reference data - no longer a security boundary. No viewAllRecords.</description>
     <fieldPermissions>
         <editable>false</editable>
         <field>Account.AccountSource</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Account.Deals_Lost__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Account.Deals_Won__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -35,6 +51,11 @@
     <fieldPermissions>
         <editable>false</editable>
         <field>Account.Phone</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Account.Total_Deals_Submitted__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>

@@ -7,6 +7,14 @@
  * Note: TestDataFactory.createOpportunities defaults StageName to 'New', so a
  * plain insert cascades only the NDA; moving to 'Development Review' then opens
  * the feasibility review (same pattern as OpportunityReviewServiceTest).
+ *
+ * ⚠ SCOPE NOTE 2026-08-31 — THE FIRST SENTENCE IS NOW A SUBSET, NOT THE WHOLE ROUTER.
+ * The handler also routes BEFORE insert and BEFORE update, to
+ * OpportunityStageEntryService.stampStageEntryDates (design §2 ITEM 2). This class deliberately
+ * does NOT test that: it is covered end-to-end, including its 251-record bulk and in-context
+ * governor assertions, by OpportunityStageEntryServiceTest. Nothing here changed — the two
+ * before-context calls add no query, no DML and no record to any scenario below — but a reader
+ * should not conclude from this header that the after contexts are all the handler does.
  */
 @isTest
 private class OpportunityReviewTriggerHandlerTest {

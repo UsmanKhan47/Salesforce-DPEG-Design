@@ -13,10 +13,28 @@
 @isTest
 private class OpportunityApprovalControllerTest {
 
+    /**
+     * An inserted deal at the LOI stage WITH ITS PRIMARY NDA SIGNED.
+     *
+     * ⚠ THE SIGNING WAS ADDED 2026-08-30 AND IS A FIXTURE FIX, NOT A BEHAVIOUR CHANGE.
+     * `OpportunityApprovalService.submitForApproval` now refuses an LOI-stage submission whose
+     * primary NDA is blank or unsigned (design Item 3), so a deal inserted straight at LOI with no
+     * NDA is no longer submittable. It never should have been: `NDA_Signed_Before_Deal_Progression`
+     * blocks ENTRY to LOI without a signed NDA and this fixture only slipped past it because that
+     * rule is `ISCHANGED(StageName)`-gated and therefore false on insert. Every test here is about
+     * the CONTROLLER's delegation and error mapping, so the fixture must represent a deal that is
+     * otherwise submittable — otherwise the "happy path" tests would be measuring the NDA refusal.
+     *
+     * ⚠ The gate's own coverage lives in `OpportunityApprovalServiceTest`, where the refusal
+     * belongs. Do not add an NDA case here; this class must not start testing the service.
+     *
+     * @return The inserted, submittable deal.
+     */
     private static Opportunity makeOpp() {
         Opportunity o = TestDataFactory.createOpportunity(null, false);
         o.StageName = 'LOI';
         insert o;
+        TestDataFactory.signPrimaryNda(o);
         return o;
     }
 

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY - see Stage_Alert_Stage__c.field-meta.xml
+        in this folder for why a comment above the root breaks `sf` deploy at conversion.
+
+        The other half of the Item 4 stalled-deal-reminder idempotency marker. Read this together
+        with Stage_Alert_Stage__c - THIS FIELD ALONE IS NOT SUFFICIENT to decide whether to
+        re-fire, because the re-arm condition for this feature is a STAGE change, not a date
+        change (see Stage_Alert_Stage__c's header for why). Written by StageDelayAlertBatch in
+        system mode, only for deals actually notified (send-first-stamp-second).
+    -->
+    <fullName>Stage_Alert_Last_Sent_Date__c</fullName>
+    <description>Date the last stalled-deal reminder was sent for this deal. Read together with Stage_Alert_Stage__c, its required companion snapshot - this field alone cannot tell whether the reminder should re-fire, because a stage change re-arms it independently of how recent this date is. Written by StageDelayAlertBatch in system mode.</description>
+    <externalId>false</externalId>
+    <inlineHelpText>Set by the daily stalled-deal reminder job. The date the deal was last reminded on for sitting in its current stage.</inlineHelpText>
+    <label>Stage Alert Last Sent Date</label>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Date</type>
+</CustomField>

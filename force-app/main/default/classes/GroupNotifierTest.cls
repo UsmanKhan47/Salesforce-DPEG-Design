@@ -217,4 +217,195 @@ private class GroupNotifierTest {
         System.Assert.areEqual(1, GroupNotifier.sentCount,
             'The Flow entry point still sends exactly as it did before the refactor');
     }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Request.additionalRecipientIds (2026-08-31, for StageDelayAlertBatch)
+    //
+    // 🔴 THE RECIPIENT SET ITSELF CANNOT BE ASSERTED. There is no SObject for a delivered
+    // custom notification and `send()` returns void, so "did the owner get it?" is not a
+    // question any test in this org can answer. What IS observable is the OUTCOME Boolean —
+    // and, because a recipient Id that resolves to nothing makes the platform reject the
+    // WHOLE call, an unresolvable extra recipient is a precise, in-band probe for whether a
+    // given request's extras reached `send()` at all. That is what these tests use.
+    //
+    // 🔴 THE FIRST DESIGN OF THESE TESTS USED AN UNRESOLVABLE RECIPIENT ID AS THE PROBE, AND IT
+    // WAS MEASURED NOT TO WORK. In real execution a recipient Id that resolves to nothing DOES
+    // make the platform reject the whole call — probed against usman-dpeg on 2026-08-31,
+    // `n.send({ realUserId, '005000000000AAA' })` raised
+    // `System.HandledException: Invalid parameter value for: recipientIds` and delivered nothing.
+    // **Inside a test context `send()` does not validate its recipients at all** and returns
+    // cleanly, so the probe reports success and the test is vacuous. That is why
+    // `GroupNotifier.lastSendRecipients` was added: recording the set is the only way to observe
+    // what a send was actually addressed to. Do not replace it with the "simpler" invalid-Id
+    // version — it has already been tried here and it silently proves nothing.
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /** A syntactically valid User Id that resolves to no user. 15 characters, so no checksum. */
+    private static final Id UNRESOLVABLE_USER_ID = '005000000000AAA';
+
+    @IsTest
+    static void additionalRecipientIds_areMergedIntoTheSameSendRatherThanASecondOne() {
+        // The whole reason this field exists: `StageDelayAlertBatch` must reach the deal owner AND
+        // the Acquisition queue, and at a measured `6.0 ms + 0.22 ms x |recipients|` per send,
+        // merging costs ~0.22 ms where a second Request would cost ~6.2 ms. `sentCount` is the
+        // proof that it is still ONE call.
+        createGroupWithMember();
+        Lead l = new Lead(LastName = 'Target', Company = 'Acme', Status = 'New');
+        insert l;
+
+        GroupNotifier.Request r = new GroupNotifier.Request();
+        r.recipientGroup = GROUP_NAME;
+        r.title = 'Title';
+        r.body = 'Body';
+        r.targetRecordId = l.Id;
+        r.additionalRecipientIds = new Set<String>{ String.valueOf(UserInfo.getUserId()) };
+
+        Test.startTest();
+        List<Boolean> outcomes = GroupNotifier.notifyWithOutcome(new List<GroupNotifier.Request>{ r });
+        Test.stopTest();
+
+        System.Assert.areEqual(1, outcomes.size(), 'One request, one outcome');
+        System.Assert.isTrue(outcomes[0], 'and it went out');
+        System.Assert.areEqual(1, GroupNotifier.sentCount,
+            'in exactly ONE send() call — the extra recipient rides the group\'s call rather than '
+            + 'earning a second one. A second call here would double this job\'s CPU per deal');
+        System.Assert.areEqual(1, GroupNotifier.lastSendRecipients.size(), 'one recorded send');
+        System.Assert.isTrue(
+            GroupNotifier.lastSendRecipients[0].contains(String.valueOf(UserInfo.getUserId())),
+            'and the extra recipient is genuinely IN the set that was sent, which is the only '
+            + 'observable proof that the merge happened at all');
+    }
+
+    @IsTest
+    static void anExtraRecipientWhoIsAlreadyAGroupMemberIsNotNotifiedTwice() {
+        // The de-duplication half, and it is a real product behaviour rather than a tidy detail:
+        // `StageDelayAlertBatch`'s deal owner is very often also a member of the Acquisition queue,
+        // and a `Set` is what stops that person getting two bells about one deal.
+        createGroupWithMember();
+        Lead l = new Lead(LastName = 'Target', Company = 'Acme', Status = 'New');
+        insert l;
+
+        GroupNotifier.Request r = new GroupNotifier.Request();
+        r.recipientGroup = GROUP_NAME;
+        r.title = 'Title';
+        r.body = 'Body';
+        r.targetRecordId = l.Id;
+        // The group's only member IS the running user, so the extra is a duplicate by construction.
+        r.additionalRecipientIds = new Set<String>{ String.valueOf(UserInfo.getUserId()) };
+
+        Test.startTest();
+        GroupNotifier.notifyWithOutcome(new List<GroupNotifier.Request>{ r });
+        Test.stopTest();
+
+        System.Assert.areEqual(1, GroupNotifier.lastSendRecipients[0].size(),
+            'The recipient appears ONCE, not twice — a List instead of a Set here would send the '
+            + 'deal owner two identical notifications whenever they are also on the queue');
+    }
+
+    @IsTest
+    static void additionalRecipientIds_doNotLeakFromOneRequestIntoTheNext() {
+        // 🔴 THE HIGHEST-VALUE TEST OF THE THREE, AND IT PINS A ONE-LINE BUG THAT WOULD OTHERWISE BE
+        // INVISIBLE. `resolveRecipients` caches the resolved member Set BY GROUP NAME and hands back
+        // THE LIVE OBJECT. Merging extras into it directly instead of into a COPY would mean a
+        // 200-deal chunk ends with the last deal's notification addressed to all 200 owners — and
+        // nothing observable would say so, because a notification cannot be queried.
+        //
+        // `lastSendRecipients` makes it observable: request 1 carries an extra, request 2 to the
+        // SAME group carries none, and request 2's recorded recipient set must NOT contain request
+        // 1's extra. Delete the `new Set<String>(recipients)` copy in `notifyWithOutcome` and this
+        // is the only test in the repo that goes red.
+        createGroupWithMember();
+        Lead l = new Lead(LastName = 'Target', Company = 'Acme', Status = 'New');
+        insert l;
+
+        GroupNotifier.Request poisoned = new GroupNotifier.Request();
+        poisoned.recipientGroup = GROUP_NAME;
+        poisoned.title = 'Poisoned';
+        poisoned.body = 'Body';
+        poisoned.targetRecordId = l.Id;
+        poisoned.additionalRecipientIds = new Set<String>{ String.valueOf(UNRESOLVABLE_USER_ID) };
+
+        GroupNotifier.Request clean = new GroupNotifier.Request();
+        clean.recipientGroup = GROUP_NAME;
+        clean.title = 'Clean';
+        clean.body = 'Body';
+        clean.targetRecordId = l.Id;
+
+        Test.startTest();
+        List<Boolean> outcomes = GroupNotifier.notifyWithOutcome(
+            new List<GroupNotifier.Request>{ poisoned, clean }
+        );
+        Test.stopTest();
+
+        System.Assert.areEqual(2, outcomes.size(), 'Index alignment is preserved');
+        System.Assert.areEqual(2, GroupNotifier.lastSendRecipients.size(),
+            'PRECONDITION: both requests reached send()');
+        System.Assert.isTrue(
+            GroupNotifier.lastSendRecipients[0].contains(String.valueOf(UNRESOLVABLE_USER_ID)),
+            'PRECONDITION: the first request really did carry the extra recipient');
+        System.Assert.isFalse(
+            GroupNotifier.lastSendRecipients[1].contains(String.valueOf(UNRESOLVABLE_USER_ID)),
+            '🔴 and the NEXT request to the same group did NOT inherit it. If this goes red, the '
+            + 'defensive copy in notifyWithOutcome has been removed and a 200-deal chunk is now '
+            + 'addressing its last notification to all 200 deal owners');
+        System.Assert.areEqual(1, GroupNotifier.lastSendRecipients[1].size(),
+            'The clean request is addressed to the group\'s one member and nobody else');
+    }
+
+    @IsTest
+    static void additionalRecipientIds_doNotRescueAGroupThatDoesNotExist() {
+        // Deliberate: a missing recipient group is a CONFIGURATION failure (post-deploy gate P1),
+        // and sending to the owner alone would let the caller stamp an idempotency marker and hide
+        // it forever. The guard is unchanged and the extras do not bypass it.
+        Lead l = new Lead(LastName = 'Target', Company = 'Acme', Status = 'New');
+        insert l;
+
+        GroupNotifier.Request r = new GroupNotifier.Request();
+        r.recipientGroup = 'No_Such_Group';
+        r.title = 'Title';
+        r.body = 'Body';
+        r.targetRecordId = l.Id;
+        r.additionalRecipientIds = new Set<String>{ String.valueOf(UserInfo.getUserId()) };
+
+        Test.startTest();
+        List<Boolean> outcomes = GroupNotifier.notifyWithOutcome(new List<GroupNotifier.Request>{ r });
+        Test.stopTest();
+
+        System.Assert.isFalse(outcomes[0],
+            'A group that does not exist still reports false even with extras supplied');
+        System.Assert.areEqual(0, GroupNotifier.sentCount,
+            'and nothing is sent, so a send-then-stamp caller writes no marker and retries');
+    }
+
+    @IsTest
+    static void aNullOrEmptyExtraSetChangesNothingForExistingCallers() {
+        // The compatibility pin. All six callers written before 2026-08-31 leave this field null,
+        // and their behaviour must be byte-for-byte unchanged.
+        createGroupWithMember();
+        Lead l = new Lead(LastName = 'Target', Company = 'Acme', Status = 'New');
+        insert l;
+
+        GroupNotifier.Request nullSet = new GroupNotifier.Request();
+        nullSet.recipientGroup = GROUP_NAME;
+        nullSet.title = 'Title';
+        nullSet.body = 'Body';
+        nullSet.targetRecordId = l.Id;
+
+        GroupNotifier.Request emptySet = new GroupNotifier.Request();
+        emptySet.recipientGroup = GROUP_NAME;
+        emptySet.title = 'Title';
+        emptySet.body = 'Body';
+        emptySet.targetRecordId = l.Id;
+        emptySet.additionalRecipientIds = new Set<String>();
+
+        Test.startTest();
+        List<Boolean> outcomes = GroupNotifier.notifyWithOutcome(
+            new List<GroupNotifier.Request>{ nullSet, emptySet }
+        );
+        Test.stopTest();
+
+        System.Assert.isTrue(outcomes[0], 'A null extras set sends exactly as before');
+        System.Assert.isTrue(outcomes[1], 'and so does an empty one');
+        System.Assert.areEqual(2, GroupNotifier.sentCount, 'two ordinary sends, nothing new');
+    }
 }

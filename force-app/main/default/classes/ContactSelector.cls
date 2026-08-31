@@ -44,6 +44,14 @@
  *     class and it is deliberately NOT `selectByEmails`, which answers the same question for a
  *     signed-in user under USER_MODE. Same question, two trust models — read both ApexDocs
  *     before merging them.
+ *   • BrokerCounterRecalcBatch.start -> queryBrokerCounterTargets (the nightly Contact
+ *     broker-counter recalculation, 2026-08-31 — the batch's root locator over EVERY broker
+ *     Contact; SYSTEM_MODE + without sharing via the `CounterTargetReads` nested class).
+ *     🔴 IT IS THE SECOND `without sharing` NESTED CLASS HERE AND ITS ARGUMENT IS UNRELATED TO
+ *     `GuestReads`': `Contact` OWD measures `ReadWrite`, which looks like "no escape needed"
+ *     and is MISLEADING — an ACCOUNT-LESS Contact is owner-private regardless of OWD, and 4 of
+ *     this org's 18 broker Contacts have a null `AccountId` (measured 2026-08-31). Read that
+ *     method's ApexDoc before narrowing it.
  *
  * ═══════════════════════════════════════════════════════════════════════════════════
  * 🔴 WHAT "BROKER" MEANS IN THIS CLASS — CHANGED 2026-08-20. READ THIS FIRST.
@@ -760,6 +768,110 @@ public with sharing class ContactSelector {
                 LIMIT 1
             ];
             return brokers.isEmpty() ? null : brokers[0];
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════════════
+    // NIGHTLY BROKER-COUNTER LOCATOR (BrokerCounterRecalcBatch)
+    //     — SYSTEM_MODE + WITHOUT SHARING
+    // ═══════════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * The work queue for `BrokerCounterRecalcBatch`: **every** broker Contact in the org, with
+     * its four current counter values (design §2 ITEM 6.2/6.4).
+     *
+     * ═══ 🔴 "EVERY BROKER" IS THE WHOLE POINT — THERE IS DELIBERATELY NO FILTER ═══
+     * No `WHERE the broker has deals`, no `Broker_Status__c = 'Active'`, no
+     * `LastModifiedDate` window. The design chose a **Contact-rooted** batch over the obvious
+     * Opportunity-rooted one for exactly one reason, and this locator is where that reason
+     * lives: an Opportunity-rooted job never VISITS a broker whose deals were all deleted or
+     * reassigned, so their old count survives forever and reads as live. Only a job that
+     * visits every broker can reset a stale count back to **0**. Adding any narrowing
+     * predicate here silently reinstates the bug — `BrokerCounterRecalcBatchTest`'s
+     * `resetsStaleCountersToZero` is the falsifier and will go red if you do.
+     *
+     * ⚠ THE FOUR COUNTER FIELDS ARE SELECTED, NOT JUST THE Id, AND THAT IS LOAD-BEARING TOO.
+     * The batch compares the computed values against these and skips rows that already match,
+     * so the DML row count is proportional to CHANGES rather than to the broker population — a
+     * nightly job over a stable roster costs zero DML rows. Dropping them from the select list
+     * would work, but would rewrite every Contact in the org every night, churning
+     * `LastModifiedDate`, field history and every downstream trigger.
+     *
+     * ⚠ `ORDER BY Id` IS FOR CHUNK DETERMINISM, not display. It keeps a re-run's chunk
+     * boundaries stable, which is what makes a partial failure reproducible.
+     *
+     * ═══ 🔴 TWO KEYWORDS, TWO SEPARATE QUESTIONS ═══
+     *
+     * ▸ MODE = `WITH SYSTEM_MODE` (API 67), automation path (ARCHITECTURE.md §2). Two of the
+     *   four selected fields — `Deals_Lost__c` and `First_Submission_DateTime__c` — are
+     *   Metadata-API-deployed customs created in this same change, and such a field arrives
+     *   with **no FLS for any profile, System Administrator included**. Under `USER_MODE` this
+     *   locator would throw `No such column` for the very administrator who deployed it, on day
+     *   one, and the feature would be silently dead. Identical in shape to the argument at
+     *   `OpportunitySelector.queryCallForOffersAlerts`, and reached independently.
+     *
+     * ▸ SHARING = **`without sharing`, via `CounterTargetReads`, AND IT IS MEASURED.** This one
+     *   does NOT follow from the OWD and is the trap this method exists to sidestep:
+     *   `Contact.InternalSharingModel` is **`ReadWrite`** (Tooling API, `usman-dpeg`,
+     *   2026-08-31) — which looks like "no escape needed" and is **misleading**. A Contact with
+     *   **no `AccountId` is a private contact, visible only to its owner, and the OWD does not
+     *   override that.** Measured on this org the same day: **4 of the 18 broker Contacts
+     *   (22%) have a null `AccountId`.** Under `with sharing` those four are invisible to any
+     *   scheduling principal who does not own them, are never visited, and therefore keep a
+     *   stale count forever — the precise failure the Contact-rooted design was chosen to
+     *   prevent, reintroduced through the back door. See
+     *   `selectBrokerByEmailForIntake` in this class, which sidesteps the same rule the other
+     *   way (`AccountId != null`); that option is not available here, because an unvisited
+     *   broker is exactly the row this job is for.
+     *
+     * @return A locator over every Broker-record-type Contact with its four counter fields,
+     *         ordered by Id.
+     * @example
+     * public Database.QueryLocator start(Database.BatchableContext ctx) {
+     *     return ContactSelector.queryBrokerCounterTargets();
+     * }
+     */
+    public static Database.QueryLocator queryBrokerCounterTargets() {
+        return new CounterTargetReads().brokerCounterTargets();
+    }
+
+    /**
+     * 🔴 THE SHARING ESCAPE FOR THE NIGHTLY BROKER-COUNTER LOCATOR, AND NOTHING ELSE.
+     *
+     * `without sharing` is confined to this inner class so it applies to ONE query. The
+     * enclosing `ContactSelector` stays `with sharing` and must: it backs eight reads, most of
+     * them user-facing `USER_MODE` reads whose job is to respect what the running user may see.
+     * This is the `OpportunitySelector.NdaGateReads` shape ARCHITECTURE.md §2 prescribes.
+     *
+     * It is deliberately a SECOND inner class rather than a method on `GuestReads`. That class's
+     * escape was argued for an UNAUTHENTICATED guest lookup; this one is argued from the
+     * account-less-Contact measurement. Merging them would leave a reader unable to tell which
+     * argument covers which query.
+     *
+     * The full justification lives at `queryBrokerCounterTargets`'s own declaration. Read it
+     * before touching this.
+     *
+     * ⚠ DO NOT ADD A SECOND METHOD HERE. Every query that lands in this class silently inherits
+     * an escape argued for a different one.
+     */
+    private without sharing class CounterTargetReads {
+
+        /**
+         * Every broker Contact and its current counters, read without sharing so the
+         * account-less broker Contacts (22% of the roster, measured 2026-08-31) are visited and
+         * can be reset.
+         *
+         * @return The locator; never null.
+         */
+        private Database.QueryLocator brokerCounterTargets() {
+            return Database.getQueryLocator([
+                SELECT Id, Deals_Submitted__c, Deals_Won__c, Deals_Lost__c,
+                       First_Submission_DateTime__c
+                FROM Contact
+                WHERE RecordType.DeveloperName = 'Broker'
+                WITH SYSTEM_MODE
+                ORDER BY Id ASC
+            ]);
         }
     }
 }

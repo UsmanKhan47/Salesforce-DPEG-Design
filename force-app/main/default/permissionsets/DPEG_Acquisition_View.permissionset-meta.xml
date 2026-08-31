@@ -1309,6 +1309,19 @@
         <field>Opportunity.Stage_Entry_Date__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!-- Stage_Alert_Last_Sent_Date__c / Stage_Alert_Stage__c ADDED Acquisitions gap-fix Item 4
+         (2026-08-31). Read-only twin of the same grants on DPEG_Acquisition_Edit - see that set
+         for why these two, unlike Stage_Entry_Date__c, are read-only even on the Edit set. -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Opportunity.Stage_Alert_Last_Sent_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Opportunity.Stage_Alert_Stage__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
         <field>Opportunity.Sale_Process__c</field>

@@ -297,10 +297,18 @@ private class CallForOffersAlertBatchTest {
         Opportunity pastCeiling = dealDueIn(30);
         Opportunity noDeadline = TestDataFactory.createOpportunity(null, true);
 
-        // Closed at INSERT rather than by an update, so no ISCHANGED(StageName) validation rule is
-        // involved in setting up a test that is not about validation rules.
+        // ⚠ AMENDED 2026-08-30. RETRACTED, verbatim: "Closed at INSERT rather than by an update,
+        // so no ISCHANGED(StageName) validation rule is involved in setting up a test that is not
+        // about validation rules." `Rejection_Reason_Required_On_Dead` now fires on INSERT too, so
+        // inserting at a closed stage no longer avoids it. The INTENT of the original comment
+        // still holds and is why the insert shape is kept: it keeps this fixture clear of the
+        // BACKWARD-stage rules, which remain ISCHANGED-gated. 'Wrong Market' is present on all
+        // BOTH surviving Opportunity record types — Land and Retail (Commercial was deleted
+        // 2026-08-30; re-verified against the surviving files that day). This fixture sets no
+        // RecordTypeId, so Master applies.
         Opportunity closedDeal = TestDataFactory.createOpportunity(null, false);
         closedDeal.StageName = 'Dead/Pass';
+        closedDeal.Rejection_Reason__c = 'Wrong Market';
         insert closedDeal;
         update new Opportunity(Id = closedDeal.Id, Offer_Due_Date__c = Date.today().addDays(2));
 

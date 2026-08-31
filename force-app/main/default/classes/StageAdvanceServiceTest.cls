@@ -296,12 +296,38 @@ private class StageAdvanceServiceTest {
         Opportunity psaDeal = newOpp('Under Contract (PSA)');
         Opportunity deadDeal = newOpp('Under Review');
 
-        // Only psaDeal needs preparing: 'About to Close' is inside the signed-NDA gate's stage
-        // list, and the NDA auto-created on insert is Pending. Nothing else here crosses a gate —
-        // the two branch targets are ungated, and the Dead/Pass leg is deliberately left bare
-        // because it is a live assertion that the off-ramp is ALWAYS reachable. Giving deadDeal an
-        // NDA it does not need would silently stop testing that.
+        // 'About to Close' is inside the signed-NDA gate's stage list, and the NDA auto-created on
+        // insert is Pending, so psaDeal needs signing. The two branch targets are ungated.
         TestDataFactory.signPrimaryNda(psaDeal);
+
+        // ═══ 🔴 THE Dead/Pass LEG IS NO LONGER "LEFT BARE" — AND THE OLD REASON FOR LEAVING IT
+        //         BARE NO LONGER HOLDS (2026-08-30) ═══
+        // RETRACTED, verbatim: "the Dead/Pass leg is deliberately left bare because it is a live
+        // assertion that the off-ramp is ALWAYS reachable. Giving deadDeal an NDA it does not need
+        // would silently stop testing that."
+        //
+        // TWO SEPARATE THINGS WERE CONFLATED THERE, AND ONLY ONE OF THEM IS STILL TRUE:
+        //   ✅ Dead/Pass is still outside the SIGNED-NDA gate, and deadDeal still gets NO NDA. That
+        //      half of the original point is intact and is why signPrimaryNda is NOT called on it.
+        //   ❌ "Bare" also meant no Rejection_Reason__c, and as of 2026-08-30 that is a blocked
+        //      state: Rejection_Reason_Required_On_Dead makes the reason mandatory on any
+        //      ISCHANGED transition into Dead/Pass. advanceTo -> setStage does exactly such an
+        //      update, its catch converts the DmlException into StageAdvanceException, and this
+        //      test would fail on line "advanceTo(deadDeal.Id, 'Dead/Pass')" BEFORE reaching a
+        //      single assertion.
+        //
+        // ⚠ THIS BREAKS UNDER THE RULE'S ORIGINAL ISCHANGED-ONLY FORMULA TOO — it does NOT depend
+        // on the later ISNEW() amendment. That is precisely why two sweeps missed it: both looked
+        // for records CREATED at Dead/Pass, and this one is MOVED there. Any future sweep for this
+        // rule must cover the update path, including moves made indirectly through a service.
+        //
+        // ⚠ STAMPED IN ITS OWN DML, WITHOUT TOUCHING StageName, so this preparation cannot itself
+        // trip the rule (which is ISCHANGED(StageName)-gated). StageAdvanceService loads its own
+        // copy of the row, and its selector does not select this field, so `update o` sends a
+        // partial record and the value stamped here survives the advance.
+        // 'Wrong Market' is valid on both surviving Opportunity record types (Land and Retail);
+        // deadDeal takes the running user's default, and the value is on every one that exists.
+        update new Opportunity(Id = deadDeal.Id, Rejection_Reason__c = 'Wrong Market');
 
         Test.startTest();
         StageAdvanceService.advanceTo(landDeal.Id, 'Development Review');

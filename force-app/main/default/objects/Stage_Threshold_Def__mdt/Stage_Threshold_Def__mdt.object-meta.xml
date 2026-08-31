@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomObject xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        Acquisitions gap-fix, Item 4 (2026-08-31, agent-output/design-requirements.md §2 ITEM 4,
+        §10 admin prompt WAVE C). Holds the stalled-deal reminder threshold, in days, per
+        Opportunity stage. User decision: a FLAT 14 DAYS for every open stage, stored here (not
+        hardcoded) so it can be retuned per-stage later without a deploy.
+
+        A SEPARATE TYPE FROM CFO_Alert_Rung__mdt (Item 5d), DELIBERATELY - do not merge them if a
+        future change looks like it would simplify things. See CFO_Alert_Rung__mdt's own header
+        for the full three-part reasoning; the short version: different cardinality (one row per
+        STAGE here vs one row per RUNG there), different readers (StageDelayService vs
+        CallForOffersService), and the CFO rung values are a DATA CONTRACT with existing
+        Opportunity.Offer_Alert_Last_Interval__c markers that this type's rows have no
+        counterpart to and must never be able to corrupt.
+
+        THE RE-ARM KEY IS THE STAGE, NOT A DATE. Opportunity.Stage_Alert_Stage__c (the snapshot
+        field, see its own header) is what makes a deal that moves on and stalls again ring a
+        second time - a date-only marker (mirroring the Offer_Alert_Due_Date__c /
+        NDA_Alert_Expiry_Date__c pattern) would leave it permanently silent, because nothing about
+        this feature's threshold changes when the stage changes. This type carries none of that
+        re-arm logic itself - it is pure lookup data, read by StageDelayService.
+
+        RECORDS ARE NOT DEPLOYABLE HERE. .forceignore excludes **/customMetadata/** in this org
+        (file-based CMDT record deploy throws UNKNOWN_EXCEPTION - see Broker_Protection_Config__mdt
+        and CFO_Alert_Rung__mdt's own headers for the same trap). This file (the TYPE) and its
+        fields/*.field-meta.xml ARE deployed normally; the eight per-stage rows (all
+        Threshold_Days__c = 14, per design-requirements.md §10) are loaded by an Apex script
+        (scripts/load-stage-threshold-defs.apex - developer-owned, not part of this admin build),
+        following the load-broker-protection-config.apex / load-cfo-alert-rungs.apex pattern.
+
+        RESIDUAL-4 (design-requirements.md §8): the Delayed_Opportunities report's 14-day filter
+        is a LITERAL, disconnected from these rows - a report filter cannot read a CMDT record.
+        Retuning a threshold here does not retune the report; see that report's own description.
+
+        See agent-output/design-requirements.md §2 ITEM 4 and §10 (admin prompt, WAVE C) for the
+        full design context.
+    -->
+    <label>Stage Threshold Def</label>
+    <pluralLabel>Stage Threshold Defs</pluralLabel>
+    <visibility>Public</visibility>
+</CustomObject>

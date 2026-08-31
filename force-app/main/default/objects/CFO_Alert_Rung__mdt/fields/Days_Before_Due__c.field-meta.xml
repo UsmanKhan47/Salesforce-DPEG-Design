@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY - a comment ABOVE the root
+        breaks `sf` deploy at conversion with a misleading parent-xml error.
+
+        Replaces the literal values in CallForOffersService.ALERT_INTERVALS = {7, 3, 1, 0}.
+        Seed exactly four rows with this value at 7, 3, 1 and 0 via
+        scripts/load-cfo-alert-rungs.apex so day-one behaviour is byte-identical to today
+        (Q5, design-requirements.md §2 ITEM 5(d)). ORDER IS LOAD-BEARING - the reading service
+        must sort DESCENDING by this field explicitly; CustomMetadataType.getAll() returns a
+        Map with no guaranteed order. Do not add, remove or renumber rungs without re-reading
+        CallForOffersService.intervalFor's "keeps the LAST match" logic first - getting the
+        order wrong silently changes which rung fires.
+
+        =================================================================================
+        🔴 ADDED 2026-08-30 (FIX 5, same-day follow-up): THE RUNG CEILING TRAP.
+        =================================================================================
+        Making the rungs Setup-editable (this type's whole purpose) creates a NEW silent
+        failure the hardcoded {7,3,1,0} array never could: OpportunitySelector.
+        queryCallForOffersAlerts uses a Database.QueryLocator, which CANNOT bind an Apex
+        collection or variable in its WHERE clause the way an ordinary SOQL call can - so the
+        selector's upper bound is a hard, literal Offer_Due_Date__c <= TODAY + 7 in the query
+        text itself, not something read from CFO_Alert_Rung__mdt. An admin who adds a rung
+        GREATER THAN 7 (e.g. 14, "warn two weeks out") gets a row that CallForOffersService
+        will happily sort and evaluate, but the QueryLocator has already excluded every
+        Opportunity that rung could ever fire for - it fires for nobody, forever, with no
+        error anywhere. The <description> and <inlineHelpText> above carry this warning
+        because Setup is the only place the admin making this mistake is looking; a class
+        header comment would never be seen by them. If a rung wider than 7 is ever genuinely
+        needed, the QueryLocator's literal ceiling must move first (and be re-verified as the
+        MAX of the active rungs, not a fresh guess) - do not add the CMDT row alone.
+    -->
+    <fullName>Days_Before_Due__c</fullName>
+    <description>Days before Offer_Due_Date__c this rung fires. Seeded {7,3,1,0}, sorted DESCENDING when read - order is load-bearing. CEILING: queryCallForOffersAlerts filters to TODAY+7 - a rung greater than 7 will never fire, silently. Do not add one above 7.</description>
+    <externalId>false</externalId>
+    <fieldManageability>DeveloperControlled</fieldManageability>
+    <inlineHelpText>One rung of the CFO reminder ladder (days before due). Do NOT add a value greater than 7 - the alert query has a hard TODAY+7 ceiling, so a bigger rung fires for nobody and nothing errors.</inlineHelpText>
+    <label>Days Before Due</label>
+    <precision>3</precision>
+    <required>true</required>
+    <scale>0</scale>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

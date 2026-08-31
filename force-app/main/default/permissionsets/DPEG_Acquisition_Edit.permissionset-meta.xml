@@ -1297,6 +1297,23 @@
         <field>Opportunity.Stage_Entry_Date__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!-- Stage_Alert_Last_Sent_Date__c / Stage_Alert_Stage__c ADDED Acquisitions gap-fix Item 4
+         (2026-08-31). Read-only in every user-facing set, unlike Stage_Entry_Date__c immediately
+         above and the Offer_Alert_*/NDA_Alert_* markers elsewhere in this set - these two are
+         BATCH-MAINTAINED (StageDelayAlertBatch, system mode) and this design does not offer a
+         supported "blank it to re-arm" workflow the way the CFO/NDA reminders do, so there is no
+         end-user write case to grant. See DPEG_Admin_Access for why the DEPLOYING administrator
+         still needs an editable grant on these two. -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Opportunity.Stage_Alert_Last_Sent_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Opportunity.Stage_Alert_Stage__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
         <field>Opportunity.Sale_Process__c</field>

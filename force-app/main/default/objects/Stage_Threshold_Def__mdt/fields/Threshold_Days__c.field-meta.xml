@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY - see Stage_Value__c.field-meta.xml
+        in this folder for why a comment above the root breaks `sf` deploy at conversion.
+
+        Replaces a hardcoded `14` that would otherwise sit in StageDelayService or
+        StageDelayAlertBatch. Design decision (design-requirements.md §2 ITEM 4, Q2/Q3): a FLAT
+        14 days for every open stage today, seeded identically across all eight rows by
+        scripts/load-stage-threshold-defs.apex - but stored PER STAGE, not as one org-wide
+        constant, specifically so a future admin can lengthen or shorten the threshold for one
+        slow-moving stage (e.g. Underwriting) without touching any other stage or redeploying.
+        StageDelayService.thresholdFor(Stage_Value__c) reads this; if you find yourself writing
+        `14` in StageDelayService or the batch, stop - the value belongs here.
+    -->
+    <fullName>Threshold_Days__c</fullName>
+    <description>Days a deal may sit in this stage (Stage_Value__c) before the stalled-deal reminder fires. All eight seeded rows are 14 today (design decision), but each stage's value can be retuned independently without a deploy.</description>
+    <externalId>false</externalId>
+    <fieldManageability>DeveloperControlled</fieldManageability>
+    <inlineHelpText>Days in this stage before the stalled-deal reminder fires for it. Seeded at 14 for every stage; can be tuned per stage.</inlineHelpText>
+    <label>Threshold Days</label>
+    <precision>3</precision>
+    <required>true</required>
+    <scale>0</scale>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomObject xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        Acquisitions gap-fix, Item 5(d) (2026-08-30, Q5 option (i) in
+        agent-output/design-requirements.md §0.5/§2). Moves the Call for Offers reminder
+        ladder's rung values out of CallForOffersService.ALERT_INTERVALS ({7, 3, 1, 0}) and
+        into configuration. The ladder itself is preserved EXACTLY - only the four values move
+        here. No regression, no marker invalidation, per Q5.
+
+        A SEPARATE TYPE FROM Stage_Threshold_Def__mdt (Item 4), DELIBERATELY - do not merge
+        them if a future change looks like it would simplify things:
+          1. Different cardinality/meaning: one row per STAGE (Item 4) vs one row per RUNG
+             (here). A shared type would need a discriminator column plus two mutually
+             irrelevant columns per row.
+          2. Different readers: StageDelayService vs CallForOffersService, two unrelated
+             batches.
+          3. DECISIVE: the rung values are a DATA CONTRACT with existing rows.
+             Opportunity.Offer_Alert_Last_Interval__c stores the rung on every deal that has
+             ever alerted. Item 4's thresholds have no stored counterpart on any record. One
+             shared type would let an admin edit to one feature's config silently corrupt the
+             other feature's stored markers.
+
+        ORDER IS LOAD-BEARING. CallForOffersService.intervalFor iterates its interval list and
+        keeps the LAST match, which only yields "the smallest rung the deal still qualifies
+        for" because that list is DESCENDING. Custom Metadata's getAll() returns a Map with NO
+        guaranteed iteration order, so the accessor reading this type MUST sort
+        Days_Before_Due__c descending explicitly after reading it - do not rely on record
+        order in Setup or on getAll()'s Map order.
+
+        RECORDS ARE NOT DEPLOYABLE HERE. .forceignore excludes **/customMetadata/** in this
+        org (file-based CMDT record deploy throws UNKNOWN_EXCEPTION - see
+        Broker_Protection_Config__mdt's own header for the same trap). This file (the TYPE)
+        and its fields/*.field-meta.xml ARE deployed normally; the four rung records
+        ({7, 3, 1, 0}, matching ALERT_INTERVALS byte-for-byte) are loaded by an Apex script
+        (scripts/load-cfo-alert-rungs.apex - developer-owned, not part of this admin build),
+        following the load-broker-protection-config.apex pattern.
+
+        See agent-output/design-requirements.md §2 ITEM 5(d) and §10 (admin prompt, 5C) for
+        the full design context.
+    -->
+    <label>CFO Alert Rung</label>
+    <pluralLabel>CFO Alert Rungs</pluralLabel>
+    <visibility>Public</visibility>
+</CustomObject>

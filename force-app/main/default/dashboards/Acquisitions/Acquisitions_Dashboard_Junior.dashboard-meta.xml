@@ -1,5 +1,33 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Dashboard xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        Acquisitions gap-fix, Item 4 (2026-08-31, agent-output/design-requirements.md §2 ITEM 4,
+        §7 GATE FP-1). Adds ONE new component: "Delayed - 14d in stage", the stalled-deal
+        reminder widget, deliberately titled distinctly from the pre-existing "7-Day Stale Deals"
+        widget (Q3, design-requirements.md §0.5) - that widget measures NO ACTIVITY IN 7 DAYS
+        (Stale_Deals_7Day report, LAST_ACTIVITY-based); this one measures TIME STUCK IN STAGE
+        (Delayed_Opportunities report, Days_In_Stage__c-based). Both stay, on purpose.
+
+        🔴 GATE FP-1 - THIS FILE WAS RETRIEVED FROM THE ORG BEFORE THIS EDIT, NOT EDITED FROM THE
+        REPO COPY. A dashboard deploy REPLACES the org copy with no version history, and a diff of
+        the retrieved copy against the repo's pre-existing (2026-07-15) copy found the org had
+        ALREADY DIVERGED from the repo in two ways neither related to this change:
+          1. `<owner>` / `<runningUser>` in the ORG were already
+             `usman.khan.dpeg@avanzasolutions.com` - a real user, NOT the stale
+             `test-aysz9meqvl23@example.com` scratch-org address the repo copy carried. The repo
+             file was the STALE one on this point; deploying the pre-existing repo copy as-is
+             would have REGRESSED the org back to the broken runningUser. This edit carries the
+             org's correct value forward instead of "fixing" a value that was already fixed
+             org-side.
+          2. Two components (`Deal Stage Pipeline`, `Broker Leaderboard`) carry a
+             `<sortLegendValues>false</sortLegendValues>` element the repo copy did not have -
+             almost certainly a platform-added default from a prior in-app save. Preserved here
+             rather than dropped, since a full-file deploy would otherwise silently remove it.
+        Report both findings to the invoking coordinator/devops step rather than silently
+        "fixing" the runningUser again - see this build's own handoff.
+
+        Component budget: this dashboard now carries 14 of the platform's 20-component ceiling.
+    -->
     <backgroundEndColor>#FFFFFF</backgroundEndColor>
     <backgroundFadeDirection>Diagonal</backgroundFadeDirection>
     <backgroundStartColor>#FFFFFF</backgroundStartColor>
@@ -261,6 +289,7 @@
                 <showPercentage>false</showPercentage>
                 <showValues>true</showValues>
                 <sortBy>RowLabelAscending</sortBy>
+                <sortLegendValues>false</sortLegendValues>
                 <title>Deal Stage Pipeline</title>
                 <useReportChart>false</useReportChart>
             </dashboardComponent>
@@ -299,6 +328,7 @@
                 <showPicturesOnCharts>false</showPicturesOnCharts>
                 <showValues>true</showValues>
                 <sortBy>RowValueDescending</sortBy>
+                <sortLegendValues>false</sortLegendValues>
                 <title>Broker Leaderboard</title>
                 <useReportChart>false</useReportChart>
             </dashboardComponent>
@@ -351,13 +381,38 @@
             <rowIndex>16</rowIndex>
             <rowSpan>6</rowSpan>
         </dashboardGridComponents>
+        <dashboardGridComponents>
+            <colSpan>3</colSpan>
+            <columnIndex>0</columnIndex>
+            <dashboardComponent>
+                <autoselectColumnsFromReport>false</autoselectColumnsFromReport>
+                <chartSummary>
+                    <column>RowCount</column>
+                </chartSummary>
+                <componentChartTheme>light</componentChartTheme>
+                <componentType>Metric</componentType>
+                <decimalPrecision>-1</decimalPrecision>
+                <displayUnits>Auto</displayUnits>
+                <groupingSortProperties/>
+                <indicatorBreakpoint1>2.0</indicatorBreakpoint1>
+                <indicatorBreakpoint2>5.0</indicatorBreakpoint2>
+                <indicatorHighColor>#930B0B</indicatorHighColor>
+                <indicatorLowColor>#0B5394</indicatorLowColor>
+                <indicatorMiddleColor>#8A930B</indicatorMiddleColor>
+                <metricLabel>Delayed - 14d in Stage</metricLabel>
+                <report>Acquisitions/Delayed_Opportunities</report>
+                <showRange>false</showRange>
+            </dashboardComponent>
+            <rowIndex>22</rowIndex>
+            <rowSpan>4</rowSpan>
+        </dashboardGridComponents>
         <numberOfColumns>12</numberOfColumns>
         <rowHeight>36</rowHeight>
     </dashboardGridLayout>
     <dashboardType>SpecifiedUser</dashboardType>
     <isGridLayout>true</isGridLayout>
-    <owner>test-aysz9meqvl23@example.com</owner>
-    <runningUser>test-aysz9meqvl23@example.com</runningUser>
+    <owner>usman.khan.dpeg@avanzasolutions.com</owner>
+    <runningUser>usman.khan.dpeg@avanzasolutions.com</runningUser>
     <textColor>#000000</textColor>
     <title>Acquisitions Dashboard</title>
     <titleColor>#000000</titleColor>

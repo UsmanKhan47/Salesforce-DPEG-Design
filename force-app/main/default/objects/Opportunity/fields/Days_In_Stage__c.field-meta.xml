@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Days_In_Stage__c</fullName>
+    <label>Days In Stage</label>
+    <description>Whole days since Stage_Entry_Date__c, computed live. 0 for any closed deal (IsClosed - true for Closed Won and Dead/Pass). Blank if Stage_Entry_Date__c is not yet stamped. Drives the Item 4 stalled-deal reminder threshold.</description>
+    <inlineHelpText>Days the deal has sat in its current stage. Recalculated automatically; cannot be edited.</inlineHelpText>
+    <externalId>false</externalId>
+    <formula>IF(IsClosed, 0, IF(ISBLANK(Stage_Entry_Date__c), null, TODAY() - Stage_Entry_Date__c))</formula>
+    <formulaTreatBlanksAs>BlankAsZero</formulaTreatBlanksAs>
+    <precision>18</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

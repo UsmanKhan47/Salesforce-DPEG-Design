@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY - a comment ABOVE the root breaks
+        `sf` deploy at conversion with a misleading parent-xml error.
+
+        Acquisitions gap-fix, Item 6.2/6.4 (2026-08-31, agent-output/design-requirements.md §1,
+        §2 ITEM 6, §0.5 Q6/Q9). Sibling of the pre-existing Deals_Submitted__c / Deals_Won__c -
+        same population, same maintenance mechanism (BrokerCounterRecalcBatch, nightly, system
+        mode), added here because the story asks for a Deals Lost counter alongside the two that
+        already exist.
+
+        🔴 READ THE <description> BELOW IN FULL BEFORE USING THIS FIELD IN A REPORT OR LIST VIEW.
+        It states the population this field covers, and that population is NARROWER than it
+        looks. §1 of the design document: MOST BROKERS WHO SUBMIT AND LOSE NEVER RECEIVE A LEAD
+        (since 2026-07-31 a competing broker gets no Lead), so they never convert to a Contact,
+        so they NEVER APPEAR on this field - a Contact-keyed "Deals Lost" count structurally
+        cannot see the majority of actual losses. That is not a bug to be fixed later; it is why
+        this field's authoritative counterpart is brokerLeaderboard / BrokerLeaderboardService
+        (keyed on Broker_Email__c against Competing_Broker_Submission__c, which has no such gap).
+        This field exists ONLY to stop the Broker_Hub / BrokerController surface from rendering a
+        permanent zero for brokers who DO have a Contact.
+
+        Maintained nightly by BrokerCounterRecalcBatch, batched over CONTACT (not Opportunity) so
+        a broker whose deals are deleted or reassigned correctly resets to 0. READ-ONLY by design
+        in every user-facing permission set - the write is SYSTEM_MODE and needs no user FLS
+        grant; DPEG_Admin_Access carries an EDITABLE grant instead, matching this org's
+        established pattern for batch-maintained marker/counter fields, because RunLocalTests
+        executes as the deploying administrator and this repo has measured that fixture-driven
+        direct writes to a brand-new field fail for that exact principal without it.
+    -->
+    <fullName>Deals_Lost__c</fullName>
+    <description>Count of this broker's Opportunities at StageName = Dead/Pass. Covers ONLY brokers who have a Contact (Lead converted) - brokers who submitted and lost never receive a Lead since 2026-07-31 and so never appear here. Authoritative population: brokerLeaderboard / BrokerLeaderboardService, live from Competing_Broker_Submission__c. Maintained nightly by BrokerCounterRecalcBatch.</description>
+    <externalId>false</externalId>
+    <label>Deals Lost</label>
+    <precision>18</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <trackFeedHistory>false</trackFeedHistory>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

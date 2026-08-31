@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        🔴 THIS RULE REVERSES A RECORDED PRIOR USER DECISION. HIGHEST-RISK CHANGE IN THIS
+        TRANCHE (agent-output/design-requirements.md §2 ITEM 1, §0.5 Q1, §8 RESIDUAL-10).
+        Read this comment in full before touching this rule or the No_Backward_Stage_Movement
+        rule it interacts with.
+
+        1. THE 2026-08-30 DECISION. On 2026-08-30 the user was shown the full consequence of
+           blocking Dead/Pass from Closed Won - that Closed Won would become inescapable in
+           the app, with no bypass permission and no self-service recovery route - and,
+           after that consequence was stated, REAFFIRMED the decision to build it anyway.
+           See design-requirements.md §0.5 Q1: "YES - BUILD IT. User overrides the recorded
+           invariant, with no replacement recovery route." This is not an oversight of the
+           prior decision below; it is a deliberate, informed override of it, made on this
+           date.
+
+        2. THE SUPERSEDED INVARIANT, QUOTED VERBATIM, AND WHERE IT LIVES. The rule this file
+           sits beside - objects/Opportunity/validationRules/
+           No_Backward_Stage_Movement.validationRule-meta.xml - records in its own header
+           comment "the user-required invariant that Dead/Pass stay reachable from every
+           stage" and names the Closed Won -> Dead/Pass -> earlier-stage round trip as
+           "the actual recovery procedure for a mistakenly advanced deal." That invariant is
+           recorded THERE, dated to an earlier decision, and this file is what supersedes it
+           for the Closed Won case specifically. No_Backward_Stage_Movement's own header has
+           been amended in the same change as this file to retract the parts that are now
+           false for Closed Won - see its comment for the retraction.
+
+        3. CLOSED WON NOW HAS NO IN-APP EXIT. Every other route out of Closed Won was already
+           closed before this file existed: ranks 1-7 are blocked as backward moves by
+           No_Backward_Stage_Movement's rank map (Closed Won is rank 8, the highest), that
+           rule's CARVE-OUT 2 (the Initiate Underwriting checkbox) explicitly excludes Closed
+           Won as of its own 2026-08-04 amendment, and D4 rejected a bypass admin permission
+           for backward moves generally. This rule closes the one route that remained. A deal
+           that reaches Closed Won by mistake now REQUIRES AN ADMIN DATA FIX (e.g. a direct
+           data update outside normal validation, or a temporary rule deactivation performed
+           deliberately and reverted) - there is no button, checkbox or permission a user can
+           be granted to reverse it. See design-requirements.md §5 P8: brief the team on this
+           before go-live.
+
+        4. NO BYPASS CUSTOM PERMISSION WAS ADDED. Do not add one to "fix" the dead end this
+           rule creates - that would re-open D4, which the user explicitly rejected at the
+           original design gate ("the block is absolute for users"). If a bypass is ever
+           wanted, it needs its own decision gate, not a quiet addition here.
+
+        5. A READER OF ONLY No_Backward_Stage_Movement'S HEADER WILL BE MISLED. That file's
+           comment was written before this decision and, prior to this change's amendment of
+           it, described Dead/Pass as reachable from Closed Won and named the round trip as
+           the working recovery procedure. Anyone who reads only that file and not this one
+           will reach the wrong conclusion about how to recover a mistakenly Closed Won deal.
+           THIS FILE IS THE CURRENT DECISION. Point future readers here.
+
+        MECHANICS: PRIORVALUE(StageName)-keyed, so this rule is transition-only and
+        self-limiting by construction, the same stickiness property No_Backward_Stage_Movement's
+        "CARVE-OUT 1 STICKINESS CHECK" documents for its own carve-out. An existing Dead/Pass
+        record whose prior stage happened to be Closed Won is NOT affected retroactively - it
+        is not changing StageName, so ISCHANGED is false and this rule cannot fire on it (see
+        design-requirements.md §6.3(i)). The rule only blocks the SAVE that performs the
+        Closed Won -> Dead/Pass transition itself. TEXT(StageName) is not used here (unlike
+        No_Backward_Stage_Movement) because both sides of the comparison are single, known
+        picklist values, not a CASE() rank lookup - ISPICKVAL() is the correct, and this org's
+        documented, form for that.
+    -->
+    <fullName>Dead_Pass_Not_Allowed_From_Closed_Won</fullName>
+    <active>true</active>
+    <description>Blocks moving a Closed Won deal to Dead/Pass. Reverses a prior invariant (Dead/Pass reachable from every stage) per the 2026-08-30 decision - see the XML comment. No bypass permission exists; a wrongly Closed Won deal needs an admin data fix.</description>
+    <errorConditionFormula>AND(
+    ISCHANGED(StageName),
+    ISPICKVAL(PRIORVALUE(StageName), &apos;Closed Won&apos;),
+    ISPICKVAL(StageName, &apos;Dead/Pass&apos;)
+)</errorConditionFormula>
+    <errorDisplayField>StageName</errorDisplayField>
+    <errorMessage>A Closed Won deal cannot be moved to Dead/Pass. Contact your administrator.</errorMessage>
+</ValidationRule>

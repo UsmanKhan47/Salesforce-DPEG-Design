@@ -174,6 +174,28 @@
             <default>false</default>
         </values>
     </picklistValues>
+    <!-- Offer_Status__c: default=true removed from Open 2026-08-31 (code review, second
+         half of the same fix as the field-level default removal). A record-type picklist
+         default is a SEPARATE mechanism from the field-level <default> on the CustomField
+         itself - it supplies the default independently for records created under THIS
+         record type, so removing only the field-level default changed nothing for any
+         deal created as Land or Retail (i.e. every deal). Both must be checked whenever
+         either one is touched. See Offer_Status__c.field-meta.xml for the field-level
+         half of this fix. -->
+    <picklistValues>
+        <picklist>Offer_Status__c</picklist>
+        <values>
+            <fullName>Open</fullName>
+        </values>
+        <values>
+            <fullName>Submitted</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Closed</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
     <picklistValues>
         <picklist>Rejection_Reason__c</picklist>
         <values>

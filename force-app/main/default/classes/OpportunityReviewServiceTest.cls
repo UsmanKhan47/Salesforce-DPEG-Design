@@ -711,10 +711,34 @@ private class OpportunityReviewServiceTest {
         // IDEMPOTENCY, not the direction of travel, so the "away" hop is re-routed rather than
         // the assertion weakened. Dead/Pass is the only stage that expresses "left and came back"
         // without contradicting the new rules: it is deliberately UNRANKED, so entering it is
-        // always allowed (the escape hatch every stranded deal needs) and leaving it is always
-        // allowed (reviving a passed deal). It is also outside the signed-NDA gate's stage list,
-        // so this fixture still needs no NDA — which keeps the test about duplicate reviews.
+        // allowed from every RANKED stage (the escape hatch every stranded deal needs) and leaving
+        // it is always allowed (reviving a passed deal). It is also outside the signed-NDA gate's
+        // stage list, so this fixture still needs no NDA — which keeps the test about duplicate
+        // reviews.
+        //
+        // ═══ ⚠ AMENDED 2026-08-30 — THE COMMENT WAS WRONG, THE TEST IS NOT ═══
+        // RETRACTED, verbatim: "it is deliberately UNRANKED, so entering it is always allowed (the
+        // escape hatch every stranded deal needs)". "ALWAYS" IS NO LONGER TRUE. The new rule
+        // Opportunity/validationRules/Dead_Pass_Not_Allowed_From_Closed_Won blocks
+        // Closed Won -> Dead/Pass outright (user decision 2026-08-30, reaffirmed after the
+        // consequence was stated: Closed Won now has NO in-app exit and a wrongly-closed deal
+        // requires an admin data fix). Dead/Pass is reachable from ranks 1–7 and from Closed Won
+        // it is not.
+        //
+        // 🔴 THIS TEST STILL PASSES AND IS UNCHANGED — it moves away from Development Review
+        // (rank 3), not from Closed Won, so the new rule cannot fire on this fixture. The comment
+        // is amended rather than the code, because the DANGER here is a future test that COPIES
+        // this "route the away-hop through Dead/Pass" pattern starting from Closed Won. That test
+        // would fail with a validation-rule error about a rule it never mentions, and this comment
+        // is the only thing that would explain why. Route such a hop through another RANKED stage,
+        // or reconsider whether the fixture needs to reach Closed Won at all.
         o.StageName = 'Dead/Pass';
+        // ⚠ REQUIRED AS OF 2026-08-30 (Rejection_Reason_Required_On_Dead). This is an ISCHANGED
+        // stage move into Dead/Pass, so the rule fires here; without a reason the fixture fails
+        // before the test reaches its subject (duplicate reviews on re-entry). 'Wrong Market' is
+        // on BOTH surviving Opportunity record types (Land and Retail; Commercial was deleted
+        // 2026-08-30 — re-verified against the surviving files).
+        o.Rejection_Reason__c = 'Wrong Market';
         update o; // moves away — no create
         o.StageName = 'Development Review';
         update o; // re-enters — must NOT create a second

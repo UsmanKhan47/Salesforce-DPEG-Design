@@ -12,6 +12,15 @@
  * a user's notification settings are per TYPE, so PM alerts would have been
  * un-muteable independently of acquisitions ones, and vice versa.
  *
+ * ═══ ⚠ AMENDED 2026-08-31 — A REQUEST MAY CARRY EXTRA RECIPIENTS ═══
+ * `Request.additionalRecipientIds` (Apex-only, NOT an `@InvocableVariable`) merges
+ * additional user Ids into one request's recipient set on top of the group's own
+ * members. Added for `StageDelayAlertBatch`, which must reach the deal OWNER as well
+ * as the `Acquisition` queue. Null/empty ⇒ byte-for-byte unchanged behaviour for every
+ * caller written before this date, and the Flow signature is untouched. The full
+ * argument — including why it is one merged `send()` and not a second `send()` per
+ * record — is at the field's own declaration.
+ *
  * `Request.notificationType` is OPTIONAL and defaults to
  * `DEFAULT_NOTIF_TYPE_DEV_NAME`, so all five pre-existing callers
  * (`ContractExecutionService`, `CallForOffersAlertBatch`, the `send()` convenience
@@ -51,6 +60,29 @@ public without sharing class GroupNotifier {
     // assert against the number of successful sends instead.
     @TestVisible private static Integer sentCount = 0;
 
+    /**
+     * Test hook, added 2026-08-31 alongside `Request.additionalRecipientIds`: the recipient set
+     * handed to each successful `send()`, in send order.
+     *
+     * 🔴 IT EXISTS BECAUSE `sentCount` CANNOT FALSIFY THE ONE BUG THE MERGE CAN INTRODUCE.
+     * `resolveRecipients` caches the resolved member Set BY GROUP NAME and returns THE LIVE OBJECT,
+     * so merging extras into it rather than into a copy would make a 200-record chunk end with the
+     * last record's notification addressed to all 200 extras. Nothing observable would say so: a
+     * delivered custom notification has no SObject, `send()` returns void, and every request would
+     * still report `true`.
+     *
+     * ⚠ AND THE OBVIOUS ALTERNATIVE WAS TRIED AND MEASURED TO NOT WORK. An unresolvable recipient
+     * Id DOES make the platform reject a whole `send()` in real execution (probed against
+     * usman-dpeg 2026-08-31: `System.HandledException: Invalid parameter value for: recipientIds`)
+     * — but **inside a test context `send()` does not validate its recipients at all** and returns
+     * cleanly, so that probe is unusable as a test. Recording the set is the only way left.
+     *
+     * ⚠ UNCONDITIONAL, not guarded on `Test.isRunningTest()`, matching `sentCount` immediately
+     * above. The cost is bounded by the requests in one transaction (at most a few hundred small
+     * Sets against a 6 MB async heap) and no production code reads it.
+     */
+    @TestVisible private static List<Set<String>> lastSendRecipients = new List<Set<String>>();
+
     // Transaction-scoped caches. notify() is already O(1) in queries for any one
     // call, but a caller that loops send() re-enters it once per record and pays
     // 3 fresh queries every time (measured: 9 queries per Opportunity in
@@ -80,6 +112,36 @@ public without sharing class GroupNotifier {
          */
         @InvocableVariable(label='Notification Type DeveloperName' required=false)
         public String notificationType;
+
+        /**
+         * ═══ ⚠ ADDED 2026-08-31 — EXTRA RECIPIENTS ON TOP OF THE GROUP ═══
+         * OPTIONAL user Ids merged into this ONE request's recipient set, in addition to whatever
+         * `recipientGroup` resolves to. Null or empty ⇒ nothing changes, which is why all six
+         * pre-existing callers are byte-for-byte unaffected.
+         *
+         * 🔴 WHY IT EXISTS, AND WHY IT IS NOT A SECOND `send()`. `StageDelayAlertBatch` must reach
+         * the deal OWNER as well as the `Acquisition` queue (recorded user decision). The obvious
+         * implementation — a second `Request` per deal targeting the owner — would DOUBLE the send
+         * count per chunk, and `CallForOffersAlertBatch`'s header §1 measures a send at
+         * `6.0 ms + 0.22 ms x |recipients|`, i.e. the cost is dominated by the PER-CALL term until
+         * roughly 27 recipients. Merging the owner into the existing call adds ONE recipient
+         * (~0.22 ms) instead of a whole second call (~6.2 ms) — a 28x cheaper way to say the same
+         * thing, and it also means the owner and the team see ONE notification about a deal rather
+         * than the owner seeing two when they are also a queue member (a `Set` de-duplicates).
+         *
+         * ⚠ DELIBERATELY **NOT** `@InvocableVariable`. A `Set<Id>` is not a Flow-addressable type,
+         * and exposing a `List<String>` variant would change the Flow signature of `notify` for no
+         * asked-for reason. This is an Apex-only field; Flow callers cannot see it and are
+         * unaffected.
+         *
+         * ⚠ IT DOES NOT RESCUE A MISSING GROUP. If `recipientGroup` resolves to no recipients at
+         * all — which, given the queue-Id fallback below, only happens when the group DOES NOT
+         * EXIST — the request is still skipped and still reports `false`, even when extras are
+         * supplied. That is deliberate: a missing recipient group is a configuration failure
+         * (post-deploy gate P1) and sending to the owner alone would stamp an idempotency marker
+         * and hide it forever.
+         */
+        public Set<String> additionalRecipientIds;
     }
 
     /** Direct entry point for Apex callers. Sends under the default notification type. */
@@ -190,6 +252,18 @@ public without sharing class GroupNotifier {
                 System.debug(LoggingLevel.WARN, 'GroupNotifier: notification type missing: ' + typeName);
                 continue;
             }
+            // ⚠ COPY BEFORE MERGING — `recipients` is the LIVE OBJECT held in RECIPIENTS_CACHE.
+            // Adding the extras to it directly would leak one request's owner into every later
+            // request for the same group in this transaction, i.e. a 200-deal chunk would end with
+            // the last deal's notification going to all 200 owners. The copy is a handful of
+            // references per request and is not optional.
+            Set<String> targets = recipients;
+            if (r.additionalRecipientIds != null && !r.additionalRecipientIds.isEmpty()) {
+                targets = new Set<String>(recipients);
+                targets.addAll(r.additionalRecipientIds);
+                targets.remove(null);
+            }
+
             Messaging.CustomNotification n = new Messaging.CustomNotification();
             n.setNotificationTypeId(notificationTypeId);
             n.setTargetId(r.targetRecordId);
@@ -218,8 +292,12 @@ public without sharing class GroupNotifier {
             // all-or-nothing per group rather than per member, and the `catch` below reports it as
             // a single `false` for the request.
             try {
-                n.send(recipients);
+                n.send(targets);
                 sentCount++;
+                // A DEFENSIVE COPY, and the reason is the same one the merge above needs one for:
+                // `targets` may BE the live cached Set when no extras were supplied, and a later
+                // request's merge must not appear to have changed what this one sent.
+                lastSendRecipients.add(new Set<String>(targets));
                 outcomes[i] = true;
             } catch (Exception e) {
                 System.debug(LoggingLevel.WARN, 'GroupNotifier: send failed for ' + r.recipientGroup + ': ' + e.getMessage());

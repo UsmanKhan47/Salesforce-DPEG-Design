@@ -14,6 +14,25 @@
  * pins the deliberate Disqualified carve-out - a Lead with no address must always be
  * disqualifiable, mirroring the Opportunity Dead/Pass invariant - which nothing else defends.
  *
+ * === (*) THE JUSTIFICATION ABOVE WAS AMENDED 2026-08-30. THE LEAD BEHAVIOUR IS UNCHANGED. ===
+ * RETRACTED, verbatim: "mirroring the Opportunity Dead/Pass invariant". That invariant - recorded
+ * in Opportunity/validationRules/No_Backward_Stage_Movement's header as "the user-required
+ * invariant that Dead/Pass stay reachable from every stage" - NO LONGER HOLDS UNIVERSALLY on
+ * Opportunity. Dead_Pass_Not_Allowed_From_Closed_Won (new, 2026-08-30, user decision reaffirmed
+ * after the consequence was stated) blocks Closed Won -> Dead/Pass, so Opportunity's off-ramp is
+ * now reachable from every stage EXCEPT Closed Won.
+ *
+ * THE CORRECTED JUSTIFICATION, WHICH IS STRONGER AND DOES NOT DEPEND ON THE OPPORTUNITY AT ALL:
+ * a junk Lead with no address must always be disqualifiable, because Disqualified is the ONLY
+ * terminal state a Lead has and VR-L1 gates the very fields a junk Lead is missing - so gating
+ * Disqualified would make an unusable Lead permanently unclosable. That is a fact about Lead, not
+ * an analogy to Opportunity.
+ *
+ * (*) 🔴 THE ANALOGY MOVED; THE LEAD CARVE-OUT DID NOT, AND MUST NOT. Nothing in the 2026-08-30
+ * decision was about Lead. Do NOT "harmonise" this test, Property_And_Email_Required_To_Progress,
+ * or the Lead status model by adding a Disqualified restriction to mirror the new Opportunity
+ * rule. The test below is unchanged and still passes.
+ *
  * ⚠ VR-L2 IS CONDITIONAL ON AN ORG SETTING. Property_And_Email_Required_To_Convert only fires
  * when "Require Validation for Converted Leads" (shouldLeadConvertRequireValidation, Setup ->
  * Lead Settings) is ON - see the XML comment in
@@ -58,10 +77,16 @@ private class LeadPropertyEmailGateTest {
             [SELECT Status FROM Lead WHERE Id = :l.Id].Status,
             'A rejected save must leave Status untouched');
 
-        // Disqualified is deliberately NOT in the rule's gated-status list - it is the Lead's
-        // equivalent of the Opportunity's Dead/Pass off-ramp, and a junk lead with no address
-        // must always be disqualifiable, or the same trap the backward-block invariant exists to
-        // prevent on Opportunity is reintroduced here. Same record, opposite outcome.
+        // Disqualified is deliberately NOT in the rule's gated-status list - a junk lead with no
+        // address must always be disqualifiable, because Disqualified is the only terminal state a
+        // Lead has and VR-L1 gates exactly the fields such a Lead is missing. Same record,
+        // opposite outcome.
+        //
+        // ⚠ AMENDED 2026-08-30 - see the class header. This comment used to justify the carve-out
+        // as "the Lead's equivalent of the Opportunity's Dead/Pass off-ramp", which was true when
+        // Dead/Pass was reachable from EVERY Opportunity stage. It no longer is
+        // (Dead_Pass_Not_Allowed_From_Closed_Won). The carve-out stands on its own Lead-side
+        // reasoning; the Opportunity analogy is what was removed, not the behaviour.
         Test.startTest();
         l.Status = 'Disqualified';
         update l;

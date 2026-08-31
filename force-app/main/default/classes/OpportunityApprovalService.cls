@@ -38,6 +38,55 @@
  * LoiSelector / UnderwritingSelector / ContractReviewSelector) — this service holds no
  * inline SOQL.
  *
+ * ═══ 🔴 THE SIGNED-NDA GATE (2026-08-30) — AND THE PREMISE IT FALSIFIES ═══
+ * `submitForApproval` now REFUSES an Opportunity submission at `StageName = 'LOI'` when the deal's
+ * `Primary_NDA__c` is blank or its `Primary_NDA__r.NDA_Signed__c` is false. It is a PRE-check, run
+ * before `Approval.process`, and it costs one query on the Opportunity path.
+ *
+ * ⚠ RETRACTED, verbatim, from the `catch` block below, where it still stands as a comment about
+ * the STAGE re-read and is still correct THERE:
+ *     "⚠ THE STAGE RE-READ IS DELIBERATELY IN THE CATCH, NOT BEFORE THE SUBMIT. A pre-check would
+ *      cost a query on every successful submission to serve only the failure path, and would
+ *      duplicate the entry criteria in Apex — where it would silently drift from the approval
+ *      process's own definition."
+ * THAT RULE DOES NOT EXTEND TO THIS GATE, AND THE DISTINCTION IS THE WHOLE JUSTIFICATION:
+ *   - The stage re-read buys a better ERROR MESSAGE for a submission the platform was going to
+ *     refuse anyway. Paying a query on every SUCCESS to improve a FAILURE's wording is a bad
+ *     trade, which is why it lives in the catch.
+ *   - The NDA gate buys a REFUSAL THAT WOULD OTHERWISE NOT HAPPEN. Post-check is not an option at
+ *     any price: by the time the catch runs, `Approval.process` has SUCCEEDED and the deal is in
+ *     the approval. There is no failure to interpret, and unwinding a submitted approval is not
+ *     something this service may do.
+ *   - It does NOT duplicate the approval's entry criteria. `LOI_Approval`'s criterion is the
+ *     STAGE; the NDA is not part of it and never was. This is an additional business rule, not a
+ *     second copy of a declarative one.
+ * 🔴 DO NOT DELETE THIS PRE-CHECK ON THE STRENGTH OF THE CATCH-BLOCK COMMENT. That is the exact
+ * reading this paragraph exists to prevent.
+ *
+ * ⚠ WHY THE GATE IS APEX AND NOT A VALIDATION RULE — MEASURED, NOT PREFERRED. `resolveApprovalTargetId`
+ * maps `LOI__c` to the PARENT Opportunity and `Approval.process` submits THAT. **No DML ever touches
+ * the `LOI__c` row**, so a validation rule on `LOI__c` is dead code — it cannot fire on this path at
+ * all. An Opportunity-side rule is no better: `LoiGateTest.rejectionReturnsDealToUnderwriting`
+ * demonstrates that approval field updates BYPASS custom validation rules in this org.
+ *
+ * ⚠ AND THERE IS DELIBERATELY NO `RecordType.DeveloperName == 'Acquisition_LOI'` CRITERION.
+ * The module boundary is already STRUCTURAL: a `Disposition_LOI` carries a blank `Opportunity__c`,
+ * so `resolveApprovalTargetId` returns null and the "not linked to a deal" refusal above fires
+ * before the gate is reached; the disposition side has a wholly separate path
+ * (`dispositionSubmitForApproval` -> `DispositionApprovalService`). A criterion that can never
+ * discriminate reads as load-bearing to the next person and gets defended forever. The reasoning
+ * is recorded here INSTEAD of being encoded as a check.
+ *
+ * ⚠ TWO ACCEPTED RESIDUALS, so neither is later filed as a bug:
+ *   1. This is a UI-PATH gate, not an absolute one. `Approval.process` can still be called
+ *      directly — `scripts/verify-junior-lifecycle.apex` does exactly that. No platform mechanism
+ *      makes an approval submission absolutely conditional.
+ *   2. Its live population is NARROW. `NDA_Signed_Before_Deal_Progression` already blocks ENTRY to
+ *      the LOI stage without a signed NDA, so this covers only the insert-time hole in that rule
+ *      (it is `ISCHANGED`-gated), a deal whose NDA is un-signed or repointed after it reached LOI,
+ *      and stage moves made by approval field updates. "The gate never fires" is the expected
+ *      steady state, not a defect.
+ *
  * EXCEPTION CONTRACT (code-review W2 — no raw platform text may reach the user):
  *   - A user-actionable rule violation throws a TYPED {@link ApprovalException} whose
  *     message is safe to surface verbatim (no record, not linked to a deal, already
@@ -86,6 +135,20 @@ public with sharing class OpportunityApprovalService {
         + 'Open this deal\'s Underwriting record and use Submit for Approval there.';
 
     /**
+     * Surfaced when an LOI-stage deal is submitted for approval without a signed primary NDA.
+     *
+     * ⚠ IT DELIBERATELY MIRRORS `NDA_Signed_Before_Deal_Progression`'s `errorMessage` — "The
+     * primary NDA must be signed before this deal can move to this stage. Link a signed NDA
+     * (Primary NDA) first." — so the two gates read to a user as ONE rule enforced at two moments,
+     * rather than as two rules that happen to be about NDAs. If that validation rule's wording is
+     * ever changed, change this with it; they are a pair, and nothing but this comment links them.
+     */
+    @TestVisible
+    private static final String NDA_UNSIGNED_MESSAGE =
+        'The primary NDA must be signed before this LOI can be submitted for approval. '
+        + 'Link a signed NDA (Primary NDA) on the deal first.';
+
+    /**
      * Raised when a submission cannot proceed and the reason is user-actionable and safe to
      * surface verbatim: no record supplied, the record is not linked to a deal, a submission
      * is already pending, the object type is unsupported, or the deal's stage meets no
@@ -98,6 +161,11 @@ public with sharing class OpportunityApprovalService {
      * Submits the clicked record's APPROVAL TARGET into whichever approval process it matches:
      * Underwriting_Approval on the Underwriting__c record at Stage__c = 'In Progress', or
      * LOI_Approval on the Opportunity at StageName = 'LOI'.
+     *
+     * ⚠ An Opportunity target at `StageName = 'LOI'` additionally passes through the signed-NDA
+     * gate (`assertNdaSignedForLoiSubmission`) before `Approval.process` is reached — see the
+     * class header for why that pre-check exists and why it does not contradict the catch-block
+     * comment about the stage re-read.
      *
      * @param recordId the clicked record: an Underwriting (submits ITSELF), or an Opportunity /
      *                 LOI / Contract Review (all submit the parent deal).
@@ -121,6 +189,7 @@ public with sharing class OpportunityApprovalService {
         if (!ProcessInstanceSelector.selectPendingByTargetId(targetId).isEmpty()) {
             throw new ApprovalException('This record is already pending approval.');
         }
+        assertNdaSignedForLoiSubmission(targetId);
         try {
             Approval.ProcessSubmitRequest req = new Approval.ProcessSubmitRequest();
             req.setObjectId(targetId);
@@ -161,6 +230,51 @@ public with sharing class OpportunityApprovalService {
             // not reachable in normal operation — the pending-gate above prevents
             // ALREADY_IN_PROCESS and an eligible stage always matches its process.
             throw e;
+        }
+    }
+
+    /**
+     * 🔴 THE SIGNED-NDA GATE. Refuses an Opportunity submission at the LOI stage when the deal has
+     * no primary NDA, or has one that is not signed. See the class header for why this is a
+     * pre-check (and why that does NOT contradict the catch-block comment about the stage re-read),
+     * why it is Apex rather than a validation rule, and why it carries no record-type criterion.
+     *
+     * ── FOUR NARROWING CONDITIONS, EACH OF WHICH IS A NO-OP FOR SOMEONE ─────
+     *   1. NOT AN OPPORTUNITY TARGET -> return, WITHOUT QUERYING. An `Underwriting__c` submits
+     *      itself into `Underwriting_Approval`, which has nothing to do with the LOI or the NDA.
+     *      This is also what keeps the added cost off the underwriting path entirely.
+     *   2. THE ROW DOES NOT RESOLVE -> return. `selectNdaGateById` returns null rather than
+     *      throwing precisely so this gate cannot change WHERE an unexpected failure originates:
+     *      a dead Id must still reach `Approval.process` and fail there, raw, as it always has.
+     *      (`OpportunityApprovalServiceTest.unexpectedFailurePropagatesRawNotWrapped` is the pin.)
+     *   3. NOT AT THE LOI STAGE -> return. The gate is about the LOI approval. A deal at any other
+     *      stage is refused, or accepted, by the pre-existing logic untouched.
+     *   4. NDA PRESENT AND SIGNED -> return. The steady state; see RESIDUAL 2 in the class header.
+     *
+     * ⚠ THE BLANK-LOOKUP AND THE UNSIGNED-NDA CASES SHARE ONE MESSAGE, ON PURPOSE. They are the
+     * same user-facing fact ("this deal has no signed NDA") reached two ways, and the remedy is
+     * identical — link a signed NDA as the primary. Splitting them would make the submitter guess
+     * which of two similar sentences applies to them.
+     *
+     * ⚠ `deal.Primary_NDA__r` IS NOT DEREFERENCED WHEN `Primary_NDA__c` IS NULL. A null lookup
+     * yields a null parent, so `deal.Primary_NDA__r.NDA_Signed__c` would be a null dereference; the
+     * `Primary_NDA__c == null` test is checked FIRST and short-circuits. Do not "simplify" the two
+     * conditions into one `!= true` expression on the spanning field.
+     *
+     * @param targetId The record `Approval.process` is about to be called on.
+     * @throws ApprovalException when the target is an LOI-stage deal without a signed primary NDA.
+     *         The message is user-actionable and safe to surface verbatim (EXCEPTION CONTRACT).
+     */
+    private static void assertNdaSignedForLoiSubmission(Id targetId) {
+        if (targetId.getSobjectType() != Opportunity.SObjectType) {
+            return;
+        }
+        Opportunity deal = OpportunitySelector.selectNdaGateById(targetId);
+        if (deal == null || deal.StageName != STAGE_LOI) {
+            return;
+        }
+        if (deal.Primary_NDA__c == null || deal.Primary_NDA__r.NDA_Signed__c != true) {
+            throw new ApprovalException(NDA_UNSIGNED_MESSAGE);
         }
     }
 

@@ -119,41 +119,40 @@ private class ContactSelectorTest {
      * the FLS question). The User + PermissionSetAssignment DML is isolated in its own
      * runAs block to avoid MIXED_DML_OPERATION with the non-setup Contact DML.
      *
-     * ⚠ This named DPEG_Acquisitions until 2026-08-10, when that legacy monolith was
-     * retired (docs/permission-set-retirement-runbook.md). The query below resolves a
-     * permission set BY NAME, so deleting the named set fails this test with
-     * "System.QueryException: List has no rows for assignment to SObject" rather than
-     * with an FLS assertion — i.e. the failure does NOT look like a permission problem.
-     * DPEG_Contact_Edit is the conformant successor: it is the layer-3 module set that
-     * owns broker Contact access, so it is the correct grant to prove FLS with here.
-     * User granted the DPEG_Acquisitions permission set (which grants FLS on the
-     * custom Contact.Is_Broker__c / Broker_Firm__c this query touches) reads broker
-     * rows under WITH USER_MODE. The broker Contacts are inserted INSIDE runAs so the
-     * Standard User owns them (removing sharing as a variable and isolating the FLS
-     * question). The User + PermissionSetAssignment DML is isolated in its own runAs
-     * block to avoid MIXED_DML_OPERATION with the non-setup Contact DML.
+     * ⚠ THE GRANT IS DPEG_Contact_Edit, AND IT IS THE ONLY ONE. This fixture also resolved
+     * DPEG_Acquisitions by name until 2026-08-31. That legacy monolith was retired on
+     * 2026-08-10 (docs/permission-set-retirement-runbook.md) and the Javadoc was updated to say
+     * so — but THE CODE WAS NOT, and the stale query sat here for three weeks. It began failing
+     * the moment the set actually left the org (first red 2026-08-30 17:24).
      *
-     * ⚠ ALSO GRANTS DPEG_Contact_Edit (added 2026-08-10, fix round 1). TestDataFactory now
-     * stamps every factory Contact onto the Contact.Broker record type (IR/Acquisitions
-     * segregation, Task 3), and DPEG_Acquisitions alone does not carry that record type's
-     * visibility - only DPEG_Contact_Edit / DPEG_Contact_View do (Task 2). Without this grant
-     * TestDataFactory.recordTypeId's isAvailable() guard degrades this persona to an unstamped
-     * (default-record-type) Contact rather than throwing - but that would silently defeat this
-     * test's own stated intent, "mirrors the real broker-options persona": a persona reading the
-     * broker-options list must be able to see and create Broker-typed Contacts in the first
-     * place, so DPEG_Contact_Edit belongs on this fixture on the merits, independent of the
-     * factory change that surfaced its absence.
+     * 🔴 THE FAILURE MODE IS WHY THIS PARAGRAPH EXISTS. Resolving a permission set BY NAME with
+     * a single-row assignment throws "System.QueryException: List has no rows for assignment to
+     * SObject" — it does NOT look like a permission problem, it looks like broken test data, so
+     * nobody connects it to the deleted set. Test SOQL is the blind spot in a permission-set
+     * retirement: the runbook greps production classes, and this was the only by-name reference
+     * to DPEG_Acquisitions left in all 534 classes.
+     *
+     * DPEG_Contact_Edit is the conformant successor and is SUFFICIENT ALONE — verified against
+     * the permission set on 2026-08-31, not assumed: it grants Contact allowCreate / allowRead /
+     * allowEdit, readable+editable FLS on both Contact.Is_Broker__c and Contact.Broker_Firm__c
+     * (the SELECT list is Id, Name, Broker_Firm__c), and visibility on the Contact.Broker record
+     * type that TestDataFactory stamps onto every factory Contact. That last one is load-bearing:
+     * without it TestDataFactory.recordTypeId's isAvailable() guard silently degrades this
+     * persona to an unstamped Contact instead of throwing, and the selector's
+     * RecordType.DeveloperName = 'Broker' predicate would then return zero rows — the test would
+     * fail for a reason that has nothing to do with FLS.
+     *
+     * ⚠ Dropping the second assignment does NOT weaken this test. Both assertions below are
+     * statements about DPEG_Contact_Edit specifically, and the retired set granted nothing the
+     * query touches that DPEG_Contact_Edit does not.
      */
     @isTest
     static void selectBrokersOrderedByName_standardUserWithGrants_userModeReturnsRows() {
         User standardUser = buildStandardUser();
-        Id permSetId = [SELECT Id FROM PermissionSet WHERE Name = 'DPEG_Contact_Edit' LIMIT 1].Id;
-        Id acqPermSetId = [SELECT Id FROM PermissionSet WHERE Name = 'DPEG_Acquisitions' LIMIT 1].Id;
         Id contactEditPermSetId = [SELECT Id FROM PermissionSet WHERE Name = 'DPEG_Contact_Edit' LIMIT 1].Id;
         System.runAs(new User(Id = UserInfo.getUserId())) {
             insert standardUser;
             insert new List<PermissionSetAssignment>{
-                new PermissionSetAssignment(AssigneeId = standardUser.Id, PermissionSetId = acqPermSetId),
                 new PermissionSetAssignment(AssigneeId = standardUser.Id, PermissionSetId = contactEditPermSetId)
             };
         }

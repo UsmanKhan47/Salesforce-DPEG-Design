@@ -1,717 +1,1343 @@
-# DESIGN REQUIREMENTS — Move Principal Approval from Opportunity to Underwriting__c
+# DESIGN REQUIREMENTS — Acquisitions Gap-Fix, Items 1–6
 
-**Date:** 2026-08-28
-**Repo:** `f:\Acquisition-Design-Salesforce`  ·  **Branch:** `qa/lifecycle-simulation-2026-08-27`
-**Org:** `usman-dpeg` (NON-SANDBOX Enterprise Edition)
-**Status:** Analysis + plan only. NO metadata created or modified by this agent.
-
----
-
-## 0. WHAT THE USER REQUESTED
-
-> "We need the approval on Underwriting, not on Opportunity. Once the user clicks Initiate
-> Underwriting, the Underwriting record is created, and there will be a validation on the Initiate
-> LOI button — if the underwriting is not approved, it will not move on to LOI."
-
-Gate-1 decisions D1–D4 are taken and are designed to, not re-asked. The five agreed pieces are
-validated below; four of the five stand, **one (piece 2) rests on a false premise and one (piece 3)
-contains a defect that would permanently strand deals.**
+Date: 2026-08-30 · Revision 2 (all nine open questions answered)
+Branch: `qa/lifecycle-simulation-2026-08-27`
+Docs consulted: `CLAUDE.md`, `ARCHITECTURE.md`, `.claude/rules/{salesforce-global,apex-layering,bulk-test,invocable,content-publication}-rule.md`.
 
 ---
 
-## 1. 🔴 CONTRADICTED PREMISES — READ BEFORE ANYTHING ELSE
+> # 🔴 THIS DOCUMENT IS THE RECORD OF TRUTH
+>
+> **Wherever this document and the originating task brief disagree, THIS DOCUMENT IS CORRECT.**
+> The brief will not be in context for the specialist agents. Nine of its assertions were verified
+> wrong or incomplete (§0); the coordinator independently re-verified every one of them and accepted
+> the corrections. Do not "restore" a detail from memory of the brief — if it is not in this document,
+> it is not in scope.
+>
+> **Status: ALL NINE OPEN QUESTIONS ANSWERED. All items are dispatchable.**
+> Two answers **reverse** what this document previously recommended (Q1 and Q6). The superseded
+> recommendations are retained in §0.5 with their reasoning, deliberately — they are what a future
+> reader will re-propose on seeing the shape, and deleting them invites the loop again.
 
-Five things in the brief are wrong or incomplete against the repo. Each is measured, with the file.
+---
 
-### C-1. "Nothing in the org currently sets `Underwriting__c.Stage__c = 'Approved'`" — **FALSE**
+## §0 — FINDINGS: WHERE THE BRIEF AND THE ORG DISAGREED
 
-`classes/ApprovalAuditService.cls:72-83` already does exactly this, today, on principal sign-off:
+Every surface inventory the brief asserted was re-derived from source. Nine were wrong or
+incomplete. **All nine were independently re-verified by the coordinator and accepted.**
 
-```apex
-for (Underwriting__c uw : UnderwritingSelector.selectIdsByOpportunityIds(approvedUwOpps)) {
-    uwUpdates.add(new Underwriting__c(Id = uw.Id, Stage__c = 'Approved',
-                                      Status__c = 'Approved by Principals'));
-}
-```
+| # | Brief said | Verified reality | Consequence |
+|---|---|---|---|
+| F1 | "verify what `No_Backward_Stage_Movement` does and does not already prevent" | Dead/Pass ranks **0 = UNRANKED**, so clause 3 (`new rank > 0`) is FALSE for every move *into* Dead/Pass. **The rule never fires on entry to Dead/Pass from any stage, including Closed Won.** | Item 1's Closed Won half is a genuine gap. **Now approved to build — see Q1 in §0.5.** |
+| F2 | (not stated) | `No_Backward_Stage_Movement`'s header records *"the user-required invariant that Dead/Pass stay reachable from every stage"* and names the Closed Won → Dead/Pass → earlier round trip as **"the actual recovery procedure for a mistakenly advanced deal"**. D4 rejected a bypass permission. Ranks 1–7 are blocked as backward; CARVE-OUT 2 excludes Closed Won. | **Dead/Pass is currently the ONLY exit from Closed Won.** The user was shown this and **overrode it**. See Q1 — this is now the highest-risk change in the tranche. |
+| F3 | "Opportunity ALREADY has four before-save flows" | **Opportunity has TWO.** `Contract_Review_Stage_Sync` targets `Contract_Review__c`; `NDA_Signed_Status_Sync` targets `NDA__c`. Opportunity also has **five after-save flows** the brief omitted. | The brief's argument for Apex was priced at 2.5× reality. Conclusion stands, reason replaced — see F4. |
+| F4 | "STRONGLY PREFER stamping in the existing `OpportunityReviewTriggerHandler` (before update)" | `OpportunityReviewTrigger` is `on Opportunity (**after insert, after update**)` — **there is no before context**. | The trigger must be **widened**. The real argument is order-of-execution: **before-save Flows run BEFORE Apex before-triggers**, so a before-trigger stamp is *guaranteed* to see the final `StageName` after `Opportunity_Initiate_Underwriting` rewrites it. A third before-save Flow has no such guarantee. |
+| F5 | "`DispositionStageEntryService` does this for `Disposition__c`" | It creates stage-entry **child records** and fills one date for one stage. `Disposition__c` has no days-in-stage field. | Real precedents: **`Lease_Inquiry__c.Days_In_Stage__c`** (a *formula* over `Stage_Start_Date__c`) and **`stampListingDates`** (before-save, in-memory, zero statements). |
+| F6 | "A VR alone **may** not fire if submission does not perform DML on the LOI" | **Not "may" — cannot.** `resolveApprovalTargetId` maps `LOI__c` → the **parent Opportunity**; `Approval.process` submits the Opportunity. **No DML touches the LOI row.** `Acquisition_LOI.recordType-meta.xml` says it independently. | **A VR on `LOI__c` is dead code.** Gate must be Apex. The approved record-type scoping is **already satisfied structurally**. |
+| F7 | "(e) … **This is a likely latent bug**" | **Not a bug — already built, deliberately.** `CallForOffersService.shouldFire` line 416: `Integer effective = (markerDueDate == liveDueDate) ? lastInterval : null;` under the comment *"A DEADLINE THAT MOVED RE-ARMS EVERYTHING."* | **Item 5(e) is ZERO work.** Do not modify `shouldFire`. |
+| F8 | "(d) the reminder interval (… the story's default is 2 days)" | No single interval. `ALERT_INTERVALS = {7, 3, 1, 0}` — a four-rung ladder. `Offer_Alert_Last_Interval__c` stores **the rung**. | Resolved as **Q5 option (i)**: preserve the ladder, move the rung values to CMDT. |
+| F9 | "**GROUPNOTIFIER IS ACQUISITIONS-BRANDED** … hardcodes `Acquisitions_Deal_Update`" | **Stale.** Header line 7: *"It **was** a hardcoded private constant … with no override."* Now `DEFAULT_NOTIF_TYPE_DEV_NAME` + a per-`Request` override. | Conclusion holds (default type is correct for acquisitions); reason does not. No override needed. |
+| **F10** | "the Owner and the **Acquisition Team public group**" / "the **Acquisitions** public group is EMPTY" | Three distinct objects exist: `queues/Acquisition`, `groups/Acquisitions_Team`, `groups/DPEG_Acquisitions_Team`. `NdaExpiryAlertBatch` records **Gate 1 decision Q2.3**: *"the `Acquisition` **QUEUE** … matching the only other alert job … is what stops the two disagreeing about who 'the Acquisition team' is."* | **Item 4 must use `RECIPIENT_GROUP = 'Acquisition'`.** Upside: the empty-membership go-live gate is the **same gate (G2) already open for two jobs**, not a third. |
 
-It is invoked by `flows/Opportunity_UW_Approved_Notify` (action `Stamp_Approval_Audit`), which fires
-on the Opportunity's transition into `Underwriting_Status__c = 'Approved by Principals'`.
-`classes/RecordStageAdvanceService.cls:1354-1372` documents the same fact, and
-`classes/UnderwritingGateTest.cls:105-111` asserts it and is green.
+### F11 — NEW (revision 2): `BrokerFirmController` already computes Item 6.1's three numbers
 
-**So the Underwriting Path does NOT stick at "In Progress" forever today** — it reaches Approved via
-a three-hop chain (Opportunity approval → `UW_Set_Status_Approved` → notify flow → `ApprovalAuditService`).
-The chain is fragile and indirect, and this change legitimately replaces it — but it is a
-**replacement, not a dead-end fix**, and piece 2's stated justification must be retracted rather than
-carried into the implementation prompts.
+`BrokerFirmController.cls` lines 46–51 already derive **`dealsSubmitted` / `dealsWon` / `dealsLost`
+per firm, live in Apex**, via `OpportunitySelector.countByStageForAccount(opp.AccountId)` and a
+string compare on `'Closed Won'` / `'Dead/Pass'`. `BrokerFirmControllerTest` pins it with a
+251-row test asserting 251 / 126 / 125.
 
-### C-2. 🔴 Piece 3's formula would PERMANENTLY STRAND any deal whose LOI approval is rejected
+Item 6.1's three Account roll-up summaries therefore create a **second computation of the same
+three numbers**. They are still worth building — a roll-up is **reportable and queryable**, which a
+live Apex computation is not, and that is exactly what the story's "Account roll-ups" AC asks for —
+but the duplication must be recorded, not discovered later. **See Q10 (§0.5): the repoint of
+`BrokerFirmController` onto the roll-up fields is deliberately OUT OF SCOPE for this tranche.**
 
-Piece 3 specifies `TEXT(Primary_Underwriting__r.Stage__c) <> 'Approved'`. That is wrong on its own,
-and the failure is unrecoverable through the UI:
+---
 
-1. `approvalProcesses/Opportunity.LOI_Approval` `finalRejectionActions` → `Set_Stage_Underwriting`
-   moves a rejected deal from `LOI` back to `Underwriting`
-   (`workflows/Opportunity.workflow-meta.xml:14-22`).
-   `No_Backward_Stage_Movement` CARVE-OUT 1 exists specifically to permit it.
-2. By then the Underwriting record has normally been walked to its terminal
-   `Stage__c = 'Completed'` (`Underwriting__c.Move_to_Completed`, gated at `Approved`,
-   `flexipages/Underwriting_Record_Page.flexipage-meta.xml:80-93`).
-3. The deal driver clicks **Initiate LOI** again. `Stage__c` reads `'Completed'`, not `'Approved'`
-   → the VR **blocks**.
-4. There is no route back. `'Completed'` is the terminal of `UNDERWRITING_NEXT_STAGE`
-   (`RecordStageAdvanceService.cls:1374-1378`), no button targets `'Approved'`, and `Stage__c` is
-   `<restricted>true</restricted>` — so only a direct admin edit can unstick it.
+## §0.5 — DECISION HISTORY (read before re-opening anything)
 
-Today's `NOT(UW_Approved__c)` has no such hole because the flag **latches** — the VR's own comment
-records this as "Known, accepted".
+| Q | Question | Decision | Reverses my recommendation? |
+|---|---|---|---|
+| **Q1** | Block Dead/Pass from Closed Won? | 🔴 **YES — BUILD IT. User overrides the recorded invariant, with no replacement recovery route.** Presented with the full consequence (Closed Won becomes inescapable; D4 rejected a bypass permission; a wrongly-Closed-Won deal will need an admin data fix) and **reaffirmed**. | ✅ **YES.** I recommended amending the spec instead. Overruled. |
+| **Q2** | Item 4 suppression cadence | **Fire once per stage occupancy.** | No — my default |
+| **Q3** | Delayed vs the existing Stale widget | **Keep both, distinct titles.** | No — my default |
+| **Q4** | Item 2 backfill | **Backfill from `LastModifiedDate.date()`**, caveat in the script header, RESIDUAL-6 retained. | No — my default |
+| **Q5** | Item 5(d) CFO interval | **Option (i): make the four rungs configurable.** Ladder `{7,3,1,0}` preserved exactly; only the values move to CMDT. **No regression, no marker invalidation.** | No — my recommended reading |
+| **Q6** | Item 6 Contact side | **Partially reversed.** Build the Contact counters via a nightly batch — **but scoped honestly and explicitly NOT as the leaderboard's source.** Leaderboard untouched. Every field carries a description naming its narrow population. | ✅ **PARTIALLY.** I recommended 6A or 6C. The user chose a disciplined 6B after accepting my three reasons. |
+| **Q7** | "Default Open" | **Stamp `Open` in `CallForOffersStampService`** when a due date first appears on an existing deal, plus the insert-time field default. | No — my default |
+| **Q8** | `Source_Broker__c` | 🔴 **DO NOT CREATE IT. Reuse `Listing_Broker_Name__c` / `Listing_Broker_Email__c`** — a CFO is issued by the seller's listing broker, which those fields already hold. | No — I recommended not creating it |
+| **Q9** | Contact date field naming | **`First_Submission_DateTime__c`.** | No — my default |
+| **Q10** | *(new, revision 2)* Repoint `BrokerFirmController` at the new roll-ups? | **OUT OF SCOPE for this tranche.** Flagged in F11 and RESIDUAL-8. Not silently expanded into. | n/a |
 
-**REQUIRED CORRECTION.** The error condition must name **both** terminal-side values, exactly the
-`list-both` shape `Completed_LOI_Before_PSA` already uses in the same folder:
+### 🔴 The superseded recommendation on Q1, retained deliberately
 
+I recommended **not** blocking Dead/Pass from Closed Won, because `No_Backward_Stage_Movement`'s
+header records the opposite as a user-required invariant and because Dead/Pass is the only exit
+from Closed Won. **That recommendation was put to the user with its consequence stated and was
+overruled.** It is kept here because it is what the next reader will re-propose on encountering
+the contradiction — and the answer they need is *"this was considered on 2026-08-30 and
+deliberately overridden"*, not a re-run of the argument.
+
+### The superseded recommendation on Q6, retained deliberately
+
+I recommended **6A** (extend the existing aggregate) or **6C** (no Contact-side work), because
+Contact counters describe only the converted-winner subset. **The user accepted the reasoning and
+then chose a narrower, honest version of 6B**: build the counters, but for the `Broker_Hub` surface
+only, with the population stated on every field, and with the leaderboard explicitly left as the
+authoritative source. That is a better outcome than either of my options, and the field
+descriptions are what make it safe.
+
+---
+
+## §1 — ITEM 6 IN CONTEXT: THE METRIC-INVERSION RISK, AND HOW THE ANSWER CONTAINS IT
+
+Retained because it is the reasoning that shapes Item 6, and the field descriptions required in
+§2 ITEM 6 are meaningless without it.
+
+`BrokerLeaderboardService`'s header argues against Contact-based rollups in three numbered reasons.
+Reason 1 is the load-bearing one:
+
+> *"🔴 MOST BROKERS IN THE LEDGER HAVE NO CONTACT AND NEVER WILL. Since 2026-07-31 a COMPETING
+> broker receives no Lead at all, so no conversion, so no Contact, ever … A Contact-based rollup
+> can therefore only ever describe the subset that WON and then CONVERTED — i.e. it would silently
+> omit every losing broker … **That is not a trade-off; it is the metric inverting itself.**"*
+
+**The user was shown this verbatim, agreed, and withdrew "broker must be a contact"** — their
+words: *"leave this idea … a contact will be created on conversion so if it's sent by a new broker
+which doesn't exist in the system then we can face some issue."*
+
+**What makes the approved shape safe** is that the two surfaces are now explicitly *ranked*:
+
+| Surface | Population | Role |
+|---|---|---|
+| `brokerLeaderboard` / `BrokerLeaderboardService` (**unchanged**) | **every broker who ever submitted**, winners and losers, Contact or not — keyed by `Broker_Email__c` | 🟢 **AUTHORITATIVE** |
+| `Contact.Deals_*__c` (**new writer**) | brokers who won **and** converted, i.e. those who have a Contact | 🟡 fixes `BrokerController` / `Broker_Hub`'s permanent zeroes **only** |
+| `Account.*` roll-ups (**new**) | every Opportunity on the firm Account | 🟡 firm-level, reportable |
+
+🔴 **The four Contact field descriptions are the control that keeps this safe.** Without them, the
+inversion gets rediscovered as a bug in six months. They are a hard requirement, not documentation
+polish — see §2 ITEM 6.
+
+**Reason 2 still stands and constrains the work:** `Active_Listings__c`, `Closed_Volume__c` and
+`Avg_Days_On_Market__c` are the **disposition-side** scorecard. **Do not touch them.**
+
+**Reason 3 does NOT transfer to the approved design — stated explicitly so it is not re-inherited.**
+Reason 3 warned that any rollup would need *"Apex plus a fuzzy email match … under which a broker
+with two addresses becomes ONE SILENTLY UNDERCOUNTED Contact."* That warning was about joining
+**`Competing_Broker_Submission__c`** (which has **no Contact lookup** — its identity is a Text
+email) to Contact. **The approved batch does not touch that object.** It keys on
+**`Opportunity.Broker__c`, which is a real Contact lookup**, stamped by `LeadConvertService`
+(`o.Broker__c = l.ConvertedContactId`). **There is no matching step, fuzzy or otherwise, anywhere
+in this design.** The coordinator's reading is correct and is confirmed here so the next reader
+does not re-inherit a warning that does not apply.
+
+---
+
+## §2 — ITEM-BY-ITEM DESIGN
+
+### ITEM 1 — Rejection Reason required on Dead/Pass **+ Dead/Pass blocked from Closed Won**
+
+**Verified:** `Rejection_Reason__c` exists, Picklist, `required=false`, **`restricted=true`**, 7
+values, on all three record types. No VR enforces it. The picklist value is literally `Dead/Pass`
+(`Dead%2FPass` inside `BusinessProcess`/`RecordType` metadata only — do not "correct" either form).
+
+**ADMIN — TWO new validation rules, not one, and not a formula clause added to the existing rule.**
+
+**Why two separate rules rather than one, and why not an amendment to `No_Backward_Stage_Movement`:**
+- The two conditions need **different error messages** and **different `errorDisplayField`s** (one
+  points at `Rejection_Reason__c`, one at `StageName`). Folding them into one rule forces a single
+  generic message that serves neither.
+- `No_Backward_Stage_Movement` is a 200-line, heavily-argued rule with two carve-outs and a rank
+  map. Adding a clause to it means its `errorMessage` — *"A deal cannot be moved back to an earlier
+  stage. **To stop work on this deal, move it to Dead/Pass instead.**"* — must also change, because
+  that message would otherwise recommend a route that is now blocked. Keeping the new logic out of
+  that formula limits the blast radius to a message edit and a header amendment.
+
+**1A.** `objects/Opportunity/validationRules/Rejection_Reason_Required_On_Dead.validationRule-meta.xml`
 ```
 AND(
-    ISCHANGED(StageName),
-    ISPICKVAL(StageName, 'LOI'),
-    TEXT(Primary_Underwriting__r.Stage__c) <> 'Approved',
-    TEXT(Primary_Underwriting__r.Stage__c) <> 'Completed'
+  ISCHANGED(StageName),
+  ISPICKVAL(StageName, 'Dead/Pass'),
+  ISBLANK(TEXT(Rejection_Reason__c))
 )
 ```
+- `errorDisplayField`: `Rejection_Reason__c`
+- `errorMessage`: *"Choose a Rejection Reason before moving this deal to Dead/Pass."*
+- **`ISCHANGED`-gating is deliberate**: matches the story AC (a stage *change*), matches both
+  sibling rules, inherits their accepted insert-time hole, and **keeps `scripts/seed-pipeline.apex`
+  green** (§6.1).
 
-`TEXT(...)` not `ISPICKVAL(...)`: the repo's standing rule, and independently required here because
-`ISPICKVAL` resolves its literal at deploy time against a cross-object picklist.
+**1B.** `objects/Opportunity/validationRules/Dead_Pass_Not_Allowed_From_Closed_Won.validationRule-meta.xml`
+```
+AND(
+  ISCHANGED(StageName),
+  ISPICKVAL(PRIORVALUE(StageName), 'Closed Won'),
+  ISPICKVAL(StageName, 'Dead/Pass')
+)
+```
+- `errorDisplayField`: `StageName`
+- `errorMessage`: *"A Closed Won deal cannot be moved to Dead/Pass. Contact your administrator."*
+  (The message must **not** suggest a self-service route, because there is none.)
+- **`PRIORVALUE`-keyed, so it is transition-only and inherently self-limiting** — the same
+  stickiness property `No_Backward_Stage_Movement`'s CARVE-OUT 1 relies on. A record already
+  sitting at Dead/Pass is unaffected; `PRIORVALUE` is re-derived from the immediately prior stored
+  value on every save and cannot go stale.
 
-**No `NOT(ISBLANK(Primary_Underwriting__c))` guard** — deliberately unlike `Completed_LOI_Before_PSA`.
-That rule exempts the blank case because a *sibling* rule (`Approved_LOI_Before_PSA`) already owns it
-and two messages for one problem is worse than one. **Here no sibling rule exists**, so the blank
-lookup must stay **fail-closed**: a deal with no underwriting record must not enter LOI. State this in
-the file's XML comment so nobody "fixes" it by copying the sibling.
+**🔴 1C — THE HEADER BLOCK. THIS IS THE HIGHEST-RISK CHANGE IN THE TRANCHE AND IS NOT OPTIONAL.**
 
-### C-3. Retiring the old approval silently kills the **UW_Approved_By__c / UW_Approval_Date__c audit stamp** — not mentioned in the brief
+Rule **1B reverses a recorded prior user decision.** A reader who finds only the older header will
+be actively misled. `Dead_Pass_Not_Allowed_From_Closed_Won` must carry an XML comment **inside the
+root element** (a comment *above* the root breaks `sf` at source conversion with a misleading
+parent-xml error) containing all five of:
 
-`ApprovalAuditService.latestApprovedStepByTarget` reads `ProcessInstanceStep` by
-`ProcessInstance.TargetObjectId`. After retirement there is **no Opportunity ProcessInstance**, so:
+1. The **2026-08-30 user decision and its date**, and that it was **reaffirmed after the
+   consequence was stated**.
+2. The superseded invariant **quoted verbatim** — *"the user-required invariant that Dead/Pass stay
+   reachable from every stage"* — and **where it is recorded**
+   (`objects/Opportunity/validationRules/No_Backward_Stage_Movement.validationRule-meta.xml`).
+3. A plain statement that **Closed Won now has NO in-app exit**: ranks 1–7 are blocked as backward,
+   CARVE-OUT 2 excludes Closed Won, D4 rejected a bypass permission, and this rule closes the last
+   route. **A wrongly-Closed-Won deal requires an admin data fix.**
+4. That **no bypass custom permission was added**, and that adding one would re-open D4.
+5. A warning that **anyone reading only `No_Backward_Stage_Movement`'s header will be misled**, with
+   a pointer to this file as the current decision.
 
-- `latestApproval` is empty → `step == null` → `UW_Approved_By__c` / `UW_Approval_Date__c` are never
-  stamped, and `approvedUwOpps` stays empty so the Underwriting child block never runs either.
-- The class swallows failures by design, so **this regression is completely silent.**
-- `scripts/verify-junior-lifecycle.apex:58-60` asserts `UW_Approved__c && UW_Approved_By__c != null`
-  and is the only thing that would notice.
+⚠ `<description>` is capped at **255 characters** (breached three times in this programme). The
+block above goes in the **comment**, not the description.
 
-The mirror-field mechanism must therefore also repoint the audit read to the **Underwriting record's**
-approval history. Section 4 does this in the same class, in the same DML.
+**🔴 1D — FOUR OTHER FILES CARRY PREMISES THIS OVERRIDE FALSIFIES OR NARROWS. All four must be
+amended in the same change**, in this repo's retracted-verbatim-then-corrected house style:
 
-### C-4. 🔴 `Underwriting__c` has **no Approval History and no Recall route** — the new approval is unrecallable as designed
+| File | What becomes false | Required edit |
+|---|---|---|
+| `objects/Opportunity/validationRules/No_Backward_Stage_Movement.validationRule-meta.xml` | Its **`errorMessage`** — *"To stop work on this deal, move it to Dead/Pass instead"* — now recommends a **blocked** route for Closed Won deals. Its header's "two-save round trip through Dead/Pass IS the actual recovery procedure" paragraph and its "Dead/Pass always reachable, per invariant" claim are both now false for Closed Won. | Amend the `errorMessage`; **retract the recovery-procedure paragraph verbatim** and point at rule 1B as current. |
+| `classes/DealFolderService.cls` | Its header lists **"the Dead/Pass two-save recovery"** as one of seven live routes into `CLAIM_STAGES`. | **Narrowed, not falsified** (Dead/Pass is still reachable from ranks 1–7). Amend to say the route no longer exists *from Closed Won*. |
+| `classes/LeadPropertyEmailGateTest.cls` | Its header justifies the Lead `Disqualified` carve-out as *"mirroring the Opportunity Dead/Pass invariant"* — an invariant that no longer holds universally. | Amend the justification. ⚠ **Do NOT change the Lead behaviour** — the Lead carve-out was not part of this decision and must not be swept along. |
+| `classes/OpportunityReviewServiceTest.cls` (`noDuplicateOnReentry`, ~line 707) | Its comment asserts *"entering it is always allowed (the escape hatch every stranded deal needs)"*. | **The test still PASSES** — it moves away from Development Review (rank 3), not Closed Won. **Amend the comment only.** A future test copying this pattern from Closed Won would fail confusingly. |
 
-- `flexipages/Underwriting_Record_Page.flexipage-meta.xml` contains **no** `force:relatedListContainer`
-  (grep of `componentName`: highlightsPanel, pathAssistant, column ×2, fieldSection,
-  `force:relatedListSingleContainer`, tab ×2, tabset, dealMessageLog).
-- `layouts/Underwriting__c-Underwriting Layout.layout-meta.xml` contains **no**
-  `RelatedProcessHistoryList`.
-
-Per the measured note in `flexipages/Disposition_Record_Page.flexipage-meta.xml:186-212` and
-`layouts/Disposition_Offer__c-...:73-74`, **the layout-driven Approval History related list is the
-only route to Recall Approval Request**, and `force:relatedListSingleContainer` pointed at approval
-history deploys green and renders nothing (`INVALID_TYPE` from the related-list UI API).
-
-With `recordEditability = AdminOnly` (D3), a mis-submitted Underwriting record would be **locked with
-no way to recall it**. Both halves must ship: the layout block AND the FlexiPage component.
-The Opportunity side already has both (`Opportunity_Record_Page:1438` +
-`Opportunity-Opportunity Layout:344`) — which is what makes the step-1 recall possible.
-
-### C-5. The seed scripts are **already immune** — no seed sweep needed
-
-`scripts/seed-fsd-02/03/04/05-*.apex` already set the Underwriting child to
-`Stage__c = 'Approved', Status__c = 'Approved by Principals'` **before** moving the Opportunity to
-`'LOI'` (e.g. `seed-fsd-03:56-60`, `seed-fsd-02:145-149`). The corrected VR therefore passes on every
-seeded deal with **zero edits**. Their `update new Opportunity(..., UW_Approved__c = true, ...)` lines
-become redundant but harmless — leave them (they keep the mirror truthful under D4).
-
-**Smaller true findings, recorded so they are not re-derived:**
-
-| Premise | Verdict |
-|---|---|
-| `Underwriting__c.Opportunity__c` is a Lookup | ✅ CONFIRMED (`fields/Opportunity__c.field-meta.xml:12`, `deleteConstraint SetNull`) |
-| `Submit_for_Approval` already renders at `Stage__c = 'In Progress'` | ✅ CONFIRMED (`Underwriting_Record_Page:34-47`, pure `1 AND 2`) |
-| `Primary_Underwriting__c` is a Lookup on Opportunity, so `Primary_Underwriting__r.Stage__c` is a legal VR reference | ✅ CONFIRMED (`fields/Primary_Underwriting__c.field-meta.xml:13`) |
-| `'Approved'` is on the master value set; `Underwriting__c` has **no record types** | ✅ CONFIRMED (`Underwriting__c/Stage__c.field-meta.xml:24-28`; no `recordTypes/` dir). The field IS `<restricted>true</restricted>`, so the write would have been refused had the value been absent — **the check was necessary, and it passes.** |
-| Nothing in scope is `.forceignore`d | ✅ CONFIRMED — no entry covers `approvalProcesses/`, `flows/`, `workflows/`, `objects/Underwriting__c/**`, `objects/Opportunity/**`, `layouts/Underwriting__c-*`, `flexipages/`, or the classes. ⚠ `flowDefinitions/**` IS ignored: new flows must carry `<status>Active</status>` in the `.flow-meta.xml` itself. |
-| `Opportunity.Submit_for_Approval` reachability | ⚠ The quick action **exists** but appears on **neither** `Opportunity_Record_Page` **nor** `Opportunity-Opportunity Layout`. Its only reach is a direct `@AuraEnabled` call or an admin adding it. This lowers the practical risk of open item (b) to near zero — the message fix is still required (§6). |
+**Routing: 🔵 `salesforce-admin`** for 1A/1B/1C and the `No_Backward_Stage_Movement` edit;
+**🟢 `salesforce-developer`** for the three Apex header/comment amendments in 1D.
 
 ---
 
-## 2. BLOCKING DECISION GATES
+### ITEM 2 — Stage-entry date stamping (feeds Item 4)
 
-Two items cannot be resolved from the repo. They must be answered before the admin/dev agents run.
+**Verified:** Opportunity has neither field. ⚠ `Days_in_System__c` exists with a **lowercase `in`** —
+a pre-existing `ARCHITECTURE.md` §1 violation. **Do not copy that casing.**
 
-### GATE A — one new field on `Underwriting__c`, or drop the reject direction?
-
-🔴 **Measured fact that forces this gate: `Stage__c` DOES NOT CHANGE ON REJECTION, so no
-`Stage__c`-keyed mechanism can see a rejection at all.** The approval's entry criterion is
-`Stage__c = 'In Progress'`; nothing moves it during the pending window; D2's "returns to 'In Progress'"
-is therefore a **same-value, no-op field update**. A record-triggered flow with
-`doesRequireRecordChangedToMeetCriteria = true` never fires; without that flag it fires on the
-*submission* save too and would clear `Underwriting_Complete__c` at exactly the wrong moment.
-`Status__c` fails identically (it is already `'In Progress'` — seeded that way by
-`OpportunityReviewService.cls:489`).
-
-| Option | Cost | Verdict |
+| Field | Type | Rationale |
 |---|---|---|
-| **A1 (RECOMMENDED)** — new `Underwriting__c.Approval_Status__c`, restricted picklist `Approved` / `Rejected`, written by the approval's own `finalApprovalActions` / `finalRejectionActions` field updates. The new sync flow keys on **its** change and branches. | 1 field + 1 workflow file | **Exact in-repo precedent:** `Disposition_Offer__c.Approval_Status__c` + `Set_Offer_Approval_Approved` / `Set_Offer_Approval_Rejected` (`approvalProcesses/Disposition_Offer__c.Offer_Selection_Approval:116-128`). Own-record updates, so the Lookup constraint does not bite. **Bonus: single-writer.** The seed scripts and `TestDataFactory` write `Stage__c`, never this, so they are immune to the new automation by construction — today's seed behaviour is preserved byte-for-byte, and a manual `Stage__c` edit cannot fake an approval. |
-| **A2** — key on `Stage__c = 'Approved'`; accept that `Opportunity.Underwriting_Complete__c` is **no longer auto-cleared on rejection**. | 0 new metadata | Defensible: the approval's own description already records that Section 12B "no longer gates submission", and D3's lock inversion hands the analyst edit access back on rejection so they can untick it. But it is a **silent behaviour loss** vs. today's `UW_Reopen_For_Revision`, and it makes the seeds fire the market-data freeze (behaviour change). |
-| **A3 (REJECTED)** — `finalRejectionActions` writes `Stage__c = 'In Progress'` | — | Measurably a **no-op**. Must not be chosen. |
-| **A4 (REJECTED)** — `finalRejectionActions` writes `Stage__c = 'Requested'` | — | Detectable, but contradicts D2, and "Requested" means "not started", which is false for a reworked model. |
-| **A5 (REJECTED)** — `initialSubmissionActions` to set a marker on submit | — | `initialSubmissionActions` and `recallActions` appear **nowhere** in `approvalProcesses/**`; the XML shape is unproven at 67.0 and a block that deploys green and never fires is worse than the gap. |
+| `Stage_Entry_Date__c` | **Date** | Item 4's threshold is whole days, the batch runs daily, sub-day precision buys nothing, and a `Date` makes `TODAY() - Stage_Entry_Date__c` exact and timezone-free. Matches `Lease_Inquiry__c.Stage_Start_Date__c`. ⚠ Counter-precedent as a *warning*: `Lead.First_Seen_Date__c` is a **DateTime despite its Date suffix** — a violation `LeadConvertService` documents and refuses to "fix" because a rename is a delete-and-create. |
+| `Days_In_Stage__c` | **Formula (Number, scale 0)** | Zero storage, always current, no batch to keep it fresh. `IF(IsClosed, 0, IF(ISBLANK(Stage_Entry_Date__c), null, TODAY() - Stage_Entry_Date__c))`, `formulaTreatBlanksAs = BlankAsZero`. Use **`IsClosed`** rather than naming the two stages: it is the standard formula field, is true for both (verified in `OpportunityStage.standardValueSet`), and survives a future added closed stage. |
 
-**Ask the user: A1 or A2?**
+**Where the stamp goes — Apex before-trigger.** Before-save Flows run **before** Apex
+before-triggers, so a before-trigger observes the final `StageName` after
+`Opportunity_Initiate_Underwriting` has rewritten it, while `Trigger.oldMap` still holds the true
+prior DB value. A third before-save Flow would have **no defined ordering** relative to the two
+existing ones.
 
-### GATE B — the approval page loses two fields the principals see today
+**DEVELOPER**
+1. `triggers/OpportunityReviewTrigger.trigger` — **MODIFY**: widen to
+   `on Opportunity (before insert, before update, after insert, after update)`.
+2. `classes/OpportunityReviewTriggerHandler.cls` — **MODIFY**: add `beforeInsert()` /
+   `beforeUpdate()` overrides. Update the class header (it says "Routes the after-insert and
+   after-update contexts" and enumerates five after-context calls — both become incomplete).
+3. `classes/OpportunityStageEntryService.cls` — **NEW**.
+   `stampStageEntryDates(List<Opportunity>, Map<Id,Opportunity>)`.
+   **Zero SOQL, zero DML at any record count** — a pure in-memory assignment, the
+   `stampListingDates` shape. That is what makes it safe to widen a trigger already routing five
+   services. ⚠ One deliberate difference from `stampListingDates`: that method is *fill-if-blank*
+   for idempotency; this one must **overwrite unconditionally on a genuine transition** — re-entering
+   a stage must restart the clock. Entry, not presence (`prior == null` on insert counts). Hoist
+   `Date.today()` once per chunk. `with sharing`; layer = service; no selector.
+4. `classes/OpportunityStageEntryServiceTest.cls` — **NEW**. Bulk-test rule applies **in full**
+   (trigger-driven, no exemption): **251-record** insert and update tests. Assert the governor shape
+   on counters captured **inside** the trigger context — `Test.stopTest()` restores pre-test
+   counters and makes the obvious assertion **silently vacuous**.
+5. `scripts/backfill-opp-stage-entry-date.apex` — **NEW** (Q4 = backfill).
+   `Stage_Entry_Date__c = LastModifiedDate.date()` for open deals where null; `SYSTEM_MODE`,
+   `allOrNone = false`, debug the row count. 🔴 Header must state that `LastModifiedDate` is the
+   last edit **of any kind**, so day-1 values are an approximation, not history (RESIDUAL-6).
 
-`Opportunity.Underwriting_Approval.approvalPageFields` shows `Name, Owner, StageName,
-Asking_Price__c, My_Price__c, Underwritten_NOI__c, My_Cap_Rate__c, Underwriting_Notes__c`.
+**ADMIN:** the two fields + `fieldPermissions` merged into `DPEG_Acquisition_Edit`,
+`DPEG_Acquisition_View`, `DPEG_Opportunity_View` — **GATE PS-1**. `Days_In_Stage__c` is a formula ⇒
+**`readable` only, never `editable`** (an `editable` entry on a formula fails the deploy).
 
-`Asking_Price__c` and `Underwriting_Notes__c` are **Opportunity** fields. An `Underwriting__c`
-approval page cannot show them, and `Underwriting__c` has **no counterpart for either** (verified
-against `objects/Underwriting__c/fields/`: 18 fields, no notes field, no asking price).
+**All eight `StageName` mutation paths — verified:**
 
-**Ask the user:** accept the loss (approvers open the parent deal via the `Opportunity__c` lookup on
-the page), or is a field needed? **Do not invent one.**
-
-Proposed page fields, all confirmed to exist and all granted read by `DPEG_Acquisition_View`:
-`Name, Owner, Opportunity__c, My_Price__c, My_Cap_Rate__c, Market_Cap_Rate__c, Underwritten_NOI__c,
-Target_Return__c, Principal_Price_Decision__c, Stage__c`.
-
-### VERIFY-BEFORE-DEPLOY (org-side, not answerable from this repo)
-
-| # | Check | Why it is fatal |
+| # | Path | Fires? |
 |---|---|---|
-| V1 | The two approvers hold a permission set granting `Underwriting__c` read. `DPEG_Acquisition_View` grants `allowRead=true, viewAllRecords=true` (`:1791-1799`), which also solves the Private OWD (`sharingRules/Underwriting__c.sharingRules-meta.xml` is **EMPTY** — zero rules on a Private object). There is **no `DPEG Principal` permission set in this repo**; the org is the only source of truth. | Without it the approval request opens on a record the principal cannot see. |
-| V2 | Exactly ONE pending `ProcessInstance` on `Underwriting_Approval` (§3 step 1). | A stranded instance cannot be actioned or recalled. |
-| V3 | `Opportunity_Record_Page`'s `force:relatedListContainer` has `showActionBar = true` (needed for the Recall button in step 1). | Determines whether step 1 is a UI recall or an anonymous-Apex recall. |
+| 1 | Manual UI / Path / list-view inline | ✅ |
+| 2 | `StageAdvanceService.setStage` (Advance Stage action, `advanceDealStage` LWC) | ✅ |
+| 3 | `Opportunity_Initiate_Underwriting` before-save Flow (→ `Underwriting` from any stage) | ✅ runs **before** the trigger — the decisive case |
+| 4 | `workflows/Opportunity.workflow-meta.xml` → `Set_Stage_Underwriting` (LOI_Approval **final rejection**) | ✅ expected — **verify in-org (P7)** |
+| 5 | `workflows/Opportunity.workflow-meta.xml` → `UW_Set_Stage_Initiate_LOI` (UW approval → `LOI`) | ✅ expected — same check |
+| 6 | **`flows/Transaction_Complete_Close.flow-meta.xml`** → RecordUpdate `StageName='Closed Won'` **from the Transaction object** | ✅ 🔴 **the brief did not list this path** |
+| 7 | `LeadConvertService` (conversion creates the Opportunity) | ✅ via before-**insert** |
+| 8 | `scripts/*.apex` seed and migration scripts | ✅ |
+
+No path changes `StageName` without DML ⇒ a before-trigger is **exhaustive**.
+
+**Routing: 🔵 `salesforce-admin`** (2 fields, FLS) → **🟢 `salesforce-developer`**.
 
 ---
 
-## 3. EXECUTION ORDER
+### ITEM 3 — LOI cannot be submitted for approval without a signed NDA
 
-Step 1 is the recall and is **non-negotiably first**.
+**🔴 The approved mechanism cannot work (F6). The gate is Apex, and only Apex.**
 
-| # | Step | Owner | Type |
+Path: `LOI__c.Submit_for_Approval` → `lwc/submitForApproval` → `OpportunityApprovalController` →
+`OpportunityApprovalService.submitForApproval` → `resolveApprovalTargetId(LOI__c)` →
+`LoiSelector.selectOpportunityIdRequiredById(...).Opportunity__c` → `Approval.process` on the
+**Opportunity**. Nothing writes the LOI row. An Opportunity-side VR is also unreliable —
+`LoiGateTest.rejectionReturnsDealToUnderwriting` demonstrates approval field updates **bypass
+custom validation rules** in this org.
+
+**Module boundary — already structural; no criterion needed.** A `Disposition_LOI` has a blank
+`Opportunity__c`, so the resolver returns null and the service already refuses it. The disposition
+side has a separate path entirely (`dispositionSubmitForApproval` → `DispositionApprovalService`).
+⚠ **Do not add a `RecordType.DeveloperName == 'Acquisition_LOI'` check** — a criterion that never
+discriminates is read as load-bearing by the next reader. Record the reasoning in the header instead.
+
+**DEVELOPER**
+1. `classes/OpportunityApprovalService.cls` — **MODIFY**. NDA pre-check **before**
+   `Approval.process`, applying only when the resolved target is an Opportunity at
+   `StageName = 'LOI'`. Refuse when `Primary_NDA__c` is blank **or**
+   `Primary_NDA__r.NDA_Signed__c` is false. Throw the class's own typed **`ApprovalException`**
+   (the EXCEPTION CONTRACT reserves it for user-actionable violations safe verbatim) — **never**
+   `AuraHandledException`; this service deliberately never throws that.
+   Message: *"The primary NDA must be signed before this LOI can be submitted for approval. Link a
+   signed NDA (Primary NDA) on the deal first."* (mirrors the sibling VR so the gates read as one rule).
+   🔴 **Amend the class-header premise in place.** It argues *"a pre-check would cost a query on
+   every successful submission to serve only the failure path"* — true when the query buys a better
+   **error message**, false when it buys a **correctness gate**. Retract-verbatim-then-correct, or
+   the next reader deletes the gate as a violation of the class's own rule.
+2. `classes/OpportunitySelector.cls` — **MODIFY**. New method returning `Id, StageName,
+   Primary_NDA__c, Primary_NDA__r.NDA_Signed__c`. **`WITH SYSTEM_MODE`, justified at its own
+   declaration**: performed on the submitter's behalf as an automation gate, and `USER_MODE`
+   *throws* (does not degrade) on one inaccessible field, refusing a legitimate submission with
+   `No such column` wearing a schema error. ⚠ The header says **"THREE are `WITH SYSTEM_MODE`"** and
+   enumerates them — amend count and list **in place**, and heed its warning: *"Do not read a future
+   fourth SYSTEM_MODE method as conformant because three already exist."*
+3. `classes/OpportunityApprovalServiceTest.cls` — **MODIFY**. Signed NDA submits; unsigned refused;
+   **blank `Primary_NDA__c` refused**; non-LOI stage unaffected; `Underwriting__c` submission
+   unaffected. The 251 mandate does **not** apply (single-record UI action) — **state that reasoning
+   in the test class header**, as the rule's exemption requires.
+
+**RESIDUAL-1:** a UI-path gate, not an absolute one — `Approval.process` can be called directly
+(`scripts/verify-junior-lifecycle.apex` does).
+**RESIDUAL-2:** narrow live population — `NDA_Signed_Before_Deal_Progression` already blocks *entry*
+to LOI, so this covers only the insert-time hole, post-hoc un-signing/repointing, and approval field
+updates. Do not later file "the gate never fires" as a bug.
+
+**Routing: 🟢 `salesforce-developer`.** No admin work at all.
+
+---
+
+### ITEM 4 — Stalled-deal reminder (DEPENDS ON ITEM 2)
+
+Structural template: **`NdaExpiryAlertBatch` / `NdaExpiryAlertSchedule` / `NdaExpiryService`** —
+itself cloned from `CallForOffers*`. This is the third instance of a proven pattern.
+
+**ADMIN**
+- `objects/Stage_Threshold_Def__mdt/...` — **NEW**. `Stage_Value__c` Text(80) (a CMDT picklist
+  cannot reference a standard value set), `Threshold_Days__c` Number(3,0), `Is_Active__c` Checkbox.
+  Template: `Broker_Protection_Config__mdt`. **Structure only — rows via the loader script.**
+- `objects/Opportunity/fields/Stage_Alert_Last_Sent_Date__c.field-meta.xml` — Date.
+- `objects/Opportunity/fields/Stage_Alert_Stage__c.field-meta.xml` — Text(80), **the snapshot**.
+  🔴 **Not optional.** The `Offer_Alert_*` / `NDA_Alert_*` markers snapshot a *date*; here the thing
+  that must re-arm the alert is a **stage change**. Re-arm test:
+  `Stage_Alert_Stage__c != StageName OR Stage_Alert_Last_Sent_Date__c < Stage_Entry_Date__c`.
+  A date-only marker would leave a deal that moved and stalled again **permanently silent**.
+- `reports/Acquisitions/Delayed_Opportunities.report-meta.xml` — **NEW**. `Opportunity` report type,
+  grouped by `STAGE_NAME`, filtered `Days_In_Stage__c > 14` and open. ⚠ **A report filter cannot
+  read a CMDT row** (RESIDUAL-4) — state that in the description. ⚠ A `Metric` component needs a
+  **Summary**-format report; use `FlexTable` for detail; `<aggregate>` not `a!`/`s!`.
+- `dashboards/Acquisitions/Acquisitions_Dashboard_Junior.dashboard-meta.xml` — **MODIFY**, +1
+  component (currently **13 of 20** ✅). Q3 = keep both widgets with **distinct titles**
+  ("Stale — no activity 7d" vs "Delayed — 14d in stage").
+  🔴 Carries `<runningUser>test-aysz9meqvl23@example.com</runningUser>` — a **stale scratch-org
+  address**, the known cause of "invalid cross reference id" failures here. **Repoint it.**
+  🔴 Three other dashboards are modified and uncommitted in this tree — **diff against HEAD first**.
+  **GATE FP-1** applies.
+
+**DEVELOPER**
+1. `classes/StageDelayService.cls` — **NEW**. **Pure** (no SOQL/DML/clock), like
+   `CallForOffersService` / `NdaExpiryService`. Reads `Stage_Threshold_Def__mdt.getAll()` (a CMDT
+   read is **not** SOQL and costs no governor units). Exposes `thresholdFor(String)` and
+   `shouldFire(...)`. **Every threshold lives here — the batch contains no `14`.**
+2. `classes/OpportunitySelector.cls` — **MODIFY**. `queryStalledDeals()` `Database.QueryLocator`,
+   **`WITH SYSTEM_MODE`** (same justification as `queryCallForOffersAlerts`: it selects custom
+   fields created in this same change, which arrive with **no FLS for any profile including the
+   deploying admin**).
+   `WHERE IsClosed = FALSE AND Stage_Entry_Date__c != NULL AND Stage_Entry_Date__c <= :ceiling`.
+   **`IsClosed = FALSE` is the correct exclusion** for "excluding Dead/Pass and Closed Won" (both
+   carry `<closed>true</closed>`) and survives a future closed stage. **`!= NULL` is load-bearing** —
+   it excludes un-backfilled legacy deals. Amend the header's SYSTEM_MODE count/list in place.
+3. `classes/StageDelayAlertBatch.cls` — **NEW**. `Database.Batchable` + `Database.Stateful`.
+   `SCOPE = 200` **INHERITED from `CallForOffersAlertBatch`'s five measured probes — say so plainly**
+   rather than implying a fresh measurement (exactly how `NdaExpiryAlertBatch` words it).
+   **SEND FIRST, STAMP SECOND** (a notification is not transactional; only this order is
+   recoverable). `GroupNotifier.notifyWithOutcome`, **never** `notify`. Stamp only successes.
+   `Database.update(toStamp, false, AccessLevel.SYSTEM_MODE)`.
+   🔴 **`RECIPIENT_GROUP = 'Acquisition'` — the QUEUE**, per recorded Gate 1 Q2.3 (F10).
+   🔴 If notifying the Owner needs a **second `send()` per deal**, **re-run** the CPU arithmetic
+   (`6.0 ms + 0.22 ms × |recipients|`) for 400 sends/chunk before accepting `SCOPE = 200`. At the
+   measured rate that is ≈2,500 ms of a 60,000 ms async budget (~24× margin) — but do the arithmetic
+   in your header rather than inheriting a number computed for a different call count.
+4. `classes/StageDelayAlertSchedule.cls` — **NEW**. `Schedulable`, one line.
+5. `scripts/load-stage-threshold-defs.apex` — **NEW**. **8 rows, all `Threshold_Days__c = 14`**:
+   `New`, `Under Review`, `Development Review`, `Construction Review`, `Underwriting`, `LOI`,
+   `Under Contract (PSA)`, `About to Close`. (Closed stages get no rows.) Template:
+   `load-broker-protection-config.apex`. ⚠ Watch the **45-row collection-initializer compile
+   ceiling** — Apex names the *statement start* (`Unexpected token "<"`), not the real cause. 8 is safe.
+6. Tests — **251-record** fixtures. Assert the constant-governor property (a chunk owing nothing
+   costs **zero DML and zero notifications**), not merely that 251 rows produced 251 alerts.
+   ⚠ `content-publication-rule.md` does **not** apply (no `ContentVersion`/`ContentNote`).
+
+⚠ Class names cap at **40 chars** (all four are within). **`bulk` is a reserved word** and produces
+misleading "method does not exist" errors.
+
+**Routing: 🔵 `salesforce-admin`** (CMDT structure, 2 fields, report, dashboard) **+ 🟢
+`salesforce-developer`** (service, selector, batch, schedule, loader, tests).
+
+---
+
+### ITEM 5 — Call for Offers, extended in place
+
+**(a) `Offer_Status__c` — ADMIN**
+- Picklist, **`restricted=true`**, `Open` / `Submitted` / `Closed`, `Open` as `<default>true`.
+- 🔴 **Add all three values to the `Land`, `Retail` and `Commercial` record types, and deploy the
+  record types BEFORE any Apex naming a value.** Record-type picklist restriction **IS enforced by
+  DML** in this org (measured 4×) — several repo files claim it is UI-only and are **wrong**. ⚠ A
+  record type file that **omits** a picklist silently drops all of its values for that type —
+  enumerate every picklist already present; never write a partial file.
+- **Q7:** a `<default>` applies **on insert only**. Also stamp `Open` in **`CallForOffersStampService`**
+  when `Offer_Due_Date__c` first appears on an existing deal — one extra in-memory assignment on a
+  record already being written, zero added queries.
+
+**(b) `Source_Broker__c` — 🔴 DO NOT CREATE (Q8).** A CFO is issued by the seller's **listing
+broker**, and `Listing_Broker_Name__c` / `Listing_Broker_Email__c` already hold exactly that.
+Surface those in `callForOffersPanel` instead. This respects `LeadConvertService`'s explicit
+warning — *"This is the SUBMITTING broker; the OM's listing broker is a different person … **Do not
+merge the two**"* — and adds no fourth broker role.
+✅ **Convenient consequence:** `OpportunitySelector.queryCallForOffersAlerts` **already selects
+`Listing_Broker_Name__c`**, and `CallForOffersAlertBatch.buildRequest` already puts it in the
+notification body. The bell and the panel will name the same person **by construction**. No selector
+change is needed for (b).
+
+**(c) Suppress once Submitted/Closed — DEVELOPER**
+Modify `OpportunitySelector.queryCallForOffersAlerts()`. 🔴 **SOQL NULL TRAP:** every existing deal
+has `Offer_Status__c = null`, and `Offer_Status__c NOT IN ('Submitted','Closed')` evaluates
+**unknown for null and EXCLUDES the row** — silently killing the alert for the entire existing
+population on day one. Write:
+```
+AND (Offer_Status__c = NULL OR Offer_Status__c NOT IN ('Submitted','Closed'))
+```
+The filter belongs in the **selector** (a *population* filter, not a ladder threshold; and
+excluding rows before chunking is cheaper). ⚠ `OpportunitySelectorTest.queryCallForOffersAlerts_doesNotSelectTheReceivedDate`
+**pins the selected field list** — adding a field may red it. Add both
+`..._excludesSubmittedAndClosed` **and** `..._stillIncludesNullStatus`; the second is the falsifier
+for the null trap and is the more valuable.
+
+**(d) Rung values → Custom Metadata (Q5 = option (i)) — DEVELOPER + ADMIN**
+
+**The ladder is preserved exactly. Only its values move.** No regression, no marker invalidation.
+
+- **A SEPARATE CMDT type — `CFO_Alert_Rung__mdt`. Not shared with Item 4.** Three reasons:
+  1. **Different cardinality and meaning** — one row per *stage* (Item 4) vs one row per *rung*
+     (here). A shared type would need a discriminator plus two mutually-irrelevant columns.
+  2. **Different readers** — `StageDelayService` vs `CallForOffersService`, two batches.
+  3. 🔴 **Decisive: the rung values are a data contract with existing rows.**
+     `Offer_Alert_Last_Interval__c` stores **the rung** on every deal that has ever alerted. Item 4's
+     thresholds have no such stored counterpart. Putting both in one type means **one admin edit can
+     corrupt the other feature's stored markers.** Keep them apart.
+- Fields: `Days_Before_Due__c` Number(3,0), `Is_Active__c` Checkbox.
+- **Seed EXACTLY `{7, 3, 1, 0}`** via `scripts/load-cfo-alert-rungs.apex` so day-one behaviour is
+  **byte-identical** to today.
+- 🔴 **ORDER IS LOAD-BEARING AND `getAll()` DOES NOT GUARANTEE IT.** `intervalFor` iterates
+  `ALERT_INTERVALS` and keeps the **last** match, which only yields "the smallest rung still
+  containing the deal" because the list is in **descending** order. A `Map` from `getAll()` has **no
+  guaranteed iteration order**, so `CallForOffersService` must **sort the rungs descending
+  explicitly** after reading them. Getting this wrong changes which rung fires, silently.
+- ✅ `CallForOffersAlertBatch`'s rule — *"If you find yourself writing `7` or `3` in this file,
+  stop"* — **survives unchanged and is strengthened**: the values now live in CMDT, read by the pure
+  service, and the batch still contains no literal.
+
+**(e) Due-date change re-arms — ✅ ALREADY BUILT. ZERO WORK (F7).** Only confirm
+`CallForOffersServiceTest` has a re-arms-on-moved-due-date case; add one if not. **Do not modify
+`shouldFire`.**
+
+**(f) Surface `Offer_Status__c` (+ the listing broker, per (b)) — ADMIN + DEVELOPER**
+- `objects/Opportunity/listViews/Offers_Due_Soon.listView-meta.xml` — **MODIFY**, add the
+  `Offer_Status__c` column.
+- `lwc/callForOffersPanel/*`, `lwc/callForOffersList/*` — **MODIFY**. Check first whether each is
+  LDS-wired or imperative-Apex-backed; if imperative, `CallForOffersController` + its DTO need the
+  new member and the JS/HTML change is additive.
+  ⚠ `lightning-record-edit-form` **FLS-checks every key in its payload including programmatic ones**
+  — a non-editable field vanishes with a **success toast**. ⚠ A getter bound to a custom element
+  attribute is written **unconditionally** — return `''`, not `undefined`, and assert on the
+  **rendered attribute**, not the getter. ⚠ Jest + `@sa11y/jest` required. ⚠ **`<description>` in an
+  LWC `.js-meta.xml` is capped at 255 chars and ONLY a deploy catches it.** ⚠ Run the **SLDS linter**.
+
+**RESIDUAL-3 (user-accepted):** a CFO cannot span multiple deals in a portfolio package.
+`Portfolio_Deal__c` members each carry independent `Offer_Due_Date__c` / `Offer_Status__c` and can
+silently disagree. Nothing detects it.
+
+**Routing: 🔵 `salesforce-admin`** (1 field, 3 record types, CMDT structure, list view) **+ 🟢
+`salesforce-developer`** (selector, service, loader script, 2 LWCs + Jest, controller, tests).
+
+---
+
+### ITEM 6 — Broker leaderboard counters
+
+**Read §1 first. The Contact fields' descriptions are a hard requirement, not polish.**
+
+#### 6.1 ACCOUNT SIDE — three native roll-up summaries ✅
+
+**Verified:** Account has **zero** custom fields. `Opportunity.AccountId` **is** the broker firm
+(`BrokerFirmController` reads `opp.Account.Name`; `LeadConvertService`: *"Several Leads can converge
+on ONE Account (Smart Lead Conversion reuses a firm)"*). Account→Opportunity **is** a supported
+non-master-detail roll-up path.
+
+| Field | Summary | Filter |
+|---|---|---|
+| `Total_Deals_Submitted__c` | COUNT of Opportunity | none |
+| `Deals_Won__c` | COUNT | `StageName equals Closed Won` |
+| `Deals_Lost__c` | COUNT | `StageName equals Dead/Pass` |
+
+🔴 **Roll-up summary XML is a known deployment-failure area.** Load the **`sf-custom-field`** skill.
+`<summaryForeignKey>Opportunity.AccountId</summaryForeignKey>`, `<summaryOperation>count</summaryOperation>`,
+**omit `<summarizedField>` for `count`** (supplying it is a common failure), `<summaryFilterItems>`
+with `<field>Opportunity.StageName</field>` / `<operation>equals</operation>` / `<value>`.
+Use the **literal** `Dead/Pass` in a filter value (`%2F` is a BusinessProcess/RecordType-only convention).
+
+⚠ Roll-ups are **read-only** ⇒ `readable` only in `DPEG_Account_View`; `editable=true` fails the deploy.
+⚠ Deploying triggers a **full recalculation** across all Opportunities — harmless here, but do not
+misdiagnose a slow deploy.
+
+**RESIDUAL-5:** a roll-up counts **every** Opportunity on the Account, not just broker-introduced
+ones. Verify against live data before go-live (count Opportunities whose Account record type is not
+`Broker_Firm`).
+**RESIDUAL-8 (new):** these three numbers now exist **twice** — as roll-ups and as
+`BrokerFirmController`'s live Apex computation (F11). **Q10 deliberately leaves the repoint out of
+scope.** Record the duplication in the field descriptions so a future divergence is diagnosable.
+
+#### 6.2 / 6.4 CONTACT SIDE — four fields + one nightly batch
+
+**🔴 The brief pointed at the wrong field.** `Lead.Broker_First__c` is a **Text(255) mirroring the
+brokerage FIRM NAME** (`BrokerPortalService` lines 140–141 set `l.Company` and `l.Broker_First__c`
+to the same `input.brokerageFirm`; two tests assert *"Broker_First mirrors firm"*). It is **not** a
+broker-identity link. **The join is `Lead.ConvertedContactId`**, which `LeadConvertService` also
+stamps onto `Opportunity.Broker__c`.
+
+**ADMIN — four fields on Contact**
+
+| Field | Type | Source |
+|---|---|---|
+| `Deals_Submitted__c` *(exists)* | Number(18,0) | COUNT of Opportunity `GROUP BY Broker__c` |
+| `Deals_Won__c` *(exists)* | Number(18,0) | COUNT where `StageName = 'Closed Won'` |
+| `Deals_Lost__c` | **NEW** Number(18,0) | COUNT where `StageName = 'Dead/Pass'` |
+| `First_Submission_DateTime__c` | **NEW** DateTime (Q9) | `MIN(Lead.First_Seen_Date__c)` `GROUP BY ConvertedContactId` |
+
+⚠ `Lead.First_Seen_Date__c` is a **DateTime** despite its Date suffix (a violation
+`LeadConvertService` documents and refuses to rename). `Opportunity.Broker_First_Seen__c` moved
+Date → DateTime on **2026-08-30 (today, WS2)** to match. The new field is a **DateTime** so the
+instant maps straight across with no `.date()` truncation.
+
+🔴 **WS2 is active work on this exact surface, today.** `LeadConvertService` and
+`Broker_First_Seen__c` both changed 2026-08-30. **Diff against HEAD and check for concurrent-session
+edits before touching the lead-convert path.**
+
+🔴 **ALL FOUR FIELDS REQUIRE A `<description>` STATING THE POPULATION. Non-negotiable.** Each must say,
+in substance: *"Covers only brokers who have a Contact — i.e. those whose Lead was converted. Brokers
+who submitted and lost never receive a Lead (since 2026-07-31) and therefore never appear here. The
+authoritative broker population is the `brokerLeaderboard` component / `BrokerLeaderboardService`,
+computed live from `Competing_Broker_Submission__c`. Maintained nightly by `BrokerCounterRecalcBatch`."*
+⚠ `<description>` is capped at **255 characters** — split across the field description and an XML
+comment inside the root if needed.
+
+🔴 **DO NOT TOUCH `Active_Listings__c`, `Closed_Volume__c` or `Avg_Days_On_Market__c`** — they are
+the **disposition-side** scorecard and mean something else entirely (§1 reason 2).
+
+**LEADERBOARD — NO CHANGE.** `BrokerLeaderboardService`, `BrokerLeaderboardController`,
+`lwc/brokerLeaderboard`, `brokerFirmCard` and `reports/Acquisitions/Broker_Leaderboard` are **all
+untouched**. Do not repoint the leaderboard at Contact.
+
+**DEVELOPER — the batch (nightly, NOT trigger-time)**
+
+**Why a batch, decisively.** `OpportunityReviewTrigger` already routes **five** services — one
+(`DealFolderService`) enqueues a SharePoint Queueable under a **never-throw** contract, another
+(`PropertyAssetService`) **throws by design**. Adding a parent read + parent DML to that cascade is
+the exact shape of a **measured** failure in this repo: routing a new parent into a Task trigger cost
+`ceil(rows/200)` SOQL **and** DML — 23 each at production scale. **And Item 2 is already widening
+this same trigger** — doing both in one wave makes a regression unattributable.
+
+1. `classes/BrokerCounterRecalcBatch.cls` — **NEW** (24 chars ✅).
+   🔴 **Batch over CONTACT, not over Opportunity.** `Database.getQueryLocator` on
+   `Contact WHERE RecordType.DeveloperName = 'Broker'`. This is not a style choice: batching over
+   Contact means **every Contact in scope is written**, so a broker whose deals were deleted or
+   reassigned correctly goes to **0** instead of keeping a stale count. Batching over Opportunity
+   can only ever *increase* counts and would silently strand them.
+   Per chunk — **2 SOQL, 1 DML, constant in the number of deals**:
+   - `AggregateResult` over Opportunity `GROUP BY Broker__c WHERE Broker__c IN :chunkIds`
+   - `AggregateResult` over Lead `MIN(First_Seen_Date__c) GROUP BY ConvertedContactId WHERE
+     ConvertedContactId IN :chunkIds`
+   - one `Database.update(..., false, AccessLevel.SYSTEM_MODE)`
+   ✅ **NO EMAIL MATCHING, FUZZY OR OTHERWISE.** `Opportunity.Broker__c` is a real Contact lookup
+   (`LeadConvertService`: `o.Broker__c = l.ConvertedContactId`). `BrokerLeaderboardService`'s
+   reason-3 warning was about `Competing_Broker_Submission__c`, whose identity is a **Text email
+   with no Contact lookup** — **this batch does not touch that object.** Record this in the class
+   header so the warning is not re-inherited.
+   ⚠ All SOQL via selectors per `.claude/rules/apex-layering-rule.md` — add the aggregates to
+   `OpportunitySelector` and `LeadSelector`, **not** inline. `WITH SYSTEM_MODE`, justified at each
+   declaration (automation path; new fields arrive with no FLS).
+2. `classes/BrokerCounterRecalcSchedule.cls` — **NEW** (27 chars ✅).
+3. Tests — **251-record** fixtures (`bulk-test-rule.md`, no exemption). Include a **reset-to-zero**
+   case: a Contact with counts whose Opportunities are removed must go to 0. That is the falsifier
+   for the batch-over-Contact decision.
+
+**Win rate & last submission — computed, not stored.** The existing `BrokerLeaderboardService`
+already returns first/last submission and computes rank in Apex, precisely so *"two surfaces
+computing their own ranks"* cannot disagree. No stored field. If a reporting need emerges, the
+honest form is a **formula** over the two counts, not a maintained Number.
+
+**Routing: 🔵 `salesforce-admin`** (3 Account roll-ups, 2 new Contact fields, 2 existing Contact
+field descriptions, FLS) **+ 🟢 `salesforce-developer`** (2 selector aggregates, batch, schedule,
+tests). **Not solution-architect** — no OWD/sharing decision is embedded and the roll-up
+relationship is platform-fixed.
+
+---
+
+## §3 — SEQUENCING AND PARALLELISM
+
+```
+WAVE A (fully parallel)
+  ├── ITEM 1   VR 1A + VR 1B + header block 1C + No_Backward amendment  🔵 admin
+  │            └── 1D: three Apex header/comment amendments             🟢 developer
+  ├── ITEM 3   Apex NDA gate                                            🟢 developer
+  ├── ITEM 5a/b/f  Offer_Status__c + record types + list view + LWCs    🔵 admin + 🟢 developer
+  ├── ITEM 5c  selector predicate (SOQL null trap)                      🟢 developer
+  ├── ITEM 5d  CFO_Alert_Rung__mdt + loader + service repoint           🔵 admin + 🟢 developer
+  └── ITEM 6.1 Account roll-ups                                         🔵 admin
+
+WAVE B
+  └── ITEM 2   fields ─► trigger widening + service + backfill script
+                                                       🔵 admin ─► 🟢 developer
+
+WAVE C (HARD DEPENDENCY on Item 2 — the batch reads Days_In_Stage__c)
+  └── ITEM 4   CMDT + 2 fields + report + dashboard ─► service/selector/batch/schedule/loader
+                                                       🔵 admin ─► 🟢 developer
+
+WAVE D (must NOT share a wave with Item 2 — see below)
+  └── ITEM 6.2/6.4  Contact fields + nightly recalc batch  🔵 admin + 🟢 developer
+
+ITEM 5e — ZERO WORK.
+```
+
+🔴 **Item 6.4 must NOT run in the same wave as Item 2.** Both touch the Opportunity write path
+(Item 2 widens the trigger; Item 6.4 adds a nightly writer keyed on `Opportunity.Broker__c`). A
+regression would be unattributable. Item 6.4 can run in parallel with Item 4 (Item 4 touches
+Opportunity marker fields only, via a different batch).
+
+🔴 **HUB-FILE PROTOCOL.** Items 1, 2, 4, 5 and 6 all touch **permission sets**; Item 4 touches a
+**dashboard**; Items 5 and 6 touch **LWCs**. No concurrent stream may edit these. Nominate **one
+consolidation pass per wave** that merges all `fieldPermissions` for that wave into the six
+permission-set files in a single edit.
+
+---
+
+## §4 — COMPLEXITY ROUTING SUMMARY
+
+| Item | Declarative | Programmatic | Reasoning |
 |---|---|---|---|
-| **1** | **RECALL the one pending `Underwriting_Approval` instance** (details below) | Human (submitter or SysAdmin) | Operational |
-| 2 | Answer GATE A + GATE B; confirm V1–V3 | User / DevOps | Gate |
-| 3 | `Underwriting__c.Approval_Status__c` field + `workflows/Underwriting__c.workflow-meta.xml` field updates *(A1 only)* | Admin | Metadata |
-| 4 | Approval History: `layouts/Underwriting__c-Underwriting Layout` `relatedLists` block **AND** `flexipages/Underwriting_Record_Page` `force:relatedListContainer` — **two files, neither works alone** | Admin | Metadata |
-| 5 | NEW `approvalProcesses/Underwriting__c.Underwriting_Approval.approvalProcess-meta.xml` (`<active>false</active>` initially) | Admin | Metadata |
-| 6 | NEW `flows/Underwriting_Approval_Sync.flow-meta.xml` | Admin | Metadata |
-| 7 | Apex: `ApprovalAuditService`, `OpportunityApprovalService`, `StageAdvanceService`, `TestDataFactory` | Developer | Apex |
-| 8 | LWC: `submitForApproval` confirm wording + its Jest test | Developer | LWC |
-| 9 | **DEACTIVATE** `Opportunity.Underwriting_Approval` (`<active>false</active>`) | Admin | Metadata |
-| 10 | Rewrite `Opportunity.Underwriting_Approved_Before_LOI` (the corrected two-value formula, §C-2) | Admin | Metadata |
-| 11 | **ACTIVATE** the new `Underwriting__c` approval (`<active>true</active>`) | Admin | Metadata |
-| 12 | Test classes (§7) | Unit Testing | Apex |
-| 13 | Post-deploy verification (§8), incl. **re-submitting the deal recalled in step 1** | DevOps + Human | Verification |
+| 1 | 🔵 admin (2 VRs, 1 VR message/header amendment) | 🟢 developer (3 Apex header/comment amendments — 1D) | Declarative rules executing a decision taken here. The Apex half is comments only, no logic. |
+| 2 | 🔵 admin (2 fields, FLS) | 🟢 developer | Trigger widening + a zero-SOQL/zero-DML service. No integration, no sharing decision (nothing is read). |
+| 3 | — none | 🟢 developer | One method in an existing service + one selector method. `Opportunity` OWD is `ReadWrite` ⇒ no sharing question. |
+| 4 | 🔵 admin (CMDT structure, 2 fields, report, dashboard) | 🟢 developer | Third instance of a measured pattern; governor shape inherited, not designed. |
+| 5 | 🔵 admin (1 field, 3 record types, CMDT structure, list view) | 🟢 developer (selector, service, loader, 2 LWCs + Jest) | Additive to a shipped feature. **5(d) does NOT escalate** — Q5 chose the additive option, so it is a config move, not a migration. |
+| 6.1 | 🔵 admin | — | Relationship is platform-fixed ⇒ no model decision embedded. |
+| 6.2/6.4 | 🔵 admin (4 fields + descriptions) | 🟢 developer (2 selector aggregates, batch, schedule) | Standard batch. The population decision is taken here; the agents execute it. |
 
-**Why steps 9 → 10 → 11 in that order.** Between 9 and 10 the old VR still reads
-`NOT(UW_Approved__c)`, which is the *permissive* state for every already-approved deal — no deal is
-blocked in the window. Repointing the VR (10) **before** the new approval is live (11) means an
-un-approved deal is correctly refused rather than being handed a hop the new process cannot yet
-grant. Doing 10 before 9 would mean neither process could satisfy the new formula.
-
-⚠ **Do not fold step 5+11 into one deploy.** Two active approval processes whose entry criteria are on
-different objects cannot collide, but shipping the new one inactive first gives a clean revert
-boundary for the layout/FlexiPage half (step 4) — the same G4 discipline
-`LOI_Record_Page.flexipage-meta.xml:406-410` records as having been skipped, to its cost.
-
-### Step 1 in full — the recall
-
-- **Who.** `allowedSubmitters` is `owner`, so the **record owner** of the deal, or any user with
-  *Modify All Data*. Nobody else can recall it.
-- **How (primary).** Open the Opportunity → **Approval History** related list → **Recall Approval
-  Request**. Confirmed available: `Opportunity_Record_Page:1438` carries
-  `force:relatedListContainer` and `Opportunity-Opportunity Layout:344` carries
-  `RelatedProcessHistoryList`. `allowRecall` is `true` on the process. Verify V3 first.
-- **How (fallback).** Anonymous Apex, run **as the submitter or a SysAdmin**:
-  ```apex
-  ProcessInstanceWorkitem wi = [
-      SELECT Id FROM ProcessInstanceWorkitem
-      WHERE ProcessInstance.ProcessDefinition.DeveloperName = 'Underwriting_Approval'
-        AND ProcessInstance.Status = 'Pending' LIMIT 1];
-  Approval.ProcessWorkitemRequest r = new Approval.ProcessWorkitemRequest();
-  r.setWorkitemId(wi.Id);
-  r.setAction('Removed');
-  Approval.process(r);
-  ```
-- **Verification — server-side, not counter-reading.** Both must return **0**:
-  ```sql
-  SELECT COUNT() FROM ProcessInstance
-   WHERE ProcessDefinition.DeveloperName = 'Underwriting_Approval' AND Status = 'Pending'
-  SELECT COUNT() FROM ProcessInstanceWorkitem
-   WHERE ProcessInstance.ProcessDefinition.DeveloperName = 'Underwriting_Approval'
-  ```
-- ⚠ **A recall fires NO actions** — no field update, no stamp. The deal simply unlocks at
-  `StageName = 'Underwriting'` with `UW_Approved__c` still false. That is the correct end state.
-- ⚠ **The recalled deal must be re-submitted from its Underwriting record after step 11.** It is the
-  org's only active deal; add it to the §8 checklist by name.
+**No item routes to ⚫ `salesforce-technical-architect`** — nothing touches ASB, Plaid, Yardi,
+Procore, CoStar, OpenAI, SharePoint or Turnstile; no Named Credentials; no LDV; no Platform Events.
 
 ---
 
-## 4. 🔵 ADMIN WORK (`salesforce-admin`)
+## §5 — POST-DEPLOY MANUAL STEPS (ALL FAIL SILENTLY)
 
-### A-1. NEW `approvalProcesses/Underwriting__c.Underwriting_Approval.approvalProcess-meta.xml`
+> 🔴 **DEPLOYMENT IS BLOCKED THIS SESSION.** The `salesforce` MCP server failed to connect
+> (`CONNECT_TIMEOUT`). **Build and code review can proceed; the `salesforce-devops` step cannot.**
+> This is a **known environmental state, not a design constraint** — nothing in this document should
+> be reshaped around it. Every gate and step below still applies whenever deployment does happen.
 
-Copy the shape of `approvalProcesses/Disposition_Offer__c.Offer_Selection_Approval` — same object
-class (a child with a Lookup parent), same approvers, same `FirstResponse`.
-
-- `<active>` — `false` at step 5, `true` at step 11.
-- `allowRecall` `true`; `allowedSubmitters` `owner`.
-- `entryCriteria` → `Underwriting__c.Stage__c` equals `In Progress`.
-- Approvers — **UNCHANGED per D1**: `nikhil.dhanani@usmandpeg.uat`,
-  `aftab.ali.dpeg.usman@avanzasolutions.com`, `whenMultipleApprovers = FirstResponse`.
-- `recordEditability` → **`AdminOnly`** (D3).
-- `finalApprovalRecordLock` `false`; `finalRejectionRecordLock` `false`.
-- `showApprovalHistory` `true`; `enableMobileDeviceAccess` `false`; `processOrder` `1`.
-- `approvalPageFields` — per GATE B.
-- `finalApprovalActions` → field updates on **its own record**:
-  `Stage__c = 'Approved'`, `Status__c = 'Approved by Principals'`, *(A1)* `Approval_Status__c = 'Approved'`.
-- `finalRejectionActions` → *(A1)* `Approval_Status__c = 'Rejected'`. *(A2: none — nothing to write.)*
-- ⚠ Any XML comment must sit **INSIDE** the root element (`sf` fails source conversion otherwise).
-- ⚠ `<description>` under 255 chars, per the repo's uniform rule.
-
-### A-2. NEW `workflows/Underwriting__c.workflow-meta.xml`
-
-Field updates referenced above. Precedent file: `workflows/Disposition_Offer__c.workflow-meta.xml`.
-Must deploy **before** A-1.
-
-### A-3. *(A1 only)* NEW `objects/Underwriting__c/fields/Approval_Status__c.field-meta.xml`
-
-Restricted picklist, values `Approved` / `Rejected`, no default. Mirrors
-`Disposition_Offer__c.Approval_Status__c`. Add read FLS to `DPEG_Acquisition_View` and
-`DPEG_Acquisition_Edit` in the same deploy.
-⚠ **A PermissionSet deploy REPLACES its whole `fieldPermissions` set** — the edit must be additive
-against the current repo file, and hub files must be diffed against HEAD before deploying.
-
-### A-4. Approval History on `Underwriting__c` — TWO FILES, NEITHER WORKS ALONE
-
-1. `layouts/Underwriting__c-Underwriting Layout.layout-meta.xml` — add a `relatedLists` block with
-   `<relatedList>RelatedProcessHistoryList</relatedList>` and the standard five columns copied from
-   `layouts/Opportunity-Opportunity Layout:338-345`.
-2. `flexipages/Underwriting_Record_Page.flexipage-meta.xml` — add `force:relatedListContainer`
-   (identifier `relatedLists`, `showActionBar = true`).
-   🔴 **NOT `force:relatedListSingleContainer`** — measured `INVALID_TYPE`; it deploys green and
-   renders nothing.
-
-🔴 **FlexiPage deploy hazard.** A FlexiPage deploy REPLACES the org copy and there is no version
-history. Before touching this file: `sf project retrieve start --metadata FlexiPage:Underwriting_Record_Page
---target-metadata-dir <tmp>` and diff — **never a plain retrieve over the project tree.** Also read
-`SetupAuditTrail` for App Builder saves newer than the last retrieve, and do **not** toggle
-`enableActionsConfiguration` (already `true`; toggling silently empties the whole action bar).
-
-### A-5. NEW `flows/Underwriting_Approval_Sync.flow-meta.xml`
-
-**DECISION: a SEPARATE flow. `Underwriting_Opp_Sync` is NOT extended.** Four independent reasons:
-
-1. **ENTRY SEMANTICS.** `Underwriting_Opp_Sync` has **no entry filter and no
-   `doesRequireRecordChangedToMeetCriteria`** — it fires on every save of every Underwriting record.
-   The mirror stamp must be **transition-scoped**, because `MarketDataSnapshotService`'s freeze
-   depends on `Opportunity.Underwriting_Status__c` genuinely *transitioning*. Folding an
-   entry-scoped stamp into an every-save flow means hand-rolling `$Record__Prior` logic to
-   reproduce a platform primitive, imperfectly.
-2. **THE FILE'S OWN RECORDED DECISION FORBIDS IT.** `Underwriting_Opp_Sync`'s description states:
-   *"Opp.Underwriting_Status__c is deliberately NOT synced - the approval process owns it."*
-   Under this design **the approval still owns it**, via the new flow. Extending the sync flow would
-   force a retraction of a decision that is still true.
-3. **THE REJECT DIRECTION NEEDS A DIFFERENT ENTRY CONDITION.** A flow has ONE `<start>`.
-   `Underwriting_Opp_Sync` cannot carry two.
-4. **BLAST RADIUS.** `Underwriting_Opp_Sync` pushes the deal's headline numbers and is live and
-   working. A separate flow can be deactivated for diagnosis without taking the numbers down.
-
-**Shape:**
-- Object `Underwriting__c`, `RecordAfterSave`, `CreateAndUpdate`,
-  `doesRequireRecordChangedToMeetCriteria = true`.
-- Entry filter — **A1:** `Approval_Status__c` not null (then a Decision branches Approved / Rejected).
-  **A2:** `Stage__c EqualTo 'Approved'`, no branch.
-- 🔴 `<runInMode>SystemModeWithoutSharing</runInMode>` — **mandatory**. This flow runs as the
-  **approver**, and the approving principals are deliberately **read-only on Opportunity**
-  (`MarketDataSnapshotService.cls:33-35`, measured). Without it the write silently does nothing.
-- `<status>Active</status>` in the file (`flowDefinitions/**` is `.forceignore`d).
-- **Approved branch** → `actionCalls` → apex `ApprovalAuditService`,
-  `recordId = $Record.Id`, `gate = 'UnderwritingChild'`.
-  🔴 **The parent write is done in APEX, not in a flow `recordUpdate`.** Reason:
-  `ApprovalAuditService.cls:101-107` records a measurement that `SystemModeWithoutSharing` on the
-  flow did **NOT** lift the access mode and the stamp "silently wrote nothing" until
-  `AccessLevel.SYSTEM_MODE` was stated at the DML. Routing through Apex puts the write on the
-  proven path *and* fixes C-3 in the same statement. `ApprovalAuditService` is already
-  `without sharing`, which is separately required — `SYSTEM_MODE` lifts CRUD/FLS but **never
-  sharing**, and the approver may not own the deal.
-- **Rejected branch** *(A1 only)* → `recordUpdate` on `$Record.Opportunity__r` setting
-  `Underwriting_Complete__c = false`.
-
-### A-6. REWRITE `objects/Opportunity/validationRules/Underwriting_Approved_Before_LOI.validationRule-meta.xml`
-
-Use the **corrected four-clause formula from §C-2** — not the three-clause version in the brief.
-
-- `errorDisplayField` stays `StageName`.
-- New `errorMessage`, ≤255 chars, naming the real remedy:
-  *"This deal cannot enter LOI until its Underwriting record has been approved by the principals.
-  Open the deal's Underwriting record and use Submit for Approval."*
-- Rewrite the existing XML comment: it currently claims the rule is "safe against the legitimate
-  route by construction" because `Underwriting_Approval` sets `StageName = 'LOI'` and
-  `UW_Approved__c` in the same save. That argument **dies** with this change and must be
-  **retracted in place**, along with the "Known, accepted: `UW_Approved__c` is never cleared"
-  paragraph — replaced by the C-2 two-value rationale and the deliberate absence of an `ISBLANK`
-  guard.
-
-### A-7. DEACTIVATE `approvalProcesses/Opportunity.Underwriting_Approval.approvalProcess-meta.xml`
-
-🔴 **"Retire" means DEACTIVATE, not DELETE.** A `destructiveChanges` delete of an ApprovalProcess
-requires no `ProcessInstance` history to exist; this process **has** history, so the delete will
-fail. Set `<active>false</active>`, keep the file, and add an in-root XML comment recording the date,
-the replacement, and "DO NOT REACTIVATE".
-
-**Consequently, LEAVE the four `UW_*` field updates in `workflows/Opportunity.workflow-meta.xml`.**
-They are referenced by the retained (inactive) process file; deleting them breaks its references.
-They become inert. Record that in the workflow file's comment.
+| # | Step | Why it cannot be deployed | Fails how |
+|---|---|---|---|
+| **P1** | **Populate the `Acquisition` queue's membership.** | Queue/group membership is **not deployable metadata**; no test can see it. | 🔴 `GroupNotifier` logs `WARN: no recipients` and returns `false`. Because these jobs are **send-then-stamp**, `false` ⇒ **no marker written** ⇒ the job re-evaluates every delayed deal **every day forever, sending nothing.** Noisy in the log, invisible to users. **Same gate (G2) already open for `CallForOffersAlertBatch` and `NdaExpiryAlertBatch` — one gate, now three jobs.** |
+| **P2** | **Schedule `StageDelayAlertSchedule`** and **`BrokerCounterRecalcSchedule`**. | A `Schedulable` deploys; its **CronTrigger does not**. | The jobs never run. No error anywhere. ⚠ Also verify `CallForOffersAlertSchedule` and `NdaExpiryAlertSchedule` in the same pass — they may still be unscheduled. |
+| **P3** | **Run `scripts/load-stage-threshold-defs.apex`** (8 rows) **and `scripts/load-cfo-alert-rungs.apex`** (4 rows). | CustomMetadata **record** deploys fail in this repo (four loader-script precedents). | `getAll()` empty ⇒ Item 4 treats **every deal as not-delayed** (silently dead); Item 5(d) loses its ladder. Add a `finish()` debug naming the row count so an empty load is visible. |
+| **P4** | **Run `scripts/backfill-opp-stage-entry-date.apex`.** | One-off data operation. | Without it every existing open deal has `Stage_Entry_Date__c = null`, is excluded by the selector, and never alerts. Silent. |
+| **P5** | **Assign the six permission sets** to the running users and confirm the new grants landed. | Assignment is not in the deployed metadata. | Recorded incident shape: *"RunLocalTests fails with ~500 field-access errors" = permission sets not **assigned**.* |
+| **P6** | **Repoint the Acquisitions dashboard `<runningUser>`** away from `test-aysz9meqvl23@example.com`. | Scratch-org username baked into the file. | "Invalid cross reference id"; recurs on every org rebuild. |
+| **P7** | **Verify approval field updates fire the new before-trigger** (Item 2 paths 4 & 5): take a deal to LOI, reject the LOI approval, confirm `Stage_Entry_Date__c` moved. | Behavioural, org-specific. | Deals returned to Underwriting by rejection carry a stale entry date and alert immediately or never. |
+| **P8** | **Brief the team that Closed Won is now terminal** (Item 1B), and agree the admin data-fix procedure for a wrongly-Closed-Won deal. | Process, not metadata. | 🔴 A deal driver who closes a deal by mistake has **no in-app route out** and no error message that helps. This is the single most likely support call from this tranche. |
 
 ---
 
-## 5. 🟢 DEVELOPMENT WORK (`salesforce-developer`)
+## §6 — BREAKAGE REGISTER
 
-All four classes are `with sharing` except `ApprovalAuditService`, which is `without sharing` with a
-justification already in its header (ARCHITECTURE.md §2). No inline SOQL is added anywhere — every
-read stays in its selector.
-
-### D-1. `StageAdvanceService.cls` — Initiate LOI becomes a plain stage advance (piece 4)
-
-- `NEXT_STAGE` gains `'Underwriting' => 'LOI'`.
-- `advance()` — **delete** the entire `if (o.StageName == 'Underwriting') { ... }` branch
-  (lines 147-158) and its `try/catch (OpportunityApprovalService.ApprovalException)`.
-  The stage write then flows through `setStage()`, whose existing
-  `catch (DmlException e) { throw new StageAdvanceException(e.getDmlMessage(0)); }` **surfaces the
-  new VR's message verbatim in the user's toast — no extra work, and that is the whole gate.**
-- **Header retractions (repo convention — retract in place, do not delete):**
-  - the `APPROVAL HAND-OFF` block,
-  - `GATES PRESERVED`'s clause *"Underwriting -> LOI still goes through the approval process rather
-    than a direct write"*,
-  - the `NEXT_STAGE` comment *"Underwriting is absent because that step is an approval submission,
-    not a stage write."*
-- **Cross-file retraction:** `RecordStageAdvanceService.cls:1366-1367` says
-  *"Exactly the same shape as StageAdvanceService.NEXT_STAGE deliberately omitting 'Underwriting'"* —
-  that comparison is now false and must be retracted there too. Its
-  `NO_NEXT_STEP_HINTS['Underwriting|In Progress']` entry and `UNDERWRITING_NEXT_STAGE` itself are
-  **CORRECT AS-IS and must not be touched** — the UW record still has no button from `In Progress`,
-  and reaching `Approved` is still the approval's job.
-
-### D-2. `OpportunityApprovalService.cls` — resolve to the UNDERWRITING record (open item **(a)**, RESOLVED)
-
-**DECISION: branch inside the existing service. No new LWC, no new controller, no parameter.**
-
-Rejected alternatives and why:
-- *New LWC + controller* — duplicates the guard, the toast, the `getRecordNotifyChange` and a whole
-  Jest suite, for a routing decision. It also puts the routing on the **client**, where the
-  Underwriting page's visibility rule already is; a direct `@AuraEnabled` call bypasses it. The
-  repo's own tightening precedent (`ALLOWED_EXPLICIT_TARGETS`) says routing belongs server-side.
-- *A parameter on the shared `@AuraEnabled` method* — makes the target a caller-supplied value, which
-  is exactly the class of hole `ALLOWED_EXPLICIT_TARGETS` was created to close.
-
-**Change:** rename `resolveDealId` → `resolveApprovalTargetId` and make the `Underwriting__c` branch
-return `recordId` itself. `Opportunity`, `LOI__c`, `Contract_Review__c` are **unchanged** — LOI_Approval
-is not changing.
-
-Everything downstream then works with no further edits:
-- `ProcessInstanceSelector.selectPendingByTargetId(targetId)` now guards duplicate submission on the
-  **Underwriting** record. Correct.
-- `OpportunityActionPermissionService.assertDealActionAccess()` is a custom-permission check with no
-  object context. Unchanged.
-
-🔴 **This also closes a live latent defect.** Today, clicking Submit for Approval on an Underwriting
-record whose *parent* sits at `StageName = 'LOI'` submits the deal into **`LOI_Approval`** — the
-Underwriting page's visibility rule keys on the child's `Stage__c`, never on the parent's stage.
-After this change that is unreachable by construction. Record it in the header.
-
-### D-3. `OpportunityApprovalService.cls` — the ineligible-target messages (open item **(b)**, RESOLVED)
-
-**The current behaviour after retirement, traced:** an Opportunity at `StageName = 'Underwriting'`
-resolves to itself → pending check passes → `Approval.process` throws `NO_APPLICABLE_PROCESS`
-(`LOI_Approval`'s entry is `StageName = 'LOI'`, so **there is no wrong-process risk — the two entry
-criteria are mutually exclusive on `StageName`**) → the catch's guard
-`deal.StageName != STAGE_UNDERWRITING && != STAGE_LOI` is **FALSE**, so it falls through to
-`throw e` → the controller masks it with
-*"The deal could not be submitted for approval. Refresh the page or contact your administrator."*
-
-That is user-safe but useless, and it is the exact confusion this whole change exists to remove.
-
-**Change:**
-1. Drop `'Underwriting'` from the Opportunity-target eligible set (leave only `'LOI'`).
-2. Add a dedicated, user-safe `ApprovalException` for the Underwriting stage:
-   *"Underwriting approval now runs on the Underwriting record. Open this deal's Underwriting record
-   and use Submit for Approval there."*
-3. Repoint the generic ineligible-stage message to name only the LOI gate.
-4. Add the mirror guard for an **`Underwriting__c` target** whose `Stage__c != 'In Progress'`:
-   *"An underwriting is submitted for principal approval from the In Progress stage."*
-   (Derive it in the catch from the already-loaded record — do **not** add a pre-check query.)
-5. Retract the header's *"The approval processes live on the Opportunity"* paragraph in place.
-
-**Class name stays `OpportunityApprovalService`.** Renaming an Apex class is delete-and-create, it
-still owns `LOI_Approval` on the Opportunity, and the repo's 40-char class-name ceiling makes any
-rename a fresh risk for zero benefit.
-
-### D-4. `ApprovalAuditService.cls` — new `UnderwritingChild` gate (fixes C-3, performs the mirror write)
-
-Add a third gate alongside `Underwriting` and `LOI`. For `gate == 'UnderwritingChild'` the
-`recordId` is an **`Underwriting__c` Id**:
-
-1. Read the newest approved `ProcessInstanceStep` whose `ProcessInstance.TargetObjectId` is the
-   **Underwriting record** — the existing `ProcessInstanceStepSelector.AuditReads`
-   (`without sharing` + `SYSTEM_MODE`) already does exactly this and takes a `Set<Id>`. No selector
-   change needed.
-2. Resolve the parent Opportunity via `UnderwritingSelector` (existing method
-   `selectOpportunityIdRequiredById`, already used by `resolveApprovalTargetId`). No inline SOQL.
-3. Build **ONE** `Opportunity` shell per deal carrying **all four** fields and commit them in the
-   **existing single** `Database.update(oppUpdates, true, AccessLevel.SYSTEM_MODE)`:
-
-   | Field | Value | Why |
-   |---|---|---|
-   | `UW_Approved__c` | `true` | D4 — mirror must keep working |
-   | `Underwriting_Status__c` | `'Approved by Principals'` | 🔴 **THE FREEZE TRIGGER** |
-   | `UW_Approved_By__c` | `step.ActorId` | fixes C-3 |
-   | `UW_Approval_Date__c` | `step.CreatedDate` | fixes C-3 |
-
-   🔴 **One DML for all four is load-bearing.** `Opportunity_UW_Approved_Notify` has
-   `doesRequireRecordChangedToMeetCriteria = true`. Splitting the write means a *second* save on
-   which `Underwriting_Status__c` is already `'Approved by Principals'` — no transition, and every
-   subsequent audit field arrives on a save the freeze cannot see.
-4. **DELETE the existing `Underwriting__c` write block (lines 72-83).** `Stage__c = 'Approved'` and
-   `Status__c = 'Approved by Principals'` are now the approval's own field updates. Leaving it in
-   causes a redundant same-value DML that re-fires `Underwriting_Opp_Sync`, and it is dead code
-   after retirement anyway (no Opportunity `ProcessInstanceStep` will ever be found).
-5. Keep the wide `catch (Exception e)` and its comment **verbatim** — that catch exists because a
-   `TypeException` from a read-only approver escaped a `DmlException`-only handler and rolled back a
-   real approval on 2026-08-05. Narrowing it reopens that hole.
-6. Update the class header's Gates list.
-
-**`flows/Opportunity_UW_Approved_Notify` is left STRUCTURALLY UNTOUCHED.** After this change its
-`Stamp_Approval_Audit` action becomes a permanent no-op (no Opportunity approval history will ever
-exist). It is *deliberately* not removed: that flow carries the market-data freeze, edits to it are
-the highest-risk change in this pack, and a no-op invocable costs one query. Document the now-dead
-call in `ApprovalAuditService`'s header and in the flow's `<description>` instead.
-
-**The chain, end to end, after the change:**
+### 6.1 🔴 `scripts/seed-pipeline.apex` — the one seed script at risk (Item 1A)
 
 ```
-Principal approves the Underwriting record
-  → finalApprovalActions: Stage__c='Approved', Status__c='Approved by Principals'
-                          [+ Approval_Status__c='Approved' under A1]
-  → flows/Underwriting_Approval_Sync (after-save, entry-scoped, SystemModeWithoutSharing)
-      → ApprovalAuditService(gate='UnderwritingChild')
-          → ONE Opportunity update: UW_Approved__c, Underwriting_Status__c,
-            UW_Approved_By__c, UW_Approval_Date__c   [SYSTEM_MODE, without sharing]
-              → flows/Opportunity_UW_Approved_Notify fires on the TRANSITION
-                  → Stamp_Approval_Audit  (no-op)
-                  → Snapshot_Market_Data  ✅ THE FREEZE STILL FIRES
-  (separately, unchanged) flows/Underwriting_Opp_Sync pushes the four numbers up
+scripts/seed-pipeline.apex:17   'Dead/Pass' => new List<Object>{ 9, 5788888, 'Killed', 'Dead', thisFy, 'Dead Deal' }
+scripts/seed-pipeline.apex:31       StageName = stage,
+```
+Inserts **9 Dead/Pass Opportunities**; `Rejection_Reason__c` appears **nowhere** in the file.
+⚠ **Currently MODIFIED in the working tree.**
+✅ **The `ISCHANGED(StageName)` gate on rule 1A keeps it green** (ISCHANGED is always false on
+insert). This is the same insert-time hole `NDA_Signed_Before_Deal_Progression` documents, and
+`seed-fsd-06`'s own header relies on it: *"stage-gate validation rule in this org is
+`ISCHANGED(StageName)`-scoped, which is FALSE on [insert]."*
 
-Deal driver clicks Initiate LOI
-  → StageAdvanceService.advance() → NEXT_STAGE['Underwriting'] = 'LOI' → update
-      → Underwriting_Approved_Before_LOI evaluates Primary_Underwriting__r.Stage__c
-        ∈ {Approved, Completed} → PASSES
-      → OpportunityReviewService.createReviewRecords auto-creates the LOI__c child (unchanged)
+### 6.2 ✅ Seed scripts that write Dead/Pass and are SAFE
+
+| Script | Why |
+|---|---|
+| `seed-fsd-05-flagship-dead.apex` (55, 70, 94) | Three `update`s (ISCHANGED **true**), all three set `Rejection_Reason__c` **in the same statement** (`Wrong Market`, `Failed DD`, `Price Too High`). Prior stages are New/Underwriting/LOI — **none is Closed Won**. |
+| `seed-fsd-06-volume-pipeline.apex` (71–72, 107–108, 128) | Two Dead/Pass rows; line 128 sets the reason on the same in-memory record **before insert**. Safe under both rules. |
+| `gen-data.mjs` (33, 57) | `if (d[7] === 'Dead/Pass') f.Rejection_Reason__c = 'Bad Anchor Tenant';` |
+| `seed-brokers.apex` (23) | Reads only. |
+
+### 6.3 🔴 Item 1B (Closed Won block) — the coordinator's two explicit questions, answered
+
+**(i) What happens to an EXISTING Dead/Pass record whose prior stage was Closed Won?**
+**Nothing. It is unaffected and stays valid.** Rule 1B is keyed on `PRIORVALUE(StageName)`, which is
+re-derived from the immediately prior stored value on **each save**. A record already sitting at
+Dead/Pass is not changing `StageName`, so `ISCHANGED` is false and the rule cannot fire. The rule is
+transition-keyed, not a sticky field state — the same self-limiting property
+`No_Backward_Stage_Movement`'s "CARVE-OUT 1 STICKINESS CHECK" documents.
+⚠ **The one real consequence:** such a record can never be moved *out of* Dead/Pass and back in.
+Leaving Dead/Pass is still allowed (prior rank 0), but the return trip would then evaluate
+`PRIORVALUE = 'Closed Won'`? No — it would evaluate the stage it was moved to. So a revived deal is
+governed normally. **No existing data is invalidated.**
+
+**(ii) Does any seed script or test perform a Closed Won → Dead/Pass transition?**
+**NO. Verified across `scripts/**` and `force-app/main/default/classes/**`.**
+
+| Surface | Finding |
+|---|---|
+| `seed-fsd-04-flagship-closed-won.apex` | Ends at `Closed Won` (line 92). No further stage op. ✅ |
+| `seed-fsd-05-flagship-dead.apex` | Moves to Dead/Pass from New / Underwriting / LOI. ✅ |
+| `seed-pipeline`, `seed-fsd-06`, `gen-data.mjs` | Set Dead/Pass **at insert**. ✅ |
+| `BrokerFirmControllerTest` (43–45, 92–93) | Sets `Closed Won` / `Dead/Pass` **at insert**, incl. a 251-row mixed fixture. ✅ |
+| `CallForOffersAlertBatchTest` (300–305) | Inserts Dead/Pass deliberately *"so no `ISCHANGED(StageName)` validation rule is involved"*. ✅ |
+| `OpportunityFunnelControllerTest` (42–43, 118) | Sets stages at insert. ✅ |
+| `OpportunityReviewServiceTest.noDuplicateOnReentry` (~707) | **Uses the Dead/Pass round trip — but from `Development Review` (rank 3), not Closed Won. Test PASSES.** ⚠ Its comment asserts *"entering it is always allowed"*, which is now false. **Comment amendment required (1D)** — a future test copying this pattern from Closed Won would fail confusingly. |
+
+### 6.4 ⚠ Item 2 — no script breaks, but seeded data becomes useless for Item 4
+
+Every seed script that walks a deal through stages now stamps `Stage_Entry_Date__c` on each hop —
+**all on the same day**, so seeded deals show `Days_In_Stage__c = 0` and **Item 4 reports nothing on
+seeded data**. A demo needs a back-dating step (RESIDUAL-7).
+
+### 6.5 ⚠ Apex tests at risk
+
+- **Item 3:** `LoiGateTest`, `OpportunityApprovalServiceTest`, `StageApprovalGatesTest`,
+  `OpportunityApprovalControllerTest` — any test submitting an LOI-stage deal **without** a signed
+  `Primary_NDA__c` now fails. **Fix the FIXTURES, not the logic.**
+- **Item 2:** `OpportunityReviewServiceTest`, `OpportunityReviewTriggerHandlerTest`,
+  `ContractExecutionServiceTest`, `PropertyAssetServiceTest`, `DealFolderServiceTest` — the trigger
+  gains two contexts. Should be unaffected (new work is in-memory only) but this is the blast radius.
+- **Items 3, 4, 5c:** all modify `OpportunitySelector`. It contains
+  `queryCallForOffersAlerts_doesNotSelectTheReceivedDate`, which **pins the selected field list**.
+- **Item 6.1:** `BrokerFirmControllerTest`'s 251-row test (251 / 126 / 125) pins the **live** Apex
+  computation. The new roll-ups do not change it, but the two must agree — if they diverge, that
+  test is where it shows.
+- 🔴 **Run `--tests` with the test class IN THE PAYLOAD.** A targeted run executes the **org's** copy
+  and can silently run fewer methods than the repo has while reporting 100%.
+- 🔴 **A green dry-run can mean "never validated"** — byte-identical components report `Unchanged`
+  and are **skipped**; comment-only edits do not count as a diff. **This matters unusually much for
+  Item 1D, which is entirely comment edits.**
+
+### 6.6 ⚠ Existing records
+
+- **1A:** existing Dead/Pass deals with a blank reason stay valid, but refuse the next save that
+  changes `StageName`.
+- **1B:** see 6.3(i) — no existing data invalidated.
+- **5a:** every existing deal gets `Offer_Status__c = null` (a `<default>` does not backfill) —
+  handled by the SOQL null guard in 5(c).
+- **5d:** seeding the rungs as exactly `{7,3,1,0}` means **zero** change to stored
+  `Offer_Alert_Last_Interval__c` markers. **RESIDUAL-9:** if an admin later *changes* a rung value,
+  `shouldFire` compares a NEW rung against an OLD stored rung — degrades gracefully (at most one
+  extra or one missing alert during the transition), but is worth stating.
+- **6.1:** deploying the roll-ups triggers a full recalculation.
+- **6.4:** the first batch run overwrites the two existing (permanently zero) Contact fields.
+
+---
+
+## §7 — DEPLOY GATES (BLOCKING SECTIONS, NOT FOOTNOTES)
+
+### 🔴 GATE PS-1 — a PermissionSet deploy REPLACES its entire `<fieldPermissions>` collection
+
+Caused a live outage here. **Metadata-API-deployed fields arrive with NO FLS for ANY profile,
+System Administrator included** — without grants the new fields throw `No such column` at runtime.
+
+Per set, no shortcuts: **retrieve → diff against HEAD** (concurrent sessions share this tree; two
+Transaction permission sets are already modified and uncommitted) **→ edit the RETRIEVED copy →
+deploy → read back and confirm the delta.** *"Succeeded" is not proof.*
+
+| Set | Needs |
+|---|---|
+| `DPEG_Acquisition_Edit` | `Stage_Entry_Date__c` RW, `Days_In_Stage__c` **R only**, `Offer_Status__c` RW, `Stage_Alert_Last_Sent_Date__c` R, `Stage_Alert_Stage__c` R |
+| `DPEG_Acquisition_View` | all of the above, **read-only** |
+| `DPEG_Opportunity_View` | `Stage_Entry_Date__c` R, `Days_In_Stage__c` R, `Offer_Status__c` R |
+| `DPEG_Account_View` | the three roll-ups, **R only** |
+| `DPEG_Contact_Edit` / `DPEG_Contact_View` | `Deals_Lost__c`, `First_Submission_DateTime__c` (**R only** — batch-maintained; `SYSTEM_MODE` writes need no user grant). Confirm `Deals_Submitted__c` / `Deals_Won__c` grants already exist. |
+
+⚠ `editable=true` on a **formula** or **roll-up summary** field **fails the deploy**.
+
+### 🔴 GATE FP-1 — FlexiPage / dashboard deploys REPLACE the org copy, no version history
+
+`Opportunity_Record_Page` has been hand-edited in App Builder and **edits were lost**. Item 4 touches
+the Acquisitions dashboard. **Retrieve seconds before deploying → diff against HEAD → read
+`SetupAuditTrail` for saves newer than the last retrieve.**
+⚠ `.forceignore` hides org/repo drift: un-ignoring a path makes stale drift **deployable**
+(`Case.object-meta.xml` once said `ReadWriteTransfer` while the org was `Private` — a silent org-wide
+security downgrade). Diff every `Changed` component against the **org**, not just HEAD.
+
+### 🔴 GATE RT-1 — record types deploy BEFORE dependent Apex
+
+Item 5(a) adds values to a **restricted** picklist. DML **enforces** record-type restriction here
+(measured 4×; the repo's ~20 "UI-only" assertions are **wrong**, including the one in
+`Acquisition_LOI.recordType-meta.xml`). Deploy `Land` / `Retail` / `Commercial` **before** any Apex
+or Flow naming `Open` / `Submitted` / `Closed`, or writes fail with an opaque
+`INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST`.
+⚠ A **CustomField retrieve UNIONS** local+remote picklist values; a **RecordType retrieve STRIPS**
+them. Committing a "clean sync from org" of a record type is a **silent production regression**.
+Verify via REST describe, not retrieve.
+
+### ⚠ GATE MCP-1 — `salesforce-api-context` MCP is not configured
+
+`.mcp.json` has only the `salesforce` server, and **subagents have no MCP tools at all**. Make a
+**real attempt** per type, then record:
+
+```
+mcp=unavailable | mcp_tools=none
 ```
 
-### D-5. `TestDataFactory.approveUnderwriting` — repoint to the field the gate now reads
+and fall back to the per-type skill. **Do not fabricate an MCP result.**
 
-The helper currently writes **only** `Opportunity.UW_Approved__c` (`:1031-1040`), which the rewritten
-VR no longer reads. Repoint it to set the deal's **primary Underwriting record** to
-`Stage__c = 'Approved'`, re-reading `Primary_Underwriting__c` after insert (the trigger stamps it
-after the insert returns — same shape `signPrimaryNda` already uses at `:961-1007`).
+Skills that **exist**: `sf-custom-field`, `sf-validation-rule`, `sf-permission-set`, `sf-flexipage`,
+`sf-apex`, `sf-apex-test`. **No `sf-layout`, no `sf-quick-action`, and no report / dashboard /
+custom-metadata-type skill.** The rule says "if no matching skill exists, STOP and ask" — for those
+types, **nominate `sf-metadata`** and use the de-facto templates rather than stalling:
 
-- Keep it **one DML per object, no SOQL/DML in a loop** (its documented contract; the 251-record bulk
-  tests call it).
-- Keep writing `UW_Approved__c` as well, so the mirror stays truthful under D4 and any test asserting
-  it keeps passing.
-- Keep the docstring's existing philosophy — it satisfies the **gate**, and deliberately does not
-  fake `UW_Approved_By__c` / `UW_Approval_Date__c`, which only real approval history should produce.
-- **Only two callers** (`StageApprovalGatesTest:76`, `NdaDealProgressionGateTest:36`) — verified by
-  exact-token sweep across the repo. The blast radius is genuinely small.
-
-### D-6. `lwc/submitForApproval` — confirm wording
-
-`CONFIRM.message` reads *"Submit this deal for principal approval?"*. On the Underwriting record it
-now submits the **underwriting**, not the deal. Change to a neutral string that reads correctly on all
-four surfaces (Opportunity, LOI, Contract Review, Underwriting) — the same move
-`advanceDealStage.js` made on 2026-08-27 and for the same reason. Update
-`__tests__/submitForApproval.test.js` accordingly. Keep `theme: 'warning'` and the header comment
-explaining why it is not `'info'`.
-
-### D-7. Header retraction in `lwc/advanceDealStage/advanceDealStage.js`
-
-The block *"⚠ AND THE MESSAGE SAID SOMETHING FALSE … on the Underwriting hop … `advance` does NOT
-write a stage at all"* becomes false. The wording *"Move this deal to its next step?"* stays correct
-(now literally a stage change on all five actions), but its **justification** must be retracted in
-place. No behaviour change; no Jest change.
-
----
-
-## 6. WHAT IS EXPLICITLY **NOT** CHANGING
-
-Named so a downstream agent does not "tidy" them:
-
-- `Opportunity.LOI_Approval` and its two field updates. Untouched.
-- `LOI__c.Submit_for_Approval` on `LOI_Record_Page` (all five criteria) and in the LOI layout's
-  `platformActionList`. Untouched.
-- `flows/Underwriting_Opp_Sync`. Untouched — including its description.
-- `flows/Opportunity_UW_Approved_Notify` structure and `MarketDataSnapshotService`. Untouched.
-- `RecordStageAdvanceService.UNDERWRITING_NEXT_STAGE` and
-  `NO_NEXT_STEP_HINTS['Underwriting|In Progress']`. Correct as-is (header comment only).
-- `Underwriting__c.Move_to_In_Progress` / `Move_to_Completed` quick actions and their
-  `Underwriting_Record_Page` visibility rules. Untouched.
-- `Opportunity.Initiate_Underwriting`, `flows/Opportunity_Initiate_Underwriting`, and
-  `No_Backward_Stage_Movement`'s CARVE-OUT 2. Untouched.
-- `Opportunity.UW_Approved__c`, `Underwriting_Status__c`, `Underwriting_Complete__c` field metadata,
-  FLS and report/dashboard references. **Retained per D4.** Only their field *descriptions* should be
-  refreshed to name the new writer.
-- The seed scripts (§C-5).
-- `pathAssistants/Underwriting_Path`. Its `Approved` step's `info` text
-  (*"check Underwriting Complete on the deal and submit for principal approval (12B)"*) is now
-  slightly stale but describes a step the user still performs from the same page. **Flagged, not
-  changed** — outside the five agreed pieces.
-
----
-
-## 7. TEST PLAN
-
-`.claude/rules/bulk-test-rule.md` — the 251-record mandate. `submitForApproval` and `advance()` are
-per-transaction singletons (one quick-action click) and carry the existing documented exemption. The
-new record-triggered flow **is** a bulk path, but 251 Underwriting records each carrying a distinct
-pending approval is not reachable in production and the underlying `ApprovalAuditService` is already
-collection-based with no SOQL/DML in a loop. **Record that reasoning in the test class header** (the
-rule requires the exemption to be argued in place) and prove bulk-safety with a modest multi-record
-test (5 records, one transaction, assert the query/DML counters), not with 251.
-
-### Classes that MUST be rewritten
-
-| Class | What breaks | Required change |
-|---|---|---|
-| `UnderwritingGateTest` | All three approval tests submit the **Opportunity** | Submit the **Underwriting record**. `principalApprovalAdvancesToLoi`: **delete** the `StageName == 'LOI'` assertion (approval no longer advances the deal) and keep/extend the mirror + audit assertions. `principalRejectionSendsBackForRevision`: assert against the A1/A2 outcome chosen at GATE A. `underwritingStageSubmitsWithoutCompleteFlag`: assert the pending `ProcessInstance` targets the **Underwriting** Id. |
-| `OpportunityApprovalServiceTest` | `submitsFromUnderwritingRecordResolvesParent` asserts the OPPOSITE of the new behaviour | **Invert and rename** — `submitsFromUnderwritingRecordTargetsTheUnderwritingItself`. Assert `ProcessInstance.TargetObjectId == uw.Id` and that **no** Opportunity instance exists. Also repoint `ineligibleStageThrowsApprovalException` (eligible set is now `{LOI}` for an Opportunity target). |
-| `OpportunityApprovalControllerTest` | Same shape via the controller | Mirror the above. |
-| `StageAdvanceServiceTest` / `StageAdvanceControllerTest` | The Underwriting branch asserts an approval submission (`:108`, `:128` / `:69`, `:301`) | Flip to asserting a **stage write to `'LOI'`**, with the underwriting pre-approved via the repointed `TestDataFactory.approveUnderwriting`. |
-| `StageApprovalGatesTest.underwritingApprovedGate_blocksLoiEntryUntilApproved` | Depends on `approveUnderwriting` | Works unchanged **if** D-5 is done correctly. Add the C-2 assertion below. |
-| `NdaDealProgressionGateTest:36` | Same | Same. |
-
-### New tests required
-
-| # | Test | Proves |
-|---|---|---|
-| T1 | 🔴 `loiReentryIsAllowedWhenUnderwritingIsCompleted` — UW at `'Completed'`, `StageName` `Underwriting → LOI` must **succeed** | **The C-2 defect.** With the three-clause formula this test REDS. It is the permanent falsifier and the single highest-value test in this pack. |
-| T2 | `loiEntryIsRefusedWhenUnderwritingIsNotApproved` — UW at `'In Progress'` → blocked, and the **message** matches the new `errorMessage` | The gate itself, message included (asserting only "blocked" would pass against the wrong rule). |
-| T3 | `loiEntryIsRefusedWhenPrimaryUnderwritingIsBlank` | The deliberate **fail-closed** blank case (§C-2) — and that it produces exactly ONE message. |
-| T4 | `approvalStampsAllFourMirrorFieldsInOneSave` — approve the UW record, assert `UW_Approved__c`, `Underwriting_Status__c`, `UW_Approved_By__c == UserInfo.getUserId()`, `UW_Approval_Date__c != null` | The whole D-4 chain, **and C-3's fix** (the audit stamp). |
-| T5 | `submittingFromTheOpportunityAtUnderwritingNamesTheRealRoute` — assert the **new user-safe message**, and that **no** `ProcessInstance` was created | Open item **(b)**. Asserting only "it threw" would pass against the generic mask this change exists to remove. |
-| T6 | `aSecondSubmissionWhilePendingIsRefused` on the Underwriting record | The duplicate-pending gate now guards the right target. |
-| T7 | `theUnderwritingRecordIsLockedWhilePending` — attempt an update, expect refusal | **D3**, the deliberate lock inversion. |
-| T8 | *(A1)* `rejectionClearsUnderwritingCompleteOnTheParent` and `theOrdinaryRequestedToInProgressHopDoesNot` | That the reject mechanism is scoped to a real rejection and not to the forward hop. |
-
-⚠ `MarketDataSnapshotServiceTest` calls `snapshotMarketData` **directly** and never drives an approval
-— so it is **insulated** from this change and will keep passing. That is convenient and also means
-**the Apex suite does NOT prove the freeze end-to-end.** The end-to-end proof is post-deploy check
-P-4 below, and it must not be skipped on the strength of a green suite.
-
-### Jest
-
-- `lwc/submitForApproval/__tests__/submitForApproval.test.js` — update for the D-6 wording.
-- `lwc/advanceDealStage/__tests__/advanceDealStage.test.js` — no change (D-7 is comment-only).
-- ⚠ Jest is local-only and never deploys. It cannot see any of the above.
-
----
-
-## 8. POST-DEPLOY VERIFICATION CHECKLIST
-
-🔴 **Read state back from the org. Do not read deploy counters.** This org has reported
-`"689/689 deployed, 0 errors"` on a deploy that rolled everything back, and a green dry-run can mean
-byte-identical components were reported `Unchanged` and never validated.
-
-### Server-side reads (all must pass before any UI testing)
-
-| # | Check |
+| Type | Template |
 |---|---|
-| S-1 | `SELECT COUNT() FROM ProcessInstance WHERE ProcessDefinition.DeveloperName='Underwriting_Approval' AND Status='Pending'` → **0** *(step 1)* |
-| S-2 | Tooling: retrieve `ApprovalProcess:Opportunity.Underwriting_Approval` and confirm `<active>false</active>`; retrieve `ApprovalProcess:Underwriting__c.Underwriting_Approval` and confirm `<active>true</active>` |
-| S-3 | Tooling: `SELECT Metadata FROM ValidationRule WHERE ValidationName='Underwriting_Approved_Before_LOI'` — confirm the formula contains **both** `'Approved'` **and** `'Completed'`, and that `Primary_Underwriting__r` appears |
-| S-4 | `SELECT Body FROM ApexClass WHERE Name='StageAdvanceService'` — confirm `'Underwriting' => 'LOI'` is present and the `OpportunityApprovalService.submitForApproval` branch is gone |
-| S-5 | `SELECT ApiName, ActiveVersionId FROM FlowDefinitionView WHERE ApiName='Underwriting_Approval_Sync'` → active; and `Opportunity_UW_Approved_Notify` still active |
-| S-6 | `sf apex run test --test-level RunLocalTests` — green, and check `ApexTestResult` timestamps to distinguish "I broke it" from a concurrent-session change |
-| S-7 | Diff every hub file touched (`Underwriting_Record_Page`, the two layouts, the permission sets) against the ORG copy **immediately before** deploying — a second session shares this working tree |
+| `__mdt` CustomObject | `objects/Broker_Protection_Config__mdt/Broker_Protection_Config__mdt.object-meta.xml` |
+| Report | `reports/Acquisitions/Stale_Deals_7Day.report-meta.xml` |
+| Dashboard | `dashboards/Acquisitions/Acquisitions_Dashboard_Junior.dashboard-meta.xml` |
+| CMDT loader script | `scripts/load-broker-protection-config.apex` |
+| Batch/Schedule/Service trio | `classes/NdaExpiryAlertBatch.cls` / `NdaExpiryAlertSchedule.cls` / `NdaExpiryService.cls` |
+| Roll-up summary field | *(none in repo — Account has zero custom fields; follow `sf-custom-field` exactly)* |
 
-### 🔴 NEGATIVE TESTS — these are the ones that actually prove the feature
-
-| # | Scenario | Required outcome |
-|---|---|---|
-| **N-1** | Deal at `Underwriting`; its Underwriting record at `In Progress`. Click **Initiate LOI**. | 🔴 **REFUSED.** Toast shows the VR's `errorMessage` verbatim (not a generic "could not be advanced"). `StageName` still reads `Underwriting`. |
-| **N-2** | Deal whose `Primary_Underwriting__c` is blank. Click **Initiate LOI**. | 🔴 **REFUSED** (fail-closed). Exactly **one** error message. |
-| **N-3** | Submit an Underwriting record, then click **Submit for Approval** on it again while pending. | REFUSED: *"already pending approval."* Exactly one `ProcessInstance`. |
-| **N-4** | While pending, edit `My_Price__c` on the Underwriting record as the analyst. | 🔴 **REFUSED** (record locked). **This is D3's whole purpose** — it is the fix, not a side effect. |
-| **N-5** | While pending, edit `Amount` / `Asking_Price__c` on the **Opportunity**. | **ALLOWED.** The Opportunity is no longer locked. Confirms the lock moved rather than doubled. |
-| **N-6** | Invoke Submit for Approval from the **Opportunity** at `StageName = 'Underwriting'`. | User-safe message naming the Underwriting record. **NOT** the generic mask, **NOT** a raw platform error, and **NO** `ProcessInstance` created — in particular it must not land in `LOI_Approval`. |
-| **N-7** | Reject the underwriting; then click **Initiate LOI**. | REFUSED (the UW is not Approved). Under A1, `Opportunity.Underwriting_Complete__c` is now `false`. |
-| **N-8** | 🔴 **The C-2 case.** Approve → Initiate LOI → walk the UW to `Completed` → submit and **reject** `LOI_Approval` (deal returns to `Underwriting`) → click **Initiate LOI** again. | 🔴 **MUST SUCCEED.** If this is refused, the three-clause formula shipped and every LOI-rejected deal in the org is permanently stranded. |
-
-### Positive / freeze verification
-
-| # | Scenario | Required outcome |
-|---|---|---|
-| **P-1** | Re-submit the deal recalled in step 1, from its **Underwriting record**. | One `ProcessInstance` whose `TargetObjectId` is the **Underwriting** Id. Approval History renders on the Underwriting page with a **Recall** button (proves C-4's two-file fix). |
-| **P-2** | Approve as one principal. | The other principal's work item is **withdrawn** (`FirstResponse`, D1 preserved): `SELECT COUNT() FROM ProcessInstanceWorkitem WHERE ProcessInstance.TargetObjectId = :uwId` → **0**. |
-| **P-3** | Read the Underwriting record. | `Stage__c = 'Approved'`, `Status__c = 'Approved by Principals'`, the Path shows **Approved**, and **Move to Completed** renders. |
-| **P-4** | 🔴 **THE MARKET-DATA FREEZE.** Read the Opportunity. | `UW_Approved__c = true`; `Underwriting_Status__c = 'Approved by Principals'`; `UW_Approved_By__c` = **the principal who approved** (not the submitter, not `null`); `UW_Approval_Date__c` populated; **`Market_Data_As_Of_Date__c = TODAY`**; **`Market_Data_Snapshot__c` is non-blank AND does NOT start with `'Market data snapshot failed:'`**. Query it, do not eyeball it: <br>`SELECT Id, Market_Data_As_Of_Date__c, Market_Data_Snapshot__c FROM Opportunity WHERE Id = :oppId` |
-| **P-5** | Click **Initiate LOI**. | `StageName = 'LOI'`, and `OpportunityReviewService` has auto-created the `LOI__c` child with `Primary_LOI__c` stamped. |
-| **P-6** | Confirm `Underwriting_Opp_Sync` still works: edit `My_Cap_Rate__c` on the UW record post-approval. | The number mirrors onto the Opportunity, and **no second freeze fires** (`Underwriting_Status__c` does not re-transition). |
+**Per-type order** (one type fully complete before the next): RecordType → CustomField →
+CustomObject (`__mdt`) → ValidationRule → ListView → PermissionSet → Report → Dashboard →
+ApexClass → ApexTrigger → LWC.
 
 ---
 
-## 9. RISK REGISTER
+## §8 — ACCEPTED RESIDUALS
 
-| # | Risk | Mitigation |
-|---|---|---|
-| R1 | 🔴 The three-clause formula ships and strands every LOI-rejected deal | Test **T1**, check **N-8**. Both must be run. |
-| R2 | 🔴 The mirror write silently does nothing (approver is read-only on Opportunity) | Route through `ApprovalAuditService`'s proven `AccessLevel.SYSTEM_MODE` + `without sharing`, **not** a flow `recordUpdate` relying on `runInMode` — the repo has a measured counter-example. Verify with **P-4**, which reads the field back rather than trusting a success toast. |
-| R3 | 🔴 The audit stamp dies silently (C-3) | Fixed in D-4; proven by **T4** and **P-4**'s `UW_Approved_By__c` assertion. |
-| R4 | 🔴 The Underwriting approval is unrecallable (C-4) | Both halves of A-4 must ship; proven by **P-1**. |
-| R5 | The FlexiPage deploy clobbers unrecorded App Builder edits | `--target-metadata-dir` retrieve + diff seconds before deploying; check `SetupAuditTrail`. Never toggle `enableActionsConfiguration`. |
-| R6 | Attempting to DELETE the old approval process fails (it has history) | Deactivate only (A-7); leave the four `UW_*` field updates in place. |
-| R7 | `Underwriting__c.Stage__c` is directly editable (`DPEG_Acquisition_Edit:1636`), so a user with edit FLS could set `'Approved'` and bypass the approval | **No net change** — today the same set grants edit on `Opportunity.UW_Approved__c` (`:1231`), the exact field today's gate reads. The bypass surface **moves, it does not widen.** Under **A1** it actually **narrows**, because the mirror stamp and the freeze key on `Approval_Status__c`, which only the approval process writes. Recorded as a residual, **not** fixed here (out of scope). |
-| R8 | The principals cannot see `Underwriting__c` | **V1**. Blocking; org-side only. |
-| R9 | A concurrent session edits the same hub files | **S-7**; commit retrieves alone. |
-| R10 | Approvers lose `Asking_Price__c` / `Underwriting_Notes__c` on the approval page | **GATE B** — user decision, not an invention. |
-
----
-
-## 10. OPEN NAMING ITEMS (flagged, not invented)
-
-The implementing agents must pick ONE spelling each and use it consistently everywhere:
-
-| Item | Suggested |
+| # | Residual |
 |---|---|
-| New flow | `Underwriting_Approval_Sync` (label "Underwriting Approval Sync") |
-| New field *(A1)* | `Underwriting__c.Approval_Status__c` — mirrors `Disposition_Offer__c.Approval_Status__c` exactly |
-| New field updates *(A1)* | `Set_UW_Approval_Approved` / `Set_UW_Approval_Rejected` — mirrors `Set_Offer_Approval_*` |
-| Own-record field updates on the new approval | `UW_Stage_Approved`, `UW_Status_Approved` |
-| New approval process | `Underwriting__c.Underwriting_Approval` (label "Underwriting Approval", step label **"Principal approves underwriting"** — the disposition wave renamed every step off the shared "Principal Review" precisely because approvers could not tell the requests apart) |
-| `ApprovalAuditService` gate value | `'UnderwritingChild'` |
-| Renamed private method | `resolveApprovalTargetId` |
+| **RESIDUAL-1** | Item 3's gate is a **UI-path gate, not absolute** — `Approval.process` can be called directly (`scripts/verify-junior-lifecycle.apex` does). No platform mechanism makes an approval submission absolutely conditional. |
+| **RESIDUAL-2** | Item 3's live population is **narrow** — the stage-entry VR already blocks the common path. Covers only the insert-time hole, post-hoc NDA un-signing/repointing, and approval field updates. Do not file "the gate never fires" as a bug. |
+| **RESIDUAL-3** | A Call for Offers **cannot span multiple deals in a portfolio package** (user-accepted). `Portfolio_Deal__c` members carry independent `Offer_Due_Date__c` / `Offer_Status__c` and can silently disagree. |
+| **RESIDUAL-4** | Item 4's threshold exists in **two disconnected copies** — the CMDT row (batch) and a literal in the report filter (a report filter cannot read CMDT). Unavoidable declaratively; state it in the report description. |
+| **RESIDUAL-5** | Item 6.1's roll-ups count **every** Opportunity on the Account, not just broker-introduced ones. Verify against live data. |
+| **RESIDUAL-6** | Item 2's backfill is an **approximation** — `LastModifiedDate` is the last edit of any kind. Day-1 `Days_In_Stage__c` values are not history. |
+| **RESIDUAL-7** | Item 4 **reports nothing on seeded data** — seeds walk all stages in one run, stamping today at each hop. A demo needs a back-dating step. |
+| **RESIDUAL-8** | *(new)* Item 6.1's three numbers now exist **twice** — as Account roll-ups and as `BrokerFirmController`'s live Apex computation (F11). The repoint is **out of scope (Q10)**. Record it in the field descriptions so a future divergence is diagnosable. |
+| **RESIDUAL-9** | *(new)* Item 5(d): if an admin **changes** a rung value after go-live, `shouldFire` compares a NEW rung against an OLD stored `Offer_Alert_Last_Interval__c`. Degrades gracefully — at most one extra or one missing alert during the transition — but is not zero. |
+| **RESIDUAL-10** | *(new, and the most consequential)* Item 1B leaves **Closed Won with no in-app exit and no bypass permission**. A wrongly-Closed-Won deal requires an admin data fix. Accepted by the user on 2026-08-30 after the consequence was stated and reaffirmed. See P8. |
 
 ---
 
-## 11. MCP / RULES COMPLIANCE
+## §9 — TRACEABILITY TO THE STORY ACs
 
-`.claude/rules/salesforce-global-rule.md` mandates a `salesforce-api-context` MCP attempt for every
-metadata type. **`mcp=unavailable`, `mcp_tools=none`** — this agent has no MCP tools, and `.mcp.json`
-configures only the `salesforce` server. Downstream admin/dev agents must record the same status and
-fall back to the per-type skill, per the rule's own fallback clause.
+| Story AC | Satisfied by | Fully? |
+|---|---|---|
+| "Dead available from any stage except Closed Won" | Item 1B | ✅ **as literally specified.** ⚠ Overrides a recorded invariant — see RESIDUAL-10, P8, and the 1C header block. |
+| "Rejection Reason required" | Item 1A | ✅ (transition-gated; insert-time hole accepted, consistent with both sibling rules) |
+| "Each stage change stamps a stage-entry date" | Item 2 | ✅ all 8 mutation paths verified |
+| "Cannot submit [LOI] without a Signed NDA" | Item 3 | ✅ via Apex — **not** via the approved VR mechanism, which provably cannot fire (F6) |
+| "Days in stage tracked from the stage-entry date" | Item 2 formula | ✅ |
+| "Threshold per stage in Custom Metadata" | Item 4 CMDT + loader | ✅ flat 14, per-stage rows so it can vary later without a deploy |
+| "Reminder to the Owner and Acquisition Team" | Item 4 | ✅ ⚠ recipient is the **`Acquisition` queue** per recorded Gate 1 Q2.3 (F10) |
+| "'Delayed opportunities' widget on the dashboard" | Item 4 report + dashboard | ✅ sits beside the existing `Stale_Deals_7Day`, distinct titles (Q3) |
+| CFO: status, source broker, suppression, interval, re-schedule, surfacing | Item 5 | ✅ ⚠ **(b) satisfied by reusing `Listing_Broker_*` — no new field (Q8); (e) already built — zero work** |
+| "Contact field First Submission Date (earliest Lead where the broker is First-Seen)" | Item 6.2 | ✅ via `Lead.ConvertedContactId` — **not** via `Lead.Broker_First__c`, which is a firm-name Text field (brief error) |
+| "Account roll-ups: Total Deals Submitted, Won, Lost" | Item 6.1 | ✅ ⚠ duplicates `BrokerFirmController`'s live computation (RESIDUAL-8) |
+| "Leaderboard: Submitted, Won, Lost, win rate, last submission — by firm and by broker" | existing `brokerLeaderboard` + `Broker_Leaderboard` report + Item 6.1 + Item 6.2 | ✅ ⚠ **the leaderboard is UNCHANGED and remains authoritative.** The Contact counters serve `Broker_Hub` only and must say so on every field (§1). |
 
-Unproven XML shapes escalated as gates rather than guessed: `initialSubmissionActions` and
-`recallActions` (absent from every file in `approvalProcesses/**`) — **neither is used by this design.**
-Every element specified above is copied from a deployed file in this repo:
-`Disposition_Offer__c.Offer_Selection_Approval` (approval on a Lookup child),
-`Disposition__c-Disposition Layout` + `Disposition_Record_Page` (the two-file Approval History),
-`Underwriting_Opp_Sync` (a `SystemModeWithoutSharing` after-save flow on `Underwriting__c` writing its
-parent Opportunity), and `workflows/Disposition_Offer__c.workflow-meta.xml`.
+---
+
+## §10 — PROMPTS FOR SPECIALIST AGENTS
+
+> All questions are answered. **All four prompts are dispatchable**, subject to the wave ordering in
+> §3. Deployment is blocked this session (MCP `CONNECT_TIMEOUT`) — **build and review only.**
+
+### 🔵 PROMPT — `salesforce-admin` (WAVE A)
+
+```
+Read ARCHITECTURE.md and .claude/rules/salesforce-global-rule.md first. Then read
+agent-output/design-requirements.md -- it is the RECORD OF TRUTH and overrides anything you may
+infer from elsewhere.
+
+The salesforce-api-context MCP is NOT configured (.mcp.json has only the `salesforce` server;
+subagents have no MCP tools). Make a real attempt per type, then record
+`mcp=unavailable | mcp_tools=none` and fall back to the per-type skill. Do NOT fabricate an MCP
+result. There is no report/dashboard/__mdt/roll-up skill -- nominate `sf-metadata` and use the
+template files in §7 GATE MCP-1.
+
+Per-type order, one type fully complete before the next:
+RecordType -> CustomField -> CustomObject(__mdt) -> ValidationRule -> ListView -> PermissionSet.
+
+=== ITEM 1 -- TWO validation rules, and a header block that is NOT optional ===
+
+1A. objects/Opportunity/validationRules/Rejection_Reason_Required_On_Dead.validationRule-meta.xml
+    AND(ISCHANGED(StageName), ISPICKVAL(StageName,'Dead/Pass'), ISBLANK(TEXT(Rejection_Reason__c)))
+    errorDisplayField: Rejection_Reason__c
+    errorMessage: "Choose a Rejection Reason before moving this deal to Dead/Pass."
+    - The value is literally `Dead/Pass`. Do NOT write a rule against 'Dead'. The `Dead%2FPass`
+      encoding is BusinessProcess/RecordType-only -- do not use it here.
+    - ISCHANGED-gating is DELIBERATE: it matches the story AC, matches both sibling rules, and keeps
+      scripts/seed-pipeline.apex green (it inserts 9 Dead/Pass Opportunities with no
+      Rejection_Reason__c). Do not remove the gate.
+
+1B. objects/Opportunity/validationRules/Dead_Pass_Not_Allowed_From_Closed_Won.validationRule-meta.xml
+    AND(ISCHANGED(StageName), ISPICKVAL(PRIORVALUE(StageName),'Closed Won'),
+        ISPICKVAL(StageName,'Dead/Pass'))
+    errorDisplayField: StageName
+    errorMessage: "A Closed Won deal cannot be moved to Dead/Pass. Contact your administrator."
+    - The message must NOT suggest a self-service route, because there is none.
+    - PRIORVALUE-keyed so it is transition-only and self-limiting; existing Dead/Pass records are
+      unaffected.
+
+1C. 🔴 HIGHEST-RISK CHANGE IN THIS TRANCHE. Rule 1B REVERSES A RECORDED PRIOR USER DECISION.
+    1B MUST carry an XML comment INSIDE the root element (a comment ABOVE the root breaks `sf` at
+    source conversion with a misleading parent-xml error) containing ALL FIVE of:
+      1. the 2026-08-30 user decision + date, and that it was REAFFIRMED after the consequence was
+         stated;
+      2. the superseded invariant QUOTED VERBATIM -- "the user-required invariant that Dead/Pass
+         stay reachable from every stage" -- and where it is recorded
+         (objects/Opportunity/validationRules/No_Backward_Stage_Movement.validationRule-meta.xml);
+      3. that CLOSED WON NOW HAS NO IN-APP EXIT: ranks 1-7 blocked as backward, CARVE-OUT 2 excludes
+         Closed Won, D4 rejected a bypass permission, and this rule closes the last route. A
+         wrongly-Closed-Won deal requires an ADMIN DATA FIX;
+      4. that NO bypass custom permission was added, and adding one would re-open D4;
+      5. a warning that anyone reading only No_Backward_Stage_Movement's header WILL BE MISLED,
+         with a pointer to this file as the current decision.
+    ⚠ <description> is capped at 255 chars (breached 3x in this programme). The block goes in the
+      COMMENT, not the description.
+
+1E. MODIFY objects/Opportunity/validationRules/No_Backward_Stage_Movement.validationRule-meta.xml
+    -- DO NOT TOUCH ITS errorConditionFormula. Two edits only:
+    (i)  errorMessage: it currently reads "A deal cannot be moved back to an earlier stage. To stop
+         work on this deal, move it to Dead/Pass instead." That now RECOMMENDS A BLOCKED ROUTE for
+         Closed Won deals. Amend it so it does not.
+    (ii) header comment: RETRACT VERBATIM the "two-save round trip through Dead/Pass IS the actual
+         recovery procedure" paragraph and the "Dead/Pass always reachable, per invariant" claim,
+         in this file's established retracted-then-corrected style, and point at 1B as current.
+
+=== ITEM 2 -- two fields ===
+2A. objects/Opportunity/fields/Stage_Entry_Date__c.field-meta.xml -- type Date
+2B. objects/Opportunity/fields/Days_In_Stage__c.field-meta.xml -- FORMULA, Number, scale 0
+    IF(IsClosed, 0, IF(ISBLANK(Stage_Entry_Date__c), null, TODAY() - Stage_Entry_Date__c))
+    formulaTreatBlanksAs: BlankAsZero
+    - Ported from objects/Lease_Inquiry__c/fields/Days_In_Stage__c.field-meta.xml.
+    - Use IsClosed rather than naming 'Closed Won'/'Dead/Pass': it is the standard formula field, is
+      true for both (verified in OpportunityStage.standardValueSet), and survives a future closed
+      stage.
+    - Note the casing: Days_In_Stage__c, capital I. Opportunity.Days_in_System__c has a lowercase i
+      and is a pre-existing ARCHITECTURE.md §1 violation. Do NOT copy it.
+
+=== ITEM 5 -- Offer_Status__c. DO NOT CREATE Source_Broker__c. ===
+5A. objects/Opportunity/fields/Offer_Status__c.field-meta.xml
+    Picklist, restricted=true, values Open / Submitted / Closed, Open as <default>true.
+5B. MODIFY objects/Opportunity/recordTypes/{Land,Retail,Commercial}.recordType-meta.xml
+    Add all three Offer_Status__c values to EACH.
+    🔴 Record-type picklist restriction IS enforced by DML in this org (measured 4x). Several repo
+      files claim it is UI-only; they are WRONG. These record types MUST deploy BEFORE any Apex
+      naming a value.
+    🔴 A record type file that OMITS a picklist silently drops ALL of its values for that type.
+      Enumerate every picklist already present. Never write a partial file.
+5C. objects/CFO_Alert_Rung__mdt/CFO_Alert_Rung__mdt.object-meta.xml -- NEW, STRUCTURE ONLY
+    Days_Before_Due__c Number(3,0); Is_Active__c Checkbox.
+    Rows come from the developer's loader script -- CustomMetadata RECORD deploys fail in this repo.
+    Template: objects/Broker_Protection_Config__mdt/.
+    It is a SEPARATE type from Item 4's Stage_Threshold_Def__mdt, deliberately: the rung values are a
+    data contract with stored Offer_Alert_Last_Interval__c markers on live deals, and Item 4's
+    thresholds are not. One shared type would let one admin edit corrupt the other feature.
+5D. MODIFY objects/Opportunity/listViews/Offers_Due_Soon.listView-meta.xml
+    Add the Offer_Status__c column.
+    ⚠ DO NOT create Source_Broker__c. A CFO is issued by the seller's LISTING broker and
+      Listing_Broker_Name__c / Listing_Broker_Email__c already hold that. Adding a fourth broker
+      field would violate LeadConvertService's explicit "Do not merge the two" warning.
+
+=== ITEM 6.1 -- three Account roll-up summaries ===
+Load the sf-custom-field skill. Roll-up XML is a known deploy-failure area.
+    objects/Account/fields/Total_Deals_Submitted__c  count of Opportunity, no filter
+    objects/Account/fields/Deals_Won__c              count, filter StageName equals 'Closed Won'
+    objects/Account/fields/Deals_Lost__c             count, filter StageName equals 'Dead/Pass'
+  - summaryForeignKey Opportunity.AccountId; summaryOperation count; OMIT <summarizedField> for
+    count (supplying it is a common failure). Use the LITERAL 'Dead/Pass' in the filter value.
+  - Field descriptions must note that BrokerFirmController also computes these three numbers live in
+    Apex, so a future divergence is diagnosable.
+
+=== ITEM 6.2 -- two NEW Contact fields + descriptions on two EXISTING ones ===
+6A. objects/Contact/fields/Deals_Lost__c.field-meta.xml            -- NEW, Number(18,0)
+6B. objects/Contact/fields/First_Submission_DateTime__c.field-meta.xml -- NEW, DateTime
+    (DateTime, not Date: the source Lead.First_Seen_Date__c is a DateTime despite its Date suffix,
+    and Opportunity.Broker_First_Seen__c moved Date->DateTime on 2026-08-30 to match. A .date()
+    truncation would discard the instant.)
+6C. MODIFY objects/Contact/fields/Deals_Submitted__c.field-meta.xml and Deals_Won__c.field-meta.xml
+    -- description only, no type change.
+
+🔴 ALL FOUR of the above need a <description> stating the POPULATION. This is a HARD REQUIREMENT,
+   not documentation polish -- without it the metric inversion documented in §1 gets rediscovered as
+   a bug. In substance: "Covers only brokers who have a Contact -- i.e. those whose Lead was
+   converted. Brokers who submitted and lost never receive a Lead (since 2026-07-31) and therefore
+   never appear here. The authoritative broker population is the brokerLeaderboard component /
+   BrokerLeaderboardService, computed live from Competing_Broker_Submission__c. Maintained nightly by
+   BrokerCounterRecalcBatch."
+   ⚠ <description> caps at 255 chars -- split across the description and an XML comment inside the
+   root if needed.
+🔴 DO NOT TOUCH Contact.Active_Listings__c, Closed_Volume__c or Avg_Days_On_Market__c. They are the
+   DISPOSITION-side scorecard and mean something else entirely.
+
+=== ITEM 4 IS NOT IN THIS WAVE === (it depends on Item 2 deploying first)
+
+=== PERMISSION SETS -- 🔴 READ GATE PS-1 IN THE DESIGN DOC BEFORE TOUCHING THESE ===
+A PermissionSet deploy REPLACES its entire <fieldPermissions> collection. This caused a live outage
+here. For each set: retrieve from the org -> diff against HEAD (concurrent sessions share this tree;
+two Transaction permission sets are already modified and uncommitted) -> edit the RETRIEVED copy ->
+deploy -> read back and confirm the delta. "Succeeded" is not proof.
+  DPEG_Acquisition_Edit : Stage_Entry_Date__c RW, Days_In_Stage__c R, Offer_Status__c RW
+  DPEG_Acquisition_View : same, all read-only
+  DPEG_Opportunity_View : Stage_Entry_Date__c R, Days_In_Stage__c R, Offer_Status__c R
+  DPEG_Account_View     : the three roll-ups, R ONLY
+  DPEG_Contact_Edit / DPEG_Contact_View : Deals_Lost__c R, First_Submission_DateTime__c R (both are
+    batch-maintained; SYSTEM_MODE writes need no user grant). Confirm Deals_Submitted__c /
+    Deals_Won__c grants already exist.
+⚠ editable=true on a FORMULA or ROLL-UP field FAILS the deploy.
+⚠ Metadata-deployed fields arrive with NO FLS for ANY profile including System Administrator --
+  without these grants the new fields throw "No such column" at runtime.
+
+DO NOT DEPLOY -- create metadata files only. (Deployment is blocked this session anyway: the
+salesforce MCP server is returning CONNECT_TIMEOUT.)
+```
+
+### 🟢 PROMPT — `salesforce-developer` (WAVE A: Items 1D, 3, 5c, 5d)
+
+```
+Read ARCHITECTURE.md §2, .claude/rules/apex-layering-rule.md, .claude/rules/bulk-test-rule.md, and
+agent-output/design-requirements.md (the RECORD OF TRUTH). Record
+`mcp=unavailable | mcp_tools=none` after a real attempt; fall back to sf-apex / sf-apex-test.
+API 67.0. Class names cap at 40 chars. `bulk` is a RESERVED WORD and produces misleading
+"method does not exist" errors. No inline SOQL outside selectors. `with sharing` on every class.
+
+=== ITEM 1D: THREE COMMENT-ONLY AMENDMENTS. NO LOGIC CHANGES. ===
+A new validation rule (Dead_Pass_Not_Allowed_From_Closed_Won) blocks Closed Won -> Dead/Pass. This
+REVERSES a recorded user invariant, and three Apex files carry premises it falsifies or narrows.
+Amend the COMMENTS ONLY, in this repo's retracted-verbatim-then-corrected style:
+
+  1. classes/DealFolderService.cls -- its header lists "the Dead/Pass two-save recovery" as one of
+     seven live routes into CLAIM_STAGES. NARROWED, not falsified (Dead/Pass is still reachable from
+     ranks 1-7). Amend to say the route no longer exists FROM CLOSED WON.
+  2. classes/LeadPropertyEmailGateTest.cls -- its header justifies the Lead `Disqualified` carve-out
+     as "mirroring the Opportunity Dead/Pass invariant", which no longer holds universally. Amend
+     the justification. ⚠ DO NOT CHANGE THE LEAD BEHAVIOUR -- the Lead carve-out was not part of
+     this decision and must not be swept along.
+  3. classes/OpportunityReviewServiceTest.cls, noDuplicateOnReentry (~line 707) -- its comment
+     asserts "entering it is always allowed (the escape hatch every stranded deal needs)". THE TEST
+     STILL PASSES (it moves away from Development Review, rank 3, not Closed Won). Amend the COMMENT
+     only, and note that a future test copying this pattern from Closed Won would fail confusingly.
+
+🔴 A green dry-run can mean "never validated": byte-identical components report `Unchanged` and are
+SKIPPED, and comment-only edits may not register as a diff. This applies unusually strongly to this
+item -- confirm these three files actually deployed.
+
+=== ITEM 3: NDA gate on LOI approval submission ===
+🔴 A validation rule CANNOT implement this and you must not write one. Verified:
+OpportunityApprovalService.resolveApprovalTargetId maps LOI__c -> the PARENT Opportunity, and
+Approval.process submits the OPPORTUNITY. NO DML touches the LOI__c row, so an LOI__c VR can never
+fire. Confirmed independently by objects/LOI__c/recordTypes/Acquisition_LOI.recordType-meta.xml. An
+Opportunity-side VR is also unreliable -- LoiGateTest.rejectionReturnsDealToUnderwriting shows
+approval field updates BYPASS custom validation rules in this org.
+
+1. MODIFY classes/OpportunityApprovalService.cls
+   Add an NDA pre-check BEFORE Approval.process, applying ONLY when the resolved target is an
+   Opportunity at StageName = 'LOI'. Refuse when Primary_NDA__c is blank OR
+   Primary_NDA__r.NDA_Signed__c is false.
+   Throw the class's own typed ApprovalException (its EXCEPTION CONTRACT reserves that type for
+   user-actionable violations safe to surface verbatim). NEVER AuraHandledException -- this service
+   deliberately never throws that; the controller masks unexpected failures.
+   Message: "The primary NDA must be signed before this LOI can be submitted for approval. Link a
+   signed NDA (Primary NDA) on the deal first."  (mirrors NDA_Signed_Before_Deal_Progression so the
+   two gates read as one rule)
+
+   🔴 YOU ARE FALSIFYING A PREMISE IN THIS CLASS'S OWN HEADER. It argues: "THE STAGE RE-READ IS
+   DELIBERATELY IN THE CATCH, NOT BEFORE THE SUBMIT. A pre-check would cost a query on every
+   successful submission to serve only the failure path." That is true when the query buys a better
+   ERROR MESSAGE and false when it buys a CORRECTNESS GATE. Amend that paragraph IN PLACE in this
+   file's retracted-verbatim-then-corrected style, or the next reader will delete your pre-check as
+   a violation of the class's own stated rule.
+
+   🔴 DO NOT add a RecordType.DeveloperName == 'Acquisition_LOI' check. It would never discriminate:
+   a Disposition_LOI has a blank Opportunity__c, so resolveApprovalTargetId already returns null and
+   the service already refuses it. The disposition side has a wholly separate path
+   (dispositionSubmitForApproval -> DispositionApprovalService). Record this reasoning in the header
+   INSTEAD -- a criterion that never discriminates gets read as load-bearing by the next person.
+
+2. MODIFY classes/OpportunitySelector.cls
+   New method returning Id, StageName, Primary_NDA__c, Primary_NDA__r.NDA_Signed__c for one Id.
+   WITH SYSTEM_MODE, justified AT ITS OWN DECLARATION: performed on the submitter's behalf as an
+   automation gate, and USER_MODE THROWS (does not degrade) on one inaccessible field, refusing a
+   legitimate submission with "No such column" wearing a schema error.
+   ⚠ This class's header says "THREE are WITH SYSTEM_MODE" and enumerates them. Amend the count and
+   list IN PLACE, and heed its warning: "Do not read a future fourth SYSTEM_MODE method as
+   conformant because three already exist."
+
+3. MODIFY classes/OpportunityApprovalServiceTest.cls
+   signed NDA submits; unsigned refused (typed exception); BLANK Primary_NDA__c refused; non-LOI
+   stage unaffected; an Underwriting__c submission unaffected (resolves to itself).
+   The 251-record mandate does NOT apply (single-record UI action, one per transaction) -- STATE
+   THAT REASONING IN THE TEST CLASS HEADER, as bulk-test-rule.md's exemption requires.
+   ⚠ Expect fixture breakage in LoiGateTest, StageApprovalGatesTest and
+   OpportunityApprovalControllerTest: any existing test submitting an LOI-stage deal without a
+   signed Primary_NDA__c now fails. Fix the FIXTURES, not the logic.
+
+=== ITEM 5(c): suppress the CFO reminder once Submitted/Closed ===
+4. MODIFY OpportunitySelector.queryCallForOffersAlerts()
+   🔴 SOQL NULL TRAP -- get this exactly right. Every existing deal has Offer_Status__c = null, and
+   `Offer_Status__c NOT IN ('Submitted','Closed')` evaluates UNKNOWN for null and EXCLUDES the row,
+   silently killing the alert for the ENTIRE existing population on day one. Write:
+       AND (Offer_Status__c = NULL OR Offer_Status__c NOT IN ('Submitted','Closed'))
+   The filter belongs in the SELECTOR, not the batch: it is a POPULATION filter, not a ladder
+   threshold, and excluding rows before chunking is cheaper.
+   ⚠ OpportunitySelectorTest.queryCallForOffersAlerts_doesNotSelectTheReceivedDate PINS the selected
+   field list -- adding a field may red it.
+5. Add BOTH `..._excludesSubmittedAndClosed` and `..._stillIncludesNullStatus` to
+   OpportunitySelectorTest. The second is the falsifier for the null trap and is the more valuable.
+
+=== ITEM 5(d): move the CFO rung VALUES to Custom Metadata. PRESERVE THE LADDER. ===
+The user chose OPTION (i): the {7,3,1,0} four-rung ladder is preserved EXACTLY; only its values move
+into CMDT so an admin can retune without a deploy. NO regression. Do NOT collapse it to a single
+2-day interval. Do NOT invalidate any stored Offer_Alert_Last_Interval__c marker.
+
+6. MODIFY classes/CallForOffersService.cls -- replace the ALERT_INTERVALS constant with a read of
+   CFO_Alert_Rung__mdt (the admin ships the type; a CMDT read is NOT SOQL and costs no governor
+   units). Filter on Is_Active__c.
+   🔴 ORDER IS LOAD-BEARING AND getAll() DOES NOT GUARANTEE IT. intervalFor() iterates the list and
+   keeps the LAST match, which only yields "the smallest rung still containing the deal" because the
+   list is in DESCENDING order. A Map from getAll() has NO guaranteed iteration order. You MUST sort
+   the rungs DESCENDING explicitly after reading them. Getting this wrong changes which rung fires,
+   silently, with no error.
+   ✅ CallForOffersAlertBatch's rule -- "If you find yourself writing 7 or 3 in this file, stop" --
+   SURVIVES UNCHANGED and is strengthened: the values live in CMDT, are read by the pure service,
+   and the batch still contains no literal. Do not move any logic into the batch.
+7. CREATE scripts/load-cfo-alert-rungs.apex -- seed EXACTLY 7, 3, 1, 0 so day-one behaviour is
+   BYTE-IDENTICAL to today. Template: scripts/load-broker-protection-config.apex. Debug the row
+   count in finish() so an empty load is visible.
+8. CallForOffersServiceTest -- add a case proving the ladder still behaves identically at each rung
+   with the seeded CMDT rows, and a case proving DESCENDING sort is applied regardless of map order.
+   ⚠ ALSO (Item 5e): confirm a `shouldFire`-re-arms-on-moved-due-date case exists; add one if not.
+   DO NOT MODIFY shouldFire -- line 416 already reads
+       Integer effective = (markerDueDate == liveDueDate) ? lastInterval : null;
+   under the comment "A DEADLINE THAT MOVED RE-ARMS EVERYTHING." The task brief called this a
+   "likely latent bug". It is not a bug. It is the feature.
+
+DO NOT deploy. DO NOT write tests for code you did not change.
+```
+
+### 🟢 PROMPT — `salesforce-developer` (WAVE B: Item 2)
+
+```
+Dispatch only AFTER Item 2's admin fields (Stage_Entry_Date__c, Days_In_Stage__c) have deployed.
+Read ARCHITECTURE.md §2, apex-layering-rule.md, bulk-test-rule.md, and
+agent-output/design-requirements.md §2 ITEM 2.
+
+Stamp Opportunity.Stage_Entry_Date__c on every StageName change, in a BEFORE trigger.
+
+WHY A BEFORE-TRIGGER AND NOT A FLOW -- carry this into the code, do not re-derive it:
+Salesforce order of execution runs before-save FLOWS before Apex BEFORE-TRIGGERS. Opportunity has
+TWO active before-save flows -- Opportunity_Initiate_Underwriting (which jumps StageName to
+'Underwriting' from any stage) and Opportunity_LOI_Prep_Stamp. A before-trigger therefore observes
+the FINAL StageName after the flow has rewritten it, while Trigger.oldMap still holds the true prior
+DB value. A third before-save Flow would have NO defined ordering relative to the other two.
+(The task brief claimed FOUR before-save flows on Opportunity. There are TWO --
+Contract_Review_Stage_Sync targets Contract_Review__c and NDA_Signed_Status_Sync targets NDA__c.
+The conclusion holds; the count did not.)
+
+1. MODIFY triggers/OpportunityReviewTrigger.trigger
+   Widen from `on Opportunity (after insert, after update)` to
+   `on Opportunity (before insert, before update, after insert, after update)`.
+   (The brief said to stamp in "OpportunityReviewTriggerHandler (before update)" -- that context does
+   not exist yet, which is why the trigger must be widened.)
+2. MODIFY classes/OpportunityReviewTriggerHandler.cls
+   Add beforeInsert() / beforeUpdate() overrides routing to the new service. Update the class header:
+   it says "Routes the after-insert and after-update contexts" and enumerates five after-context
+   service calls. Both statements become incomplete.
+3. CREATE classes/OpportunityStageEntryService.cls
+   stampStageEntryDates(List<Opportunity> opps, Map<Id,Opportunity> oldMap)
+   - ZERO SOQL, ZERO DML at any record count -- a pure in-memory assignment. That is what makes it
+     safe to widen a trigger already routing five services, one of which enqueues a SharePoint
+     Queueable under a never-throw contract and another of which throws by design.
+   - Model it on DispositionStageEntryService.stampListingDates (before-save, in-memory, zero
+     statements) BUT NOTE ONE DELIBERATE DIFFERENCE: that method is FILL-IF-BLANK for idempotency.
+     Yours must OVERWRITE UNCONDITIONALLY on a genuine transition -- re-entering a stage MUST restart
+     the clock.
+   - Entry, not presence: prior == null (insert) counts as entry into whatever stage it was created
+     at. Guard `priorStage == newStage -> continue`.
+   - Hoist Date.today() once per chunk so two records in one save cannot straddle midnight.
+   - `with sharing`. Layer = service. No selector (nothing is read).
+4. CREATE classes/OpportunityStageEntryServiceTest.cls
+   bulk-test-rule.md applies IN FULL -- trigger-driven, no exemption. 251-record bulk INSERT and bulk
+   UPDATE tests, assertions matching 251.
+   🔴 Assert the governor shape (0 added SOQL, 0 added DML) on counters captured INSIDE the trigger
+   context. Test.stopTest() RESTORES pre-test governor counters, so asserting Limits.* afterwards is
+   SILENTLY VACUOUS. Precedent: ExtractAddressQueueable.lastRunQueryCount.
+   Use TestDataFactory. Never @isTest(SeeAllData=true).
+   Cover: insert-at-a-stage stamps; an update that moves the stage re-stamps; an update that does NOT
+   move the stage leaves the date alone.
+5. CREATE scripts/backfill-opp-stage-entry-date.apex
+   Stage_Entry_Date__c = LastModifiedDate.date() for OPEN deals where it is null. SYSTEM_MODE,
+   allOrNone = false, debug the row count.
+   🔴 State in the header that LastModifiedDate is the last edit OF ANY KIND, not the stage entry, so
+   day-1 Days_In_Stage__c values are an approximation and must not be read as history.
+
+VERIFY, do not assume -- all eight StageName mutation paths must produce a correct stamp:
+  1 manual UI / Path / list-view inline
+  2 StageAdvanceService.setStage (Advance Stage action, advanceDealStage LWC)
+  3 Opportunity_Initiate_Underwriting before-save Flow (-> 'Underwriting' from any stage)
+  4 workflows/Opportunity.workflow-meta.xml -> Set_Stage_Underwriting (LOI_Approval final rejection)
+  5 workflows/Opportunity.workflow-meta.xml -> UW_Set_Stage_Initiate_LOI (UW approval -> 'LOI')
+  6 flows/Transaction_Complete_Close.flow-meta.xml -> RecordUpdate StageName='Closed Won' FROM THE
+    TRANSACTION OBJECT  <-- the task brief did not list this path; it is ordinary DML and does fire
+  7 LeadConvertService (conversion creates the Opportunity) -- this is why before-INSERT is included
+  8 scripts/*.apex seed and migration scripts
+Paths 4 and 5 are approval field updates, EXPECTED to re-fire triggers -- but this repo has measured
+that approval field updates bypass VALIDATION RULES (a different mechanism, but the surprise rate is
+high enough) so path 4 must be verified in-org post-deploy: take a deal to LOI, reject the LOI
+approval, confirm the stamp moved.
+
+Class names cap at 40 chars. `bulk` is a reserved word. Do NOT deploy.
+```
+
+### 🔵 + 🟢 PROMPT — WAVE C (Item 4) and WAVE D (Item 6.2/6.4)
+
+```
+WAVE C dispatches only AFTER Item 2 has deployed and Stage_Entry_Date__c / Days_In_Stage__c exist in
+the org. WAVE D must NOT share a wave with Item 2 -- both touch the Opportunity write path and a
+regression would be unattributable. Full component lists in
+agent-output/design-requirements.md §2 ITEM 4 and ITEM 6, gates in §7.
+
+--- WAVE C: ITEM 4 (stalled-deal reminder) ---
+ADMIN: Stage_Threshold_Def__mdt (STRUCTURE ONLY -- rows come from the developer's loader script,
+because CustomMetadata RECORD deploys fail in this repo); Opportunity marker fields
+Stage_Alert_Last_Sent_Date__c (Date) and Stage_Alert_Stage__c (Text 80 -- THE SNAPSHOT, and it is NOT
+optional: the thing that must re-arm this alert is a STAGE CHANGE, not a date change, so a date-only
+marker leaves a deal that moved and stalled again PERMANENTLY SILENT); the Delayed_Opportunities
+report; one new dashboard component titled distinctly from the existing "Stale Deals 7-Day" widget,
+which measures NO ACTIVITY IN 7 DAYS, not stuck-in-stage (keep both -- user decision Q3).
+🔴 dashboards/Acquisitions/Acquisitions_Dashboard_Junior.dashboard-meta.xml has
+<runningUser>test-aysz9meqvl23@example.com</runningUser> -- a STALE SCRATCH-ORG ADDRESS, the known
+cause of "invalid cross reference id" dashboard failures here. Repoint it. It is at 13 of 20
+components. THREE OTHER dashboards are already modified and uncommitted in this working tree -- diff
+against HEAD before editing. GATE FP-1: a dashboard deploy REPLACES the org copy, no version history.
+
+DEVELOPER: StageDelayService (PURE -- every threshold lives here, the batch contains no `14`);
+OpportunitySelector.queryStalledDeals (WITH SYSTEM_MODE; `IsClosed = FALSE` NOT a two-value NOT IN;
+and `Stage_Entry_Date__c != NULL`, which is load-bearing for un-backfilled legacy deals);
+StageDelayAlertBatch (SCOPE=200 INHERITED from CallForOffersAlertBatch's five measured probes -- say
+so plainly rather than implying a fresh measurement, exactly as NdaExpiryAlertBatch words it; SEND
+FIRST, STAMP SECOND; GroupNotifier.notifyWithOutcome, NEVER notify; stamp only successes);
+StageDelayAlertSchedule; scripts/load-stage-threshold-defs.apex (8 rows, all 14); 251-record tests.
+🔴 RECIPIENT_GROUP = 'Acquisition' -- the QUEUE. This is a RECORDED decision (Gate 1 Q2.3, in
+NdaExpiryAlertBatch's header) taken over Acquisitions_Team and DPEG_Acquisitions_Team specifically so
+the org's alert jobs cannot disagree about who "the Acquisition team" is. The task brief's
+"Acquisitions public group" is a THIRD name and would re-open a settled question.
+🔴 If notifying the Owner requires a SECOND send() per deal, RE-RUN the CPU arithmetic in
+CallForOffersAlertBatch §1 (6.0 ms + 0.22 ms x |recipients|) for 400 sends per chunk before accepting
+SCOPE=200. Do the arithmetic in your header; do not inherit a number computed for a different call
+count.
+Suppression cadence: FIRE ONCE PER STAGE OCCUPANCY (user decision Q2). Re-arm test:
+Stage_Alert_Stage__c != StageName OR Stage_Alert_Last_Sent_Date__c < Stage_Entry_Date__c.
+Structural template for all of it: NdaExpiryAlertBatch / NdaExpiryAlertSchedule / NdaExpiryService.
+
+--- WAVE D: ITEM 6.2/6.4 (Contact broker counters) ---
+The LEADERBOARD IS UNTOUCHED. Do NOT modify BrokerLeaderboardService, BrokerLeaderboardController,
+lwc/brokerLeaderboard, brokerFirmCard or reports/Acquisitions/Broker_Leaderboard. It remains the
+AUTHORITATIVE broker population because it is the only surface that sees losing brokers. These
+Contact counters fix the BrokerController / Broker_Hub permanent-zeroes surface ONLY.
+
+DEVELOPER:
+1. classes/BrokerCounterRecalcBatch.cls -- NEW.
+   🔴 BATCH OVER CONTACT, NOT OVER OPPORTUNITY. Locator: Contact WHERE
+   RecordType.DeveloperName = 'Broker'. This is not style: batching over Contact means EVERY Contact
+   in scope is written, so a broker whose deals were deleted or reassigned correctly goes to 0.
+   Batching over Opportunity can only ever INCREASE counts and would silently strand them.
+   Per chunk -- 2 SOQL, 1 DML, CONSTANT in the number of deals:
+     - AggregateResult over Opportunity GROUP BY Broker__c WHERE Broker__c IN :chunkIds
+       (COUNT all; COUNT where StageName='Closed Won'; COUNT where StageName='Dead/Pass')
+     - AggregateResult over Lead MIN(First_Seen_Date__c) GROUP BY ConvertedContactId
+       WHERE ConvertedContactId IN :chunkIds
+     - one Database.update(..., false, AccessLevel.SYSTEM_MODE)
+   ✅ NO EMAIL MATCHING, FUZZY OR OTHERWISE, ANYWHERE. Opportunity.Broker__c is a REAL Contact lookup
+   (LeadConvertService: `o.Broker__c = l.ConvertedContactId`). BrokerLeaderboardService's reason-3
+   warning about a fuzzy email match applied to Competing_Broker_Submission__c, whose identity is a
+   TEXT EMAIL with no Contact lookup -- THIS BATCH DOES NOT TOUCH THAT OBJECT. Record this in your
+   class header so the warning is not re-inherited by the next reader.
+   ⚠ The brief pointed at Lead.Broker_First__c for the first-submission join. That field is a
+   Text(255) MIRRORING THE BROKERAGE FIRM NAME (BrokerPortalService sets l.Company and
+   l.Broker_First__c to the same input.brokerageFirm). It is NOT a broker link. Use
+   Lead.ConvertedContactId.
+   ⚠ All SOQL via selectors per apex-layering-rule.md -- add the aggregates to OpportunitySelector
+   and LeadSelector, NOT inline. WITH SYSTEM_MODE, justified at EACH declaration.
+2. classes/BrokerCounterRecalcSchedule.cls -- NEW.
+3. Tests -- 251-record fixtures (no exemption). INCLUDE A RESET-TO-ZERO CASE: a Contact with counts
+   whose Opportunities are removed must go to 0. That is the falsifier for the batch-over-Contact
+   decision and is the most valuable test here.
+
+DO NOT store win rate or last submission as fields -- they are computed in BrokerLeaderboardService,
+which already ranks in Apex precisely so two surfaces cannot disagree.
+DO NOT touch Contact.Active_Listings__c, Closed_Volume__c or Avg_Days_On_Market__c -- disposition-side.
+DO NOT repoint BrokerFirmController at the new Account roll-ups -- explicitly out of scope (Q10).
+```
+
+---
+
+## §11 — REMAINING JUDGEMENT CALLS I WOULD STILL FLAG
+
+Everything below is **approved and being built**. These are recorded so that if any of them later
+surfaces as a problem, the reasoning is on file rather than rediscovered.
+
+1. **Item 1B leaves Closed Won with no in-app exit** (RESIDUAL-10). The user was shown this and
+   reaffirmed. The mitigations are the 1C header block, the four 1D amendments, and post-deploy
+   step **P8** (brief the team + agree the admin data-fix procedure). **P8 is the one most likely to
+   be skipped and the one whose absence generates the first support call.**
+2. **Item 6's Contact counters and the leaderboard will legitimately show different numbers** for
+   the same broker — the counters count Opportunities where that Contact is the submitting broker;
+   the leaderboard counts ledger submissions including competing ones. This is **correct**, not a
+   bug, and the field descriptions are the only thing that will make it look correct to a reader.
+   **Do not let the descriptions be trimmed to fit 255 characters — split into an XML comment instead.**
+3. **Item 6.1 duplicates `BrokerFirmController`'s live computation** (F11, RESIDUAL-8). Out of scope
+   by decision (Q10), but it is a genuine two-sources-of-truth situation and the natural follow-up
+   is a one-line repoint that deletes the live count.
+4. **Item 4's threshold exists in two places** (RESIDUAL-4) because a report filter cannot read
+   CMDT. Unavoidable; worth the user knowing before they retune the CMDT and find the widget
+   disagreeing with the bell.
+5. **Item 4 will report nothing on seeded data** (RESIDUAL-7). Cheap to fix, embarrassing to
+   discover during a demo.

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY - a comment ABOVE the root breaks
+        `sf` deploy at conversion with a misleading parent-xml error.
+
+        TEXT, NOT PICKLIST - a Custom Metadata Type field cannot reference a standard value set
+        (Opportunity.StageName's picklist), so this is a free-text mirror of the exact StageName
+        value it applies to. Length 80 matches the sibling snapshot field
+        Opportunity.Stage_Alert_Stage__c and every other org StageName mirror in this repo.
+        StageDelayService.thresholdFor(String) matches on this value literally - a typo here
+        (extra space, wrong case) silently produces "no threshold configured" for that stage,
+        not an error. Seeded by scripts/load-stage-threshold-defs.apex with the eight open-stage
+        labels exactly as they appear in Opportunity's OpportunityStage standard value set: New,
+        Under Review, Development Review, Construction Review, Underwriting, LOI, Under Contract
+        (PSA), About to Close. Closed stages (Closed Won, Dead/Pass) get no row - IsClosed
+        deals are excluded upstream by OpportunitySelector.queryStalledDeals.
+    -->
+    <fullName>Stage_Value__c</fullName>
+    <description>The Opportunity.StageName value this threshold applies to, as free text (a CMDT field cannot reference a picklist/standard value set). Must match StageName exactly, including case and punctuation - StageDelayService matches on this literally. One row per open stage; closed stages carry no row.</description>
+    <externalId>false</externalId>
+    <fieldManageability>DeveloperControlled</fieldManageability>
+    <inlineHelpText>Must match the Opportunity Stage value exactly (e.g. "Under Contract (PSA)"). A typo here silently disables the reminder for that stage.</inlineHelpText>
+    <label>Stage Value</label>
+    <length>80</length>
+    <required>true</required>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>

@@ -8,6 +8,8 @@
  *     outcome counts, top-by-price list, open-pipeline aggregate, deal-type counts)
  *   - OpportunityDocStatusController (Primary_* reference read for the deal card)
  *   - OpportunityApprovalController (stage read inside the no-applicable-process branch)
+ *   - OpportunityApprovalService (the signed-NDA submission gate — selectNdaGateById,
+ *     `WITH SYSTEM_MODE`, see MODE below)
  *   - StageAdvanceController (stage read for the advance quick actions)
  *   - ContractExecutionService.handleExecution (PSA-execution handoff: the deal
  *     header + primary contract/LOI figures used to stamp the Opportunity and
@@ -26,23 +28,74 @@
  *     page — selectPackageAnchorById, `WITH USER_MODE`; the OPPORTUNITY-rooted half of
  *     that feature's two reads, the portfolio-deal-rooted half being
  *     PortfolioDealSelector.selectWithMembersById)
+ *   - BrokerCounterRecalcBatch (the nightly Contact broker-counter recalculation —
+ *     aggregateDealCountsByBroker, `WITH SYSTEM_MODE`, see MODE below)
+ *   - StageDelayAlertBatch (the daily stalled-deal reminder — queryStalledDeals,
+ *     `WITH SYSTEM_MODE`, see MODE below)
  *
- * MODE — most queries are `WITH USER_MODE` (API 67). **THREE are `WITH SYSTEM_MODE`:**
- * `selectCallForOffersTargetsByIds`, `queryCallForOffersAlerts` and
- * `selectMarketSnapshotSourceByIds`. Read the METHOD, not the class.
+ * MODE — most queries are `WITH USER_MODE` (API 67). **SIX are `WITH SYSTEM_MODE`:**
+ * `selectCallForOffersTargetsByIds`, `queryCallForOffersAlerts`,
+ * `selectMarketSnapshotSourceByIds`, `selectNdaGateById`,
+ * `aggregateDealCountsByBroker` and `queryStalledDeals`. Read the METHOD, not the class.
  *
- * ⚠ THIS PARAGRAPH SAID "the ONE `WITH SYSTEM_MODE` method" UNTIL 2026-08-14 AND "TWO"
- * UNTIL 2026-08-16 — amended in place each time rather than left standing. The second
+ * ⚠ THIS PARAGRAPH SAID "the ONE `WITH SYSTEM_MODE` method" UNTIL 2026-08-14, "TWO"
+ * UNTIL 2026-08-16, "THREE" UNTIL 2026-08-30, "FOUR" UNTIL 2026-08-31 AND "FIVE" FOR A
+ * FEW HOURS OF THAT SAME DAY — amended in
+ * place each time rather than
+ * left standing. The second
  * entrant is the alert job's locator, and its justification is argued at its own
  * declaration rather than borrowed from the first: it is SYSTEM_MODE because it selects
  * two custom fields created in that same change, which arrive with no FLS for any
  * profile including the deploying administrator. The third (the market-data freeze) is
  * argued at ITS own declaration for a THIRD reason again — it runs inside an
  * APPROVAL-TRIGGERED flow, so a throw does not merely disable the feature, it rolls back
- * the approval. Do not read a future fourth SYSTEM_MODE method as conformant because
- * three already exist — read its header.
+ * the approval. Do not read a future SEVENTH SYSTEM_MODE method as conformant because
+ * six already exist — read its header.
  *
- * The thirteen USER_MODE methods back reads a human explicitly asked for. Opportunity
+ * 🔴 THE SIXTH ENTRANT (`queryStalledDeals`, 2026-08-31) IS THE **FIRST-CASE** ONE AGAIN —
+ * a daily batch locator, performed by a scheduler on the team's behalf, never at a
+ * principal's request — and the concrete trigger is the same one the SECOND entrant
+ * records: it selects `Stage_Alert_Last_Sent_Date__c` and `Stage_Alert_Stage__c`, two
+ * Metadata-API-deployed custom fields created in that same change, which arrive with NO
+ * field permissions for ANY profile, System Administrator included. Under USER_MODE this
+ * locator would throw `No such column` for the very administrator who deployed them, on
+ * day one, and the reminder would be silently dead while everything looked shipped.
+ *
+ * 🔴 THE FIFTH ENTRANT (`aggregateDealCountsByBroker`, 2026-08-31) IS A **NIGHTLY BATCH**
+ * READ AND ITS JUSTIFICATION IS THE FIRST-CASE ONE, NOT A NEW ONE: no principal asks for
+ * it; `BrokerCounterRecalcBatch`'s scheduler performs it on the team's behalf, and it
+ * aggregates `Broker__c` — a custom field — for a scheduling principal whose FLS nobody
+ * controls. What is worth reading twice is the FAILURE DIRECTION, because it is worse here
+ * than for the other four: this batch is a **reset writer** (it writes every Contact in
+ * scope, including back to zero), so a read that returns nothing does not leave the
+ * counters stale — it actively **overwrites correct counts with zeroes**. A USER_MODE
+ * throw would at least be loud; a degraded read would be silent and destructive. That
+ * asymmetry is also why the SHARING question was measured separately below rather than
+ * assumed from the mode.
+ *
+ * 🔴 THE FOURTH ENTRANT (`selectNdaGateById`, 2026-08-30) IS THE ONE MOST LIKELY TO BE
+ * MISREAD AS NON-CONFORMANT, BECAUSE IT SITS ON A UI PATH. It is reached from a quick
+ * action a human clicked, which looks exactly like the "read a human asked for" case the
+ * USER_MODE default governs. It is not: the human asked to SUBMIT FOR APPROVAL, and this
+ * read is a CORRECTNESS GATE performed on their behalf before that submission — nothing
+ * it returns is ever displayed. Its FOURTH, independent justification is argued at its
+ * own declaration and turns on the direction of failure: under USER_MODE, one missing FLS
+ * grant on `NDA__c.NDA_Signed__c` (a cross-object traversal, so it needs read on `NDA__c`
+ * the OBJECT too) does not degrade the gate, it THROWS `No such column` — refusing a
+ * legitimate submission with a schema error, for a permissions reason, on a persona the
+ * gate was never about. ⚠ That is a FOURTH distinct reason, not a re-use of the first three.
+ *
+ * ⚠ THE COMPLEMENTARY COUNT WAS STALE UNTIL 2026-08-31 AND IS CORRECTED HERE, IN THE SAME
+ * IN-PLACE STYLE THE SYSTEM_MODE COUNT ABOVE USES. This paragraph said "thirteen", and the
+ * four other places in this file that partition the same 21 methods said "thirteen",
+ * "fourteen", "eleven" and "thirteen" — none of them moved as entrants four, five and six
+ * were added, because each of those edits amended only the SYSTEM_MODE side. The class's whole
+ * discipline is that its counts are authoritative, so a half-amended partition is worse than
+ * no count. RE-DERIVED BY ENUMERATION, not by arithmetic on the old figure: 21 public methods
+ * = 6 `WITH SYSTEM_MODE` (the six named above) + 15 `WITH USER_MODE`. 🔴 If you add a method,
+ * update BOTH sides or neither.
+ *
+ * The fifteen USER_MODE methods back reads a human explicitly asked for. Opportunity
  * is the only standard-object selector in A1; per the P4 design §5 the standard
  * fields selected across them (Id, Name, StageName, CloseDate, CreatedDate) are
  * `permissionable=false` and therefore never subject to FLS — USER_MODE cannot
@@ -546,6 +599,139 @@ public with sharing class OpportunitySelector {
     }
 
     /**
+     * The signed-NDA submission gate's inputs: a deal's stage plus its primary NDA and whether
+     * that NDA is signed. Backs `OpportunityApprovalService.submitForApproval`, which refuses an
+     * LOI-stage submission when the primary NDA is blank or unsigned.
+     *
+     * ═══ 🔴 TWO KEYWORDS, TWO SEPARATE QUESTIONS — the D25 rule ═══
+     *
+     * ▸ MODE = `WITH SYSTEM_MODE`, and this is the class's FOURTH such method (the header's count
+     *   and list were amended in place, per its own instruction). It is the one that looks least
+     *   like an automation read, so the argument is made in full rather than borrowed:
+     *
+     *   - THE READ IS NOT THE THING THE HUMAN ASKED FOR. They asked to submit for approval. This
+     *     query is a correctness gate run on their behalf before that submission, and NOTHING it
+     *     returns is ever rendered. The USER_MODE default in ARCHITECTURE.md §2 governs "a read
+     *     the running user ASKED FOR", where a throw reports a real provisioning gap and the fix
+     *     is a permission set. Here a throw would report nothing to anybody: it would refuse a
+     *     legitimate submission.
+     *   - `USER_MODE` THROWS, IT DOES NOT DEGRADE, AND THE SURFACE IS UNUSUALLY WIDE. This is a
+     *     CROSS-OBJECT traversal (`Primary_NDA__r.NDA_Signed__c`), so under USER_MODE it needs
+     *     read on the `NDA__c` OBJECT as well as FLS on that field — for every persona who can
+     *     click Submit for Approval. `DPEG_Opportunity_View`, the Transactions team's Opportunity
+     *     subset, is precisely the shape of persona that has the Opportunity and not the child.
+     *     One missing grant anywhere in that set turns the gate into `System.QueryException: No
+     *     such column` — an FLS denial wearing a schema error — which the controller then masks
+     *     as "The deal could not be submitted for approval." Nobody could diagnose that.
+     *   - THE FAILURE DIRECTION IS THE DECIDING ARGUMENT. SYSTEM_MODE can only make the gate
+     *     EVALUATE; it cannot make it pass. A deal with an unsigned NDA is still refused, and
+     *     refused with the actionable message. USER_MODE would trade a correct refusal for an
+     *     incorrect one.
+     *
+     * ▸ SHARING = 🔴 **`without sharing`, VIA THE NARROW `NdaGateReads` INNER CLASS BELOW** — a
+     *   SEPARATE decision from the mode, and one that was settled BY MEASUREMENT on 2026-08-30
+     *   rather than by argument.
+     *
+     *   ⚠ THIS BULLET USED TO READ, AND THE CODE USED TO MATCH: *"SHARING = `with sharing` (the
+     *   class keyword) … It is sufficient here and deliberately so: the caller is submitting THIS
+     *   record for approval from its own record page, so they demonstrably already have it.
+     *   `Opportunity` internal OWD is `ReadWrite` … so today every user sees every row anyway."*
+     *   🔴 THAT REASONING WAS CORRECT AND COMPLETE ABOUT THE **ROOT** ROW, AND ENTIRELY SILENT
+     *   ABOUT THE **TRAVERSED PARENT** — which is where the whole risk lived. `Opportunity` OWD is
+     *   irrelevant to `Primary_NDA__r`; **`NDA__c` OWD is `Private`**.
+     *
+     *   ═══ THE MEASUREMENT (2026-08-30, org `usman-dpeg`, test run `707iw000003bQwp`) ═══
+     *   `OpportunityApprovalServiceTest.aSubmitterWhoCannotSeeTheNdaIsNotFalselyBlocked` and
+     *   `theOwnedRecordControlStillSubmits` were written against a `DPEG_Opportunity_View` persona
+     *   on the `Minimum Access - Salesforce` profile — Opportunity read + viewAllRecords, and NO
+     *   `NDA__c` object permission of any kind — with `UserRecordAccess.HasReadAccess = false` on
+     *   the NDA asserted as a precondition. **BOTH FAILED** against the `with sharing` version:
+     *   a submitter who could not READ the NDA was REFUSED a deal whose NDA WAS SIGNED.
+     *   ⇒ A `WITH SYSTEM_MODE` spanning read IS sharing-filtered on the parent. `SYSTEM_MODE` lifts
+     *   CRUD/FLS and, as ARCHITECTURE.md §2 says, **NEVER sharing** — the parent simply comes back
+     *   NULL, indistinguishable from "no NDA linked".
+     *
+     *   🔴 THAT IS WHY THIS ONE NEEDED THE ESCAPE AND MOST READS DO NOT: the failure does not
+     *   DEGRADE, IT INVERTS. A sharing-filtered read here does not hide information from someone
+     *   who should not see it — it fabricates "this deal has no signed NDA" and BLOCKS a
+     *   legitimate submission, for every non-owner, on exactly the deals that have reached LOI.
+     *   Strictly worse than the failure the gate exists to prevent.
+     *
+     *   ⚠ THE ESCAPE IS AS NARROW AS THE PLATFORM ALLOWS: a `private without sharing` inner class
+     *   holding ONLY this one query (the `InboundEmailStagingSelector.RoutingReads` /
+     *   `ProcessInstanceStepSelector.AuditReads` shape ARCHITECTURE.md §2 prescribes).
+     *   🔴 DO NOT PUT `without sharing` ON THIS CLASS. It backs twenty other reads, fifteen of
+     *   them user-facing `USER_MODE` reads whose whole job is to respect what the user may see.
+     *
+     *   ⚠ IT WIDENS NOTHING A USER CAN OBSERVE. The only thing that escapes the inner class is a
+     *   `Boolean` consumed by a guard; no NDA field is returned to the caller, rendered, or
+     *   logged. The submitter learns only whether their own submission is allowed — which they
+     *   were always entitled to know.
+     *
+     *   ⚠ IF THE ROW ITSELF IS INVISIBLE this still returns null and the gate is SKIPPED — see the
+     *   NOT-FOUND CONTRACT below for why skipping is right and not a hole.
+     *
+     * NOT-FOUND CONTRACT — returns NULL for a null Id or a row that resolves to nothing, and
+     * DELIBERATELY does not throw, unlike the `selectStageRequiredById` fetch-for-use family two
+     * methods above. That is load-bearing rather than stylistic: the "unexpected failure
+     * propagates RAW from `Approval.process`" contract in `OpportunityApprovalService` is
+     * PRE-EXISTING, and a gate that threw `QueryException` first would move where that failure
+     * originates and silently change which exception a caller sees. A null row means "cannot
+     * evaluate the gate", the gate is skipped, and `Approval.process` fails exactly as it did
+     * before this method existed.
+     *
+     * @param opportunityId The deal whose NDA state to read; null-safe.
+     * @return The Opportunity with Id, StageName, Primary_NDA__c and Primary_NDA__r.NDA_Signed__c
+     *         populated, or null when the input is null or the Id resolves to no row.
+     * @example
+     * Opportunity deal = OpportunitySelector.selectNdaGateById(targetId);
+     */
+    public static Opportunity selectNdaGateById(Id opportunityId) {
+        if (opportunityId == null) {
+            return null;
+        }
+        return new NdaGateReads().ndaGateById(opportunityId);
+    }
+
+    /**
+     * 🔴 THE SHARING ESCAPE FOR THE SIGNED-NDA GATE, AND NOTHING ELSE.
+     *
+     * `without sharing` is confined to this inner class so it applies to ONE query. The enclosing
+     * `OpportunitySelector` stays `with sharing` and must: it backs twenty other reads, fifteen of
+     * them user-facing `USER_MODE` reads whose entire job is to respect what the running user may
+     * see. This is the `InboundEmailStagingSelector.RoutingReads` /
+     * `ProcessInstanceStepSelector.AuditReads` shape ARCHITECTURE.md §2 prescribes.
+     *
+     * The full justification — including the 2026-08-30 measurement that established it was
+     * necessary, and why the failure it prevents INVERTS rather than degrades — is at
+     * `selectNdaGateById`'s own declaration. Read it before touching this.
+     *
+     * ⚠ DO NOT ADD A SECOND METHOD HERE. Every query that lands in this class silently inherits an
+     * escape argued for a different one. A new read that needs the same treatment needs its OWN
+     * inner class and its OWN measurement — that is the point of keeping these narrow.
+     */
+    private without sharing class NdaGateReads {
+
+        /**
+         * The gate's four fields, read without sharing so the `Primary_NDA__r` traversal is not
+         * filtered by the submitter's access to the Private-OWD `NDA__c` parent.
+         *
+         * @param opportunityId The deal to read; never null (the wrapper guards it).
+         * @return The row, or null when no row matches.
+         */
+        private Opportunity ndaGateById(Id opportunityId) {
+            List<Opportunity> rows = [
+                SELECT Id, StageName, Primary_NDA__c, Primary_NDA__r.NDA_Signed__c
+                FROM Opportunity
+                WHERE Id = :opportunityId
+                WITH SYSTEM_MODE
+                LIMIT 1
+            ];
+            return rows.isEmpty() ? null : rows[0];
+        }
+    }
+
+    /**
      * Loads the fields ContractExecutionService needs when a Contract Review is
      * executed: the deal header (Name, Property) plus the primary-contract value
      * and primary-LOI earnest money it copies onto the new Transaction, and the
@@ -589,13 +775,44 @@ public with sharing class OpportunitySelector {
      * not return null (returning null would NPE the caller). Preserved here via a
      * single-row SOQL assignment that throws native System.QueryException on a miss.
      *
+     * ═══ 🔴 IT NOW ALSO CARRIES THE THREE FIRM-LEVEL ROLL-UPS (2026-08-30, Item 6.1) ═══
+     * `Account.Total_Deals_Submitted__c`, `Account.Deals_Won__c` and `Account.Deals_Lost__c` are
+     * native roll-up summaries over the firm's Opportunities. Carrying them on THIS row is what
+     * lets `BrokerFirmController` stop running a second `GROUP BY` aggregate
+     * (`countByStageForAccount`) for the same three numbers: the sidebar card went from TWO
+     * queries to ONE, and — the actual point — the card and the `Broker_Leaderboard` report now
+     * read the SAME stored numbers instead of two independent derivations that can silently
+     * disagree.
+     *
+     * ⚠ THEY ARE SPANNED, NOT FETCHED BY A SECOND `AccountSelector` READ, and that is consistent
+     * rather than a layering shortcut: this method ALREADY spans `Account.Name` for the same card,
+     * and the query is still a query against `Opportunity`, which this class owns.
+     *
+     * 🔴 FLS — THIS IS A `WITH USER_MODE` READ AND THE THREE FIELDS ARE NEW, SO THEY MUST BE
+     * GRANTED BEFORE THIS DEPLOYS OR THE WHOLE SIDEBAR CARD THROWS. USER_MODE throws on the WHOLE
+     * ROW for one inaccessible field, so a missing grant does not blank three numbers — it turns
+     * `getBrokerFirm` into "The brokerage firm summary could not be loaded" for every persona that
+     * lacks it, including the deploying administrator (a Metadata-API-deployed field arrives with
+     * no FLS for anyone). Required: `<readable>true</readable>` in every set whose persona opens
+     * an Opportunity record page — at minimum `DPEG_Account_View`, `DPEG_Acquisition_Edit`,
+     * `DPEG_Acquisition_View`, `DPEG_Opportunity_View` and `DPEG_Admin_Access`.
+     * ⚠ `<editable>true</editable>` on a ROLL-UP SUMMARY FAILS THE DEPLOY. Readable only, always.
+     *
+     * ⚠ MODE STAYS `USER_MODE` AND MUST NOT BECOME THE CLASS'S FIFTH `SYSTEM_MODE` METHOD. This
+     * is a card on a record page a human opened, at their request — the textbook USER_MODE case in
+     * ARCHITECTURE.md §2, where a throw reports a real provisioning gap and the fix is a permission
+     * set. The FLS burden above is the REASON to grant the fields, not a reason to lift the check.
+     *
      * @param opportunityId Opportunity Id to load; must reference an existing row.
-     * @return The Opportunity with Id, AccountId, and Account.Name populated.
-     * @throws System.QueryException when no Opportunity matches the Id.
+     * @return The Opportunity with Id, AccountId, Account.Name and the three Account roll-ups
+     *         populated.
+     * @throws System.QueryException when no Opportunity matches the Id, or when the running user
+     *         lacks read on `Account` or on any of the three roll-up fields.
      */
     public static Opportunity selectAccountRefById(Id opportunityId) {
         return [
-            SELECT Id, AccountId, Account.Name
+            SELECT Id, AccountId, Account.Name,
+                   Account.Total_Deals_Submitted__c, Account.Deals_Won__c, Account.Deals_Lost__c
             FROM Opportunity
             WHERE Id = :opportunityId
             WITH USER_MODE
@@ -604,9 +821,24 @@ public with sharing class OpportunitySelector {
     }
 
     /**
-     * Count of an Account's Opportunities grouped by stage — backs the firm-level
-     * deal counts (submitted / won / lost) on the Opportunity sidebar
-     * (BrokerFirmController.getBrokerFirm). Added by P4 cleanup wave G.
+     * Count of an Account's Opportunities grouped by stage.
+     *
+     * ═══ ⚠ ITS ORIGINAL CALLER WAS REPOINTED ON 2026-08-30. THE METHOD IS KEPT DELIBERATELY. ═══
+     * RETRACTED, verbatim: "backs the firm-level deal counts (submitted / won / lost) on the
+     * Opportunity sidebar (BrokerFirmController.getBrokerFirm)". IT NO LONGER DOES.
+     * `BrokerFirmController` now reads the three native Account roll-up summaries spanned by
+     * `selectAccountRefById`, so the card and the `Broker_Leaderboard` report cannot drift — one
+     * stored source, not two live derivations (design Item 6.1 / RESIDUAL-8, user decision
+     * 2026-08-30 which reversed the earlier "out of scope" call, Q10).
+     *
+     * 🔴 IT IS NOT DEAD CODE TO BE SWEPT. Two class headers cite this aggregate BY NAME as the
+     * documented shape of a behaviour — `LeadConvertMatchService` ("Several Leads can converge on
+     * ONE Account … this aggregates EVERY Opportunity on an Account") and
+     * `LeadConvertMatchServiceTest` — and deleting it would falsify both while removing the
+     * per-stage breakdown the roll-ups deliberately do not provide (they are three fixed counts;
+     * this returns every stage). It also remains the honest answer for any future caller that
+     * needs a stage breakdown rather than the three headline numbers. Its own test
+     * (`OpportunitySelectorTest.countByStageForAccount_scopesToAccountAndGroupsByStage`) stays.
      *
      * @param accountId The brokerage-firm Account whose deals to aggregate.
      * @return AggregateResult rows with alias `st` (StageName) and `c` (COUNT(Id));
@@ -700,7 +932,7 @@ public with sharing class OpportunitySelector {
      * THE REMEDY, IF IT EVER HAPPENS, IS A NARROW `private without sharing` INNER
      * CLASS HOLDING ONLY THIS METHOD (the `LeadSelector.GuestReads` /
      * `InboundEmailStagingSelector.RoutingReads` shape) — never `without sharing` on this
-     * whole class, which backs eleven user-facing reads.
+     * whole class, which backs fifteen user-facing `USER_MODE` reads.
      *
      * 🔴 AND THIS METHOD IS ONLY HALF THE CHAIN — THE OTHER HALF HAS NOT BEEN ANALYSED TO THE
      * SAME DEPTH, WHICH IS WHY IT IS NAMED HERE (review finding W2, 2026-08-10). Before the
@@ -796,6 +1028,24 @@ public with sharing class OpportunitySelector {
      * in the Received column, so an FLS gap SHOULD surface; the markers are alert bookkeeping no
      * human reads, so making a user-facing table depend on their FLS would be the
      * `InboundEmailStagingSelector.selectById` mistake.
+     *
+     * ⚠ `Offer_Status__c` WAS ADDED TO BOTH LISTS 2026-08-30, AND IT PASSES THE SAME TEST FOR THE
+     * SAME REASON: it is DISPLAYED — as a row on the record-page panel and as a column in the Lead
+     * Funnel table — so a persona who cannot read it should see the read fail rather than see a
+     * blank they would take for "no status". It is therefore a USER_MODE field, and the rule above
+     * applies in full: 🔴 IT NEEDS `<readable>true</readable>` IN FOUR SETS BEFORE THIS DEPLOYS —
+     * `DPEG_Acquisition_Edit`, `DPEG_Acquisition_View`, `DPEG_Opportunity_View` AND
+     * `DPEG_Admin_Access`. The fourth is not belt-and-braces: a Metadata-API-deployed field arrives
+     * with NO field permissions for ANY profile, System Administrator included, and
+     * `DPEG_Admin_Access` is the set the deploying administrator holds — i.e. the one the deploy's
+     * own `RunLocalTests` phase runs under. Without it this read throws for the very person
+     * shipping it, and BOTH call-for-offers surfaces go down at once. Exactly the gap
+     * `Call_For_Offers_Received_Date__c` documented above.
+     *
+     * ⚠ AND IT IS THE FIELD THE ALERT LOCATOR *FILTERS* ON WITHOUT SELECTING. That asymmetry is
+     * deliberate and is argued at `queryCallForOffersAlerts`: a suppressed deal never reaches the
+     * batch's chunk, so the batch makes no decision from the value. Do not "harmonise" the three
+     * field lists — two of them are user-facing reads and the third is an automation locator.
      */
 
     /**
@@ -826,7 +1076,7 @@ public with sharing class OpportunitySelector {
         return [
             SELECT Id, Name, CreatedDate, Offer_Due_Date__c, Call_For_Offers_Received_Date__c,
                    Broker_First_Seen__c, Sale_Process__c, Listing_Broker_Name__c,
-                   Listing_Broker_Email__c, Deal_Room_Link__c
+                   Listing_Broker_Email__c, Deal_Room_Link__c, Offer_Status__c
             FROM Opportunity
             WHERE Offer_Due_Date__c != NULL
               AND IsClosed = FALSE
@@ -863,7 +1113,7 @@ public with sharing class OpportunitySelector {
         List<Opportunity> rows = [
             SELECT Id, Name, CreatedDate, Offer_Due_Date__c, Call_For_Offers_Received_Date__c,
                    Broker_First_Seen__c, Sale_Process__c, Listing_Broker_Name__c,
-                   Listing_Broker_Email__c, Deal_Room_Link__c
+                   Listing_Broker_Email__c, Deal_Room_Link__c, Offer_Status__c
             FROM Opportunity
             WHERE Id = :opportunityId
             WITH USER_MODE
@@ -900,7 +1150,7 @@ public with sharing class OpportunitySelector {
      *   `InboundEmailStagingSelector.RoutingReads` incident, one module later. The remedy then is a
      *   narrow `private without sharing` inner class holding ONLY this query (the
      *   `LeadSelector.GuestReads` shape), never `without sharing` on this class, which backs
-     *   thirteen user-facing reads.
+     *   fifteen user-facing `USER_MODE` reads.
      *
      * ═══ THE CEILING IS A REAL FILTER; THERE IS DELIBERATELY NO FLOOR ═══
      * `Offer_Due_Date__c <= TODAY + 7` is exactly the widest rung of `CallForOffersService`'s
@@ -919,7 +1169,31 @@ public with sharing class OpportunitySelector {
      * that the in-memory ladder then skips, and narrowing it below the widest rung is the only way
      * to break the feature. Whoever adds a rung above 7 must widen this too.
      *
-     * @return A locator over open deals with a deadline inside the ladder, soonest first.
+     * ═══ 🔴 THE `Offer_Status__c` SUPPRESSION, AND THE SOQL NULL TRAP IN IT (2026-08-30) ═══
+     * Once offers are in, or the campaign is closed, there is nothing left to chase, so a deal at
+     * `Submitted` or `Closed` is excluded from the work queue entirely. The filter lives HERE
+     * rather than in the batch because it is a POPULATION filter, not a ladder threshold — the
+     * ladder is `CallForOffersService`'s and stays there — and because excluding a row before
+     * chunking is strictly cheaper than reading it and skipping it.
+     *
+     * 🔴 THE PREDICATE IS WRITTEN AS A TWO-LEGGED OR AND MUST STAY THAT WAY:
+     *     (Offer_Status__c = NULL OR Offer_Status__c NOT IN ('Submitted','Closed'))
+     * The "obvious" single-legged form — `Offer_Status__c NOT IN ('Submitted','Closed')` — is
+     * WRONG AND SILENTLY CATASTROPHIC. SOQL evaluates a `NOT IN` against NULL as UNKNOWN, and an
+     * UNKNOWN row is EXCLUDED. `Offer_Status__c` is new in this change and a picklist `<default>`
+     * does NOT backfill, so on day one EVERY existing deal carries null — the single-legged form
+     * would return ZERO ROWS, the job would log a healthy all-zeros summary, and the entire
+     * call-for-offers alert feature would be dead with nothing anywhere reporting it.
+     * `OpportunitySelectorTest.queryCallForOffersAlerts_stillIncludesNullStatus` is the falsifier
+     * and is the more valuable of the two tests added with this filter.
+     *
+     * ⚠ THE FIELD IS FILTERED ON BUT DELIBERATELY NOT SELECTED. The batch makes no decision from
+     * it — a suppressed deal never reaches the chunk — so selecting it would imply to the next
+     * reader that the ladder consults it. Same reasoning, and the same shape, as
+     * `queryCallForOffersAlerts_doesNotSelectTheReceivedDate` immediately below it in the tests.
+     *
+     * @return A locator over open, non-suppressed deals with a deadline inside the ladder,
+     *         soonest first.
      * @example
      * public Database.QueryLocator start(Database.BatchableContext ctx) {
      *     return OpportunitySelector.queryCallForOffersAlerts();
@@ -934,8 +1208,206 @@ public with sharing class OpportunitySelector {
             WHERE Offer_Due_Date__c != NULL
               AND Offer_Due_Date__c <= :ceiling
               AND IsClosed = FALSE
+              AND (Offer_Status__c = NULL
+                   OR Offer_Status__c NOT IN ('Submitted', 'Closed'))
             WITH SYSTEM_MODE
             ORDER BY Offer_Due_Date__c ASC, Id ASC
+        ]);
+    }
+
+    /**
+     * Every deal count a broker Contact needs, in ONE aggregate: total submissions, wins and
+     * losses, grouped by broker AND by stage. Backs `BrokerCounterRecalcBatch` (design §2 ITEM
+     * 6.2/6.4), which turns these rows into `Contact.Deals_Submitted__c` / `Deals_Won__c` /
+     * `Deals_Lost__c`.
+     *
+     * ═══ ✅ THE JOIN IS EXACT. THERE IS NO EMAIL MATCHING HERE, FUZZY OR OTHERWISE ═══
+     * `BrokerLeaderboardService`'s class header carries a prominent warning that any broker
+     * rollup would need *"Apex plus a fuzzy email match … under which a broker with two
+     * addresses becomes ONE SILENTLY UNDERCOUNTED Contact."* 🔴 **THAT WARNING DOES NOT APPLY
+     * TO THIS METHOD AND MUST NOT BE RE-INHERITED HERE.** It was written about
+     * `Competing_Broker_Submission__c`, whose broker identity is a **Text email with no Contact
+     * lookup at all** — so a Contact rollup off THAT object really would need a match step.
+     * `Opportunity.Broker__c` is a **real Contact lookup**, stamped by `LeadConvertService`
+     * (`o.Broker__c = l.ConvertedContactId`). `GROUP BY Broker__c` is therefore an Id join, and
+     * a broker with two email addresses is one Contact Id here by construction. This query does
+     * not touch `Competing_Broker_Submission__c`.
+     *
+     * ═══ ONE QUERY, TWO GROUPING KEYS — AND THE 2,000-ROW CLIFF THAT SIZES THE BATCH ═══
+     * Grouping by `Broker__c, StageName` answers all three counts from a single aggregate, so
+     * the caller's per-chunk budget stays constant in the number of DEALS. The cost is that the
+     * row count is `|brokers in chunk| × |distinct stages they occupy|`, and an aggregate
+     * assigned to a `List<AggregateResult>` throws above **2,000 rows**.
+     * 🔴 `Opportunity.StageName` has **10 values** (`OpportunityStage.standardValueSet`,
+     * counted 2026-08-31), so a 200-row chunk could produce 2,000 rows — EXACTLY the cliff.
+     * That is why `BrokerCounterRecalcBatch.SCOPE` is **100 and not the inherited 200**; the
+     * arithmetic and the instruction to redo it live in that class's header §1. **Adding an
+     * Opportunity stage narrows that headroom — go read it.**
+     *
+     * ⚠ WINS AND LOSSES ARE NOT FILTERED IN THE QUERY, DELIBERATELY. The predicate is
+     * `Broker__c IN :ids` and nothing else, so a broker with deals at no terminal stage still
+     * returns rows and the caller can tell "0 wins" from "not in this result at all". Adding
+     * `AND StageName IN ('Closed Won','Dead/Pass')` would make the total count unavailable and
+     * cost a second query to get it back.
+     *
+     * ═══ 🔴 TWO KEYWORDS, TWO SEPARATE QUESTIONS — the D25 rule, applied again ═══
+     *
+     * ▸ MODE = `WITH SYSTEM_MODE`, on AUTOMATION-PATH grounds (ARCHITECTURE.md §2), argued at
+     *   this declaration and not borrowed from the four SYSTEM_MODE methods above it. It
+     *   aggregates `Broker__c`, a Metadata-API-deployed custom field, for a nightly scheduling
+     *   principal. Under `USER_MODE` one missing grant does not degrade the count, it THROWS
+     *   `No such column` inside `execute()`, the chunk is swallowed by the batch's fail-soft
+     *   catch, and the job logs an all-zeros pass. See the class header's fifth-entrant note for
+     *   why the failure direction is worse for a reset writer than for the other four.
+     *
+     * ▸ SHARING = `with sharing` (the class keyword), and it is SUFFICIENT — **measured, not
+     *   inherited**. `Opportunity` `InternalSharingModel` was re-queried via the Tooling API
+     *   (`SELECT InternalSharingModel FROM EntityDefinition WHERE DeveloperName = 'Opportunity'`)
+     *   against `usman-dpeg` on **2026-08-31** and returned **`ReadWrite`** (external `Private`).
+     *   Every internal principal already sees every deal, so this aggregate CANNOT under-count a
+     *   broker for a sharing reason and a `without sharing` inner class would widen a boundary
+     *   for no measured cause.
+     *   ⚠ The Item 6 task brief asserted "Opportunity OWD is Private". **That is wrong** — it was
+     *   checked before this method was written, precisely because an under-count here would be
+     *   invisible. Recorded so the claim is not re-adopted from memory.
+     *
+     *   🔴 RESIDUAL, AND IT IS SHARPER FOR THIS CALLER THAN FOR `queryCallForOffersAlerts`. OWD is
+     *   ORG state, not repo state, and standard-object OWD is UI-only so no file here governs it.
+     *   If Opportunity is ever narrowed to Private, this aggregate returns FEWER rows for a
+     *   scheduling principal who owns no deals — and because the caller is a reset writer, that
+     *   does not merely skip an alert, it **writes zeroes over every correct count in the org,
+     *   nightly, with nothing reporting it**. The remedy then is a narrow `private without
+     *   sharing` inner class holding ONLY this query (the `NdaGateReads` shape above), never
+     *   `without sharing` on this class.
+     *
+     * ⚠ TESTED FROM `BrokerCounterRecalcBatchTest`, NOT FROM `OpportunitySelectorTest`. That is a
+     *   deliberate, temporary concession to hub-file contention: this method landed while a
+     *   second developer stream was editing `OpportunitySelectorTest` for design ITEM 4. The
+     *   tests are named `selector_aggregateDealCountsByBroker_*` so they are findable, and moving
+     *   them here once ITEM 4 lands is a safe follow-up.
+     *
+     * @param brokerContactIds Broker Contact Ids to aggregate over (bound with IN); null/empty-safe.
+     * @return AggregateResult rows with aliases `brokerId` (Broker__c), `st` (StageName) and `c`
+     *         (COUNT(Id)); an empty list when the input is null/empty or no deal names any of
+     *         them (never null). A broker with no deals is ABSENT — it is not returned as a zero.
+     * @example
+     * for (AggregateResult ar : OpportunitySelector.aggregateDealCountsByBroker(chunkIds)) {
+     *     Id brokerId = (Id) ar.get('brokerId');
+     *     String stage = (String) ar.get('st');
+     * }
+     */
+    public static List<AggregateResult> aggregateDealCountsByBroker(Set<Id> brokerContactIds) {
+        if (brokerContactIds == null || brokerContactIds.isEmpty()) {
+            return new List<AggregateResult>();
+        }
+        return [
+            SELECT Broker__c brokerId, StageName st, COUNT(Id) c
+            FROM Opportunity
+            WHERE Broker__c IN :brokerContactIds
+            WITH SYSTEM_MODE
+            GROUP BY Broker__c, StageName
+        ];
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // STALLED-DEAL REMINDER (design §2 ITEM 4, 2026-08-31)
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /**
+     * The stalled-deal reminder's WORK QUEUE — every OPEN deal that has been sitting in its stage
+     * long enough to be worth reading. Backs `StageDelayAlertBatch.start`.
+     *
+     * ═══ 🔴 TWO KEYWORDS, TWO SEPARATE QUESTIONS — the D25 rule, applied again ═══
+     *
+     * ▸ MODE = `WITH SYSTEM_MODE`, on AUTOMATION-PATH grounds (ARCHITECTURE.md §2), argued HERE
+     *   rather than borrowed from the five methods above it. The concrete trigger is the same one
+     *   `queryCallForOffersAlerts` records: this query selects `Stage_Alert_Last_Sent_Date__c` and
+     *   `Stage_Alert_Stage__c`, both created in this same change. A Metadata-API-deployed custom
+     *   field arrives with NO field permissions for ANY profile, System Administrator included — so
+     *   under `USER_MODE` this locator would throw `No such column` (which is how the platform
+     *   reports an FLS denial) for the very administrator who deployed it, on day one, and the
+     *   reminder would be silently dead while everything looked shipped. No principal ever asks for
+     *   this read; the scheduler performs it on the team's behalf.
+     *
+     * ▸ SHARING = `with sharing` (the class keyword), and it is SUFFICIENT rather than merely
+     *   inherited. 🔴 THE QUESTION WAS ASKED EXPLICITLY AND MEASURED, NOT ASSUMED, BECAUSE THE
+     *   BRIEF THAT COMMISSIONED THIS METHOD ASSERTED THE OPPOSITE ("Opportunity OWD is Private").
+     *   It is not. `Opportunity` internal OWD is **`ReadWrite`** — read off `usman-dpeg` on
+     *   2026-08-31 via the Tooling API (`EntityDefinition.InternalSharingModel = ReadWrite`,
+     *   `ExternalSharingModel = Private`), which is the same measurement
+     *   `queryCallForOffersAlerts` recorded on 2026-08-14 and it has not moved. Every internal user
+     *   already sees every Opportunity row, so a sharing-filtered read cannot skip deals owned by
+     *   someone else and a `without sharing` inner class would widen a boundary for no measured
+     *   reason.
+     *
+     *   🔴 RESIDUAL, STATED BECAUSE IT IS THIS JOB'S SILENT-FAILURE MODE AND IT IS SHARED WITH THE
+     *   CALL-FOR-OFFERS JOB. OWD is ORG state, not repo state, and standard-object OWD is UI-only
+     *   so no file in this repo governs it. If `Opportunity` is ever narrowed to Private, this
+     *   locator returns ZERO ROWS for a scheduling principal who owns no deals, `finish()` logs an
+     *   all-zeros summary, and that is INDISTINGUISHABLE FROM A HEALTHY PIPELINE with nothing to
+     *   chase — the 2026-08-08 `InboundEmailStagingSelector.RoutingReads` incident, one module
+     *   later. The remedy THEN is a narrow `private without sharing` inner class holding ONLY this
+     *   query (the `LeadSelector.GuestReads` / `NdaSelector.ExpiryAlertReads` shape), never
+     *   `without sharing` on this class, which backs fifteen user-facing `USER_MODE` reads.
+     *
+     * ═══ 🔴 THE CEILING IS A PARAMETER, AND THAT IS THE POINT ═══
+     * `queryCallForOffersAlerts` above has to apologise for a hardcoded `TODAY + 7` because a
+     * `Database.QueryLocator` cannot bind an Apex collection, so it could not read its ladder. That
+     * constraint does NOT apply to a single `Date`. `StageDelayService.locatorCeiling(asOf)`
+     * computes this argument from `Stage_Threshold_Def__mdt`, so **every threshold lives in exactly
+     * one place and this selector holds no number at all.** Do not "simplify" it back into a
+     * literal here.
+     *
+     * ⚠ IT IS A CHEAPNESS BOUND, NOT A CORRECTNESS BOUND. The caller passes the SMALLEST active
+     * threshold — the widest net — and the per-stage decision is made in memory by
+     * `StageDelayService.evaluate`. A deal read here whose stage has a larger threshold is simply
+     * skipped. Widening the ceiling costs rows; narrowing it below the smallest active threshold is
+     * the only way to break the feature.
+     *
+     * ═══ THE TWO FILTERS THAT ARE NOT OPTIONAL ═══
+     * ▸ `IsClosed = FALSE` is the correct expression of "excluding Dead/Pass and Closed Won", and it
+     *   is deliberately NOT a two-value `StageName NOT IN ('Dead/Pass','Closed Won')`. Both stages
+     *   carry `IsClosed = true` (verified against `OpportunityStage` in `usman-dpeg` on 2026-08-31),
+     *   the standard flag survives a future closed stage being added, and — decisively — a
+     *   `NOT IN` against a picklist is the shape that produced the `Offer_Status__c` NULL trap
+     *   documented on `queryCallForOffersAlerts`. `IsClosed` is a Boolean and cannot be null.
+     * ▸ `Stage_Entry_Date__c != NULL` is LOAD-BEARING, not defensive. Every deal that existed before
+     *   Item 2 shipped carries a null entry date until `scripts/backfill-opp-stage-entry-date.apex`
+     *   is run (post-deploy step P4). Without this leg those rows would be read with no anchor;
+     *   `StageDelayService.evaluate` classifies them `NO_ENTRY_DATE` and skips them anyway, so this
+     *   is the cheaper half of one guard held in two places on purpose.
+     *
+     * ⚠ THERE IS DELIBERATELY NO LOWER BOUND. A deal that has been stuck for two years stays in this
+     * locator forever and is skipped in memory, because the marker makes it a no-op after its one
+     * reminder. That costs one row per pass and buys correctness for the deal that has never been
+     * reminded. Same reasoning, same deliberate restraint, as `queryCallForOffersAlerts`.
+     *
+     * ⚠ `Days_In_Stage__c` — the deployed formula field — IS DELIBERATELY NOT SELECTED, even though
+     * it holds the same number. A formula is evaluated per row at QUERY time; `StageDelayService`
+     * evaluates the whole chunk against ONE `asOf` precisely so two deals in one run cannot straddle
+     * midnight. Selecting it would invite a future reader to branch on it and reintroduce that.
+     * The formula's job is the `Delayed_Opportunities` report and the dashboard.
+     *
+     * @param ceiling The latest `Stage_Entry_Date__c` a deal can carry and still possibly be
+     *                delayed — `StageDelayService.locatorCeiling(Date.today())`. Never null; the
+     *                service always returns a date (it falls back to the shipped threshold).
+     * @return A locator over open, anchored deals at or past the widest threshold, longest-stalled
+     *         first.
+     * @example
+     * public Database.QueryLocator start(Database.BatchableContext ctx) {
+     *     return OpportunitySelector.queryStalledDeals(StageDelayService.locatorCeiling(Date.today()));
+     * }
+     */
+    public static Database.QueryLocator queryStalledDeals(Date ceiling) {
+        return Database.getQueryLocator([
+            SELECT Id, Name, StageName, OwnerId, Stage_Entry_Date__c,
+                   Stage_Alert_Last_Sent_Date__c, Stage_Alert_Stage__c
+            FROM Opportunity
+            WHERE IsClosed = FALSE
+              AND Stage_Entry_Date__c != NULL
+              AND Stage_Entry_Date__c <= :ceiling
+            WITH SYSTEM_MODE
+            ORDER BY Stage_Entry_Date__c ASC, Id ASC
         ]);
     }
 }

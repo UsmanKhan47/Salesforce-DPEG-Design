@@ -80,6 +80,11 @@ private class TopDealsControllerTest {
         deals[6].Asking_Price__c = 9000000;
         deals[7].Name = 'Dead Giant';
         deals[7].StageName = 'Dead/Pass';
+        // ⚠ REQUIRED AS OF 2026-08-30. `Rejection_Reason_Required_On_Dead` was tightened to fire
+        // on INSERT as well as on a stage change, and this fixture inserts straight at Dead/Pass.
+        // 'Wrong Market' is present on BOTH surviving Opportunity record types (Land and Retail;
+        // Commercial was deleted 2026-08-30 — re-verified against the surviving files).
+        deals[7].Rejection_Reason__c = 'Wrong Market';
         deals[7].Amount = 800000;
         deals[7].Asking_Price__c = 8000000;
         insert deals;

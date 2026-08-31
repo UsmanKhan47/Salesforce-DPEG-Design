@@ -41,11 +41,17 @@
         (user: "leave it"). The client document's "best and final requirement held alongside
         it" is a decided gap, not an oversight. Do not add the field or a column for it here
         without reopening that decision.
+
+        Offer_Status__c COLUMN ADDED 2026-08-30 (Acquisitions gap-fix, Item 5a/5f). Surfaces
+        the new Open/Submitted/Closed status introduced this same change, right next to the
+        due date it governs - Submitted/Closed rows are the ones OpportunitySelector's alert
+        query now suppresses (see the selector's own header for the SOQL null-trap note).
         =====================================================================================
     -->
     <columns>OPPORTUNITY.NAME</columns>
     <columns>Property_Address__c</columns>
     <columns>Offer_Due_Date__c</columns>
+    <columns>Offer_Status__c</columns>
     <columns>Listing_Broker_Name__c</columns>
     <columns>Listing_Broker_Email__c</columns>
     <columns>OPPORTUNITY.STAGE_NAME</columns>

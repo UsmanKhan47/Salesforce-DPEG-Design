@@ -1040,6 +1040,232 @@ private class OpportunitySelectorTest {
             + 'after Test.stopTest() is restored to pre-test values and would be silently vacuous');
     }
 
+    // ═══════════════════════════════════════════════════════════════════════
+    // queryStalledDeals — the stalled-deal reminder's work queue (design §2 ITEM 4)
+    //
+    // 🔴 THIS IS WHERE THE LOCATOR'S FILTERS ARE OWNED. `StageDelayAlertBatchTest` deliberately
+    // proves none of them: a batch test method executes exactly ONE chunk, so anything the
+    // `ORDER BY` sorts past row 200 is unobservable whether the locator excluded it or merely
+    // deferred it. These tests iterate the locator directly and synchronously, which is the only
+    // way to tell those two apart. One owner per fact.
+    //
+    // ⚠ `Stage_Entry_Date__c` CANNOT BE SEEDED ON INSERT. `OpportunityStageEntryService` runs in
+    // `OpportunityReviewTrigger`'s before contexts and overwrites it with `Date.today()` on every
+    // stage ENTRY, and an insert is an entry. A second save that leaves `StageName` alone is not a
+    // transition, so the aged value written there survives. SYSTEM_MODE because the field is a
+    // Metadata-API-deployed custom that arrives with no FLS for any profile.
+    //
+    // ⚠ The @TestSetup's 251 deals all entered their stage TODAY, so they sit outside every ceiling
+    // used below and never contaminate these assertions.
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /** Every Id the locator actually returns. A locator cannot be asserted on without draining it. */
+    private static Set<Id> idsFromLocator(Database.QueryLocator locator) {
+        Set<Id> found = new Set<Id>();
+        Database.QueryLocatorIterator it = locator.iterator();
+        while (it.hasNext()) {
+            found.add(((Opportunity) it.next()).Id);
+        }
+        return found;
+    }
+
+    /**
+     * One deal at `stage`, aged so it entered that stage `daysAgo` days ago.
+     *
+     * ⚠ THE STAGE IS SET BEFORE INSERT because ten of this object's eleven validation rules are
+     * `ISCHANGED(StageName)`-scoped and therefore false on a first save — which is how
+     * `scripts/seed-pipeline.apex` inserts nine Dead/Pass deals and how any of these fixtures can
+     * exist at a closed stage at all.
+     *
+     * 🔴 `Rejection_Reason_Required_On_Dead` IS THE ONE EXCEPTION AND IT WAS CHECKED RATHER THAN
+     * ASSUMED. It was amended on 2026-08-30 to `OR(ISNEW(), ISCHANGED(StageName))`, so it DOES fire
+     * on insert — an insert straight into Dead/Pass with a blank `Rejection_Reason__c` is blocked.
+     * A reason is therefore set for that one stage. Nothing here reads it; it exists to get past
+     * the rule.
+     */
+    private static Opportunity agedDealAtStage(String stage, Integer daysAgo) {
+        Opportunity opp = TestDataFactory.createOpportunities(1, false)[0];
+        opp.StageName = stage;
+        if (stage == 'Dead/Pass') {
+            opp.Rejection_Reason__c = 'Price Too High';
+        }
+        insert opp;
+        Database.update(new List<Opportunity>{
+            new Opportunity(Id = opp.Id, Stage_Entry_Date__c = Date.today().addDays(-1 * daysAgo))
+        }, true, AccessLevel.SYSTEM_MODE);
+        return opp;
+    }
+
+    @isTest
+    static void queryStalledDeals_excludesDeadPassAndClosedWonViaIsClosed() {
+        // 🔴 THE EXCLUSION THE FEATURE IS SPECIFIED ON, AND THE REASON IT IS WRITTEN AS
+        // `IsClosed = FALSE` RATHER THAN `StageName NOT IN ('Dead/Pass','Closed Won')`. Both stages
+        // carry IsClosed = true (verified against OpportunityStage in usman-dpeg, 2026-08-31); the
+        // standard flag survives a future closed stage being added, and a `NOT IN` against a
+        // picklist is the exact shape that produced the `Offer_Status__c` NULL trap documented on
+        // `queryCallForOffersAlerts`. All three deals below are aged identically, so stage is the
+        // only variable.
+        Opportunity open = agedDealAtStage('Under Review', 60);
+        Opportunity dead = agedDealAtStage('Dead/Pass', 60);
+        Opportunity won = agedDealAtStage('Closed Won', 60);
+
+        Test.startTest();
+        Set<Id> found = idsFromLocator(
+            OpportunitySelector.queryStalledDeals(Date.today().addDays(-14))
+        );
+        Test.stopTest();
+
+        Assert.isTrue(found.contains(open.Id), 'An OPEN deal stalled for 60 days is the whole point');
+        Assert.isFalse(found.contains(dead.Id),
+            'A Dead/Pass deal is closed and must never be chased — nobody is going to un-kill it '
+            + 'because a reminder arrived');
+        Assert.isFalse(found.contains(won.Id),
+            'and neither is a Closed Won deal, which has nowhere left to go');
+    }
+
+    @isTest
+    static void queryStalledDeals_excludesUnBackfilledDealsWithNoStageEntryDate() {
+        // 🔴 `Stage_Entry_Date__c != NULL` IS LOAD-BEARING, NOT DEFENSIVE. Every deal that existed
+        // before Item 2 shipped carries a null anchor until `scripts/backfill-opp-stage-entry-date.apex`
+        // is run (post-deploy step P4). Dropping this leg would pull the entire un-backfilled back
+        // catalogue into the work queue on day one.
+        Opportunity anchored = agedDealAtStage('New', 60);
+        Opportunity unanchored = agedDealAtStage('New', 60);
+        Database.update(new List<Opportunity>{
+            new Opportunity(Id = unanchored.Id, Stage_Entry_Date__c = null)
+            }, true, AccessLevel.SYSTEM_MODE);
+
+        Test.startTest();
+        Set<Id> found = idsFromLocator(
+            OpportunitySelector.queryStalledDeals(Date.today().addDays(-14))
+        );
+        Test.stopTest();
+
+        Assert.isTrue(found.contains(anchored.Id), 'An anchored stalled deal is selected');
+        Assert.isFalse(found.contains(unanchored.Id),
+            'A deal with no anchor cannot be measured and is excluded before it is ever read');
+    }
+
+    @isTest
+    static void queryStalledDeals_appliesTheCallersCeilingButDeliberatelyNoFloor() {
+        // The ceiling is a PARAMETER, computed by `StageDelayService.locatorCeiling` from Custom
+        // Metadata — which is what keeps every threshold in one place and leaves this selector
+        // holding no number at all. Proved by moving the ceiling and nothing else.
+        //
+        // ⚠ AND THERE IS DELIBERATELY NO LOWER BOUND. A deal stuck for two years stays in this
+        // locator forever and is skipped in memory by the marker. That costs one row per pass and
+        // buys correctness for the deal that has never been reminded.
+        Opportunity tenDays = agedDealAtStage('New', 10);
+        Opportunity twentyDays = agedDealAtStage('New', 20);
+        Opportunity twoYears = agedDealAtStage('New', 730);
+
+        Test.startTest();
+        Set<Id> at14 = idsFromLocator(
+            OpportunitySelector.queryStalledDeals(Date.today().addDays(-14))
+        );
+        Set<Id> at5 = idsFromLocator(
+            OpportunitySelector.queryStalledDeals(Date.today().addDays(-5))
+        );
+        Test.stopTest();
+
+        Assert.isFalse(at14.contains(tenDays.Id), 'Ten days is inside a 14-day ceiling, so unread');
+        Assert.isTrue(at14.contains(twentyDays.Id), 'twenty days is past it');
+        Assert.isTrue(at14.contains(twoYears.Id),
+            'and a two-year-old deal is STILL read — there is no floor, on purpose');
+        Assert.isTrue(at5.contains(tenDays.Id),
+            'Widening the ceiling to 5 days pulls the 10-day deal in, which is the whole '
+            + 'mechanism by which a smaller configured threshold reaches more deals');
+    }
+
+    @isTest
+    static void queryStalledDeals_ordersLongestStalledFirst() {
+        // The ordering is what makes a single SCOPE-sized chunk the WORST offenders rather than an
+        // arbitrary 200. A locator with no ORDER BY would pass every other test in this class.
+        Opportunity recent = agedDealAtStage('New', 20);
+        Opportunity ancient = agedDealAtStage('New', 400);
+
+        Test.startTest();
+        List<Id> ordered = new List<Id>();
+        Database.QueryLocatorIterator it =
+            OpportunitySelector.queryStalledDeals(Date.today().addDays(-14)).iterator();
+        while (it.hasNext()) {
+            ordered.add(((Opportunity) it.next()).Id);
+        }
+        Test.stopTest();
+
+        Assert.isTrue(ordered.indexOf(ancient.Id) < ordered.indexOf(recent.Id),
+            'The oldest entry date sorts first, so the most-stalled deals fill the first chunk');
+    }
+
+    @isTest
+    static void queryStalledDeals_selectsEveryFieldTheBatchReadsAndNoFormula() {
+        // 🔴 A LOCATOR THAT OMITS A FIELD DEPLOYS GREEN AND THROWS `SObject row was retrieved via
+        // SOQL without querying the requested field` at RUNTIME, inside a scheduled job, where the
+        // only symptom is a failed AsyncApexJob nobody is watching. Reading all six off a real row
+        // is the cheapest way to make that a compile-time-ish failure instead.
+        //
+        // ⚠ It also pins the DELIBERATE OMISSION of `Days_In_Stage__c`. The formula is evaluated
+        // per row at QUERY time; `StageDelayService` evaluates a whole chunk against ONE `asOf`
+        // precisely so two deals in one run cannot straddle midnight. Selecting the formula would
+        // invite a future reader to branch on it and reintroduce that.
+        Opportunity deal = agedDealAtStage('New', 60);
+
+        Test.startTest();
+        Database.QueryLocatorIterator it =
+            OpportunitySelector.queryStalledDeals(Date.today().addDays(-14)).iterator();
+        Opportunity row = null;
+        while (it.hasNext()) {
+            Opportunity candidate = (Opportunity) it.next();
+            if (candidate.Id == deal.Id) {
+                row = candidate;
+            }
+        }
+        Test.stopTest();
+
+        Assert.isNotNull(row, 'precondition: the aged deal is in the work queue');
+        Assert.isNotNull(row.Name, 'Name — the notification body names the deal');
+        Assert.isNotNull(row.StageName, 'StageName — the threshold lookup and the marker snapshot');
+        Assert.isNotNull(row.OwnerId, 'OwnerId — the owner rides the same notification send');
+        Assert.isNotNull(row.Stage_Entry_Date__c, 'the anchor');
+        // Reading the two markers must not throw even though they are null on a fresh deal.
+        Assert.isNull(row.Stage_Alert_Last_Sent_Date__c, 'the marker date, selected and blank');
+        Assert.isNull(row.Stage_Alert_Stage__c, 'and the marker snapshot, selected and blank');
+
+        Boolean formulaWasSelected = true;
+        try {
+            Decimal ignored = row.Days_In_Stage__c;
+        } catch (SObjectException e) {
+            formulaWasSelected = false;
+        }
+        Assert.isFalse(formulaWasSelected,
+            'Days_In_Stage__c is DELIBERATELY not selected — the decision belongs to '
+            + 'StageDelayService, evaluated once per chunk against one clock');
+    }
+
+    @isTest
+    static void queryStalledDeals_costsOneQueryAtBulkRegardlessOfPopulation() {
+        // The locator itself is one query however many rows it will chunk over. Measured inside the
+        // transaction — `Limits.*` read after `Test.stopTest()` is restored to pre-test values and
+        // would be silently vacuous.
+        Set<Id> ids = new Map<Id, Opportunity>([SELECT Id FROM Opportunity]).keySet();
+        Assert.areEqual(BULK_N, ids.size(), 'precondition: the 251-row setup is in place');
+
+        Test.startTest();
+        Integer before = Limits.getQueries();
+        Database.QueryLocator locator =
+            OpportunitySelector.queryStalledDeals(Date.today().addDays(-14));
+        Integer used = Limits.getQueries() - before;
+        Test.stopTest();
+
+        Assert.isNotNull(locator, 'A locator is returned');
+        Assert.areEqual(1, used,
+            'ONE query for the whole population, however many rows it will chunk over. ⚠ MEASURED '
+            + '2026-08-31 rather than assumed: Database.getQueryLocator DOES consume a SOQL query '
+            + 'unit (an earlier version of this assertion expected 0 and went red). It ALSO '
+            + 'consumes one of the 5 query locators per transaction, which is the reason start() '
+            + 'must never build more than one');
+    }
+
     private static User buildStandardUser() {
         Profile standard = [SELECT Id FROM Profile WHERE Name = 'Standard User' LIMIT 1];
         String unique = 'oppsel' + System.currentTimeMillis();

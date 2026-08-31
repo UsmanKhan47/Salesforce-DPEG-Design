@@ -239,14 +239,33 @@ force-app/main/default/objects/WorkTypeGroupMember/**
 # `recordTypes` directory NODE itself, and per gitignore semantics a negation cannot re-include a
 # path whose parent directory was already excluded; the negated recordTypes files simply never
 # appeared in the deploy's file list, with no error at all (confirmed via the dry-run's own
-# `files` array, not assumed). The fix below sidesteps negation entirely: ignore ONLY the known-
-# broken `fields/**` subfolder directly, and leave `Account/Account.object-meta.xml` and
-# `Account/recordTypes/**` un-ignored by simply never matching them - Account has no other
-# subfolders today (verified: `fields/` and `recordTypes/` are the only two). Do not widen this
-# to a blanket `Account/**` again without first resolving the eleven field-level errors above,
-# and do not assume `!`-negation will rescue a path buried under a `dir/**` ignore elsewhere in
-# this file without re-testing against a live dry-run first.
-force-app/main/default/objects/Account/fields/**
+# `files` array, not assumed).
+#
+# Account/fields/** NARROWED FURTHER 2026-08-30 (Acquisitions gap-fix, Item 6.1). The blanket
+# `Account/fields/**` line above was itself silently dropping every field under Account/fields -
+# not just the eleven broken standard-field stubs it was written to hide, but also the THREE NEW
+# roll-up summaries this build adds (Total_Deals_Submitted__c, Deals_Won__c, Deals_Lost__c). Same
+# shape as the Case fix below: narrow to the ELEVEN NAMED broken files rather than the whole
+# directory, so new custom fields on Account can deploy going forward. The eleven are listed
+# individually below, matching the names recorded in the paragraph above verbatim. Un-ignoring
+# the remaining ~23 stock Account/fields/*.field-meta.xml files is expected to be safe and inert
+# (Bucket B's own rationale: "already exist in the org, with ZERO DPEG customization" - these are
+# stock field declarations matching the org, so they deploy as `Unchanged`), mirroring the
+# Case/fields/** precedent immediately below, where un-ignoring 35 pre-existing stubs surfaced
+# exactly one failure. NOT verified against a live dry-run this session (deployment is blocked,
+# MCP CONNECT_TIMEOUT, D3) - the next deploy of this tree MUST read the dry-run's own `files`
+# array before trusting a green result, per that same precedent.
+force-app/main/default/objects/Account/fields/ChannelProgramLevelName.field-meta.xml
+force-app/main/default/objects/Account/fields/ChannelProgramName.field-meta.xml
+force-app/main/default/objects/Account/fields/CleanStatus.field-meta.xml
+force-app/main/default/objects/Account/fields/DandbCompanyId.field-meta.xml
+force-app/main/default/objects/Account/fields/DunsNumber.field-meta.xml
+force-app/main/default/objects/Account/fields/IsCustomerPortal.field-meta.xml
+force-app/main/default/objects/Account/fields/IsPartner.field-meta.xml
+force-app/main/default/objects/Account/fields/NaicsCode.field-meta.xml
+force-app/main/default/objects/Account/fields/NaicsDesc.field-meta.xml
+force-app/main/default/objects/Account/fields/Tradestyle.field-meta.xml
+force-app/main/default/objects/Account/fields/YearStarted.field-meta.xml
 
 # Case (2026-08-22, FSD v1.1 AR build): the blanket objects/Case/** ignore was removed so the
 # Delinquency record type, fields, business process and layout can deploy. Doing that un-ignored

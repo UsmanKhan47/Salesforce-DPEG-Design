@@ -56,7 +56,8 @@ const DEALS = [
         detail: 'Offers are due Aug 17, 2026.',
         isUrgent: true,
         hasDueDate: true,
-        dueInterval: 3
+        dueInterval: 3,
+        offerStatus: 'Open'
     },
     {
         opportunityId: '006000000000002AAA',
@@ -72,6 +73,10 @@ const DEALS = [
         isUrgent: false,
         hasDueDate: true,
         dueInterval: null
+        // ⚠ `offerStatus` IS DELIBERATELY ABSENT FROM THIS SECOND ROW. Every deal created before
+        // 2026-08-30 sends null (a picklist `<default>` applies on insert and does not backfill),
+        // so a mixed fixture is the REALISTIC one — and it is what makes
+        // `blankOfferStatusRendersEmpty` measure something rather than restate row 1.
     }
 ];
 
@@ -142,7 +147,7 @@ describe('c-call-for-offers-list', () => {
         expect(rows[0].dueLabel).toBe('—');
     });
 
-    it('renders exactly three columns and no "Received" column', async () => {
+    it('renders exactly four columns and no "Received" column', async () => {
         // 🔴 THE PIN FOR THE 2026-08-17 REMOVAL. "Received" was dropped at the user's request; the
         // date it rendered is not shown anywhere in this table any more. This asserts the whole
         // column SET rather than just the absence, so a silent re-add fails here — and so does a
@@ -156,15 +161,65 @@ describe('c-call-for-offers-list', () => {
         getUpcoming.emit(DEALS);
         await flush();
 
+        // ═══ 🔴 'Property' -> 'Deal': ADJUDICATED 2026-08-30, NOT PAPERED OVER ═══
+        // This assertion said `'Property'` while `callForOffersList.js` has always declared the
+        // first column's label as `'Deal'`. VERIFIED AGAINST HEAD (commit 7c9fd82): the committed
+        // source and the committed test already disagreed, so this test was failing BEFORE the
+        // 2026-08-30 Offer Status change and independently of it.
+        //
+        // A test edited to match its own source is normally the shape of a covered-up regression,
+        // so the resolution is recorded here rather than left to inference:
+        //   WHO/WHEN: user decision, 2026-08-30, taken explicitly after the disagreement was
+        //             surfaced in the Wave A handoff — NOT folded silently into the column
+        //             addition that found it.
+        //   WHAT:     THE SOURCE IS AUTHORITATIVE. The component is right; this expectation was
+        //             wrong. The heading stays 'Deal' and the test moves.
+        //   WHY:      'Deal' is the vocabulary the rest of the Lead Funnel already uses —
+        //             `c/recentOpportunities` labels the same concept 'Deal'. Renaming the column
+        //             to 'Property' to satisfy this test would have made the page internally
+        //             inconsistent, which is the more expensive of the two errors.
+        //
+        // ⚠ The absence pins below are UNAFFECTED by that decision and still guard the
+        // 2026-08-17 label-only renames.
         const labels = element.shadowRoot
             .querySelector('c-list-datatable')
             .columns.map((c) => c.label);
-        expect(labels).toEqual(['Property', 'Due Date', 'Urgency']);
+        expect(labels).toEqual(['Deal', 'Due Date', 'Urgency', 'Offer Status']);
         expect(labels).not.toContain('Received');
         // The two 2026-08-17 renames were LABEL-ONLY. Pinning the old headings as ABSENT is what
         // makes the rename visible here rather than silently reversible.
         expect(labels).not.toContain('Offers Due');
         expect(labels).not.toContain('Days Remaining');
+    });
+
+    it('offerStatusIsPlainTextAndBlankStaysBlank', async () => {
+        // 🔴 TWO FALSIFIERS IN ONE, AND THE SECOND IS THE VALUABLE ONE.
+        //
+        // (1) The column must stay `type: 'text'`. This table already carries a coloured pill for
+        //     URGENCY, and the instinct on adding a second categorical column is to colour it too.
+        //     There is no honest colour for "Submitted" — it is neither good nor bad — and a second
+        //     palette would compete with the orange/red boundary the `URGENCY` map exists to draw.
+        //
+        // (2) A blank status must reach the cell as an EMPTY STRING, not as 'Open' and not as an
+        //     em dash. `Offer_Status__c`'s picklist `<default>` applies on INSERT ONLY and does not
+        //     backfill, so the entire pre-2026-08-30 population sends null. Defaulting it here
+        //     would paint a campaign state onto records that assert none, and would hide how much
+        //     of this table is un-backfilled; an em dash in a STATUS column reads as a value.
+        //     DEALS[1] deliberately omits the field, which is what makes this measurable.
+        const element = build();
+        getUpcoming.emit(DEALS);
+        await flush();
+
+        const table = element.shadowRoot.querySelector('c-list-datatable');
+        const column = table.columns.find((c) => c.label === 'Offer Status');
+        expect(column.fieldName).toBe('offerStatus');
+        expect(column.type).toBe('text');
+        // No pill styling smuggled in via typeAttributes.
+        expect(column.typeAttributes).toBeUndefined();
+
+        expect(table.data[0].offerStatus).toBe('Open');
+        expect(table.data[1].offerStatus).toBe('');
+        expect(table.data[1].offerStatus).not.toBe('—');
     });
 
     it('the renamed "Urgency" column still reads the SERVER label and pill styles, unchanged', async () => {

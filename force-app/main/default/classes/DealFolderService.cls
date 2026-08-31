@@ -46,6 +46,19 @@
  *      by hand every time the set changes. Here it is one `Set<String>` and one `contains` pair,
  *      and it is `@TestVisible`.
  *
+ * ⚠ THE SEVENTH ROUTE ABOVE — "the Dead/Pass two-save recovery" — WAS NARROWED ON 2026-08-30, AND
+ * IS QUOTED RATHER THAN EDITED SO THE COUNT AND THE ARGUMENT STILL READ AS WRITTEN. It is still a
+ * live route, from ranks 1–7. It NO LONGER EXISTS FROM `Closed Won`: the new validation rule
+ * `objects/Opportunity/validationRules/Dead_Pass_Not_Allowed_From_Closed_Won.validationRule-meta.xml`
+ * blocks `Closed Won -> Dead/Pass` outright (user decision 2026-08-30, reaffirmed after the
+ * consequence was stated — `Closed Won` now has no in-app exit at all and a wrongly-closed deal
+ * needs an admin data fix). NOTHING IN THIS CLASS CHANGES: `Closed Won` is not in `CLAIM_STAGES`,
+ * so a route that used to leave `Closed Won` and re-enter a claim stage two saves later is a route
+ * this class no longer needs to defend against — the argument for Apex is if anything unaffected,
+ * because the six other routes are untouched and the SET is what makes the count irrelevant.
+ * 🔴 DO NOT "CORRECT" THE COUNT TO SIX. The route survives from every non-closed stage; only its
+ * `Closed Won` origin is gone.
+ *
  * ═══ 🔴 THE NEVER-THROW RULE — THE HARDEST CONSTRAINT IN THIS CLASS ═══
  * `ensureOnClaimStageEntry` MUST NOT THROW A CATCHABLE EXCEPTION, under any input, ever. A
  * SharePoint problem rolling back a stage advance is strictly worse than a missing folder: the
