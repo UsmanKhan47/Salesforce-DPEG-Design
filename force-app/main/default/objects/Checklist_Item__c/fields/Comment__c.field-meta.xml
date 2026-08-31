@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Comment__c</fullName>
+    <description>Free-text notes on this item, replacing Task.Description. Long text is stored separately from the row, so selecting it costs more than the rest of the record combined - do not add it to a list-view selector or a bulk rollup query. WARNING for anyone writing tests against it: long text fields STRIP TRAILING WHITESPACE on save in this org, so a composed string does not survive a DML round trip byte for byte and an equality assertion on one will fail for a reason the message does not explain.</description>
+    <inlineHelpText>Notes about this item. Trailing blank lines are removed when the record is saved.</inlineHelpText>
+    <label>Comment</label>
+    <length>4000</length>
+    <trackTrending>false</trackTrending>
+    <type>LongTextArea</type>
+    <visibleLines>5</visibleLines>
+</CustomField>

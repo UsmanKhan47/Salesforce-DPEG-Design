@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Due_Date__c</fullName>
+    <description>When this item is due, computed at fan-out as Transaction__c.Contract_Executed_Date__c plus Transaction_Task_Def__mdt.Due_Day_Offset__c. PARITY FIELD replacing Task.ActivityDate: without it Transaction__c.Tasks_Overdue__c and the Overdue Tasks report have no source at all and would report zero overdue on every deal forever. Date, not DateTime - the offsets are whole days and no time of day is ever meaningful here.</description>
+    <inlineHelpText>Date this item is due, calculated from the contract execution date plus the offset in the checklist definition.</inlineHelpText>
+    <label>Due Date</label>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>Date</type>
+</CustomField>

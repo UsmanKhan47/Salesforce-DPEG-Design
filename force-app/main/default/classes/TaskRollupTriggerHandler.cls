@@ -9,6 +9,21 @@
  *      checklist Task changes.
  *   2. THE COMPLETION STAMP. In the BEFORE contexts, sets or clears
  *      `Task.Onboarding_Completed_Date__c` — see `OnboardingTaskDomain`.
+ *   3. THE WIRE-FRAUD PREREQUISITE GATE (added 2026-08-31, Phase 0 of the Transaction
+ *      FSD gap closure). In BEFORE UPDATE only, refuses a checklist Task that is
+ *      transitioning into a completed status while the Task named by its
+ *      `Blocked_By__c` is still open — B3 behind B2, I8 behind I7 — and maintains the
+ *      denormalised `Is_Prerequisite_Met__c` that backs the validation-rule backstop.
+ *      See `TaskPrerequisiteService`; all of the reasoning lives in that header.
+ *      In BEFORE INSERT it CLAMPS ONLY (`clampOnInsert`) — no sibling lookup, because
+ *      that would add `ceil(rows/200)` SOQL to the Day-0 fan-out cascade for a check
+ *      that finds nothing; the insert REFUSAL comes from the validation rule reading
+ *      the clamped value. That arithmetic is spelled out at `enforceOnUpdate`.
+ *      🔴 INERT FOR ONBOARDING AND FOR EVERY OTHER TASK IN THE ORG: one blank check on
+ *      `Blocked_By__c` (two in before update, `new` and `old`), then an early return —
+ *      no query, no DML. Only two Tasks per Transaction ever carry the field.
+ *      ⚠ PHASE 0 IS DELIBERATELY TEMPORARY and is discarded when the
+ *      `Checklist_Item__c` model lands (design §10, M5). Do not build on it.
  *
  * Checklist Tasks relate to their parent via `Transaction_Deal__c` /
  * `Onboarding__c` (not `WhatId`), so they stay off the Activity timeline.
@@ -54,10 +69,17 @@ public with sharing class TaskRollupTriggerHandler extends TriggerHandler {
 
     protected override void beforeInsert() {
         OnboardingTaskDomain.stampCompletion((List<Task>) newList, null);
+        // Clamp only — no sibling lookup on insert. One blank check per Task, zero queries; the
+        // arithmetic for why the lookup is update-only is at TaskPrerequisiteService.enforceOnUpdate.
+        TaskPrerequisiteService.clampOnInsert((List<Task>) newList);
     }
 
     protected override void beforeUpdate() {
         OnboardingTaskDomain.stampCompletion((List<Task>) newList, (Map<Id, Task>) oldMap);
+        // Return value deliberately discarded: the refusals are applied to the records via
+        // addError inside the service, and the map exists only so a unit test can assert the
+        // decision without depending on addError outside a trigger. See that method's Javadoc.
+        TaskPrerequisiteService.enforceOnUpdate((List<Task>) newList, (Map<Id, Task>) oldMap);
     }
 
     protected override void afterInsert() {

@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PermissionSet xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        This comment sits INSIDE the root element deliberately - a comment placed ABOVE
+        <PermissionSet> breaks `sf` at source conversion with "unable to find matching parent xml
+        file" (recurring trap in this repo, see DPEG_Task_Edit and Wire__c's validation rule).
+
+        WHY THIS SET EXISTS (2026-08-31, wire-fraud prerequisite gate, THIRD code-review pass). The
+        SAME review that flipped Blocked_By__c / Transaction_Deal__c / Task_Group__c /
+        Task_Sequence__c to editable=false on DPEG_Task_Edit (both Task.* and Event.*) also created
+        this set as the admin-only escape hatch for the three legitimate operations that need
+        editable=true on those exact four fields despite the lockdown - see
+        Transaction_Prereq_Override.customPermission-meta.xml for the full narrative. In order:
+          1. scripts/backfill-task-blocked-by.apex - runs as ANONYMOUS APEX, which enforces the
+             running user's own FLS (AccessLevel.SYSTEM_MODE is unavailable in anonymous Apex, and
+             there is no `without sharing` there either - see that script's own precondition 2). The
+             runner must hold THIS set in addition to DPEG_Task_Edit.
+          2. The M5 migration's mass key-clear - the documented retirement path for this whole
+             Phase-0 control once Checklist_Item__c replaces Task (design doc §7/§10).
+          3. Phase 1's Blocked_By_Sequence__c renumbering, and repair of a mis-fanned deal whose key
+             is wrong but still RESOLVABLE to a real row (a wrong key is not automatically exempt
+             from TaskPrerequisiteService's refusal - only an unresolvable one is; see that class's
+             header).
+
+        🔴 DELIBERATELY NOT A MEMBER OF DPEG_Transaction_Team, AND NOT ADDED TO DPEG_Admin_Access.
+        Every field this set grants exists specifically so the working Transaction team CANNOT edit
+        it (that is the entire point of the lockdown this set is the escape hatch for) - adding this
+        set to that group would silently reopen every bypass the lockdown just closed. It was not
+        added to DPEG_Admin_Access either: that file was modified by a CONCURRENT SESSION (a
+        Disposition tranche) at 18:33 on 2026-08-31, the same day this was written, and remains
+        uncommitted in this working tree. A PermissionSet deploy REPLACES its entire
+        fieldPermissions set rather than merging, so editing that file here risked either shipping
+        that session's undeployed work prematurely or silently discarding it - exactly the class of
+        collision agent-output/ has already recorded once for a hub file. This is a standalone set
+        instead, assigned DIRECTLY to the individuals who run the backfill / migration / repair (an
+        org action, not deployable metadata - deploying this set grants nobody anything until it is
+        assigned).
+
+        WHY IT ALSO CARRIES readable=true (not editable-only). A permission set field grant with
+        editable=true and no readable entry is invalid FLS - editable implies and requires readable
+        (sf-permission-set skill, Step 3). Both are set true for the same four fields on both
+        Task.* and Event.* here, mirroring the shape those fields already carry on DPEG_Task_Edit
+        before this change.
+
+        WHY EVENT.* IS INCLUDED TOO, EVEN THOUGH THE THREE OPERATIONS ABOVE ONLY TOUCH TASK ROWS.
+        A field declared under objects/Activity/fields/ applies to BOTH Task and Event, and
+        DPEG_Task_Edit's own paired-entries convention (every Activity custom field gets a
+        Task.* AND an Event.* fieldPermissions block, even where only one sObject is ever actually
+        written) is followed here for the same reason: a PermissionSet deploy replaces the WHOLE
+        fieldPermissions set, so a future actual need on the Event side is never silently
+        unrepresented because this set only covered half the object family.
+
+        NO customPermissions OTHER THAN Transaction_Prereq_Override, NO classAccesses, NO
+        objectPermissions. This set authorizes exactly one thing: FLS on four identity fields, gated
+        by the one custom permission TaskPrerequisiteService checks before honouring an identity-
+        field change on an open row. It intentionally does not also grant Transaction_Task_Actions
+        or Transaction_Stage_Actions - a principal needing this override does not automatically need
+        those, and bundling them would make this set's own audit trail (who can bypass the
+        prerequisite gate) harder to read.
+    -->
+    <label>Transaction Prereq Override Access</label>
+    <description>Admin-only escape hatch for the wire-fraud prerequisite gate: FLS on the four checklist identity fields plus Transaction_Prereq_Override. For the backfill script, M5 migration and Phase 1 key repair only - never assign to DPEG_Transaction_Team.</description>
+    <hasActivationRequired>false</hasActivationRequired>
+    <customPermissions>
+        <enabled>true</enabled>
+        <name>Transaction_Prereq_Override</name>
+    </customPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Event.Blocked_By__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Event.Task_Group__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Event.Task_Sequence__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Event.Transaction_Deal__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Task.Blocked_By__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Task.Task_Group__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Task.Task_Sequence__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Task.Transaction_Deal__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+</PermissionSet>

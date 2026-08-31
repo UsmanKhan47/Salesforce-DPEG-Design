@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Is_Prerequisite_Met__c</fullName>
+    <defaultValue>false</defaultValue>
+    <description>Denormalised backstop for the wire-fraud prerequisite gate, mirroring the semantics already proven on Task.Is_Prerequisite_Met__c. A validation rule cannot read a sibling record, so this field is what lets a rule evaluate the prerequisite even under SYSTEM_MODE, which the trigger path alone does not stop. SEMANTICS, deliberately identical to the Phase 0 field: false by default INCLUDING for items with no prerequisite, stamped only by the before-update gate, and clamped to false on insert for any item carrying Blocked_By__c because defaultValue applies only when the field is ABSENT from the payload and a loader supplying true would otherwise satisfy the rule outright. NO VALIDATION RULE SHIPS IN PHASE 1: with no handler maintaining this field, a rule keyed on it would refuse every completion in the org. The rule lands in Phase 2, in the same change as the handler.</description>
+    <inlineHelpText>System-maintained. True only when this item prerequisite is already complete. Do not edit directly.</inlineHelpText>
+    <label>Is Prerequisite Met</label>
+    <type>Checkbox</type>
+</CustomField>

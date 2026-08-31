@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Stage__c</fullName>
+    <description>The deal phase this checklist group belongs to. The four values are BYTE-IDENTICAL to the first four values of Transaction__c.Stage__c, including the hyphen in Post-Closing - not the Closing and Post Closing spellings the LWC and the FlexiPage tabs currently use. Anything else makes a cross-object report join impossible. Closed is deliberately absent: no task group belongs to the terminal stage. NO DEFAULT VALUE, deliberately - a plausible default would hide a fan-out that failed to stamp the phase, whereas a blank is visible.</description>
+    <inlineHelpText>Deal phase this group belongs to. Stamped when the checklist is created from the group definition.</inlineHelpText>
+    <label>Stage</label>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>Picklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>Open Contract</fullName>
+                <default>false</default>
+                <label>Open Contract</label>
+            </value>
+            <value>
+                <fullName>Due Diligence</fullName>
+                <default>false</default>
+                <label>Due Diligence</label>
+            </value>
+            <value>
+                <fullName>Closing Prep</fullName>
+                <default>false</default>
+                <label>Closing Prep</label>
+            </value>
+            <value>
+                <fullName>Post-Closing</fullName>
+                <default>false</default>
+                <label>Post-Closing</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>

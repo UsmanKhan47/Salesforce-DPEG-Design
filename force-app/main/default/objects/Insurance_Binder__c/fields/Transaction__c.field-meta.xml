@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Transaction__c</fullName>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <description>The deal this binder covers. LOOKUP with required=false and deleteConstraint=SetNull for the same reason as Loan__c.Transaction__c: a required lookup forces Restrict and would make every Transaction carrying a binder permanently undeletable, removing the only cheap rollback path a migration has.</description>
+    <inlineHelpText>The deal this insurance binder covers. Normally set automatically when the binder is created from the deal.</inlineHelpText>
+    <label>Transaction</label>
+    <referenceTo>Transaction__c</referenceTo>
+    <relationshipLabel>Insurance Binders</relationshipLabel>
+    <relationshipName>Insurance_Binders</relationshipName>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>Lookup</type>
+</CustomField>

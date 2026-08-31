@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Verification_Phone__c</fullName>
+    <description>Phone number used to verbally verify the wiring instructions - independently looked up, NEVER taken from the email that carried the instructions, which is the entire point of the control. Migrated from Task.Verification_Phone__c, which is Text(40); typed as Phone here for formatting consistency with Wire__c.Verifier_Phone__c. Phone is stored as text, so the migration is a straight copy.</description>
+    <inlineHelpText>The number you dialled to verify, looked up independently. Never use a number supplied in the wire instruction email.</inlineHelpText>
+    <label>Verification Phone Number</label>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>Phone</type>
+</CustomField>

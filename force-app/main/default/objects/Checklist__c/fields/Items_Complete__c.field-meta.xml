@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Items_Complete__c</fullName>
+    <description>Count of items in this group whose Flag__c is Completed or Verified. Apex-maintained for the same reasons recorded on Items_Total__c. NOTE THE TWO-VALUE TEST: because Flag__c is the single lossy picklist the business chose, done means Completed OR Verified, and a rollup written against Completed alone silently undercounts every verified item.</description>
+    <inlineHelpText>Number of items in this group already completed or verified. Recalculated automatically; do not edit.</inlineHelpText>
+    <externalId>false</externalId>
+    <label>Items Complete</label>
+    <precision>3</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

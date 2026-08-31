@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Carrier_Name__c</fullName>
+    <description>Name of the insurance carrier, as free text. Named _Name__c and not Carrier__c for the same reason as Lender_Name__c: the naming convention reserves an object-shaped name for a lookup, and no Carrier__c object exists.</description>
+    <inlineHelpText>Name of the insurance company issuing the binder.</inlineHelpText>
+    <externalId>false</externalId>
+    <label>Carrier Name</label>
+    <length>255</length>
+    <required>false</required>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>

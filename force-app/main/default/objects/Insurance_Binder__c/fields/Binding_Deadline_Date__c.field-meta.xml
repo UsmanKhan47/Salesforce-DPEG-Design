@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Binding_Deadline_Date__c</fullName>
+    <description>Date coverage must be bound by. Feeds the Insurance Binding critical date, which is already a valid Critical_Date__c.Type__c value. NOTE THE _Date__c SUFFIX: it is required by the naming convention, and the existing Transaction__c.Feasibility_Deadline__c deviates from that rule. Do not copy the deviation onto new fields.</description>
+    <inlineHelpText>Deadline for binding coverage. Feeds the Insurance Binding critical date on the deal.</inlineHelpText>
+    <label>Binding Deadline Date</label>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>Date</type>
+</CustomField>

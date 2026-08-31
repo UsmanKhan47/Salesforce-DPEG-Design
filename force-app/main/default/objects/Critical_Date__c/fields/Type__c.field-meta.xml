@@ -1,6 +1,28 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+      THIS COMMENT IS INSIDE THE ROOT ELEMENT ON PURPOSE - a comment ABOVE the root breaks sf at
+      source conversion with a misleading parent-xml error.
+
+      Contract Executed WAS ADDED HERE (GATE-B2). The auto-create service projects four dates from
+      the deal: Contract Executed, Earnest Money Due, Feasibility End and Closing Date. Three of
+      those already had a value; Contract Executed did not.
+
+      THIS VALUE MUST DEPLOY BEFORE ANY APEX THAT WRITES IT. The value set is restricted=true, and
+      restricted picklists ARE enforced by Apex DML on this org - measured four separate times,
+      including on LOI__c.Stage__c and Contract_Review__c.Negotiation_Status__c. Writing an absent
+      value raises INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST; it is not coerced and it is not a
+      warning. Deploying the Apex first therefore produces a runtime failure that no compile and no
+      dry run catches.
+
+      APPENDED AT THE END, NOT INSERTED IN CHRONOLOGICAL POSITION. The existing order is already
+      non-chronological (Closing Date is first), sorted is false, and no Path or record type reads
+      this field, so ordering carries no behaviour here. Appending keeps the diff to one block and
+      leaves the five existing values byte-identical.
+    -->
     <fullName>Type__c</fullName>
+    <description>Which deadline this critical date represents. Restricted, and paired with the parent Transaction it forms the idempotency key the auto-create service uses, so one deal carries at most one row per type and a re-run heals rather than duplicates. Contract Executed was added 2026-08-31 for the checklist rewrite - see the XML comment in this file for the deploy-order constraint that comes with it.</description>
+    <inlineHelpText>Which deadline this row represents. One row per type per deal; the projection service keeps the date pinned to the matching field on the deal.</inlineHelpText>
     <label>Type</label>
     <required>false</required>
     <trackTrending>false</trackTrending>
@@ -33,6 +55,11 @@
                 <fullName>Earnest Money Due</fullName>
                 <default>false</default>
                 <label>Earnest Money Due</label>
+            </value>
+            <value>
+                <fullName>Contract Executed</fullName>
+                <default>false</default>
+                <label>Contract Executed</label>
             </value>
         </valueSetDefinition>
     </valueSet>

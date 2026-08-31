@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Stage__c</fullName>
+    <description>The deal phase this group belongs to. Moves the phase mapping out of the hardcoded PHASES map in transactionTaskGroups.js and into data: Open Contract covers A and B, Due Diligence covers C D E F G H and H2, Closing Prep covers I, Post-Closing covers J. FREE TEXT, NOT A PICKLIST - a Custom Metadata Type field cannot reference another object value set, which is the same constraint Stage_Threshold_Def__mdt.Stage_Value__c already records. The value must match Transaction__c.Stage__c EXACTLY, including the hyphen in Post-Closing, and NOT the Closing or Post Closing spellings the LWC and the FlexiPage tabs use today. A mismatch is rejected at DML by the restricted picklist on the checklist, not silently coerced.</description>
+    <inlineHelpText>Deal phase this group belongs to. Must match the deal Stage value exactly, for example Post-Closing with the hyphen.</inlineHelpText>
+    <externalId>false</externalId>
+    <fieldManageability>DeveloperControlled</fieldManageability>
+    <label>Stage</label>
+    <length>40</length>
+    <required>false</required>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>

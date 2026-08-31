@@ -1,12 +1,45 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+      THIS COMMENT IS INSIDE THE ROOT ELEMENT ON PURPOSE - a comment ABOVE the root breaks sf at
+      source conversion with a misleading parent-xml error.
+
+      RELAXED 2026-08-31 (GATE-B3): deleteConstraint Restrict to SetNull, and required true to
+      false. Both halves are one change, not two - a REQUIRED lookup cannot carry SetNull, because
+      the platform would have to null a field it also requires. Restrict is only reachable from
+      required=true.
+
+      WHY. With Restrict, a Transaction that has ANY Critical Date cannot be deleted, ever. Today
+      only a demo seed script creates these rows, so the blast radius is small and it already bites:
+      the delete in scripts/seed-transactions.apex throws on a rebuilt org for exactly this reason.
+      Auto-creating critical dates on every deal would make DELETE_FAILED the default for every
+      Transaction in the org and would remove the only cheap rollback a botched migration has -
+      delete the deal and re-fan it.
+
+      🔴 THE CONSEQUENCE THAT IS EASY TO MISS, AND IT IS AN FLS ONE. A required field is
+      NON-PERMISSIONABLE: it cannot appear in a permission set fieldPermissions block, and that is
+      why no DPEG permission set grants this field today. Making it optional turns it into an
+      ordinary permissionable field, and a permissionable custom field with no FieldPermissions row
+      is INVISIBLE - reads raise "No such column", which is an FLS denial wearing a schema error.
+      DPEG_Checklist_Edit therefore grants it. Every OTHER permission set that grants
+      Critical_Date__c object access needs the same grant in the same deploy; those are hub files a
+      concurrent session is editing, so they are raised as a hub request rather than edited here.
+
+      ⚠ WHAT WAS DELIBERATELY NOT DONE. No validation rule requiring the lookup ships with this
+      change. Whether a SetNull cascade evaluates validation rules could not be measured this
+      session (no org access), and a rule that DOES fire on the cascade would re-create the
+      undeletable-parent defect with a worse error message than Restrict gave. Presence is enforced
+      by the single service that creates these rows. Add the rule only after measuring the cascade.
+    -->
     <fullName>Transaction__c</fullName>
-    <deleteConstraint>Restrict</deleteConstraint>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <description>The deal this critical date belongs to. Optional at the platform level with SetNull on purpose so a Transaction carrying critical dates stays deletable and a botched migration stays reversible; presence is enforced by the service that creates the rows, not by a required flag. See the XML comment in this file before changing either attribute - they move together.</description>
+    <inlineHelpText>The deal this critical date belongs to. Normally set automatically when the date is projected from the deal.</inlineHelpText>
     <label>Transaction</label>
     <referenceTo>Transaction__c</referenceTo>
     <relationshipLabel>Critical Dates</relationshipLabel>
     <relationshipName>Critical_Dates</relationshipName>
-    <required>true</required>
+    <required>false</required>
     <trackTrending>false</trackTrending>
     <type>Lookup</type>
 </CustomField>

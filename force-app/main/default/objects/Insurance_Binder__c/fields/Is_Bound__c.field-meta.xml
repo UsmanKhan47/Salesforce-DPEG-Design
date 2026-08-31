@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Is_Bound__c</fullName>
+    <description>True once Bound_Date__c is populated. A FORMULA, not a stored checkbox, so it cannot drift from the date it summarises - a stored flag would need a trigger and would be wrong for exactly as long as nobody noticed. Must be granted editable=false in every permission set; editable=true on a formula field fails the deploy.</description>
+    <inlineHelpText>Ticked automatically once a bound date is recorded. It is derived and cannot be edited.</inlineHelpText>
+    <label>Is Bound</label>
+    <type>Checkbox</type>
+    <formula><![CDATA[NOT(ISBLANK(Bound_Date__c))]]></formula>
+    <formulaTreatBlanksAs>BlankAsBlank</formulaTreatBlanksAs>
+</CustomField>

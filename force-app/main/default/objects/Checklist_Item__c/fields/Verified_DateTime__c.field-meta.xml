@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Verified_DateTime__c</fullName>
+    <description>Timestamp the verbal wire verification was logged. Migrated from Task.Verified_At__c and RENAMED to the canonical form, matching Wire__c.Verified_DateTime__c so the two sides of a wire read alike. NOTE FOR THE MIGRATION: Wire__c carries a validation rule refusing a Verified_DateTime__c more than about one minute from NOW, so historical values cannot be loaded onto Wire__c. That rule is object-scoped to Wire__c and does NOT apply here, so historical checklist evidence migrates cleanly - do not add an equivalent rule to this object without re-reading that constraint.</description>
+    <inlineHelpText>Date and time the verbal verification call was logged. Set automatically when verification is recorded.</inlineHelpText>
+    <label>Verified DateTime</label>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>DateTime</type>
+</CustomField>

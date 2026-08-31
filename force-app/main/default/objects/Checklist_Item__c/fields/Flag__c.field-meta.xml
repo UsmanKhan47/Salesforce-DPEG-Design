@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Flag__c</fullName>
+    <description>The single status column the FSD specifies: None, CRITICAL, Verified, Completed. SHIPPED AS ONE PICKLIST BY EXPLICIT BUSINESS DECISION, against the design recommendation to split severity from state. KNOWN AND ACCEPTED CONSEQUENCE: completing a critical item overwrites CRITICAL, so this field can only answer which critical items are still open and can never answer how many a deal had. Reports needing severity must use Is_Critical__c; the open-wire-risk count must use Is_Wire_Verification__c. Done means Completed OR Verified - a rollup or report written against Completed alone silently undercounts every verified item.</description>
+    <inlineHelpText>Status of this item. CRITICAL marks an open high-risk item; it is replaced by Completed or Verified once the item is worked.</inlineHelpText>
+    <label>Flag</label>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>Picklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>None</fullName>
+                <default>true</default>
+                <label>None</label>
+            </value>
+            <value>
+                <fullName>CRITICAL</fullName>
+                <default>false</default>
+                <label>CRITICAL</label>
+            </value>
+            <value>
+                <fullName>Verified</fullName>
+                <default>false</default>
+                <label>Verified</label>
+            </value>
+            <value>
+                <fullName>Completed</fullName>
+                <default>false</default>
+                <label>Completed</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>

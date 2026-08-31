@@ -444,6 +444,127 @@ private class TransactionActionPermissionServiceTest {
         insert new PermissionSetAssignment(AssigneeId = assigneeId, PermissionSetId = permSetId);
     }
 
+    // ═════════════════════════════════════════════════════════════════════════════════════════
+    // PREREQUISITE OVERRIDE GATE (added 2026-08-31) — the third, independent token.
+    // ═════════════════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * A bare Minimum-Access user holds neither `Transaction_Prereq_Override` nor "Modify All Data",
+     * so the wire-fraud disarm refusal applies to them — which is the whole point of the gate.
+     *
+     * 🔴 AND THE BOUNDARY THAT MATTERS MOST FOR THIS TOKEN: it is asked from inside a BEFORE-UPDATE
+     * TRIGGER, in the same transaction as the TASK gate on every checklist completion. If the two
+     * shared a cache, every `Transaction_Task_Actions` holder would silently inherit the override.
+     * The second half asserts the two answers are independent within one transaction.
+     */
+    @isTest
+    static void hasPrereqOverrideAccess_bareUser_isDeniedAndDoesNotShareTheTaskGateCache() {
+        User bareUser = buildStandardUser('tapsPO');
+        insert bareUser;
+
+        Test.startTest();
+        Boolean overrideAllowed;
+        Boolean taskAllowed;
+        TransactionActionPermissionService.clearCache();
+        System.runAs(bareUser) {
+            // Ask the TASK gate first, so a shared cache would have answered the override gate too.
+            taskAllowed = TransactionActionPermissionService.hasTaskActionAccess();
+            overrideAllowed = TransactionActionPermissionService.hasPrereqOverrideAccess();
+        }
+        TransactionActionPermissionService.clearCache();
+        Test.stopTest();
+
+        Assert.isFalse(overrideAllowed,
+            'A user with no Transaction_Prereq_Override grant and no "Modify All Data" must not be '
+            + 'able to disarm a live wire-fraud gate');
+        Assert.isFalse(taskAllowed,
+            'Control: the task gate denies this user too, so the assertion above is not being '
+            + 'carried by an unexpectedly permissive runner');
+    }
+
+    /**
+     * The administrator bypass, which for THIS token is the primary route rather than a fallback:
+     * the M5 mass key-clear, Phase 1 renumbering and wrong-but-resolvable key repair are all run
+     * from anonymous Apex or a script, where no permission set may be assigned.
+     *
+     * Also pins the cache: a second ask must return the memoized answer rather than recomputing.
+     */
+    @isTest
+    static void hasPrereqOverrideAccess_administrator_isAllowedAndMemoized() {
+        Test.startTest();
+        TransactionActionPermissionService.clearCache();
+        Boolean first = TransactionActionPermissionService.hasPrereqOverrideAccess();
+        Boolean second = TransactionActionPermissionService.hasPrereqOverrideAccess();
+        Test.stopTest();
+
+        Assert.isTrue(first,
+            'PREMISE: the test runner is an administrator, so "Modify All Data" grants the override '
+            + 'even though Transaction_Prereq_Override may not be deployed yet. If this failed, the '
+            + 'runner is not an admin — that is the cause, not a defect.');
+        Assert.isTrue(second, 'and the memoized second ask agrees');
+        Assert.areEqual(true, TransactionActionPermissionService.cachedHasPrereqOverrideAccess,
+            'The answer is cached for the transaction — this gate is asked from a trigger, so an '
+            + 'uncached repeat would put its bypass query on every disarm attempt in the chunk');
+    }
+
+    /**
+     * A permission-machinery fault PROPAGATES rather than being swallowed as a denial, and leaves
+     * the cache empty so the next ask re-evaluates. Mirrors the two sibling gates exactly.
+     *
+     * ⚠ Propagation is the correct direction even though this gate runs inside a before trigger: a
+     * swallowed fault would read as "no override", silently refusing the M5 retirement path with no
+     * diagnosis. A thrown one is loud. The seam is deliberately behind the free custom-permission
+     * check, so this cannot fire on the happy path.
+     */
+    @isTest
+    static void hasPrereqOverrideAccess_machineryFault_propagatesAndLeavesCacheEmpty() {
+        User bareUser = buildStandardUser('tapsPOF');
+        insert bareUser;
+
+        Test.startTest();
+        Boolean threw = false;
+        TransactionActionPermissionService.clearCache();
+        System.runAs(bareUser) {
+            TransactionActionPermissionService.simulateLookupFailure = true;
+            try {
+                TransactionActionPermissionService.hasPrereqOverrideAccess();
+                Assert.fail('A permission-machinery fault must PROPAGATE, not be swallowed as a denial');
+            } catch (QueryException e) {
+                threw = true;
+            }
+        }
+        Assert.isNull(TransactionActionPermissionService.cachedHasPrereqOverrideAccess,
+            'A thrown fault must leave the cache EMPTY so the next ask re-evaluates rather than '
+            + 'memoizing a fault as an answer');
+        TransactionActionPermissionService.clearCache();
+        Test.stopTest();
+
+        Assert.isTrue(threw, 'hasPrereqOverrideAccess propagates a machinery fault');
+    }
+
+    /**
+     * `clearCache` must clear ALL THREE caches. Added with the third gate because a cache added
+     * without a matching line in `clearCache` is invisible until a `runAs` test starts returning the
+     * previous user's answer — which is precisely the class of bug this whole file exists to prevent.
+     */
+    @isTest
+    static void clearCache_clearsAllThreeGateCaches() {
+        Test.startTest();
+        TransactionActionPermissionService.hasTransactionActionAccess();
+        TransactionActionPermissionService.hasTaskActionAccess();
+        TransactionActionPermissionService.hasPrereqOverrideAccess();
+        Assert.isNotNull(TransactionActionPermissionService.cachedHasPrereqOverrideAccess,
+            'Precondition: all three asked, so all three cached');
+
+        TransactionActionPermissionService.clearCache();
+        Test.stopTest();
+
+        Assert.isNull(TransactionActionPermissionService.cachedHasTransactionActionAccess, 'stage cleared');
+        Assert.isNull(TransactionActionPermissionService.cachedHasTaskActionAccess, 'task cleared');
+        Assert.isNull(TransactionActionPermissionService.cachedHasPrereqOverrideAccess,
+            'override cleared — the line most likely to be forgotten when a fourth gate is added');
+    }
+
     /**
      * Builds (but does not insert) a bare Standard User.
      * @param tag short per-test token keeping Username unique across methods in one run

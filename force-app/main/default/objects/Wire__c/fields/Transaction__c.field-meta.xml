@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+      trackHistory=true, CONFIRMED LIVE, 2026-08-31. Same finding as Wire_Type__c on this same
+      object (see that file's identical comment) - this field IS tracked and always was. Tooling
+      API `CustomField`/`FieldDefinition` (`IsFieldHistoryTracked = true`) confirms all 9 of
+      Wire__c's custom fields, this one included.
+      🔴 DO NOT READ FIELD HISTORY STATE OVER REST `FieldDefinition` - IT IS FLS-FILTERED AND OMITS
+      ROWS RATHER THAN RETURNING false. An earlier pass here wrongly concluded this field had
+      silently stopped tracking (a "same-deploy trackHistory silently drops" theory) because a REST
+      `FieldDefinition` query didn't return it - disproven and withdrawn. The running user simply
+      lacked FLS on this field at query time; the Tooling API (not FLS-filtered) returns the true
+      state. An absent row from REST `FieldDefinition` means "caller cannot see this field," never
+      "this field is untracked."
+    -->
+    <fullName>Transaction__c</fullName>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <description>The Transaction this wire belongs to, for acquisition earnest-money and closing wires. ADDITIVE: the existing Disposition__c lookup, the six verification evidence fields and the Verified_DateTime_Not_Backdatable rule are untouched, and a wire carries one parent or the other, never both. SAFE AGAINST THE DISPOSITION SIDE: relationshipName is unique per TARGET object, so Wires here does not collide with the Wires relationship Disposition__c already uses. The Wire_Verification_Rollup flow filters on Disposition__c not null, so a Transaction-parented wire never enters it - verify that filter by readback after any change to that flow.</description>
+    <inlineHelpText>The deal this wire belongs to. Leave blank on disposition wires, which use the Disposition field instead.</inlineHelpText>
+    <label>Transaction</label>
+    <referenceTo>Transaction__c</referenceTo>
+    <relationshipLabel>Wires</relationshipLabel>
+    <relationshipName>Wires</relationshipName>
+    <required>false</required>
+    <trackHistory>true</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Lookup</type>
+</CustomField>

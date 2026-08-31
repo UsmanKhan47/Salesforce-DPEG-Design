@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Blocked_By_Sequence__c</fullName>
+    <description>Sequence number of the definition that must be completed before this one, within the group named by Blocked_By_Group_Letter__c (blank means this row own group). Blank means no prerequisite. Seeds Checklist_Item__c.Blocked_By__c at fan-out: B3 points at B2, I8 points at I7. THIS IS THE WHOLE POINT OF THE COLUMN - the Phase 0 gate on Task carries that pair map hardcoded in TaskFanoutService AND repeated in a backfill script, so adding a third prerequisite pair today means a code change in two places. With this column it becomes a definition edit and a loader re-run.</description>
+    <inlineHelpText>Sequence of the item that must be completed first, for example 2 on the B3 row. Leave blank when this item has no prerequisite.</inlineHelpText>
+    <externalId>false</externalId>
+    <fieldManageability>DeveloperControlled</fieldManageability>
+    <label>Blocked By Sequence</label>
+    <precision>3</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

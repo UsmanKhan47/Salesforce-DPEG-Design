@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Auto_Payment_Status__c</fullName>
+    <description>State of the automatic loan payment setup. Backs the two items the business flags as CRITICAL and frequently missed - F12 during closing prep and J4 post-closing at the lender bank. Suffixed Status__c per the naming convention because it expresses current state and does not drive a Path. Failed exists so a broken mandate is visible rather than silently indistinguishable from never set up.</description>
+    <inlineHelpText>Whether the automatic loan payment has been set up at the lender. Failed means a mandate was attempted and rejected.</inlineHelpText>
+    <label>Auto Payment Status</label>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>Picklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>Not Set Up</fullName>
+                <default>true</default>
+                <label>Not Set Up</label>
+            </value>
+            <value>
+                <fullName>Requested</fullName>
+                <default>false</default>
+                <label>Requested</label>
+            </value>
+            <value>
+                <fullName>Active</fullName>
+                <default>false</default>
+                <label>Active</label>
+            </value>
+            <value>
+                <fullName>Failed</fullName>
+                <default>false</default>
+                <label>Failed</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>

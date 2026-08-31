@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Is_Critical__c</fullName>
+    <defaultValue>false</defaultValue>
+    <description>Marks a definition row as CRITICAL. Seeds Checklist_Item__c.Is_Critical__c at fan-out on the four live items B2, F12, I7 and J4. THIS COLUMN EXISTS TO KILL A STRING PARSE: the current model derives criticality from a regex over the subject that requires the token to sit inside parentheses, and a naive backfill matching a bare substring wrongly flags A4 (Receive critical dates from title company) and A5 (Log critical dates into Salesforce deal record). Seeding from this column removes the regex, the parentheses rule and both false positives at once.</description>
+    <inlineHelpText>Tick for definition rows the business treats as critical. Drives the CRITICAL flag on every checklist item created from this row.</inlineHelpText>
+    <fieldManageability>DeveloperControlled</fieldManageability>
+    <label>Is Critical</label>
+    <type>Checkbox</type>
+</CustomField>

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Term_Months__c</fullName>
+    <description>Loan term in months. The unit is in the name, as the naming convention requires - a bare Term__c would be ambiguous between months and years and the two differ by a factor of twelve in every downstream calculation.</description>
+    <inlineHelpText>Length of the loan in months, for example 120 for a ten year term.</inlineHelpText>
+    <externalId>false</externalId>
+    <label>Term (Months)</label>
+    <precision>3</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Is_Wire_Verification__c</fullName>
+    <defaultValue>false</defaultValue>
+    <description>MARKS THE TWO ANTI-FRAUD WIRE VERIFICATION ITEMS, B2 and I7, seeded from Transaction_Task_Def__mdt.Is_Wire_Verification__c. THIS IS WHAT Transaction__c.Wire_Open_Risks__c COUNTS after cutover and it is MANDATORY, not optional. It replaces the Subject.toLowerCase().contains(anti-fraud) string parse in TaskRollupService, which fails silently in the unsafe direction: when the subject wording changes the count reads 0 and the Wire Sentinel dashboard reports no open wire risk on every deal, with no error anywhere. Because the business chose a single lossy Flag__c picklist, the count CANNOT be derived from Flag__c - completing a wire item erases the CRITICAL value that would have identified it.</description>
+    <inlineHelpText>Ticked on the two anti-fraud wire verification items. Drives the open wire risk count on the deal.</inlineHelpText>
+    <label>Is Wire Verification</label>
+    <type>Checkbox</type>
+</CustomField>

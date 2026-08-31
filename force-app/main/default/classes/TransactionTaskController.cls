@@ -155,6 +155,13 @@ public with sharing class TransactionTaskController {
     public static void setTaskStatus(Id taskId, Boolean done) {
         try {
             TransactionTaskService.setTaskStatus(taskId, done);
+        } catch (TaskPrerequisiteService.PrerequisiteNotMetException e) {
+            // Phase 0 wire-fraud gate (Story 28). User-actionable rule violation — surface the
+            // guidance verbatim, exactly as completeWireVerification does for WireVerificationException.
+            // WITHOUT THIS BRANCH the generic message below tells the user to "refresh the page and
+            // try again", which can never work: refreshing does not complete the anti-fraud
+            // verification. The message this throws names the step they actually need to finish.
+            throw ahe(e.getMessage());
         } catch (Exception e) {
             System.debug(LoggingLevel.ERROR, 'TransactionTaskController.setTaskStatus on ' + taskId
                 + ': ' + e.getMessage() + ' | ' + e.getStackTraceString());
@@ -165,12 +172,16 @@ public with sharing class TransactionTaskController {
     /**
      * Completes a regular task and persists the optional notes/comments captured in the
      * confirm dialog to the task's Description (Comments). Blank notes leave any existing
-     * comments untouched.
+     * comments untouched. A Phase 0 wire-fraud prerequisite refusal is surfaced verbatim; any other
+     * failure gets the generic message.
      */
     @AuraEnabled
     public static void completeTask(Id taskId, String notes) {
         try {
             TransactionTaskService.completeTask(taskId, notes);
+        } catch (TaskPrerequisiteService.PrerequisiteNotMetException e) {
+            // Phase 0 wire-fraud gate (Story 28) — surfaced verbatim. See setTaskStatus above.
+            throw ahe(e.getMessage());
         } catch (Exception e) {
             System.debug(LoggingLevel.ERROR, 'TransactionTaskController.completeTask on ' + taskId
                 + ': ' + e.getMessage() + ' | ' + e.getStackTraceString());

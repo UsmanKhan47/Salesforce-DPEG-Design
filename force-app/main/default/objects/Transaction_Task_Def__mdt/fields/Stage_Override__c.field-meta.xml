@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Stage_Override__c</fullName>
+    <description>Per-item deal phase, overriding the phase on this row group. BLANK MEANS INHERIT FROM Task_Group_Def__mdt.Stage__c, which is the normal case for all 82 rows today - every current item takes its phase from its group. The column exists so a single item that belongs to a different phase than its group can be expressed as data instead of a special case in the fan-out. Free text, because a Custom Metadata Type field cannot reference another object picklist, so the value must match Transaction__c.Stage__c EXACTLY including the hyphen in Post-Closing; a typo produces an invalid restricted-picklist value and the insert is rejected at DML, not coerced.</description>
+    <inlineHelpText>Leave blank to inherit the phase from the group. Only set it when one item belongs to a different phase, and match the deal Stage value exactly.</inlineHelpText>
+    <externalId>false</externalId>
+    <fieldManageability>DeveloperControlled</fieldManageability>
+    <label>Stage Override</label>
+    <length>40</length>
+    <required>false</required>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>

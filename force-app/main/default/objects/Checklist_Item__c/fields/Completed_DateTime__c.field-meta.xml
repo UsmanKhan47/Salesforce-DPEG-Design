@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Completed_DateTime__c</fullName>
+    <description>When this item was completed. DATETIME, AND NAMED FOR IT. The requirement says completed-date, but the value it replaces is Task.LastModifiedDate, a Datetime, and the wire verification modal renders a time - so a Date would lose information the control depends on. The naming convention forbids suffixing a DateTime field with Date, which is exactly the trap this field name avoids.</description>
+    <inlineHelpText>Date and time this item was completed. Set automatically; do not edit.</inlineHelpText>
+    <label>Completed DateTime</label>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>DateTime</type>
+</CustomField>

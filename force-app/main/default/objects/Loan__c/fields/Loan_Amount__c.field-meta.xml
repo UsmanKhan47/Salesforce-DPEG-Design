@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Loan_Amount__c</fullName>
+    <description>Total principal of the loan. Suffixed Amount because the naming convention requires a currency field name to make its unit unambiguous - a bare Loan__c or Principal__c would not say whether it is a total, a rate or a periodic payment.</description>
+    <inlineHelpText>Total loan principal in the deal currency.</inlineHelpText>
+    <label>Loan Amount</label>
+    <precision>18</precision>
+    <required>false</required>
+    <scale>2</scale>
+    <trackTrending>false</trackTrending>
+    <type>Currency</type>
+</CustomField>

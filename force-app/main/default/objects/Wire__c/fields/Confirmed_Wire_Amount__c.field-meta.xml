@@ -6,5 +6,6 @@
     <required>false</required>
     <scale>2</scale>
     <trackTrending>false</trackTrending>
+    <trackHistory>true</trackHistory>
     <type>Currency</type>
 </CustomField>

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Transaction__c</fullName>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <description>The deal this loan finances. LOOKUP with required=false and deleteConstraint=SetNull, NOT required=true. A required lookup forces deleteConstraint=Restrict, which is precisely why Critical_Date__c makes its Transaction undeletable and why the seed scripts throw on a rebuilt org. Presence is enforced by the service that creates the record; if a hard rule is ever wanted use a validation rule, never the required flag, which would also make this field non-permissionable.</description>
+    <inlineHelpText>The deal this loan finances. Normally set automatically when the loan is created from the deal.</inlineHelpText>
+    <label>Transaction</label>
+    <referenceTo>Transaction__c</referenceTo>
+    <relationshipLabel>Loans</relationshipLabel>
+    <relationshipName>Loans</relationshipName>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>Lookup</type>
+</CustomField>

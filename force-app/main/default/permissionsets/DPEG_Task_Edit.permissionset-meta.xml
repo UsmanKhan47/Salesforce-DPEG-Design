@@ -6,11 +6,46 @@
          PermissionSet deploy REPLACES its whole fieldPermissions set rather than merging, shipping the
          repo as-is would have silently revoked that org grant. The repo file must always be a superset
          of the org before it ships. -->
+    <!--
+        2026-08-31, THIRD wire-fraud code-review pass — Blocked_By__c, Transaction_Deal__c,
+        Task_Group__c and Task_Sequence__c FLIPPED editable=true -> false (both Event.* and Task.*).
+        Three rounds of review found four distinct bypasses of Prerequisite_Must_Be_Met_To_Complete,
+        all the same family: the gate's state (Blocked_By__c) lives on the record it protects, and
+        every working persona held editable=true on the fields that let it be repointed or defeated -
+        blank the key; repoint the key to something already complete; repoint Transaction_Deal__c to
+        a different deal whose prerequisite is already Completed (one DML statement, no Apex
+        involved); or renumber the PREREQUISITE's own Task_Sequence__c so the key stops resolving,
+        clear it, then complete. Every one of those needs an editable=true grant on ordinary
+        Task-Edit FLS - this closes the UI, list-view inline edit, Data Loader and REST-as-user paths
+        for all four in one change.
+        DOES NOT STOP: system-mode Apex or a system-context Flow (FLS is not evaluated there) - the
+        developer agent is adding a code-level deal-scope check as defence in depth for that gap.
+        VERIFIED BEFORE FLIPPING (per code review's explicit checklist): grepped every consumer of
+        Blocked_By__c / Transaction_Deal__c / Task_Group__c / Task_Sequence__c across
+        force-app/main/default/{classes,lwc,flows,flexipages} - every writer is Apex
+        (TaskFanoutService.fanOutNow, which writes `Database.insert(toInsert, true,
+        AccessLevel.SYSTEM_MODE)` - unaffected by FLS). ZERO LWCs (including transactionTaskGroups,
+        transactionPhaseCards, transactionChecklistSummary) or Flows reference any of these four
+        fields at all, so there is no `lightning-record-edit-form` silently dropping them on a
+        success toast - the historical failure mode this repo has already paid for once. Confirmed by
+        grep, not assumed.
+        BREAKS scripts/backfill-task-blocked-by.apex, WHICH RUNS AS ANONYMOUS APEX AND THEREFORE
+        ENFORCES THE RUNNING USER'S FLS. That is expected and intentional, not a regression to
+        silently work around - see Transaction_Prereq_Override_Access.permissionset-meta.xml, the
+        admin-only escape hatch created in the same pass, which the backfill runner (and the M5
+        migration, and any Phase 1 repair of a resolvable-but-wrong key) must hold in addition to
+        this set.
+    -->
     <customPermissions>
         <enabled>true</enabled>
         <name>Transaction_Task_Actions</name>
     </customPermissions>
     <description>Create/read/update standard Tasks, no delete. Task has no custom fields and no OWD/sharing of its own - row access to non-owned tasks derives from the Activity model plus Read/Write sharing on the parent Transaction.</description>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Event.Blocked_By__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
         <field>Event.Blocked_Reason__c</field>
@@ -37,6 +72,11 @@
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
+        <editable>false</editable>
+        <field>Event.Is_Prerequisite_Met__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
         <editable>true</editable>
         <field>Event.Onboarding_Status__c</field>
         <readable>true</readable>
@@ -52,7 +92,7 @@
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
-        <editable>true</editable>
+        <editable>false</editable>
         <field>Event.Task_Group__c</field>
         <readable>true</readable>
     </fieldPermissions>
@@ -62,12 +102,12 @@
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
-        <editable>true</editable>
+        <editable>false</editable>
         <field>Event.Task_Sequence__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
-        <editable>true</editable>
+        <editable>false</editable>
         <field>Event.Transaction_Deal__c</field>
         <readable>true</readable>
     </fieldPermissions>
@@ -99,6 +139,11 @@
     <fieldPermissions>
         <editable>true</editable>
         <field>Task.ActivityDate</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Task.Blocked_By__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -137,6 +182,11 @@
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
+        <editable>false</editable>
+        <field>Task.Is_Prerequisite_Met__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
         <editable>true</editable>
         <field>Task.Source_System__c</field>
         <readable>true</readable>
@@ -147,7 +197,7 @@
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
-        <editable>true</editable>
+        <editable>false</editable>
         <field>Task.Task_Group__c</field>
         <readable>true</readable>
     </fieldPermissions>
@@ -157,12 +207,12 @@
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
-        <editable>true</editable>
+        <editable>false</editable>
         <field>Task.Task_Sequence__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
-        <editable>true</editable>
+        <editable>false</editable>
         <field>Task.Transaction_Deal__c</field>
         <readable>true</readable>
     </fieldPermissions>

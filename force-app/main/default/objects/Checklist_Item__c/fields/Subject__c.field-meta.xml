@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Subject__c</fullName>
+    <description>The task text, for example Call title company to verbally verify wiring instructions (anti-fraud). Named Subject__c to match Transaction_Task_Def__mdt.Subject__c and the Task.Subject it replaces, which keeps the migration mapping 1 to 1. Length 255 gives headroom over the CMDT source, which is 120. NOTHING MAY BRANCH ON THIS TEXT. The current model derives criticality and wire status by regex over this string and reads zero silently when the wording changes; Is_Critical__c and Is_Wire_Verification__c exist so that never happens again.</description>
+    <inlineHelpText>What has to be done for this checklist line. Wording comes from the checklist definition.</inlineHelpText>
+    <externalId>false</externalId>
+    <label>Subject</label>
+    <length>255</length>
+    <required>false</required>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>

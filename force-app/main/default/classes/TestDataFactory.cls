@@ -825,8 +825,16 @@ public with sharing class TestDataFactory {
                 CloseDate = Date.today().addDays(90),
                 Amount = 1000000 + (i * 1000),
                 Deal_Type__c = 'Retail',
-                // Opportunity.Asset_Type__c uses 'Retail Strip'; Lead/Property use 'Retail'.
-                Asset_Type__c = 'Retail Strip',
+                // ALL THREE Asset_Type__c VALUE SETS ARE NOW ALIGNED (Gap 1, 2026-08-31). This
+                // comment used to read "Opportunity.Asset_Type__c uses 'Retail Strip'; Lead/
+                // Property use 'Retail'" — that divergence was the defect and it is gone.
+                // Lead's 8 == Opportunity's 8 (Retail, Land, Industrial, Office, Multifamily,
+                // Mixed-Use, Hospitality, Medical Office), and Property__c carries those 8 plus
+                // C-Store and Storage, so Lead ⊂ Opportunity ⊂ Property. A literal here that is
+                // not on the Opportunity set is REFUSED by DML (restricted picklist) and reds
+                // most of the suite, so change it only in step with the field and BOTH
+                // Opportunity record-type blocks.
+                Asset_Type__c = 'Retail',
                 Asking_Price__c = 1000000 + (i * 1000),
                 Guidance_Cap_Rate__c = 6.5
             ));
@@ -1176,7 +1184,7 @@ public with sharing class TestDataFactory {
      * Review, so the moment a deal legitimately carried a Primary_Contract__c the rule correctly
      * refused the synthetic write with FIELD_CUSTOM_VALIDATION_EXCEPTION ("Contract Executed Date
      * can only be set once the PSA is Executed"). THE RULE IS RIGHT AND THE HELPER WAS WRONG: a
-     * hand-typed execution date produces a Day-0 checklist whose ~75 deadlines are all silently
+     * hand-typed execution date produces a Day-0 checklist whose 82 deadlines are all silently
      * mis-dated, which is exactly what that rule exists to prevent.
      *
      * The fix reaches the state HONESTLY: executePrimaryContracts() below drives each deal's own
@@ -1275,10 +1283,13 @@ public with sharing class TestDataFactory {
      * (NOT WhatId) so they stay off the Activity timeline, and they fire
      * TaskRollupTrigger.
      *
-     * NOTE: this method does not cap `count`. TaskFanoutService fans out ~75 Tasks
-     * per Transaction; 251 Transactions x 75 = 18,825 rows against the 10,000
-     * DML-rows limit. That break is a genuine Phase 7 finding — the factory
-     * deliberately does not paper over it by shrinking the fan-out.
+     * NOTE: this method does not cap `count`. TaskFanoutService fans out 82 Tasks
+     * per Transaction (82 Transaction_Task_Def__mdt rows across 11 Task_Group_Def__mdt
+     * groups — the figure TaskFanoutServiceTest:248 already asserts); 251 Transactions
+     * x 82 = 20,582 rows against the 10,000 DML-rows limit. That break is a genuine
+     * Phase 7 finding — the factory deliberately does not paper over it by shrinking
+     * the fan-out. (This note said "~75 … 18,825" until 2026-08-31 and understated the
+     * overflow by 1,757 rows; the count has been 82 since the definitions were loaded.)
      *
      * @param count         Tasks to create.
      * @param transactionId Transaction__c.Id (required).
@@ -2558,10 +2569,145 @@ public with sharing class TestDataFactory {
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
+    // CHECKLISTS (Checklist__c -> Checklist_Item__c, both master-detail)
+    //
+    // ⚠ NEITHER OBJECT HAS AN OwnerId. Both are ControlledByParent detail records, so
+    // "owner" is Owner_Label__c, a ROLE STRING (Danish / CFO / Legal / FES /
+    // Accounting / Prop. Mgmt.), never a User. Do not try to set an owner here.
+    // ⚠ Checklist_Item__c.Blocked_By__c is a REAL self-lookup, so it cannot be set in
+    // the same statement that creates its target. createChecklistItems leaves it null;
+    // link() below is the second pass, mirroring what ChecklistFanoutService does.
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Checklist groups under a Transaction.
+     *
+     * @param count         Number of groups (letters are generated A, B, C ...).
+     * @param transactionId Master-detail parent (required — a detail record cannot be
+     *                      created without one).
+     * @param doInsert      Insert when true.
+     * @return Checklists, sequenced from 1.
+     */
+    public static List<Checklist__c> createChecklists(
+        Integer count,
+        Id transactionId,
+        Boolean doInsert
+    ) {
+        requirePositive(count);
+        requireId(transactionId, 'transactionId (Checklist__c.Transaction__c is master-detail)');
+        final List<String> letters = new List<String>{
+            'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'
+        };
+        List<Checklist__c> checklists = new List<Checklist__c>();
+        for (Integer i = 0; i < count; i++) {
+            String letter = i < letters.size() ? letters[i] : 'X' + i;
+            checklists.add(new Checklist__c(
+                Transaction__c = transactionId,
+                Group_Letter__c = letter,
+                Group_Name__c = 'Test Group ' + letter,
+                Owner_Label__c = 'Danish',
+                Sequence__c = i + 1,
+                // Byte-identical to the first value of Transaction__c.Stage__c. The picklist is
+                // RESTRICTED and restricted picklists ARE enforced by DML on this project.
+                Stage__c = 'Open Contract',
+                Is_Conditional__c = false
+            ));
+        }
+        insertIf(doInsert, checklists);
+        return checklists;
+    }
+
+    /** Single Checklist. @param transactionId Parent deal. @param doInsert Insert when true. @return The Checklist. */
+    public static Checklist__c createChecklist(Id transactionId, Boolean doInsert) {
+        return createChecklists(1, transactionId, doInsert)[0];
+    }
+
+    /**
+     * Checklist items under one checklist group.
+     *
+     * Flag__c is set explicitly to 'None' rather than relying on the picklist default, so a test
+     * that asserts a transition is never comparing against an unset value.
+     *
+     * @param count       Number of items.
+     * @param checklistId Master-detail parent (required).
+     * @param doInsert    Insert when true.
+     * @return Items, sequenced from 1, all open and none critical.
+     */
+    public static List<Checklist_Item__c> createChecklistItems(
+        Integer count,
+        Id checklistId,
+        Boolean doInsert
+    ) {
+        requirePositive(count);
+        requireId(checklistId, 'checklistId (Checklist_Item__c.Checklist__c is master-detail)');
+        List<Checklist_Item__c> items = new List<Checklist_Item__c>();
+        for (Integer i = 0; i < count; i++) {
+            items.add(new Checklist_Item__c(
+                Checklist__c = checklistId,
+                Subject__c = 'Test Checklist Item ' + i,
+                Sequence__c = i + 1,
+                Flag__c = 'None',
+                Stage__c = 'Open Contract',
+                Owner_Label__c = 'Danish',
+                Is_Critical__c = false,
+                Is_Wire_Verification__c = false,
+                Is_Conditional__c = false,
+                Due_Date__c = Date.today().addDays(14)
+            ));
+        }
+        insertIf(doInsert, items);
+        return items;
+    }
+
+    /** Single Checklist Item. @param checklistId Parent group. @param doInsert Insert when true. @return The item. */
+    public static Checklist_Item__c createChecklistItem(Id checklistId, Boolean doInsert) {
+        return createChecklistItems(1, checklistId, doInsert)[0];
+    }
+
+    /**
+     * The prerequisite second pass: points one INSERTED item at another.
+     *
+     * Exists because `Blocked_By__c` is a real lookup and therefore cannot be populated in the same
+     * statement that creates its target — the same reason `ChecklistFanoutService` needs a second
+     * DML pass. A test that tries to do it in one statement gets a null lookup and silently proves
+     * nothing.
+     *
+     * @param dependent    The item to block (must be inserted).
+     * @param prerequisite The item it must wait for (must be inserted).
+     * @param doUpdate     Update when true.
+     * @return The dependent, with Blocked_By__c set and Is_Prerequisite_Met__c false.
+     */
+    public static Checklist_Item__c linkPrerequisite(
+        Checklist_Item__c dependent,
+        Checklist_Item__c prerequisite,
+        Boolean doUpdate
+    ) {
+        requireId(dependent == null ? null : dependent.Id, 'dependent.Id');
+        requireId(prerequisite == null ? null : prerequisite.Id, 'prerequisite.Id');
+        Checklist_Item__c link = new Checklist_Item__c(
+            Id = dependent.Id,
+            Blocked_By__c = prerequisite.Id,
+            Is_Prerequisite_Met__c = false
+        );
+        if (doUpdate == true) {
+            update link;
+        }
+        return link;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
     // DISPOSITIONS
-    // NOTE: Wire__c parents to Disposition__c, NOT Transaction__c — the org has no
-    // Wire__c -> Transaction__c relationship. Transaction__c.Wire_Open_Risks__c is
-    // computed from checklist Tasks, not from Wire__c.
+    // ⚠ CORRECTED 2026-08-31 (Phase 1 of the Transaction checklist rewrite). This block
+    // and createWires below BOTH used to assert "the org has no Wire__c -> Transaction__c
+    // relationship". THAT IS NO LONGER TRUE: Wire__c.Transaction__c ships in the Phase 1
+    // schema (objects/Wire__c/fields/Transaction__c.field-meta.xml), alongside
+    // Wire__c.Wire_Type__c. The factory still parents test Wires to Disposition__c
+    // because that is the only wired path today; a Transaction-parented Wire is a
+    // Phase 5 fixture and should be added as its own overload rather than by
+    // repointing this one.
+    // ⚠ Transaction__c.Wire_Open_Risks__c is still NOT computed from Wire__c. On the
+    // legacy model it is a subject-string parse over checklist Tasks; on the new model
+    // it is a count of Checklist_Item__c.Is_Wire_Verification__c. Neither reads Wire__c.
     // ═══════════════════════════════════════════════════════════════════════════
 
     // 🔴 THESE TWO LITERALS ARE THE ONE SANCTIONED EXCEPTION TO DispositionDomain's "every other
@@ -3476,8 +3622,10 @@ public with sharing class TestDataFactory {
     }
 
     /**
-     * Wires. Parents to Disposition__c — there is no Wire__c -> Transaction__c
-     * relationship in this org.
+     * Wires. Parents to Disposition__c.
+     * ⚠ CORRECTED 2026-08-31: this used to say "there is no Wire__c -> Transaction__c
+     * relationship in this org". There is one now (Phase 1 schema). This overload still
+     * parents to Disposition__c deliberately — see the block comment above.
      * @param count         Number of Wires.
      * @param dispositionId Parent Disposition__c (nullable).
      * @param doInsert      Insert when true.

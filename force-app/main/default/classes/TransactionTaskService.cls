@@ -9,11 +9,16 @@
  * only marshals input, delegates here, and maps failures to an AuraHandledException at
  * the LWC boundary (ARCHITECTURE.md §5).
  *
- * All SOQL is delegated to TaskSelector — this service holds no inline SOQL. It throws a
- * typed WireVerificationException for the user-actionable "name/phone required" rule
- * (surfaced verbatim by the controller) and the raw platform exceptions (DmlException /
- * QueryException) on a save/read failure. The AuraHandledException boundary lives in the
+ * All SOQL is delegated to TaskSelector — this service holds no inline SOQL. It throws TWO typed,
+ * user-actionable, user-safe exceptions that the controller surfaces VERBATIM — WireVerificationException
+ * for the "name/phone required" rule, and TaskPrerequisiteService.PrerequisiteNotMetException for the
+ * Phase 0 wire-fraud gate (see `refusalOrOriginal`) — and the raw platform exceptions (DmlException /
+ * QueryException) on any other save/read failure. The AuraHandledException boundary lives in the
  * controller, NOT here, so the service stays UI-agnostic (also callable from Flow / Apex).
+ * ⚠ The two are not parallel in ORIGIN and that is worth knowing when debugging: the first is raised
+ * BY this class before any DML; the second is raised by a BEFORE-UPDATE TRIGGER during the DML and is
+ * re-typed on the way out. Both reach the user as themselves; only the second can also be triggered
+ * by a write that never passes through this class at all (Data Loader, REST, Flow).
  *
  * TRANSACTIONALITY: each method issues a single Task update — single-record operations
  * that mirror the pre-thinning controller exactly. There is one DML statement per method,
@@ -85,13 +90,56 @@ public with sharing class TransactionTaskService {
     public class WireVerificationException extends Exception {}
 
     /**
+     * Re-types a save that the Phase 0 wire-fraud prerequisite gate refused, so the controller can
+     * surface WHY verbatim instead of the generic write-failure message.
+     *
+     * 🔴 THE DEFECT THIS FIXES. `TaskPrerequisiteService` refuses a completion with `addError` in a
+     * before-update trigger, which reaches Apex as a plain `DmlException`. The controller's
+     * `catch (Exception e)` mapped that to *"This task could not be updated. Refresh the page and
+     * try again."* — advice that can NEVER work here, since refreshing does not complete the
+     * anti-fraud verification. The one message that tells the user what to do (it names the blocking
+     * step) went to the debug log. So on the ONLY path a human actually uses, an enforced control
+     * looked like a broken page.
+     *
+     * ⚠ RECOGNITION LIVES IN `TaskPrerequisiteService.asRefusal`, NOT HERE, and deliberately: it
+     * matches against the very constants that produced the text, so the matcher cannot drift from
+     * the message. This method only decides what to throw.
+     *
+     * ⚠ ANYTHING ELSE IS RETURNED UNCHANGED so the controller still maps it to the generic message.
+     * This must not become a route for raw `DmlException` text to reach the UI — the controller's
+     * refusal to leak platform errors is intact and intended.
+     *
+     * @param e The DmlException from one of this class's writes.
+     * @return A `TaskPrerequisiteService.PrerequisiteNotMetException` when the gate refused the
+     *         save; otherwise `e` itself.
+     */
+    private static Exception refusalOrOriginal(DmlException e) {
+        TaskPrerequisiteService.PrerequisiteNotMetException refusal = TaskPrerequisiteService.asRefusal(e);
+        if (refusal == null) {
+            return e;
+        }
+        // ⚠ LOGGED HERE BECAUSE THE CONTROLLER NO LONGER WILL. Its `System.debug` sits in the
+        // generic catch, which this branch deliberately routes around — so without this line a
+        // refusal would leave NO trace anywhere, and a FALSE refusal (a mis-stamped key, a sharing
+        // gap hiding the prerequisite) would be undiagnosable: the user sees an explanation, the
+        // org keeps no record that the save was even attempted. `Task` field history is not tracked
+        // either, so the debug log is the only artefact.
+        System.debug(LoggingLevel.WARN, 'TransactionTaskService: wire-fraud prerequisite gate refused '
+            + 'a checklist completion. ' + refusal.getMessage());
+        return refusal;
+    }
+
+    /**
      * Toggles a checklist Task between Completed and Not Started.
      *
      * @param taskId the Task to update (required)
      * @param done   true → Completed, false → Not Started
      * @throws TransactionActionPermissionService.AccessDeniedException when the running user
      *         does not hold `Transaction_Task_Actions` and is not an administrator
-     * @throws System.DmlException on a platform save failure
+     * @throws TaskPrerequisiteService.PrerequisiteNotMetException when the Phase 0 wire-fraud gate
+     *         refuses the completion (B3 while B2 is open, I8 while I7 is open). User-actionable and
+     *         user-safe: the controller surfaces its message verbatim.
+     * @throws System.DmlException on any other platform save failure
      */
     public static void setTaskStatus(Id taskId, Boolean done) {
         // Authorization FIRST. This check is what REPLACES the Task Edit CRUD the platform will
@@ -104,11 +152,17 @@ public with sharing class TransactionTaskService {
         // `with sharing`), so the user must still hold record access to this Task.
         // allOrNone = true: one record, and a silent partial failure would tell the user the
         // task completed when it did not.
-        Database.update(
-            new Task(Id = taskId, Status = done ? 'Completed' : 'Not Started'),
-            true,
-            AccessLevel.SYSTEM_MODE
-        );
+        try {
+            Database.update(
+                new Task(Id = taskId, Status = done ? 'Completed' : 'Not Started'),
+                true,
+                AccessLevel.SYSTEM_MODE
+            );
+        } catch (DmlException e) {
+            // A wire-fraud prerequisite refusal is re-typed so the controller surfaces it verbatim;
+            // everything else is rethrown untouched and still gets the generic message.
+            throw refusalOrOriginal(e);
+        }
     }
 
     /**
@@ -120,7 +174,10 @@ public with sharing class TransactionTaskService {
      * @param notes  optional free-text comment; when blank the Description is not touched
      * @throws TransactionActionPermissionService.AccessDeniedException when the running user
      *         does not hold `Transaction_Task_Actions` and is not an administrator
-     * @throws System.DmlException on a platform save failure
+     * @throws TaskPrerequisiteService.PrerequisiteNotMetException when the Phase 0 wire-fraud gate
+     *         refuses the completion (B3 while B2 is open, I8 while I7 is open). User-actionable and
+     *         user-safe: the controller surfaces its message verbatim.
+     * @throws System.DmlException on any other platform save failure
      */
     public static void completeTask(Id taskId, String notes) {
         TransactionActionPermissionService.assertTaskActionAccess();
@@ -130,7 +187,11 @@ public with sharing class TransactionTaskService {
         }
         // SYSTEM_MODE justification: as setTaskStatus above — un-grantable Task Edit CRUD,
         // authorization already asserted, sharing deliberately still enforced.
-        Database.update(t, true, AccessLevel.SYSTEM_MODE);
+        try {
+            Database.update(t, true, AccessLevel.SYSTEM_MODE);
+        } catch (DmlException e) {
+            throw refusalOrOriginal(e);
+        }
     }
 
     /**

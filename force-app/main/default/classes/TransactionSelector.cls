@@ -115,6 +115,146 @@ public with sharing class TransactionSelector {
     }
 
     /**
+     * Fields the CHECKLIST fan-out always needs, regardless of CMDT configuration.
+     *
+     * 🔴 A SEPARATE LIST FROM `BASE_FIELDS`, AND MERGING THE TWO WOULD BREAK THE LIVE TASK FAN-OUT.
+     * `selectByIdsWithConditionFields` above runs in `USER_MODE` and is called by
+     * `TaskFanoutService`, which is deployed and enforcing. Adding `Checklist_Fanned_Out__c` - a
+     * field that arrives with ZERO FieldPermissions for anybody, System Administrator included - to
+     * that list would make the LEGACY fan-out throw `System.QueryException: No such column` for
+     * every calling user the day this deploys. Additive means additive.
+     */
+    private static final List<String> CHECKLIST_BASE_FIELDS = new List<String>{
+        'Id', 'OwnerId', 'Contract_Executed_Date__c', 'Checklist_Fanned_Out__c', 'Stage__c'
+    };
+
+    /**
+     * Fields `CriticalDateService` needs to apply the pinning and coherence rules lifted from
+     * `scripts/seed-critical-dates.apex`.
+     */
+    private static final List<String> CRITICAL_DATE_FIELDS = new List<String>{
+        'Id', 'Stage__c', 'Status__c', 'Target_Close_Date__c', 'Feasibility_Deadline__c',
+        'Feasibility_Missed__c', 'Loan_Required__c'
+    };
+
+    /**
+     * Loads Transactions for the CHECKLIST fan-out and reconcile - the base fields above plus any
+     * describe-validated conditional-gating fields from `Task_Group_Def__mdt.Condition_Field__c`.
+     *
+     * 🔴 `AccessLevel.SYSTEM_MODE` (the dynamic-query equivalent of `WITH SYSTEM_MODE`) - AUTOMATION
+     * PATH, AND DELIBERATELY DIFFERENT FROM `selectByIdsWithConditionFields` ABOVE, WHICH IS
+     * `USER_MODE`. Three facts make that difference a correctness requirement rather than a
+     * preference:
+     *   • The caller is `ChecklistFanoutService`, driven from a Queueable and ultimately from a
+     *     record-triggered Flow that declares no `runInMode` - a read performed ON the deal driver's
+     *     behalf, never at their request.
+     *   • `USER_MODE` THROWS rather than degrades. One missing FLS grant raises
+     *     `System.QueryException: No such column`, which inside the fan-out chain aborts the whole
+     *     job. That exact failure rolled back an entire 82-row Day-0 fan-out in this org on
+     *     2026-08-05 (see `TaskSelector`'s header).
+     *   • `Checklist_Fanned_Out__c` is brand new and, like every Metadata-API-deployed field, has
+     *     FieldPermissions rows for NOBODY on the day it deploys - so a `USER_MODE` read of it would
+     *     fail for every principal, not an unlucky few.
+     * ⚠ SYSTEM_MODE lifts CRUD/FLS and NEVER sharing, and it is not widened here. A principal who
+     * cannot see a deal gets no row, and the fan-out then does nothing for it - a loud absence
+     * rather than a silent partial checklist.
+     *
+     * ⚠ ALSO USED BY `ChecklistRollupService` AS ITS DUAL-MODEL GUARD READ, with an EMPTY condition
+     * set. That is not a misuse: the guard needs exactly `Checklist_Fanned_Out__c` and nothing else,
+     * and reusing this method keeps the field list in one place.
+     *
+     * @param transactionIds  Transaction Ids to load (bound as `:ids`).
+     * @param conditionFields Extra field API names from the CMDT rows; each is describe-validated
+     *                        and de-duplicated before use. May be null/empty.
+     * @return Map of Transaction Id -> Transaction__c; an empty map when transactionIds is
+     *         null/empty.
+     * @example
+     * Map<Id, Transaction__c> deals =
+     *     TransactionSelector.selectForChecklistFanout(dealIds, conditionFields);
+     */
+    public static Map<Id, Transaction__c> selectForChecklistFanout(
+        Set<Id> transactionIds,
+        Set<String> conditionFields
+    ) {
+        return queryByIds(transactionIds, CHECKLIST_BASE_FIELDS, conditionFields,
+            AccessLevel.SYSTEM_MODE);
+    }
+
+    /**
+     * Loads Transactions for `CriticalDateService.ensureFor`.
+     *
+     * 🔴 `AccessLevel.SYSTEM_MODE` - AUTOMATION PATH. Fired from `TransactionTrigger`'s after-update
+     * context on the saving user's behalf; `USER_MODE` throws rather than degrades, and a throw in
+     * an after-update trigger rolls back the deal save that provoked it. Same class of failure as
+     * `selectForChecklistFanout` above, stated here rather than cross-referenced because
+     * ARCHITECTURE.md §2 requires the justification at the METHOD's own declaration.
+     * ⚠ Sharing is NOT lifted: the principal saving the deal can by definition see it.
+     *
+     * @param transactionIds Transaction Ids to load.
+     * @return Map of Transaction Id -> Transaction__c with the coherence-gate fields populated.
+     * @example
+     * Map<Id, Transaction__c> deals = TransactionSelector.selectForCriticalDates(dealIds);
+     */
+    public static Map<Id, Transaction__c> selectForCriticalDates(Set<Id> transactionIds) {
+        return queryByIds(transactionIds, CRITICAL_DATE_FIELDS, null, AccessLevel.SYSTEM_MODE);
+    }
+
+    /**
+     * Shared dynamic-query builder for the three by-Id reads above. Two safeguards make the dynamic
+     * SELECT safe, exactly as the original `selectByIdsWithConditionFields` established: every extra
+     * field name is validated against the live `Transaction__c` describe before it is concatenated
+     * (so a typo'd or renamed CMDT row is skipped rather than injected), and the record filter is a
+     * BOUND `:ids` map entry via `Database.queryWithBinds`, never string concatenation.
+     *
+     * @param transactionIds Ids to load.
+     * @param baseFields     The always-selected field list for this caller.
+     * @param extraFields    Optional describe-validated additions; may be null/empty.
+     * @param mode           The access level to run the query under.
+     * @return Map of Id -> Transaction__c; empty when transactionIds is null/empty.
+     */
+    private static Map<Id, Transaction__c> queryByIds(
+        Set<Id> transactionIds,
+        List<String> baseFields,
+        Set<String> extraFields,
+        AccessLevel mode
+    ) {
+        if (transactionIds == null || transactionIds.isEmpty()) {
+            return new Map<Id, Transaction__c>();
+        }
+        Set<String> selectedLower = new Set<String>();
+        List<String> fields = new List<String>();
+        for (String baseField : baseFields) {
+            if (selectedLower.add(baseField.toLowerCase())) {
+                fields.add(baseField);
+            }
+        }
+        if (extraFields != null && !extraFields.isEmpty()) {
+            Map<String, Schema.SObjectField> fieldMap =
+                Schema.SObjectType.Transaction__c.fields.getMap();
+            for (String extraField : extraFields) {
+                if (String.isBlank(extraField)) {
+                    continue;
+                }
+                String trimmed = extraField.trim();
+                String key = trimmed.toLowerCase();
+                if (fieldMap.containsKey(key) && selectedLower.add(key)) {
+                    fields.add(trimmed);
+                }
+            }
+        }
+        String query =
+            'SELECT ' + String.join(fields, ', ') +
+            ' FROM Transaction__c' +
+            ' WHERE Id IN :ids';
+        List<Transaction__c> rows = (List<Transaction__c>) Database.queryWithBinds(
+            query,
+            new Map<String, Object>{ 'ids' => transactionIds },
+            mode
+        );
+        return new Map<Id, Transaction__c>(rows);
+    }
+
+    /**
      * All Transactions with the fields the dashboard KPI header aggregates in
      * memory — backs TransactionController.getKpis. Intentionally UNFILTERED:
      * the active-count / in-contract-value / earnest-at-risk / wire-approvals /

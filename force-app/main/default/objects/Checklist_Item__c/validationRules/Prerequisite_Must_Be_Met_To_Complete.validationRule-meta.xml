@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        WIRE-FRAUD PREREQUISITE GATE - PHASE 2, ON THE Checklist_Item__c MODEL (design
+        agent-output/design-transaction-fsd-gaps.md 5.1, 10). Blocks an item completing while the
+        item its Blocked_By__c points at is still open - B3 behind B2, I8 behind I7, and any pair a
+        future Transaction_Task_Def__mdt row defines.
+
+        THIS RULE IS THE HALF OF THE CONTROL THAT MUST SHIP IN THIS CHANGE AND NOT BEFORE IT.
+        Checklist_Item__c.Is_Prerequisite_Met__c deployed in Phase 1 with its own description
+        saying so verbatim: "NO VALIDATION RULE SHIPS IN PHASE 1: with no handler maintaining this
+        field, a rule keyed on it would refuse every completion in the org. The rule lands in Phase
+        2, in the same change as the handler." ChecklistItemTriggerHandler is that handler and it is
+        in this same deploy. Deploying this file WITHOUT it makes every gated item permanently
+        uncompletable.
+
+        WHY A VALIDATION RULE AT ALL, GIVEN THE TRIGGER COVERS EVERY WRITE PATH.
+        Defence in depth, and the same call this repo already made on Wire__c's
+        Verified_DateTime_Not_Backdatable (D-12 = BOTH): a validation rule still evaluates under
+        AccessLevel.SYSTEM_MODE and still evaluates if the trigger is ever deactivated, and it is the
+        component that refuses an INSERT created already-complete - a case the trigger deliberately
+        does not resolve, because a sibling lookup in the before-insert context would put 21 extra
+        SOQL on the fan-out's own insert cascade (the arithmetic is at
+        ChecklistItemPrerequisiteService.clampOnInsert). The trigger owns UPDATE; this rule owns the
+        INSERT refusal, reading the value clampOnInsert forced to false. The two are NOT redundant
+        and must not be collapsed.
+
+        WHY OR(ISNEW(), ISCHANGED(Flag__c)).
+        ISCHANGED is FALSE on insert, so an ISCHANGED-only rule would let a data loader or API caller
+        INSERT an item pre-set to Completed straight through with no evaluation. ISNEW() closes that.
+        Symmetrically, the rule does NOT re-trap an already-complete row for an unrelated later edit
+        (a comment, a due date) - only an actual transition into, or an insert directly as, a done
+        state is gated. Same reasoning as the Wire__c precedent.
+
+        WHY BOTH Completed AND Verified.
+        Flag__c is the single lossy picklist the business chose, and DONE means Completed OR
+        Verified. A rule testing Completed alone would let every gated item through by marking it
+        Verified instead - which is precisely the value the two wire-verification items use. The
+        matching Apex test is ChecklistItemDomain.isDone; the two must move together.
+
+        WHY NOT PRIORVALUE HERE, UNLIKE THE PHASE 0 TASK RULE - STATED PLAINLY RATHER THAN QUIETLY.
+        The Task-scoped rule closes the blank-the-key-and-complete bypass declaratively with
+        BLANKVALUE(Blocked_By__c, PRIORVALUE(Blocked_By__c)). PRIORVALUE was PROVEN by a check-only
+        dry-run to compile on that Text field; on a LOOKUP field at API 67.0 it is UNPROVEN in this
+        org, and this repo's standing rule is not to ship an unverified metadata shape as if it were
+        proven (see 3.4 of ARCHITECTURE.md for what happens when that shape is guessed). So the
+        surviving-value hardening lives ONLY in the trigger here - ChecklistItemPrerequisiteService's
+        survivingBlockedBy, which resolves the STORED value while the row is open and additionally
+        refuses the disarming save itself. CONSEQUENCE, ACCEPTED AND RECORDED: this rule alone would
+        not stop a one-save blank-and-complete; the trigger does, and it is the primary control.
+        Anyone who later proves PRIORVALUE on a Lookup at this API version should add the
+        surviving-value conjunct here and delete this paragraph.
+
+        errorDisplayField -> Flag__c, the field the user is actually trying to change.
+    -->
+    <fullName>Prerequisite_Must_Be_Met_To_Complete</fullName>
+    <active>true</active>
+    <description>Blocks completing a checklist item while the item named by Blocked_By__c is still open. Backstop to the ChecklistItemTriggerHandler gate, and the sole refusal for an insert created already complete. See the in-file comment.</description>
+    <errorConditionFormula>AND(
+    OR(ISNEW(), ISCHANGED(Flag__c)),
+    OR(ISPICKVAL(Flag__c, &apos;Completed&apos;), ISPICKVAL(Flag__c, &apos;Verified&apos;)),
+    NOT(ISBLANK(Blocked_By__c)),
+    NOT(Is_Prerequisite_Met__c)
+)</errorConditionFormula>
+    <errorDisplayField>Flag__c</errorDisplayField>
+    <errorMessage>This item cannot be completed until its required prerequisite checklist item (the wire-fraud verification step) has been completed first.</errorMessage>
+</ValidationRule>

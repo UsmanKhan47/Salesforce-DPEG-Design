@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Transaction__c</fullName>
+    <description>The deal this checklist group belongs to. MASTER-DETAIL, not a lookup: access to a checklist is exactly access to its Transaction, which is what makes the 11 groups per deal visible to the deal team without a single sharing rule. A master-detail field is always required and always cascade-deletes, so required and deleteConstraint are deliberately absent - the Metadata API rejects both on this type. It is also NON-PERMISSIONABLE: it must never appear in a permission set fieldPermissions block or the deploy fails.</description>
+    <inlineHelpText>The deal this checklist belongs to. Set when the checklist is created and cannot be changed afterwards.</inlineHelpText>
+    <label>Transaction</label>
+    <referenceTo>Transaction__c</referenceTo>
+    <relationshipLabel>Checklists</relationshipLabel>
+    <relationshipName>Checklists</relationshipName>
+    <relationshipOrder>0</relationshipOrder>
+    <reparentableMasterDetail>false</reparentableMasterDetail>
+    <trackTrending>false</trackTrending>
+    <type>MasterDetail</type>
+    <writeRequiresMasterRead>false</writeRequiresMasterRead>
+</CustomField>

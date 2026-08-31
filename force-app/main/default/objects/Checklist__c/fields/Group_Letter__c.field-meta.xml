@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Group_Letter__c</fullName>
+    <description>The checklist group key: A through J plus H2. Mirrors Task_Group_Def__mdt.Letter__c exactly, which is the definition source and the join key for the fan-out, the migration mapping and every report grouping. Length 3 because H2 is two characters and one is held in reserve. Deliberately NOT required=true: the value is machine-written from the CMDT on every row, a platform-required flag protects against a human omission that cannot occur, and required=true would make the field non-permissionable and force it onto every page layout.</description>
+    <inlineHelpText>Checklist group key from the definition, for example A, F or H2. System-populated; do not edit.</inlineHelpText>
+    <externalId>false</externalId>
+    <label>Group Letter</label>
+    <length>3</length>
+    <required>false</required>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Owner_Label__c</fullName>
+    <description>The ROLE accountable for this item, mirroring Transaction_Task_Def__mdt.Owner_Label__c and falling back to the group label when the item has none. NOT A USER AND NOT A RECORD OWNER - a master-detail child has no OwnerId. The real person who completed the item is Completed_By__c. Do not render this next to Completed_DateTime__c as completed by role.</description>
+    <inlineHelpText>The role accountable for this item, for example CFO or Legal. It is a label, not a Salesforce user.</inlineHelpText>
+    <externalId>false</externalId>
+    <label>Owner Label</label>
+    <length>80</length>
+    <required>false</required>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>

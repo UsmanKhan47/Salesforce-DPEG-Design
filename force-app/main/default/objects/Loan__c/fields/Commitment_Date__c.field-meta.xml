@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Commitment_Date__c</fullName>
+    <description>Date the lender commitment is due or was issued. PARITY FIELD: it feeds the Loan Commitment critical date, which Critical_Date__c.Type__c already carries as a valid value and which the critical-date rules already gate on Transaction__c.Loan_Required__c. Without it that critical date type has no source and can never be projected.</description>
+    <inlineHelpText>Date the lender loan commitment is due. Feeds the Loan Commitment critical date on the deal.</inlineHelpText>
+    <label>Commitment Date</label>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>Date</type>
+</CustomField>

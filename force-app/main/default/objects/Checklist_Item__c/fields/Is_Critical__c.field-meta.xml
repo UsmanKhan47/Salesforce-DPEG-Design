@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Is_Critical__c</fullName>
+    <defaultValue>false</defaultValue>
+    <description>THE IMMUTABLE SEVERITY. Seeded from Transaction_Task_Def__mdt.Is_Critical__c at fan-out on the four live critical items B2, F12, I7 and J4, and never overwritten by working the item. It exists because Flag__c is a single picklist that conflates severity with state by explicit business decision: completing a critical item overwrites CRITICAL with Completed, so Flag__c can only ever answer which critical items are still OPEN. Any report or metric asking how many critical items a deal has, or had, must group on THIS field.</description>
+    <inlineHelpText>Ticked on items the business has designated critical. Stays ticked after the item is completed, unlike the Flag column.</inlineHelpText>
+    <label>Is Critical</label>
+    <type>Checkbox</type>
+</CustomField>

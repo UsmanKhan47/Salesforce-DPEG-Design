@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Bank_Account_Type__c</fullName>
+    <description>Which kind of account the loan payments draw from: Operating, Escrow, Reserve or Other. THIS IS AN ACCOUNT TYPE, NOT AN ACCOUNT NUMBER, and it does not violate the standing rule that no bank account or routing numbers are stored anywhere in this application. It is a four-value classification the loan checklist group needs in order to route the auto-payment setup. Recorded here explicitly so a later security pass does not remove a safe field on a misreading of its name.</description>
+    <inlineHelpText>Type of account the loan payments draw from. Never record an account or routing number anywhere in Salesforce.</inlineHelpText>
+    <label>Bank Account Type</label>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>Picklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>Operating</fullName>
+                <default>false</default>
+                <label>Operating</label>
+            </value>
+            <value>
+                <fullName>Escrow</fullName>
+                <default>false</default>
+                <label>Escrow</label>
+            </value>
+            <value>
+                <fullName>Reserve</fullName>
+                <default>false</default>
+                <label>Reserve</label>
+            </value>
+            <value>
+                <fullName>Other</fullName>
+                <default>false</default>
+                <label>Other</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>

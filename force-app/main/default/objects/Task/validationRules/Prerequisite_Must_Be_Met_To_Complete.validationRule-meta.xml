@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        WIRE-FRAUD PREREQUISITE GATE - STORY 28, PHASE 0 (agent-output/design-transaction-fsd-gaps.md
+        §5.1 / §10 Phase 0). Blocks B3 (Send wire request to accounting with verified instructions)
+        completing while B2 (Call title company to verbally verify wiring instructions (anti-fraud))
+        is still open, and I8 (Send closing wire...) while I7 (Verify wiring instructions by phone
+        (anti-fraud)) is still open. Ships against the CURRENT standard-Task checklist model, ahead of
+        the Checklist__c/Checklist_Item__c rewrite (Phase 1-5); this whole rule is discarded at
+        migration step M5 and is not meant to survive it.
+
+        PLACEMENT - SETTLED 2026-08-31, MOVED FROM objects/Activity/validationRules/ AFTER A REAL
+        DEPLOY + FUNCTIONAL READBACK. The Activity-scoped file compiled and deployed clean (17/17,
+        zero errors, component changed:true), which this repo had already learned is not proof of
+        anything (see DPEG_Task_Edit's 2026-08-28 note on a Task <objectPermissions> block that
+        deployed green and was silently discarded). The Tooling query
+        `SELECT Id, ValidationName, Active, EntityDefinition.QualifiedApiName FROM ValidationRule`
+        returned exactly one row for this rule, `Active=true`, `EntityDefinition.QualifiedApiName =
+        'Activity'` - a THIRD outcome nobody had enumerated (Task+Event and Task-only were both
+        considered; binding to the abstract parent and firing on NEITHER concrete object was not).
+        Confirmed functionally, not just by the describe: two tests that inserted a Task already
+        `Status='Completed'` with an unmet prerequisite got `System.AssertException`, not
+        `DmlException` - the inserts the rule was supposed to refuse SUCCEEDED. Declaring this rule
+        directly under `objects/Task/validationRules/` instead - exactly the fallback shape this
+        file itself proposed before that deploy - closes the gap. `objects/Task/Task.object-meta.xml`
+        already exists, so no stub object file is needed. Task-only ALSO disposes of the Event
+        question entirely: Event has no `Status` field, so `ISPICKVAL(Status, 'Completed')` could
+        never have evaluated there regardless of binding.
+        ⚠ LESSON WORTH CARRYING FORWARD, NOT RE-LEARNED: `objects/Activity/fields/**` DOES federate
+        a field onto both Task and Event - that half of this feature (Blocked_By__c,
+        Is_Prerequisite_Met__c) worked exactly as documented and needed no change. Validation rules
+        do NOT federate the same way. Fields federate; validation rules do not - do not assume the
+        two behave identically again on this platform.
+        🔴 THE STALE `objects/Activity/validationRules/Prerequisite_Must_Be_Met_To_Complete` ORG
+        COMPONENT MUST BE REMOVED SEPARATELY. Deleting the source file does not delete the deployed
+        org component - it must go via a destructive-changes deploy (constructive add of this file +
+        destructive removal of the Activity-scoped one, in ONE `--manifest` payload per this repo's
+        own measured constraint that `--post-destructive-changes` cannot pair with `--source-dir`),
+        executed by the devops/admin deploy step, not assumed to have happened because this file
+        exists.
+
+        THE FIELD SHAPE, AND WHY IT IS NOT A LOOKUP.
+        Blocked_By__c cannot be Lookup(Task): measured on this org, a CustomField with
+        referenceTo=Task fails deploy with "referenceTo value of 'Task' does not resolve to a valid
+        sObject type" - Task/Event are not valid custom-relationship targets on this platform. So
+        Blocked_By__c is Text(20) holding the prerequisite item's Group_Letter__c + '|' +
+        Task_Sequence__c key (e.g. 'B|2' for item B2). Phase 0 seeds it via a hardcoded pair map in
+        the fan-out service (B3->B2, I8->I7 only, added by the developer agent) - never a
+        subject-string match (that trap is documented at length in the design doc's §2.8/§5.1).
+        `Transaction_Task_Def__mdt` has no column to drive this generically today; adding one and
+        generalising past the two hardcoded pairs is Phase 1, not this change.
+
+        WHY A VALIDATION RULE AND NOT JUST THE TRIGGER.
+        TaskRollupTriggerHandler's existing before-update context resolves Blocked_By__c against its
+        sibling Task (matched by Task_Group__c + Task_Sequence__c under the same Transaction_Deal__c)
+        and stamps the denormalised Is_Prerequisite_Met__c checkbox - that covers the UI, the API, a
+        Flow and a data loader. But this repo has already made the call, on Wire__c's
+        Verified_DateTime_Not_Backdatable, that FLS/trigger coverage alone is insufficient (D-12 =
+        BOTH): a validation rule STILL evaluates under AccessLevel.SYSTEM_MODE, where a bare `update`
+        from a future automation path would otherwise slip through untouched. A validation rule cannot
+        read a sibling record directly, which is exactly why Is_Prerequisite_Met__c exists as a
+        denormalised backstop for THIS rule to read.
+
+        WHY OR(ISNEW(), ISCHANGED(Status)).
+        ISCHANGED(Status) is FALSE on insert (Wire__c's same precedent), so an ISCHANGED-only rule
+        would let a data loader or API caller INSERT a Task pre-set to Status = 'Completed' straight
+        through with no evaluation at all. ISNEW() closes that gap. Symmetrically, this means the rule
+        does NOT re-trap an already-Completed row for an unrelated field edit (e.g. a Comment change)
+        made after completion - only an actual transition into, or an insert directly as, Completed is
+        gated. That mirrors the Wire__c precedent's reasoning for not trapping pre-existing records.
+
+        WHY THE SURVIVING-KEY CHECK, NOT A BARE NOT(ISBLANK(Blocked_By__c)) - CODE REVIEW FIX,
+        2026-08-31. The original conjunct read the NEW value of Blocked_By__c only, which a single
+        `update new Task(Id = b3Id, Status = 'Completed', Blocked_By__c = null)` defeats: the same DML
+        statement both completes the item AND clears the very key the rule is meant to check, so
+        `NOT(ISBLANK(Blocked_By__c))` reads blank and the rule never fires. The trigger has the same
+        hole and the developer agent is closing it there as the PRIMARY control; this rule is the
+        SYSTEM_MODE backstop and needs the identical hardening, or the backstop is defeated by exactly
+        the write path it exists to catch. Fix: consult whichever of the new or prior value is
+        non-blank - `IF(ISNEW(), Blocked_By__c, BLANKVALUE(Blocked_By__c, PRIORVALUE(Blocked_By__c)))`.
+        On INSERT there is no prior value to consult at all, so the ISNEW() branch reads the new value
+        only, deliberately never calling PRIORVALUE() in that branch rather than assuming what an
+        undocumented no-prior-value case would return. On UPDATE, BLANKVALUE prefers the surviving new
+        value and falls back to the prior one only when the new value is blank - so a save that clears
+        Blocked_By__c to null for a genuinely legitimate reason (the developer's completion service
+        clearing it after a prerequisite is honestly satisfied, if that ever becomes a real write path)
+        is not distinguished from an attempt to null it out to dodge the gate; both are refused if the
+        record is simultaneously going to Completed with an unmet prerequisite, which is the entire
+        point of a backstop.
+        PRIORVALUE() AVAILABILITY - MEASURED, NOT ASSUMED. `PRIORVALUE(Blocked_By__c)` was proven by a
+        check-only dry-run (usman-dpeg, 2026-08-31) to compile with zero errors in a ValidationRule on
+        this exact Text field, once the field itself was included in the same deploy package (a first,
+        field-isolated probe falsely reported "Field Blocked_By__c does not exist" only because the
+        field wasn't part of that narrower payload - not because PRIORVALUE was rejected). ISCHANGED,
+        documented alongside PRIORVALUE with the same availability list, already works correctly in
+        this rule and in the proven Wire__c precedent, which is corroborating evidence the compile
+        result reflects real support rather than a lenient parser. THIS RULE'S PLACEMENT MOVED SINCE
+        THAT PROBE, BUT THE PROBE ITSELF STILL STANDS: `PRIORVALUE` was proven to compile on a Text
+        field in a ValidationRule at all, independent of which sObject the rule ends up bound to - the
+        Activity-vs-Task finding above is about BINDING, not about whether this function or this
+        formula shape compiles. A functional (non-dry-run) readback proving PRIORVALUE evaluates as
+        intended at save time on THIS Task-scoped rule specifically has not yet been performed.
+
+        VERIFIED THIS RULE DOES NOT BREAK A LEGITIMATE COMPLETION.
+        Is_Prerequisite_Met__c is stamped by the SAME before-update context, earlier in the same save,
+        so by the time this rule evaluates it already reflects the sibling's live state - a
+        legitimately unblocked completion (no Blocked_By__c surviving this save, or its target already
+        Completed) always finds Is_Prerequisite_Met__c = true and saves normally.
+
+        errorDisplayField -> Status, the field the user is actually trying to change.
+    -->
+    <fullName>Prerequisite_Must_Be_Met_To_Complete</fullName>
+    <active>true</active>
+    <description>Blocks completing a wire-fraud-gated checklist item (e.g. B3, I8) while its verbal-verification prerequisite (B2, I7) is still open, including an attempt to clear Blocked_By__c in the same save. See the in-file comment for the full Story 28 rationale.</description>
+    <errorConditionFormula>AND(
+    OR(ISNEW(), ISCHANGED(Status)),
+    ISPICKVAL(Status, &apos;Completed&apos;),
+    NOT(ISBLANK(IF(ISNEW(), Blocked_By__c, BLANKVALUE(Blocked_By__c, PRIORVALUE(Blocked_By__c))))),
+    NOT(Is_Prerequisite_Met__c)
+)</errorConditionFormula>
+    <errorDisplayField>Status</errorDisplayField>
+    <errorMessage>This item cannot be marked Completed until its required prerequisite checklist item (wire-fraud verification) has been completed first.</errorMessage>
+</ValidationRule>

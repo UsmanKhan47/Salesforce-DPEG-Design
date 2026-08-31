@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomObject xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+      THIS COMMENT IS INSIDE THE ROOT ELEMENT ON PURPOSE - a comment ABOVE the root breaks `sf`
+      at source conversion with a misleading "unable to find matching parent xml" error.
+
+      MASTER-DETAIL, NOT LOOKUP - the decision and its consequences.
+      Transaction__c is sharingModel=Private. If this object were a Private-OWD LOOKUP child, its
+      93-ish rows per deal would be created by the fan-out Queueable and OWNED by whatever user
+      that automation runs as, making them invisible to the deal team until sharing rules were
+      written. ControlledByParent removes that entire class of defect: read/edit on a checklist is
+      exactly read/edit on its Transaction, forever, with no rule to maintain and none to drift.
+      A checklist has no independent lifecycle - an orphan checklist is meaningless - so cascade
+      delete is the correct semantic, and the platform enforces the parent at insert without a
+      validation rule.
+
+      ACCEPTED COSTS, all of which are already true of the model this replaces:
+        (a) NO OwnerId. "Owner" on a checklist is a ROLE STRING (Danish / CFO / Legal / FES /
+            Accounting / Prop. Mgmt.) held in Owner_Label__c, exactly as Task_Owner_Label__c does
+            today. It is not a User and must never be rendered as "completed by".
+        (b) No sharing rules may be written on this object. None are wanted.
+        (c) Reparenting is off (reparentableMasterDetail=false) - a checklist cannot be moved to
+            another deal.
+
+      VISIBILITY IS NOT REDUCED VS THE TASKS THIS REPLACES. DPEG_Transaction_Edit and
+      DPEG_Transaction_View both grant viewAllRecords=true on Transaction__c; under
+      ControlledByParent, read on every Transaction IS read on every Checklist. The permission
+      sets therefore leave viewAllRecords=false on this object deliberately - the outcome does not
+      depend on whether View All is grantable on a detail object, a question that could not be
+      measured (no org access this session).
+
+      ROLL-UPS ARE APEX, NOT DECLARATIVE (settled decision GATE-S1). Items_Total__c and
+      Items_Complete__c are WRITABLE Numbers maintained by ChecklistRollupService in Phase 2, not
+      roll-up summary fields. Pct_Complete__c is a formula over them, because a roll-up summary
+      can only COUNT/SUM/MIN/MAX - a ratio is not one of those.
+
+      🔴 CORRECTED 2026-08-31, POST-DEPLOY FAILURE. enableSharing was originally false here on the
+      reasoning that a ControlledByParent object has no sharing rules to enable - MEASURED WRONG:
+      the deploy was refused outright with "Allow Sharing, Allow Bulk API Access, and Allow
+      Streaming API Access must be enabled together or disabled together." This trio is an
+      all-or-nothing platform constraint independent of sharingModel; it does not encode "can this
+      object have sharing rules" (ControlledByParent still cannot, regardless of this flag's
+      value). Set to true to match Loan__c/Insurance_Binder__c and satisfy the platform rule. The
+      "no sharing rules may be written" statement above is still accurate and unaffected.
+    -->
+    <allowInChatterGroups>false</allowInChatterGroups>
+    <compactLayoutAssignment>SYSTEM</compactLayoutAssignment>
+    <deploymentStatus>Deployed</deploymentStatus>
+    <description>One task group (A-J, H2) of the Transaction closing checklist, for one Transaction. Master-detail child of Transaction__c, so access is inherited and there is no record owner - the responsible role is Owner_Label__c. Replaces the Task_Group__c grouping that the 82-Task model carried as a text field. Progress counters are written by Apex, not roll-up summaries.</description>
+    <enableActivities>false</enableActivities>
+    <enableBulkApi>true</enableBulkApi>
+    <enableFeeds>false</enableFeeds>
+    <enableHistory>false</enableHistory>
+    <enableLicensing>false</enableLicensing>
+    <enableReports>true</enableReports>
+    <enableSearch>false</enableSearch>
+    <enableSharing>true</enableSharing>
+    <enableStreamingApi>true</enableStreamingApi>
+    <externalSharingModel>ControlledByParent</externalSharingModel>
+    <label>Checklist</label>
+    <nameField>
+        <displayFormat>CHK-{000000}</displayFormat>
+        <label>Checklist Number</label>
+        <trackHistory>false</trackHistory>
+        <type>AutoNumber</type>
+    </nameField>
+    <pluralLabel>Checklists</pluralLabel>
+    <searchLayouts></searchLayouts>
+    <sharingModel>ControlledByParent</sharingModel>
+    <visibility>Public</visibility>
+</CustomObject>

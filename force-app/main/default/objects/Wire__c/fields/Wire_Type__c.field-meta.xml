@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+      trackHistory=true, CONFIRMED LIVE, 2026-08-31. This field IS tracked and always was -
+      Tooling API `CustomField`/`FieldDefinition` (`IsFieldHistoryTracked = true`) confirms all 9
+      custom fields on Wire__c, this one included.
+      🔴 DO NOT READ FIELD HISTORY STATE OVER REST `FieldDefinition` - IT IS FLS-FILTERED AND OMITS
+      ROWS RATHER THAN RETURNING false. An earlier pass here concluded this field had silently
+      stopped tracking because a REST `FieldDefinition` query for `IsFieldHistoryTracked = true`
+      didn't return it - that conclusion was WRONG, disproven, and withdrawn (do not re-derive a
+      "same-deploy trackHistory gets silently dropped" theory from that symptom again). The running
+      user simply lacked FLS on this field at query time (proof: `SELECT Wire_Type__c FROM Wire__c`
+      threw `No such column`, an FLS denial wearing a schema error, and REST `FieldDefinition`
+      returned only 7 of Wire__c's 9 custom fields - exactly the ones the user held FLS on via
+      DPEG_Disposition_Edit). Querying the SAME object over the Tooling API, which is not
+      FLS-filtered, returns all 9 fields with `IsFieldHistoryTracked = true`. Always use the Tooling
+      API for a field-history readback; an absent row from REST `FieldDefinition` means "caller
+      cannot see this field," never "this field is untracked."
+    -->
+    <fullName>Wire_Type__c</fullName>
+    <description>Which wire on the deal this is: the earnest money wire from checklist group B, or the closing wire from group I. A deal has BOTH, each with its own independent verbal verification (B2 and I7), so without this column the two are indistinguishable on the same Transaction and the closing wire evidence can be read as the earnest money wire evidence. Restricted so a third spelling cannot be introduced by a data load. Blank on disposition wires, which have only one.</description>
+    <inlineHelpText>Which wire this is on the deal. Earnest Money is the group B wire; Closing is the group I wire.</inlineHelpText>
+    <label>Wire Type</label>
+    <required>false</required>
+    <trackHistory>true</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Picklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>Earnest Money</fullName>
+                <default>false</default>
+                <label>Earnest Money</label>
+            </value>
+            <value>
+                <fullName>Closing</fullName>
+                <default>false</default>
+                <label>Closing</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>

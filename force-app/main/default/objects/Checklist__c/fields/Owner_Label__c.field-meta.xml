@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Owner_Label__c</fullName>
+    <description>The ROLE responsible for this group - Danish, CFO, Legal, FES, Accounting, Prop. Mgmt. - mirroring Task_Group_Def__mdt.Owner_Label__c. THIS IS NOT A USER AND NOT A RECORD OWNER. A master-detail child has no OwnerId at all, and the value here has always been a role string in this model. Naming follows the _Label__c type-suffix discipline for Text carrying a human label. Never pair this with a completion date and render it as completed by role - that is a lie the current model already carries warnings about.</description>
+    <inlineHelpText>The role accountable for this group of items, for example CFO or Legal. It is a label, not a Salesforce user.</inlineHelpText>
+    <externalId>false</externalId>
+    <label>Owner Label</label>
+    <length>80</length>
+    <required>false</required>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>

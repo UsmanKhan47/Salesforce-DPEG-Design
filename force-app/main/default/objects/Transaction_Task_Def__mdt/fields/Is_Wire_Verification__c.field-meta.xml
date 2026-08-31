@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Is_Wire_Verification__c</fullName>
+    <defaultValue>false</defaultValue>
+    <description>Marks the two anti-fraud wire verification definitions, B2 and I7. Seeds Checklist_Item__c.Is_Wire_Verification__c, which is what Transaction__c.Wire_Open_Risks__c counts after cutover. It replaces the Subject.toLowerCase().contains(anti-fraud) parse in TaskRollupService, which fails silently in the unsafe direction - the metric reads 0 open wire risks on every deal and nothing errors. SEPARATE FROM Is_Critical__c ON PURPOSE: B2 and I7 are both, F12 and J4 are critical but are not wire verifications, so one column cannot serve both.</description>
+    <inlineHelpText>Tick only on the anti-fraud wire verification definitions. Drives the open wire risk count on the deal.</inlineHelpText>
+    <fieldManageability>DeveloperControlled</fieldManageability>
+    <label>Is Wire Verification</label>
+    <type>Checkbox</type>
+</CustomField>

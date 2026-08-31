@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Stage__c</fullName>
+    <description>The deal phase this item belongs to, stamped at creation from its group. Values are BYTE-IDENTICAL to the first four values of Transaction__c.Stage__c, including the hyphen in Post-Closing. Denormalised from the parent so the checklist UI and reports can filter by phase without a parent join. NO DEFAULT VALUE, deliberately - a plausible default would hide a fan-out that failed to stamp the phase.</description>
+    <inlineHelpText>Deal phase this item belongs to. Stamped when the item is created; it does not move when the deal advances.</inlineHelpText>
+    <label>Stage</label>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>Picklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>Open Contract</fullName>
+                <default>false</default>
+                <label>Open Contract</label>
+            </value>
+            <value>
+                <fullName>Due Diligence</fullName>
+                <default>false</default>
+                <label>Due Diligence</label>
+            </value>
+            <value>
+                <fullName>Closing Prep</fullName>
+                <default>false</default>
+                <label>Closing Prep</label>
+            </value>
+            <value>
+                <fullName>Post-Closing</fullName>
+                <default>false</default>
+                <label>Post-Closing</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>

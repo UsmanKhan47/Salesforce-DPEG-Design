@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Sequence__c</fullName>
+    <description>Order of this item within its group, mirroring Transaction_Task_Def__mdt.Sequence__c. Together with the parent Group_Letter__c this is the STABLE IDENTITY of a checklist line - B plus 2 is item B2. Services that need to act on a specific item must resolve it this way, never by subject text.</description>
+    <inlineHelpText>Position of this item inside its group. Combined with the group letter it identifies the item, for example B2.</inlineHelpText>
+    <externalId>false</externalId>
+    <label>Sequence</label>
+    <precision>3</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

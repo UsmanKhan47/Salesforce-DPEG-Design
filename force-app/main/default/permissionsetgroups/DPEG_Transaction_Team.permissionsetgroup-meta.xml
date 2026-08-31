@@ -6,6 +6,7 @@
     <permissionSets>DPEG_Apex_Access</permissionSets>
     <permissionSets>DPEG_Transaction_Edit</permissionSets>
     <permissionSets>DPEG_Task_Edit</permissionSets>
+    <permissionSets>DPEG_Checklist_Edit</permissionSets>
     <permissionSets>DPEG_Opportunity_View</permissionSets>
     <permissionSets>DPEG_Property_View</permissionSets>
     <permissionSets>DPEG_Reports_Access</permissionSets>

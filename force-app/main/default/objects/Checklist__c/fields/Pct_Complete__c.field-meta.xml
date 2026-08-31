@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Pct_Complete__c</fullName>
+    <description>Percent of this group complete. A FORMULA, never a roll-up summary: a roll-up summary can only COUNT, SUM, MIN or MAX, and a ratio is none of those. Mirrors the existing Transaction__c.Completion_Pct__c formula shape exactly so the two read identically. Must be granted editable=false in every permission set - editable=true on a formula field fails the deploy.</description>
+    <inlineHelpText>Percent of the items in this group that are complete. Calculated automatically.</inlineHelpText>
+    <externalId>false</externalId>
+    <label>Percent Complete</label>
+    <precision>18</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <type>Number</type>
+    <unique>false</unique>
+    <formula><![CDATA[IF(Items_Total__c > 0, ROUND(100 * Items_Complete__c / Items_Total__c, 0), 0)]]></formula>
+    <formulaTreatBlanksAs>BlankAsZero</formulaTreatBlanksAs>
+</CustomField>

@@ -97,6 +97,39 @@ List<List<Object>> defs = new List<List<Object>>{
     new List<Object>{ 'J', 15, 'Accounting', 65, 'Upload all loan information to Global Cash Flow tracker' }
 };
 
+// ══════════════════════════════════════════════════════════════════════════════════════════
+// PHASE 1/2 COLUMNS — added 2026-08-31 for the Checklist__c rewrite.
+//
+// 🔴 THESE THREE SETS ARE THE THING THAT KILLS THE SUBJECT-STRING PARSE. Today criticality and
+// wire-verification are derived at RUNTIME by a regex over the Subject, in TWO independent places
+// (TaskRollupService and transactionTaskGroups.js), neither of which throws when it stops matching:
+// the Wire Sentinel tile reads 0 open wire risks on every deal and nothing errors. Seeding the
+// markers as DATA removes both parsers.
+// ⚠ A NAIVE `Subject contains "critical"` BACKFILL IS WRONG AND WOULD FLAG A4 AND A5
+// ("Receive critical dates from title company" / "Log critical dates into Salesforce deal record").
+// The live regex requires the token INSIDE PARENTHESES, which is what excludes them. These sets are
+// keyed on `<letter>|<sequence>` — structured coordinates, never text.
+//
+// CRITICAL is seeded on FOUR items, not three: {B2, F12, I7, J4}. That is what the org renders
+// today. Seeding only three would silently remove the red flag from I7, the CLOSING WIRE — the
+// highest-value item on the deal.
+Set<String> criticalKeys = new Set<String>{ 'B|2', 'F|12', 'I|7', 'J|4' };
+
+// WIRE VERIFICATION is seeded on TWO: {B2, I7} — the anti-fraud verbal-verification calls. Separate
+// from criticalKeys on purpose: B2 and I7 are both, F12 and J4 are critical but are not wire
+// verifications, so one column cannot serve both. This is what Wire_Open_Risks__c counts after
+// cutover.
+Set<String> wireVerificationKeys = new Set<String>{ 'B|2', 'I|7' };
+
+// PREREQUISITE PAIRS: dependent `<letter>|<sequence>` => the prerequisite's sequence IN THE SAME
+// GROUP (Blocked_By_Group_Letter__c stays blank, which means "same group"). B3 waits on B2; I8 waits
+// on I7. This replaces the map hardcoded in TaskFanoutService.PREREQUISITE_SEQUENCES — a third pair
+// is now a definition edit plus a re-run of this script, not a deploy of two Apex classes.
+Map<String, Integer> blockedBySequence = new Map<String, Integer>{
+    'B|3' => 2,
+    'I|8' => 7
+};
+
 Metadata.DeployContainer container = new Metadata.DeployContainer();
 for (List<Object> d : defs) {
     String letter = (String) d[0];
@@ -104,6 +137,7 @@ for (List<Object> d : defs) {
     String owner = (String) d[2];
     Integer offset = (Integer) d[3];
     String subject = (String) d[4];
+    String markerKey = letter + '|' + seq;
 
     Metadata.CustomMetadata cm = new Metadata.CustomMetadata();
     String devLetter = letter.replace('.', '').replace(' ', '');
@@ -112,7 +146,18 @@ for (List<Object> d : defs) {
 
     Map<String, Object> fv = new Map<String, Object>{
         'Group_Letter__c' => letter, 'Sequence__c' => seq, 'Subject__c' => subject,
-        'Owner_Label__c' => owner, 'Due_Day_Offset__c' => offset
+        'Owner_Label__c' => owner, 'Due_Day_Offset__c' => offset,
+        // Written for EVERY row, not only the true ones. A Custom Metadata deploy that omits a
+        // checkbox leaves whatever was there before, so an explicit false is what makes re-running
+        // this script self-healing after a marker is moved.
+        'Is_Critical__c' => criticalKeys.contains(markerKey),
+        'Is_Wire_Verification__c' => wireVerificationKeys.contains(markerKey),
+        // Null for the ~80 unblocked rows, which is what makes the fan-out's second pass touch only
+        // the two that need it.
+        'Blocked_By_Sequence__c' => blockedBySequence.get(markerKey)
+        // Blocked_By_Group_Letter__c and Stage_Override__c are deliberately NOT written: blank means
+        // "same group as this row" and "inherit the phase from the group", which is correct for all
+        // 82 rows today. Writing a value would be inventing a special case that does not exist.
     };
     for (String f : fv.keySet()) {
         Metadata.CustomMetadataValue v = new Metadata.CustomMetadataValue();

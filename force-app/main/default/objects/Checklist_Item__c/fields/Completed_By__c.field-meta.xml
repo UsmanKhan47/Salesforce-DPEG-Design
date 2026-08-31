@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Completed_By__c</fullName>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <description>THE REAL PERSON who completed this item, written by the completion service. A role-named lookup to User, which the naming convention explicitly permits because API names must be unique and a bare User__c cannot be repeated. This retires the LastModifiedBy approximation that TaskSelector and TransactionTaskController both carry warnings about - LastModifiedBy names whoever last touched the row, which after any rollup or backfill is not the person who did the work.</description>
+    <inlineHelpText>The user who completed this item. Set automatically when the item is marked complete.</inlineHelpText>
+    <label>Completed By</label>
+    <referenceTo>User</referenceTo>
+    <relationshipLabel>Completed Checklist Items</relationshipLabel>
+    <relationshipName>Completed_Checklist_Items</relationshipName>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>Lookup</type>
+</CustomField>

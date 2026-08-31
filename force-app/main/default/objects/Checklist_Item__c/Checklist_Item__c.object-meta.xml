@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomObject xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+      THIS COMMENT IS INSIDE THE ROOT ELEMENT ON PURPOSE - a comment ABOVE the root breaks sf
+      at source conversion with a misleading "unable to find matching parent xml" error.
+
+      MASTER-DETAIL to Checklist__c, for the same reasons recorded on Checklist__c: the grandparent
+      Transaction__c is sharingModel=Private, these rows are machine-created by a Queueable, and a
+      Private-OWD lookup child would be OWNED by the automation user and invisible to the deal team
+      until sharing rules were written. The chain Transaction__c to Checklist__c to Checklist_Item__c
+      makes access identical to access on the deal, with nothing to maintain and nothing to drift.
+
+      NO OwnerId. Owner_Label__c is a ROLE STRING; Completed_By__c is the real person. Do not pair
+      Owner_Label__c with a completion date and render it as "completed by role" - TaskSelector and
+      TransactionTaskController both carry warnings that this reads as a lie.
+
+      FLAG__c IS A SINGLE LOSSY PICKLIST, BY EXPLICIT USER DECISION (GATE-B6), against the design
+      recommendation to split it. Completing a CRITICAL item OVERWRITES the CRITICAL severity with
+      Completed or Verified, so "show me all critical items" can only ever return OPEN ones and
+      "how many critical items did this deal have" is unanswerable from Flag__c. That loss is known
+      and accepted.
+
+      THAT IS WHY TWO SEPARATE IMMUTABLE MARKERS EXIST AND ARE MANDATORY, NOT OPTIONAL:
+        Is_Critical__c          - the severity. Seeded from the definition on B2, F12, I7 and J4 and
+                                  never overwritten by working the item. Reports group on THIS,
+                                  never on Flag__c.
+        Is_Wire_Verification__c - seeded on B2 and I7. This is what Transaction__c.Wire_Open_Risks__c
+                                  counts after cutover. It REPLACES the
+                                  Subject.toLowerCase().contains('anti-fraud') string parse in
+                                  TaskRollupService, which reads ZERO silently, with no error
+                                  anywhere, the moment the subject text changes.
+      Wire_Open_Risks__c CANNOT be derived from Flag__c. Do not try.
+
+      DELETE IS NOT GRANTED to any persona permission set. Group-F removal on a Loan_Required__c
+      true-to-false flip reconciles in system mode and refuses when any item in the group has been
+      completed - deleting worked history is worse than an inconsistent checklist.
+
+      🔴 CORRECTED 2026-08-31, POST-DEPLOY FAILURE - same fix and same reasoning as Checklist__c's
+      own header note. enableSharing=false paired with enableBulkApi=true/enableStreamingApi=true
+      is refused outright ("must be enabled together or disabled together"), regardless of
+      sharingModel. Set to true to match Loan__c/Insurance_Binder__c. ControlledByParent still
+      permits no sharing rules on this object either way.
+    -->
+    <allowInChatterGroups>false</allowInChatterGroups>
+    <compactLayoutAssignment>SYSTEM</compactLayoutAssignment>
+    <deploymentStatus>Deployed</deploymentStatus>
+    <description>One line of the Transaction closing checklist. Master-detail child of Checklist__c and grandchild of Transaction__c, so access is inherited and there is no record owner. Replaces one Task record in the 82-Task model. Carries the wire-fraud verification evidence and the Blocked_By__c prerequisite link that gates a wire send behind its verbal verification.</description>
+    <enableActivities>false</enableActivities>
+    <enableBulkApi>true</enableBulkApi>
+    <enableFeeds>false</enableFeeds>
+    <enableHistory>false</enableHistory>
+    <enableLicensing>false</enableLicensing>
+    <enableReports>true</enableReports>
+    <enableSearch>false</enableSearch>
+    <enableSharing>true</enableSharing>
+    <enableStreamingApi>true</enableStreamingApi>
+    <externalSharingModel>ControlledByParent</externalSharingModel>
+    <label>Checklist Item</label>
+    <nameField>
+        <displayFormat>CLI-{000000}</displayFormat>
+        <label>Checklist Item Number</label>
+        <trackHistory>false</trackHistory>
+        <type>AutoNumber</type>
+    </nameField>
+    <pluralLabel>Checklist Items</pluralLabel>
+    <searchLayouts></searchLayouts>
+    <sharingModel>ControlledByParent</sharingModel>
+    <visibility>Public</visibility>
+</CustomObject>

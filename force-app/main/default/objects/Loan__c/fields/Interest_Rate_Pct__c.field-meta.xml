@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Interest_Rate_Pct__c</fullName>
+    <description>Annual interest rate. Percent type with three decimals so a rate quoted in basis points survives without rounding. The _Pct__c suffix follows the type-suffix discipline for a Number whose name would otherwise read categorical, and it makes clear at the call site that the stored value is a percentage rather than a decimal fraction.</description>
+    <inlineHelpText>Annual interest rate as a percentage, for example 6.375 for six and three eighths percent.</inlineHelpText>
+    <label>Interest Rate %</label>
+    <precision>6</precision>
+    <required>false</required>
+    <scale>3</scale>
+    <trackTrending>false</trackTrending>
+    <type>Percent</type>
+</CustomField>

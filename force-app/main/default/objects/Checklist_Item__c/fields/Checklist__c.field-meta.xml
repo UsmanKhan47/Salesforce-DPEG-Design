@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Checklist__c</fullName>
+    <description>The checklist group this item belongs to. MASTER-DETAIL, so access is inherited from the group and in turn from the Transaction, and deleting a checklist removes its items. required and deleteConstraint are deliberately absent - the Metadata API rejects both on a master-detail field, which is always required and always cascades. NON-PERMISSIONABLE: it must never appear in a permission set fieldPermissions block.</description>
+    <inlineHelpText>The checklist group this item sits in. Set at creation and cannot be changed afterwards.</inlineHelpText>
+    <label>Checklist</label>
+    <referenceTo>Checklist__c</referenceTo>
+    <relationshipLabel>Checklist Items</relationshipLabel>
+    <relationshipName>Checklist_Items</relationshipName>
+    <relationshipOrder>0</relationshipOrder>
+    <reparentableMasterDetail>false</reparentableMasterDetail>
+    <trackTrending>false</trackTrending>
+    <type>MasterDetail</type>
+    <writeRequiresMasterRead>false</writeRequiresMasterRead>
+</CustomField>

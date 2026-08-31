@@ -208,6 +208,34 @@ public with sharing class TransactionActionPermissionService {
      */
     private static final String TASK_ACTION_CUSTOM_PERMISSION = 'Transaction_Task_Actions';
 
+    /**
+     * The AUTHORIZATION token for OVERRIDING the Phase 0 wire-fraud prerequisite gate (added
+     * 2026-08-31). A THIRD, independent permission — not a reuse of the two above.
+     *
+     * 🔴 WHAT IT ACTUALLY GRANTS, STATED PRECISELY BECAUSE IT IS NARROWER THAN ITS NAME SUGGESTS.
+     * It permits changing `Task.Blocked_By__c` or `Task.Transaction_Deal__c` on a checklist item that
+     * is STILL OPEN while its prerequisite is STILL OPEN — the "disarm" refusal, branch B of
+     * `TaskPrerequisiteService.refusalFor`. It does NOT permit completing a gated item while its
+     * prerequisite is open; branch A is UNCONDITIONAL and this token does not reach it. Anyone
+     * expecting this to be a master key for the anti-fraud control is reading it wrong: it exempts
+     * the maintenance of the gate's coordinates, never the gate itself.
+     *
+     * 🔴 WHY IT HAD TO EXIST. Branch B refuses for EVERY principal and EVERY path including
+     * `AccessLevel.SYSTEM_MODE`, because a before-trigger runs regardless of mode. That blocks three
+     * legitimate operations outright: (a) the M5 mass key-clear, which is the documented RETIREMENT
+     * path for this entire feature; (b) Phase 1's renumbering when `Blocked_By_Sequence__c` replaces
+     * the hardcoded pair table; (c) repair of a mis-fanned deal whose key is wrong but RESOLVABLE
+     * (e.g. `B3 -> B|1`), which is otherwise neither repairable nor completable by anyone.
+     *
+     * ⚠ Same runtime-resolution caveat as the two tokens above, and it bites harder here because the
+     * failure is silent in the opposite direction from usual: `FeatureManagement.checkPermission`
+     * returns `false` for an undeployed permission and never throws, so shipping this class without
+     * the custom permission and its admin-only permission set means THE ESCAPE HATCH SIMPLY DOES NOT
+     * EXIST — every key change on an open row is refused, with nothing anywhere reporting why. The
+     * Apex, the permission and the permission set belong in the SAME deploy.
+     */
+    private static final String PREREQ_OVERRIDE_CUSTOM_PERMISSION = 'Transaction_Prereq_Override';
+
     // Transaction-scoped cache of the composed answer. Neither the running user's custom-permission
     // grants nor their "Modify All Data" can change mid-transaction, so the bypass read happens at
     // most once per execution context.
@@ -227,6 +255,19 @@ public with sharing class TransactionActionPermissionService {
      */
     @TestVisible
     private static Boolean cachedHasTaskActionAccess;
+
+    /**
+     * Transaction-scoped cache for the PREREQUISITE OVERRIDE gate.
+     *
+     * 🔴 A THIRD SEPARATE VARIABLE, for the same reason the second one exists: the three permissions
+     * are independently grantable, so sharing a cache would let whichever gate ran first answer
+     * another's question. That matters more here than anywhere else in this class — this gate is
+     * asked from inside a BEFORE-UPDATE TRIGGER, so it runs in the same transaction as the task gate
+     * on every checklist completion, and a shared cache would silently hand every
+     * `Transaction_Task_Actions` holder the override.
+     */
+    @TestVisible
+    private static Boolean cachedHasPrereqOverrideAccess;
 
     /**
      * Test seam for the permission-machinery fault branch — the only deterministic way to make this
@@ -341,6 +382,67 @@ public with sharing class TransactionActionPermissionService {
     }
 
     /**
+     * Whether the running user may change the COORDINATES of a live wire-fraud prerequisite gate —
+     * `Task.Blocked_By__c` or `Task.Transaction_Deal__c` on a still-open item whose prerequisite is
+     * still open. Consumed by `TaskPrerequisiteService.enforceOnUpdate` (branch B only).
+     *
+     * ⚠ THIS IS ASKED FROM INSIDE A BEFORE-UPDATE TRIGGER, which the two sibling gates are not, so
+     * two properties matter here that do not there:
+     *   - it must cost ZERO SOQL on the common path, or it would put a query on a trigger that fires
+     *     for every Task in the org. `FeatureManagement.checkPermission` is free; only a NON-holder
+     *     reaches the `hasModifyAllData` read, and only on a save that was already going to be
+     *     refused. `TaskPrerequisiteService` calls this lazily, at most once per transaction, and
+     *     only after a candidate has actually tripped branch B.
+     *   - it must not throw on the happy path. A `QueryException` escaping a before trigger becomes
+     *     `CANNOT_INSERT_UPDATE_ACTIVATE_ENTITY` and rolls back the user's own save. The fault seam
+     *     and the bypass read are both behind the free check for exactly that reason.
+     *
+     * @return true when the user holds the `Transaction_Prereq_Override` custom permission, or has
+     *         "Modify All Data"; false otherwise — including when the permission is not deployed.
+     * @throws System.QueryException when the permission-set lookup behind the admin bypass fails
+     *         unexpectedly. Deliberately NOT swallowed — see the fail-closed note in the class
+     *         header.
+     * @example
+     * if (!TransactionActionPermissionService.hasPrereqOverrideAccess()) { refuse(); }
+     */
+    public static Boolean hasPrereqOverrideAccess() {
+        if (cachedHasPrereqOverrideAccess != null) {
+            return cachedHasPrereqOverrideAccess;
+        }
+        // Assign only AFTER a successful computation: a thrown fault must leave the cache empty so
+        // the next ask re-evaluates rather than memoizing a fault as an answer.
+        Boolean allowed = computePrereqOverrideAccess();
+        cachedHasPrereqOverrideAccess = allowed;
+        return allowed;
+    }
+
+    /**
+     * Evaluates the PREREQUISITE OVERRIDE gate. Structurally identical to the two compute methods
+     * above, differing only in the token it tests.
+     *
+     * ⚠ THE "Modify All Data" BYPASS IS RETAINED, AND HERE IT IS THE PRIMARY ROUTE, NOT A FALLBACK.
+     * The three operations this gate exists to permit — the M5 mass key-clear, Phase 1 renumbering,
+     * and repair of a wrong-but-resolvable key — are all administrator work run from anonymous Apex
+     * or a script, where no permission set may be assigned. Dropping the bypass would leave the
+     * feature's own retirement path blocked by the feature.
+     *
+     * ⚠ Shares the `simulateLookupFailure` test seam with the other two gates — one flag meaning
+     * "the permission machinery itself failed", not one per gate.
+     */
+    private static Boolean computePrereqOverrideAccess() {
+        if (simulateLookupFailure == true && Test.isRunningTest()) {
+            throw new QueryException('Simulated permission-lookup failure (test seam).');
+        }
+
+        // 0 SOQL. Returns false (never throws) for an unknown or unheld permission.
+        if (FeatureManagement.checkPermission(PREREQ_OVERRIDE_CUSTOM_PERMISSION)) {
+            return true;
+        }
+
+        return hasModifyAllData();
+    }
+
+    /**
      * Evaluates the gate.
      *
      * ⚠ ORDER: the custom permission is tested FIRST because it costs ZERO SOQL, so a Transactions
@@ -427,9 +529,12 @@ public with sharing class TransactionActionPermissionService {
     @TestVisible
     private static void clearCache() {
         cachedHasTransactionActionAccess = null;
-        // ⚠ BOTH caches. A user switch invalidates every memoized answer in this class, not just
-        // the stage one; clearing only half would leave the previous user's task answer standing.
+        // ⚠ ALL THREE caches. A user switch invalidates every memoized answer in this class, not
+        // just the stage one; clearing only some would leave the previous user's answer standing.
+        // (Was "BOTH" until 2026-08-31, when the prerequisite-override gate was added — a third
+        // cache added without a line here is invisible until a runAs test starts lying.)
         cachedHasTaskActionAccess = null;
+        cachedHasPrereqOverrideAccess = null;
         simulateLookupFailure = false;
     }
 }

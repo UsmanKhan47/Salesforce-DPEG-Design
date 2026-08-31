@@ -4,5 +4,6 @@
     <defaultValue>false</defaultValue>
     <label>Verbal Verification Completed</label>
     <trackTrending>false</trackTrending>
+    <trackHistory>true</trackHistory>
     <type>Checkbox</type>
 </CustomField>

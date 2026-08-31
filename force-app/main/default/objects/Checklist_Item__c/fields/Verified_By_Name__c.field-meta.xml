@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Verified_By_Name__c</fullName>
+    <description>Name of the person at the title company or lender who confirmed the wiring instructions by phone. Migrated from Task.Verified_By__c and DELIBERATELY RENAMED: a bare _By__c reads as a relationship field under this repo naming convention, and on this object the collision is live rather than theoretical because the real User lookup Completed_By__c sits directly beside it. _Name__c is the convention for Text carrying a human label.</description>
+    <inlineHelpText>Name of the person at the title company or lender who confirmed the instructions on the call.</inlineHelpText>
+    <externalId>false</externalId>
+    <label>Verified By (Name)</label>
+    <length>120</length>
+    <required>false</required>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>

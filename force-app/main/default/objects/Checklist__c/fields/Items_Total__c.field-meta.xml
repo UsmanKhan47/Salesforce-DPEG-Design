@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Items_Total__c</fullName>
+    <description>Count of Checklist_Item__c rows under this checklist. A WRITABLE NUMBER MAINTAINED BY APEX, NOT A ROLL-UP SUMMARY - that is a settled decision, not an oversight. A roll-up summary is not writable, which would break every seed script and TestDataFactory path that assigns these counters directly, and editable=true FLS on a roll-up summary fails the deploy outright. The sibling counters Wire_Open_Risks__c and Tasks_Overdue__c cannot be roll-ups at all (one is conditional on two fields, the other is date-relative), so Apex is required regardless and running two mechanisms side by side would be strictly worse than one.</description>
+    <inlineHelpText>Number of items in this group. Recalculated automatically; do not edit.</inlineHelpText>
+    <externalId>false</externalId>
+    <label>Items Total</label>
+    <precision>3</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

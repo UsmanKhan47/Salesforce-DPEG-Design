@@ -34,9 +34,10 @@
  * Task_Owner_Label__c, Verbal_Verification_*, Verified_By__c/At__c,
  * Verification_Phone__c) rely on the deployed permsets (P3: custom-field FLS gap = 0).
  *
- * FOUR methods are `WITH SYSTEM_MODE`. Each carries its own justification at its own
- * declaration; all four sit on an AUTOMATION PATH, where `USER_MODE` THROWS rather
- * than degrades and so converts one missing FLS grant into a broken write:
+ * FIVE methods are `WITH SYSTEM_MODE` (FOUR until 2026-08-31). Each carries its own
+ * justification at its own declaration; all five sit on an AUTOMATION PATH, where
+ * `USER_MODE` THROWS rather than degrades and so converts one missing FLS grant into a
+ * broken write:
  *
  *   EAC capture pipeline (added 2026-08-02)
  *     • selectByIds                        <- EmailThreadGuardService
@@ -51,6 +52,13 @@
  *       called DIRECTLY by OnboardingService.completeTask (no trigger involved).
  *       PROSPECTIVE ONLY — inert on today's live path, because an earlier USER_MODE
  *       read in that same method throws first. See the method's own Javadoc.
+ *   Wire-fraud prerequisite gate — BEFORE-TRIGGER, USER-SAVE-ROLLING-BACK (added 2026-08-31).
+ *     • selectChecklistByDealsAndSequences <- TaskPrerequisiteService, fired by
+ *       TaskRollupTrigger (before-update). Same class of failure as
+ *       selectByTransactionDealIds above, one context earlier: a USER_MODE FLS denial on
+ *       the brand-new `Blocked_By__c` field would abort the SAVING USER'S OWN update of a
+ *       checklist item. Not an observed failure — a structurally identical one, on a field
+ *       that by construction has zero FieldPermissions on the day it deploys.
  *
  * ⚠ AMENDED 2026-08-02 — the statement "There is NO guest/automation path on Task,
  * so NO `SYSTEM_MODE` appears here" was true when written and is NO LONGER TRUE.
@@ -413,7 +421,7 @@ public with sharing class TaskSelector {
      *
      * WHY SYSTEM_MODE RATHER THAN A PERMISSION-SET GRANT: this is a TRIGGER-DRIVEN
      * ROLLUP RECOMPUTE, not a user-initiated read. Nobody asked for these rows — a
-     * trigger recomputes the "N / 75" counters on the acting user's behalf, and
+     * trigger recomputes the "N / 82" counters on the acting user's behalf, and
      * `USER_MODE` THROWS (it does not degrade) the moment one selected field is
      * inaccessible. Making an automatic recompute depend on the acting user's FLS
      * means any persona missing any one custom field silently breaks an unrelated
@@ -718,6 +726,88 @@ public with sharing class TaskSelector {
             WHERE Thread_Key__c IN :bothForms OR Inbound_Message_Id__c IN :bothForms
             WITH SYSTEM_MODE
             ORDER BY CreatedDate DESC, Id DESC
+        ];
+    }
+
+    /**
+     * Completion state of the Tasks named as prerequisites by `Task.Blocked_By__c`. THE SINGLE READ
+     * behind the Phase 0 wire-fraud prerequisite gate (`TaskPrerequisiteService`, design
+     * `agent-output/design-transaction-fsd-gaps.md` §5.1 / §10) — B3 cannot complete while B2 is
+     * open, I8 cannot complete while I7 is open.
+     *
+     * Called ONCE PER TRIGGER CHUNK from a BEFORE UPDATE context, and only when at least one Task in
+     * that chunk carries a non-blank `Blocked_By__c` — which is at most two Tasks per Transaction.
+     * The field set is deliberately minimal: `IsClosed` is the decision, `Task_Group__c` and
+     * `Task_Sequence__c` are the KEY the caller matches on, and `Subject` NAMES the blocking step in
+     * the refusal message and is read for DISPLAY ONLY (no branch reads it — that is the whole point
+     * of the feature; see `TaskPrerequisiteService`'s header on RISK 1).
+     *
+     * 🔴 WHY THE SIGNATURE IS (deals, sequences) AND NOT A SET OF PREREQUISITE IDs. `Blocked_By__c`
+     * IS NOT A LOOKUP AND CANNOT BE — measured on `usman-dpeg` 2026-08-31: a `CustomField` with
+     * `referenceTo` = `Task` fails deploy with *"referenceTo value of 'Task' does not resolve to a
+     * valid sObject type"*. Task/Event are not valid custom-relationship TARGETS on this platform. So
+     * the field is `Text(20)` carrying the prerequisite's `<GroupLetter>|<Sequence>` key (`B|2`,
+     * `I|7`) and the prerequisite is found as a SIBLING under the same `Transaction_Deal__c`. The
+     * caller does the letter matching in memory — see the row-count note below for why that is not a
+     * cop-out.
+     *
+     * ⚠ ROW COUNT, DERIVED RATHER THAN HOPED. The WHERE cannot filter on the group letter (it lives
+     * inside `Task_Group__c` as `"<Letter>. <Group Name>"`, and SOQL has no `IN`-of-`LIKE`), so this
+     * returns every checklist Task on the named deals whose sequence is in the set — roughly
+     * `groups x sequences` rows per deal, i.e. ~11 x 2 = ~22 for the real B3/I8 pair. A full 200-row
+     * before-update chunk of blocked items is 100 deals (two blocked items each), so ~2,200 rows
+     * against the 50,000 query-row limit. Building a dynamic `OR`-of-`LIKE` to trim that would trade a
+     * comfortable margin for an injection surface. Do not.
+     *
+     * 🔴 `WITH SYSTEM_MODE` — FIFTH MEMBER OF THE MODE INVENTORY IN THIS CLASS HEADER, AND IT IS A
+     * CORRECTNESS REQUIREMENT, NOT A CONVENIENCE. This is an AUTOMATION-PATH read: performed on the
+     * saving user's behalf, never at their request. `USER_MODE` THROWS rather than degrades, and
+     * a `USER_MODE` FLS denial here would raise `System.QueryException: No such column` — an FLS
+     * denial wearing a schema error — inside a BEFORE trigger, which escapes as
+     * `CANNOT_INSERT_UPDATE_ACTIVATE_ENTITY` and rolls back THE USER'S OWN SAVE of a checklist item
+     * that has nothing to do with the missing grant. That is not hypothetical in this org: the
+     * identical failure on `Transaction_Deal__c` rolled back a whole 82-Task Day-0 fan-out (see this
+     * class's header, 2026-08-05).
+     * Concretely and not by analogy: this SELECT reads `Transaction_Deal__c`, `Task_Group__c` and
+     * `Task_Sequence__c`, all THREE of which are permission-set-granted custom fields, and
+     * `Transaction_Deal__c` is the very field whose USER_MODE denial produced the 2026-08-05
+     * rollback. `Blocked_By__c` itself is not read here — it comes from `Trigger.new`, where FLS does
+     * not apply — but it is brand new and carries zero FieldPermissions on the day it deploys, so
+     * anyone who later adds it (or `Verbal_Verification_Completed__c`, the obvious next refinement)
+     * to this SELECT would recreate that failure exactly. Do not "tighten" this to USER_MODE.
+     *
+     * ⚠ SCOPE OF THE BYPASS IS UNCHANGED AND THE CLASS STAYS `with sharing`. SYSTEM_MODE lifts
+     * CRUD/FLS and never sharing, so this still returns only rows the running user can see.
+     * `TaskFanoutService` stamps every checklist Task with the Transaction's `OwnerId`, so a
+     * prerequisite and the item it blocks always share an owner and the read is satisfied by
+     * ownership on every path the model builds. A Task individually REASSIGNED away from that owner
+     * can hide its prerequisite; the caller treats an absent row as UNRESOLVED and refuses the
+     * completion (fails closed), which is the correct direction for an anti-fraud control and is
+     * asserted by `TaskPrerequisiteServiceTest`.
+     *
+     * NOT-FOUND CONTRACT: a list read — missing rows are meaningful, not exceptional. Returns an
+     * EMPTY list, never null. The caller distinguishes "absent" from "open" and refuses both.
+     *
+     * @param dealIds   `Transaction_Deal__c` ids of the blocked Tasks; null/empty-safe.
+     * @param sequences `Task_Sequence__c` values named by the blocked Tasks' `Blocked_By__c` keys;
+     *                  null/empty-safe.
+     * @return Checklist Tasks on those deals at those sequences, with Id, Transaction_Deal__c,
+     *         Task_Group__c, Task_Sequence__c, Subject and IsClosed populated; an empty list when
+     *         either input is null/empty or nothing matches (never null).
+     * @example
+     * List<Task> candidates = TaskSelector.selectChecklistByDealsAndSequences(dealIds, sequences);
+     */
+    public static List<Task> selectChecklistByDealsAndSequences(Set<Id> dealIds, Set<Decimal> sequences) {
+        if (dealIds == null || dealIds.isEmpty() || sequences == null || sequences.isEmpty()) {
+            return new List<Task>();
+        }
+        return [
+            SELECT Id, Transaction_Deal__c, Task_Group__c, Task_Sequence__c, Subject, Status, IsClosed
+            FROM Task
+            WHERE Transaction_Deal__c IN :dealIds
+              AND Task_Sequence__c IN :sequences
+              AND Task_Group__c != null
+            WITH SYSTEM_MODE
         ];
     }
 }

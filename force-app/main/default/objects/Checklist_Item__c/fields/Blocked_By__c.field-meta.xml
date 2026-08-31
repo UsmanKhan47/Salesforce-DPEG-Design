@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Blocked_By__c</fullName>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <description>Self-lookup to the item that must be completed before this one. Seeded at fan-out from Transaction_Task_Def__mdt: B3 points at B2, I8 points at I7, so the wire-fraud prerequisite is DATA, and adding a third pair later is a definition change rather than a deploy. A TRUE LOOKUP IS POSSIBLE HERE AND WAS NOT ON THE TASK MODEL: Lookup(Task) is undeployable on this org, which is why the Phase 0 gate on Activity had to store a Group plus Sequence text key instead. The cost is that fan-out needs a second pass to resolve Ids after the items are inserted. Blank means no prerequisite.</description>
+    <inlineHelpText>The checklist item that must be completed before this one can be. Blank when this item has no prerequisite.</inlineHelpText>
+    <label>Blocked By</label>
+    <referenceTo>Checklist_Item__c</referenceTo>
+    <relationshipLabel>Blocked Checklist Items</relationshipLabel>
+    <relationshipName>Blocked_Checklist_Items</relationshipName>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>Lookup</type>
+</CustomField>

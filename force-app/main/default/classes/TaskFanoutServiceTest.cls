@@ -252,4 +252,100 @@ private class TaskFanoutServiceTest {
         List<AsyncApexJob> jobs = [SELECT Id, JobType FROM AsyncApexJob WHERE ApexClass.Name = 'TaskFanoutQueueable'];
         System.assert(!jobs.isEmpty(), 'The chunked fan-out ran as a Queueable job');
     }
+
+    /**
+     * 🔴 PHASE 0 WIRE-FRAUD GATE (Story 28): the fan-out must stamp `Blocked_By__c` on B3 and I8.
+     *
+     * WHY THIS TEST EXISTS AND WHY IT IS NOT REDUNDANT WITH `TaskPrerequisiteServiceTest`. That suite
+     * proves the GATE refuses correctly — but every one of its fixtures sets `Blocked_By__c` BY HAND.
+     * So the entire feature could ship with nothing writing the key on new deals, every gate test
+     * would still pass, and the control would be retro-only: live at the moment of the one-off
+     * backfill and silently absent on every deal created afterwards. This is the only assertion in
+     * the codebase that would catch that, which is exactly what happened in review.
+     *
+     * Asserts THREE things deliberately: the two real pairs, AND that a non-gated item in the SAME
+     * group gets null. Without the negative case a stamp that keyed on the group letter alone
+     * (gating all of B and all of I) would pass.
+     */
+    @isTest
+    static void fanOutStampsWireFraudPrereqKeys() {
+        // Real coordinates from scripts/load-transaction-task-defs.apex: B2/B3 and I7/I8.
+        //
+        // 🔴 `Group_Name__c` MUST BE THE REAL NAME FROM scripts/load-task-group-defs.apex, because
+        // TaskFanoutService writes `Letter__c + '. ' + Group_Name__c` into `Task_Group__c`, which is
+        // a RESTRICTED picklist. Group I is `Pre-Closing & Closing`, NOT `Closing`. This fixture
+        // invented `I. Closing` and the whole test died in setup with
+        // INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST on the first deploy — it was neither passing nor
+        // failing, it was NOT RUNNING, which mattered because this is the only automated check that
+        // the fan-out stamps the keys at all. A CMDT override is free-form; the value it composes is
+        // not. Cross-check any group name you add here against that loader script.
+        TaskFanoutService.groupDefsOverride = new List<Task_Group_Def__mdt>{
+            new Task_Group_Def__mdt(Letter__c = 'B', Group_Name__c = 'Earnest Money Wire',
+                Owner_Label__c = 'Danish', Conditional__c = false),
+            new Task_Group_Def__mdt(Letter__c = 'I', Group_Name__c = 'Pre-Closing & Closing',
+                Owner_Label__c = 'Danish', Conditional__c = false)
+        };
+        TaskFanoutService.taskDefsOverride = new List<Transaction_Task_Def__mdt>{
+            new Transaction_Task_Def__mdt(Group_Letter__c = 'B', Sequence__c = 2, Due_Day_Offset__c = 2,
+                Subject__c = 'Call title company to verbally verify wiring instructions (anti-fraud)'),
+            new Transaction_Task_Def__mdt(Group_Letter__c = 'B', Sequence__c = 3, Due_Day_Offset__c = 2,
+                Subject__c = 'Send wire request to accounting with verified instructions'),
+            new Transaction_Task_Def__mdt(Group_Letter__c = 'B', Sequence__c = 4, Due_Day_Offset__c = 3,
+                Subject__c = 'Confirm wire sent and mark task complete'),
+            new Transaction_Task_Def__mdt(Group_Letter__c = 'I', Sequence__c = 7, Due_Day_Offset__c = 59,
+                Subject__c = 'Verify wiring instructions by phone (anti-fraud)'),
+            new Transaction_Task_Def__mdt(Group_Letter__c = 'I', Sequence__c = 8, Due_Day_Offset__c = 59,
+                Subject__c = 'Send closing wire to title company with verified instructions')
+        };
+
+        Transaction__c deal = new Transaction__c(Status__c = 'Active', Tasks_Fanned_Out__c = true,
+            Contract_Executed_Date__c = Date.today());
+        insert deal;
+
+        TaskFanoutService.bypassDedupe = true;
+        Test.startTest();
+        TaskFanoutService.fanOutNow(new List<Id>{ deal.Id });
+        Test.stopTest();
+        TaskFanoutService.bypassDedupe = false;
+
+        Map<String, String> keyBySequence = new Map<String, String>();
+        for (Task t : [
+            SELECT Task_Group__c, Task_Sequence__c, Blocked_By__c
+            FROM Task WHERE Transaction_Deal__c = :deal.Id
+        ]) {
+            keyBySequence.put(
+                t.Task_Group__c.substringBefore('.') + t.Task_Sequence__c.intValue(), t.Blocked_By__c
+            );
+        }
+
+        Assert.areEqual(5, keyBySequence.size(), 'All five definitions fanned out');
+        Assert.areEqual('B|2', keyBySequence.get('B3'),
+            'B3 (send the wire request) must be gated on B2 (the verbal anti-fraud verification) '
+                + 'AT CREATION — otherwise only backfilled deals are protected');
+        Assert.areEqual('I|7', keyBySequence.get('I8'),
+            'I8 (send the closing wire) must be gated on I7 (verify wiring instructions by phone)');
+        Assert.isNull(keyBySequence.get('B2'), 'The prerequisite itself is not gated');
+        Assert.isNull(keyBySequence.get('I7'), 'ditto for the closing-wire prerequisite');
+        Assert.isNull(keyBySequence.get('B4'),
+            'A non-gated item in a GATED GROUP must carry no key — proves the stamp keys on the '
+                + 'item, not on the group letter');
+    }
+
+    /**
+     * The pair table itself, exercised directly at its boundaries. Cheap, and it pins the key FORMAT
+     * that `TaskPrerequisiteService.resolvePrerequisites` parses on the other side — the two are a
+     * contract, and nothing else asserts the separator or the casing.
+     */
+    @isTest
+    static void blockedByKeyForCoversItsBoundaries() {
+        Assert.areEqual('B|2', TaskFanoutService.blockedByKeyFor('B', 3), 'B3 -> B2');
+        Assert.areEqual('I|7', TaskFanoutService.blockedByKeyFor('I', 8), 'I8 -> I7');
+        Assert.areEqual('B|2', TaskFanoutService.blockedByKeyFor(' b ', 3),
+            'Letter is trimmed and upper-cased — Apex Map.get on a String key is CASE-SENSITIVE, so '
+                + 'a lower-case letter must not silently produce a key nothing can resolve');
+        Assert.isNull(TaskFanoutService.blockedByKeyFor('B', 4), 'An ungated item in a gated group');
+        Assert.isNull(TaskFanoutService.blockedByKeyFor('A', 3), 'An ungated group at a gated sequence');
+        Assert.isNull(TaskFanoutService.blockedByKeyFor(null, 3), 'null letter is safe');
+        Assert.isNull(TaskFanoutService.blockedByKeyFor('B', null), 'null sequence is safe');
+    }
 }

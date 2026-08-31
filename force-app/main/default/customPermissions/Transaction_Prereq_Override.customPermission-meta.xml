@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomPermission xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        WHY THIS EXISTS (2026-08-31, wire-fraud prerequisite gate, THIRD code-review pass). Story 28
+        added Prerequisite_Must_Be_Met_To_Complete (validation rule, SYSTEM_MODE backstop) plus
+        TaskPrerequisiteService's before-update trigger gate, which refuses ANY change to a checklist
+        item's identity fields (Blocked_By__c, and by extension the Transaction_Deal__c / Task_Group__c
+        / Task_Sequence__c fields a repointed key depends on) on an OPEN row that would defeat the
+        gate - for EVERY principal and EVERY write path, INCLUDING AccessLevel.SYSTEM_MODE, because it
+        is a before-update trigger with no bypass switch. That refusal is correct for the fraud case it
+        exists to stop, but it also blocks three legitimate operations that need to touch those same
+        fields: (1) scripts/backfill-task-blocked-by.apex, which runs as ANONYMOUS APEX and therefore
+        enforces the running user's own FLS - it cannot use AccessLevel.SYSTEM_MODE at all (unavailable
+        in anonymous Apex); (2) the M5 migration's mass key-clear, the documented retirement path for
+        this whole Phase-0 control once Checklist_Item__c replaces Task; and (3) Phase 1's
+        Blocked_By_Sequence__c renumbering and the repair of a mis-fanned deal whose key is wrong but
+        still resolvable to a real (incorrect) row - neither repairable nor completable by anyone today
+        without this permission, because "wrong but resolvable" is not the same as "unresolvable and
+        therefore already exempt" (a wrong key can name a real row, and TaskPrerequisiteService's
+        refusal fires exactly the same for that case as for a fraud attempt).
+
+        This custom permission is the legitimate route TaskPrerequisiteService checks (via
+        FeatureManagement.checkPermission) before allowing an identity-field change on an open row that
+        its default rule would otherwise refuse. It does NOT weaken Prerequisite_Must_Be_Met_To_Complete
+        itself (the SYSTEM_MODE validation-rule backstop on Status = 'Completed' is unconditional and
+        this permission has no bearing on it) - it only widens who may edit the KEY fields the gate
+        reads, and is deliberately narrow and admin-only, never granted to the working Transaction team.
+
+        🔴 THE API NAME IS PINNED — Transaction_Prereq_Override — TaskPrerequisiteService is being wired
+        to this exact name via FeatureManagement.checkPermission('Transaction_Prereq_Override') in the
+        same review pass. Do not rename.
+
+        SHAPE MATCHES Transaction_Task_Actions.customPermission-meta.xml and
+        Transaction_Stage_Actions.customPermission-meta.xml (read both before touching this file):
+        object-level/gate-level CRUD that cannot be granted any other way on this platform, authorized
+        by a named custom permission read via FeatureManagement.checkPermission, with the FLS/DML grant
+        living on a dedicated permission set - here, Transaction_Prereq_Override_Access, an ADMIN-ONLY
+        set, deliberately NOT a member of DPEG_Transaction_Team and NOT added to DPEG_Admin_Access (that
+        file was mid-edit by a concurrent session on a Disposition tranche at the time this was
+        written; a PermissionSet deploy REPLACES its whole fieldPermissions set, so touching it here
+        would risk shipping or clobbering that unrelated work - see
+        Transaction_Prereq_Override_Access.permissionset-meta.xml for the full reasoning).
+
+        SCOPE IS THE FOUR WIRE-FRAUD-GATE IDENTITY FIELDS ONLY (Blocked_By__c, Transaction_Deal__c,
+        Task_Group__c, Task_Sequence__c on Task/Event). It does not authorize Task completion itself -
+        that remains Transaction_Task_Actions' job - and it does not cover Disposition, which has no
+        equivalent gate today.
+    -->
+    <label>Transaction Prereq Override</label>
+    <description>Authorization letting an admin-only path repoint the wire-fraud prerequisite gate's identity fields (Blocked_By__c and the fields a key depends on) on an open checklist item, for the backfill script, the M5 migration and Phase 1 key repair.</description>
+    <isLicensed>false</isLicensed>
+</CustomPermission>

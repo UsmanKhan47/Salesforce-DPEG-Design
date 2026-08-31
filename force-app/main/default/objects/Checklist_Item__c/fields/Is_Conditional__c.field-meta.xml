@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Is_Conditional__c</fullName>
+    <defaultValue>false</defaultValue>
+    <description>True when this item only exists on deals meeting a condition, inherited from its group. Carried onto the item so the reconcile path can identify conditional rows without re-reading the CMDT or re-deriving the group.</description>
+    <inlineHelpText>Ticked when this item only appears on deals that meet a condition, such as financed deals.</inlineHelpText>
+    <label>Is Conditional</label>
+    <type>Checkbox</type>
+</CustomField>

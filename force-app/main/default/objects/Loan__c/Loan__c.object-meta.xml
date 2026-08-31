@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomObject xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+      THIS COMMENT IS INSIDE THE ROOT ELEMENT ON PURPOSE - a comment ABOVE the root breaks sf at
+      source conversion with a misleading "unable to find matching parent xml" error.
+
+      LOOKUP TO Transaction__c, NOT MASTER-DETAIL, and required=false. Three reasons:
+        1. A Loan exists only when Loan_Required__c is true, so a platform-required parent is the
+           wrong shape - the object is conditional by design, which is the same condition that makes
+           checklist group F conditional.
+        2. required=true on a lookup FORCES deleteConstraint=Restrict. That is exactly the defect
+           Critical_Date__c.Transaction__c carries: once a child exists the Transaction can never be
+           deleted, so "delete the deal and re-fan it" stops being a repair path and the delete in
+           scripts/seed-transactions.apex throws on every rebuilt org.
+        3. A loan is a real business record a person owns and may need shared independently. Unlike
+           a checklist, it is not an inseparable part of the deal row, so ControlledByParent would
+           overstate the coupling.
+      Presence of the Transaction is enforced by the service that creates the record, not by a
+      required flag. If the business later wants a hard rule, use a VALIDATION RULE - not
+      required=true, which would additionally make the field non-permissionable and force it out of
+      every permission set.
+
+      NO BANK ACCOUNT NUMBERS AND NO ROUTING NUMBERS ON THIS OBJECT OR ANY OTHER (Decision 3).
+      Bank_Account_Type__c is an account TYPE (Operating / Escrow / Reserve / Other), not an account
+      NUMBER. It is safe, and checklist group F needs it. Do not later "harden" it away.
+    -->
+    <allowInChatterGroups>false</allowInChatterGroups>
+    <compactLayoutAssignment>SYSTEM</compactLayoutAssignment>
+    <deploymentStatus>Deployed</deploymentStatus>
+    <description>Acquisition financing for a Transaction - lender, amount, term, rate, commitment date and the auto-payment setup state. Created only on deals where Loan_Required__c is true, the same condition that fans out checklist group F. Backs checklist items F5 to F11 and the two CRITICAL auto-payment items F12 and J4. Holds no bank account or routing numbers.</description>
+    <enableActivities>false</enableActivities>
+    <enableBulkApi>true</enableBulkApi>
+    <enableFeeds>false</enableFeeds>
+    <enableHistory>false</enableHistory>
+    <enableLicensing>false</enableLicensing>
+    <enableReports>true</enableReports>
+    <enableSearch>true</enableSearch>
+    <enableSharing>true</enableSharing>
+    <enableStreamingApi>true</enableStreamingApi>
+    <externalSharingModel>Private</externalSharingModel>
+    <label>Loan</label>
+    <nameField>
+        <displayFormat>LOAN-{0000}</displayFormat>
+        <label>Loan Number</label>
+        <trackHistory>false</trackHistory>
+        <type>AutoNumber</type>
+    </nameField>
+    <pluralLabel>Loans</pluralLabel>
+    <searchLayouts></searchLayouts>
+    <sharingModel>Private</sharingModel>
+    <visibility>Public</visibility>
+</CustomObject>
