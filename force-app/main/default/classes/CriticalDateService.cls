@@ -47,10 +47,18 @@
  * `DELETE_FAILED` the default for every deal that has ever changed stage - including in scratch
  * rebuilds, and including `scripts/seed-transactions.apex:31`'s `delete [SELECT Id FROM
  * Transaction__c]`, which already throws for this reason on a seeded org.
- * MITIGATION TAKEN HERE, DELIBERATELY PARTIAL: `TransactionTriggerHandler` wires this to AFTER
- * UPDATE ONLY, never after insert, so a freshly created deal stays deletable until it moves. That
- * narrows the window; it does not close the gate. The real answer is GATE-B3 - either accept it, or
- * relax the lookup to `SetNull` + `required=false` with a validation rule in its place - and it is a
+ * 🔴 MITIGATION, AMENDED 2026-09-01 — THIS CLASS IS NOT WIRED TO ANY TRIGGER AT ALL. This paragraph
+ * said `TransactionTriggerHandler` wires it to AFTER UPDATE ONLY. That arm was REMOVED by user
+ * decision: with GATE-B2 (`Contract Executed` missing from the restricted `Type__c`) and GATE-B4
+ * (source of truth) still open, wiring it live would have made Phase 2 non-neutral for every deal in
+ * the org on its next stage move. So the window is not merely narrowed, it is currently CLOSED - a
+ * deal only becomes undeletable if someone runs the seed script against it.
+ * THE SERVICE IS NOT DEAD CODE AND MUST NOT BE DELETED AS SUCH: `scripts/seed-critical-dates.apex`
+ * calls it directly, and it is the tested, reviewed implementation the trigger arm will use when the
+ * gates close. See `TransactionTriggerHandler.afterUpdate` for the full re-wiring conditions,
+ * recorded at the removal site.
+ * GATE-B3 is still the real answer to the delete constraint - either accept it, or relax the lookup
+ * to `SetNull` + `required=false` with a validation rule in its place - and it is a
  * business/architecture decision, not one this class can take.
  *
  * BULK SHAPE: 2 selector calls and 1 DML statement per invocation regardless of deal count.
@@ -210,20 +218,20 @@ public with sharing class CriticalDateService {
      * @param toCreate    Accumulator.
      * @param claimedKeys Keys already taken, mutated so a duplicate WITHIN this run is impossible.
      * @param deal        The parent deal.
-     * @param type        A value of the restricted `Type__c` picklist.
+     * @param dateType        A value of the restricted `Type__c` picklist.
      * @param dueDate     The pinned date, or null to skip.
      */
     private static void addIfWanted(
         List<Critical_Date__c> toCreate,
         Set<String> claimedKeys,
         Transaction__c deal,
-        String type,
+        String dateType,
         Date dueDate
     ) {
         if (dueDate == null) {
             return;
         }
-        String key = String.valueOf(deal.Id) + '|' + type;
+        String key = String.valueOf(deal.Id) + '|' + dateType;
         if (claimedKeys.contains(key)) {
             lastRunSkippedExistingCount++;
             return;
@@ -231,7 +239,7 @@ public with sharing class CriticalDateService {
         claimedKeys.add(key);
         toCreate.add(new Critical_Date__c(
             Transaction__c = deal.Id,
-            Type__c = type,
+            Type__c = dateType,
             Due_Date__c = dueDate
         ));
     }

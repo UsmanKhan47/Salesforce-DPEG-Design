@@ -43,6 +43,12 @@
     height: 100%;
     border-radius: 5px;
     transition: width 0.3s ease;
+    /* Phase 3: the fill colour moved out of an inline JS style string so the SLDS linter can
+       see it and so an SLDS 2 palette override can reach it. */
+    background: var(--slds-g-color-palette-teal-40, #2bafac);
+}
+.cs-bar--done {
+    background: var(--slds-g-color-palette-green-50, #2e7d32);
 }
 .cs-foot {
     display: flex;

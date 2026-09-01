@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomPermission xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        DISPOSITION GAP CLOSURE TRANCHE 1, ITEM 9 (agent-output/disposition-gap-closure-t1-design.md
+        §3 Item 9, decision D-7, settled at Gate 1 2026-08-31).
+
+        WHY THIS EXISTS. Disposition__c.Record_Type_Is_Immutable (this same deploy) locks
+        RecordTypeId once a disposition has committed past its opening stages - a validation rule
+        is NOT bypassed by Modify All Data, so "admin-overridable" is unimplementable without a
+        $Permission gate. This is that gate, built to the EXACT shape
+        Account.Record_Type_Is_Immutable's own header prescribes: "If an exemption is ever
+        needed, add a custom permission and gate on $Permission - never widen the rule itself."
+        Account's own exemption custom permission,
+        customPermissions/Lead_Convert_Account_RecordType_Stamp, is the structural template for
+        this file.
+
+        🔴 LOCK BOUNDARY - USER DECISION AT GATE 1, 2026-08-31, OVERRIDING THE DESIGN DOC'S OWN
+        D-7 RECOMMENDATION (which proposed a looser boundary - see the validation rule's own XML
+        comment for the full contrast). The disposition record type is changeable ONLY while
+        Disposition_Stage__c is 'Disposition Readiness'; it is LOCKED from 'BOV Outreach' onward
+        through 'Sale Closes'. Rationale, in the user's own terms: a principal approves a specific
+        disposition path at Approval #1 (Sale_Decision_Approval, entry criterion
+        Disposition_Stage__c = 'Disposition Readiness'), so nothing downstream of THAT approval
+        may silently change it - "past Readiness" and "past the sale decision" are the same
+        boundary. This custom permission is the ONLY admin escape from that lock - there is no
+        other bypass.
+
+        GRANT SCOPE - assigned in the consolidated permission-set pass (a separate file, owned by
+        salesforce-solution-architect for this tranche), NOT here. Per the design doc: granted
+        ONLY to DPEG_Admin_Access. ⚠ Per Lead_Convert_Account_RecordType_Stamp's own header,
+        Modify All Data does NOT confer a custom-permission grant automatically - an admin who
+        needs this override must actually hold the permission set carrying it, not merely
+        System Administrator or Modify All Data.
+
+        ⚠ $Permission gates by WHO the running user is, not by WHICH CODE PATH is running. Any
+        holder of the granting permission set could in principle change an existing disposition's
+        RecordTypeId by hand (UI edit, Data Loader) while this permission is active - the same
+        accepted tradeoff Lead_Convert_Account_RecordType_Stamp's header records for its own
+        equivalent gate. Do not grant this permission via any set other than the one the
+        consolidated access pass names, without re-reading this note.
+
+        🔴 THIS FILE MUST LAND IN THE SAME OR AN EARLIER DEPLOY THAN
+        Disposition__c/validationRules/Record_Type_Is_Immutable.validationRule-meta.xml. A
+        validation rule referencing {!$Permission.Disposition_Record_Type_Override} before the
+        custom permission exists resolves the merge field to false for everyone, which is
+        harmless (the rule just behaves as if nobody can ever override) - but if the ORDER is
+        reversed in error and someone assumes the override is live before this permission is
+        both deployed AND assigned, they will find the "admin escape" does not exist yet.
+    -->
+    <label>Disposition Record Type Override</label>
+    <description>Exempts Disposition__c.Record_Type_Is_Immutable so an admin can change RecordTypeId after the disposition has locked (BOV Outreach onward, past the sale-decision approval). Granted only to DPEG_Admin_Access via the consolidated permission-set pass.</description>
+    <isLicensed>false</isLicensed>
+</CustomPermission>

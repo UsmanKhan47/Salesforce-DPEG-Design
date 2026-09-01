@@ -35,6 +35,28 @@
  *           Forwarded_By__c carries the coordinator. Guarded by the paste-forward test
  *           (From == Forwarded_By, or a blank/malformed From) which falls back to the
  *           body-extracted identity. See applySenderFirstBrokerIdentity.
+ *    6b. LISTING-BROKER ADDRESS GROUNDING GUARD (email-level), 2026-08-31.
+ *           `listing_broker_email` is DROPPED when the address appears nowhere in the text the
+ *           model was given (Subject__c + Raw_Body__c). Measured defect: the model invented
+ *           `info@nordhavencommercial.com` from a firm name for an email whose body contains no
+ *           '@' at all, and it landed on a field a human reads as "who do I call". Scoped to the
+ *           listing pair — `broker_email` is a claim value and keeps its envelope backstop
+ *           instead. See dropUngroundedListingBrokerEmail.
+ *           🔴 CORRECTED 2026-08-31 (SEQUENCING DEFECT A): IT RUNS TWICE — once BEFORE step 6's
+ *           demotion so a cleared slot can still be filled with the real demoted contact, and
+ *           once AFTER it so the guard is the LAST WRITER of the field it protects. With the
+ *           single "before" call, a fabrication the model put in `broker_email` was copied into
+ *           the slot by the demotion's fill-if-blank AFTER the guard had already skipped it as
+ *           blank, and reached two live Leads. Both calls are load-bearing; the method's header
+ *           enumerates what each earns and why one moved call is NOT the equivalent fix.
+ *    6c. THE DEMOTION'S CONTACT BLOCK IS CONDITIONAL, 2026-08-31 (DEFECT B).
+ *           `demoteBodyBroker` used to clear broker_phone / broker_mobile / broker_title
+ *           unconditionally. It still does for a genuinely different body-named broker — that is
+ *           the case it exists for. It stands down when the demoted identity is the SENDER
+ *           THEMSELVES under an address the model invented (same compacted local part, not a role
+ *           mailbox, and the address appears nowhere in the email). Measured: a real phone and a
+ *           real title were destroyed because the model mistyped one word of the sender's own
+ *           domain. See demoteBodyBroker and isMistypedSenderAddress.
  *    7. RELEVANCE GATE (D2, tiered):
  *           HARD (is_acquisition_related = false AND confidence >= 0.85)
  *                -> NO LEAD, NO CLAIM, Task logged, outcome recorded.
@@ -682,6 +704,35 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
     };
     private static final Set<String> SENDER_EXACT = new Set<String>{ 'bounce', 'bounces' };
 
+    /**
+     * DEFECT B (2026-08-31) — COMPACTED LOCAL PARTS THAT NAME A MAILBOX RATHER THAN A PERSON.
+     *
+     * ⚠ THIS IS NOT A SECOND PRE-FILTER AND MUST NOT BECOME ONE. `SENDER_CONTAINS` /
+     * `SENDER_EXACT` above decide whether an email is MACHINE-GENERATED and gate it before the
+     * callout; the prohibition attached to them (never add a blast signal there) is untouched by
+     * this set and does not apply to it. This set is consulted at ONE place only —
+     * `isMistypedSenderAddress` — to answer a narrower question: "is this local part an identity
+     * token, or a shared mailbox anyone at the firm could be behind?" `info@firm-a.com` and
+     * `info@firm-b.com` share a local part and are not the same person.
+     *
+     * The list mirrors the role mailboxes the extraction prompt's own carve-out names
+     * (`listings@`, `deals@`, `info@`, `marketing@`, `notifications@`, `no-reply@`,
+     * `do-not-reply@` — see `LLMExtractionCalloutService`), plus the ordinary shared-inbox
+     * handles that carve-out does not enumerate. Compaction is applied before lookup, so
+     * `no-reply` and `no.reply` both reduce to `noreply`.
+     *
+     * ✅ GENEROSITY IS THE SAFE DIRECTION HERE, which is why the list is not minimal. A token
+     * wrongly included only means the contact block CLEARS — the pre-2026-08-31 behaviour — so
+     * the cost of a false entry is the status quo. A token wrongly OMITTED is the direction that
+     * can retain the wrong person's phone number. When in doubt, add it.
+     */
+    private static final Set<String> ROLE_LOCAL_PARTS = new Set<String>{
+        'listings', 'listing', 'deals', 'info', 'marketing', 'notifications', 'notification',
+        'noreply', 'donotreply', 'sales', 'admin', 'contact', 'office', 'team', 'hello',
+        'support', 'leads', 'offers', 'enquiries', 'inquiries', 'mail', 'email', 'broker',
+        'brokers', 'brokerage', 'investmentsales', 'capitalmarkets'
+    };
+
     /** RFC 3834 automatic-response headers, plus the two de-facto ones. */
     private static final Pattern AUTO_SUBMITTED_PATTERN =
         Pattern.compile('(?im)^\\s*Auto-Submitted\\s*:\\s*auto-(replied|generated|notified)');
@@ -1099,6 +1150,23 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
 
             applyRegexFallback(extraction);
             applyEnvelopeEmailFallback(extraction);
+            // FIX 3 (2026-08-31 ACCEPTANCE RUN) — GROUNDING GUARD FOR THE LISTING-BROKER ADDRESS.
+            // ⚠ NOT A SEQUEL TO "FIX 1"/"FIX 2 (2026-08-03)" ELSEWHERE IN THIS CLASS — that is an
+            // unrelated, earlier extraction-completeness series. This one's siblings live in
+            // LLMExtractionCalloutService (FIX 2 = the `deal_type` rule, FIX 3 = the prompt half
+            // of this same guard).
+            // 🔴 CALL 1 OF 2. CORRECTED 2026-08-31 (SEQUENCING DEFECT A) — THIS CALL ALONE IS
+            // NOT SUFFICIENT AND NEVER WAS. It runs BEFORE the demotion so that a fabricated
+            // model value is cleared in time for `demoteBodyBroker`'s FILL-IF-BLANK to put the
+            // REAL body-named broker's address into the slot instead — that recovery is the only
+            // reason this call still exists, and deleting it would silently convert the fix from
+            // "recovers information" into "only destroys it".
+            //   ⚠ WHAT IT CANNOT DO: it is not the LAST WRITER of the field it protects. The
+            //   demotion below writes `listingBrokerEmail` after this returns, so a value it
+            //   installs has never been grounded by the time this call has finished. Call 2, sited
+            //   immediately after `applySenderFirstBrokerIdentity`, is the one that closes that —
+            //   see the method's own header for the measured failure sequence.
+            dropUngroundedListingBrokerEmail(extraction);
             // U1 SENDER-FIRST IDENTITY (intake-rules-v2). LAST of the three identity steps and
             // BEFORE both gates, so a gated email is still attributed to the right broker: the
             // identity feeds the Task this email is logged against and, on a claim path, the
@@ -1106,6 +1174,32 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
             // audit trail" — that note was removed 2026-08-03; the ordering reason stands on its
             // own and never depended on it.)
             applySenderFirstBrokerIdentity(extraction);
+            // 🔴 CALL 2 OF 2 — THE GUARD IS THE LAST WRITER OF THE FIELD IT PROTECTS.
+            // ADDED 2026-08-31 for SEQUENCING DEFECT A, measured on two live Leads created AFTER
+            // the guard first shipped. `demoteBodyBroker`'s fill-if-blank copies `broker_email`
+            // into `listingBrokerEmail`, and `broker_email` carries NO grounding guard of its own
+            // (deliberately — it has the envelope backstop instead). So a fabrication the model
+            // put in `broker_email` was being written into the very slot call 1 had just skipped
+            // as blank. Nothing between the two calls reads `listingBrokerEmail`, so this is a
+            // pure re-check: idempotent on a value call 1 already cleared or already passed.
+            // 🔴 DO NOT "TIDY" THIS BY MOVING CALL 1 DOWN HERE AND DELETING IT. The two calls do
+            // DIFFERENT jobs and the method's header enumerates them; a single call sited here
+            // would leave a fabricated model value blocking the fill-if-blank, so the real
+            // body-named broker's address would never be demoted in and would be lost outright.
+            // ⚠ IT RE-RUNS `buildLlmText`, AND THAT IS ACCEPTED RATHER THAN UNNOTICED. The
+            // composition is rebuilt on each call, so this change costs at most ONE extra pass
+            // over Subject__c + Raw_Body__c per email (plus a second, conditional one when the
+            // demotion also asks `isMistypedSenderAddress`). It is EMAIL-LEVEL, outside the
+            // per-property loop, and adds ZERO SOQL and ZERO DML — which is why
+            // `budget_singleProperty_...` stays green and, equally, why that test would NOT catch
+            // a regression here: it measures queries and DML, not heap or CPU.
+            // NOT HOISTED, deliberately. A memo would put a mutable member on a class whose other
+            // state is set exactly once in execute(); passing the text down as a parameter would
+            // move "what counts as the email" out of `appearsInEmailText` and back to its
+            // callers, which is the drift the shared predicate was extracted to prevent. If heap
+            // ever becomes the binding constraint on a maximum-length body, hoist it into a local
+            // in execute() and pass it down THEN, with the measurement in hand.
+            dropUngroundedListingBrokerEmail(extraction);
 
             // REFINE THE TASK'S SENDER — fill-if-present, NEVER blanking the envelope default.
             // Placed immediately after U1 so the Task shows the SAME identity arbitration used.
@@ -3135,6 +3229,257 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
     }
 
     /**
+     * FIX 3 (2026-08-31 ACCEPTANCE RUN) — DROP `listing_broker_email` WHEN THE ADDRESS IS NOWHERE
+     * IN THE EMAIL.
+     *
+     * ⚠ THE NUMBER IS NOT A SEQUEL TO THIS CLASS'S OTHER "FIX N" COMMENTS. `FIX 1 (2026-08-03)`
+     * and `FIX 2 (2026-08-03)` above belong to an unrelated, earlier extraction-completeness
+     * series. This fix's actual siblings are in `LLMExtractionCalloutService` — FIX 2 there is
+     * the `deal_type` definition rule and FIX 3 there is the PROMPT HALF of this same guard.
+     *
+     * ═══ 🔴 THE MEASURED DEFECT: A FABRICATED, CONTACTABLE ADDRESS ═══
+     * Lead `00Qiw000000wuY7EAI` carries `Listing_Broker_Email__c = info@nordhavencommercial.com`.
+     * The email's actual sender is `listings@crexi-listings.example.com` — a DIFFERENT domain —
+     * and the source text contains NO `@` CHARACTER AT ALL. The model invented a plausible
+     * address out of the firm name in the signature block. That value is written to an Email
+     * field a human reads as "who do I call about this listing", so the failure is the one the
+     * `broker_phone` role-mailbox carve-out exists to prevent — somebody contacts the wrong
+     * person — displaced one field across, and WORSE, because an address that looks real invites
+     * use in a way a bare number does not.
+     *
+     * ═══ 🔴 CALLED TWICE, ON PURPOSE. SEQUENCING DEFECT A, CORRECTED 2026-08-31 ═══
+     * THE ORIGINAL SINGLE CALL SITE WAS WRONG, AND THE LOGIC BELOW WAS NOT. This method was
+     * first shipped with ONE call, placed before `applySenderFirstBrokerIdentity`, on the
+     * reasoning that it should "only ever judge a value the MODEL returned". That reasoning was
+     * sound and INCOMPLETE: it left the guard not being THE LAST WRITER OF THE FIELD IT PROTECTS.
+     *
+     * THE OBSERVED FAILURE SEQUENCE, read off the raw extraction JSON of Leads created AFTER the
+     * guard was live:
+     *   1. The model returned `"listing_broker_email": ""` — the prompt half WORKED.
+     *   2. Call 1 hit the blank-skip at the top of this method and returned. Correct: there was
+     *      nothing to ground.
+     *   3. The model instead put its fabrication in `broker_email`, which this guard deliberately
+     *      does not touch (see the SCOPED section below).
+     *   4. That value differed from the envelope sender, so `applySenderFirstBrokerIdentity` ->
+     *      `demoteBodyBroker` fired, and its FILL-IF-BLANK copied the UNGUARDED value straight
+     *      into the slot call 1 had just skipped.
+     * 🔴 THE BLANK-SKIP IS NOT A BUG AND MUST NOT BE "FIXED". Step 2 is correct behaviour. The
+     * defect is entirely one of PLACEMENT: a guard that runs before its field's last writer
+     * cannot protect it, however right its predicate is.
+     *
+     * LIVE EVIDENCE (both Leads created after the fix deployed):
+     *   • `00Qiw000000xEVBEA2` — `Listing_Broker_Email__c = info@kestrelmoor.com` on a subject and
+     *     body containing NO `@` AT ALL.
+     *   • `00Qiw000000x9fCEAQ` — `tomas.berger@beaconridge.com`, where the real firm is
+     *     `beaconridgeadvisors.com`. ⚠ A NEAR-MISS IS WORSE THAN AN OBVIOUS FAKE: it looks right,
+     *     so somebody sends to it.
+     *
+     * ═══ 🔴 WHY TWO CALLS AND NOT ONE MOVED CALL — THE DECISION, WITH ITS COST ═══
+     * MOVING the single call to sit after the demotion was considered FIRST and REJECTED, because
+     * something between the two sites DOES depend on this field's state: `demoteBodyBroker`'s
+     * fill-if-blank is gated on `String.isBlank(extraction.listingBrokerEmail)`. Under a single
+     * moved call, a fabricated model value would still be sitting in the slot when the demotion
+     * ran, the fill-if-blank would decline, and the guard would then null the fabrication — so the
+     * REAL body-named broker's address, which the demotion existed to rescue, would never be
+     * written anywhere and would be lost outright. One call trades a fabrication for a blank; two
+     * calls trade a fabrication for the real address wherever one exists.
+     *
+     * WHAT EACH CALL EARNS:
+     *   • CALL 1 (before the demotion) is the INFORMATION-RECOVERY call. Its only job is to empty
+     *     a fabricated slot in time for the fill-if-blank to put a real address there.
+     *   • CALL 2 (after the demotion) is the GROUNDING call, and it is the one that makes the
+     *     invariant true: whatever finally sits in `listingBrokerEmail` appears in the email.
+     * The pair is IDEMPOTENT, which is what makes running it twice free rather than risky: a value
+     * call 1 nulled hits the blank-skip in call 2, and a value call 1 passed is unchanged and
+     * passes again. No value can be noted twice, because the note is written only on the same
+     * statement that nulls the field.
+     *
+     * ⚠ CALL 2 CAN JUDGE A VALUE APEX COMPUTED — AND THAT IS PROVABLY SAFE HERE, not an accepted
+     * risk. The original "never second-guess an Apex-computed value" concern has exactly two
+     * candidates, and both are grounded BY CONSTRUCTION: `applyRegexFallback` reads `brokerEmail`
+     * out of a `From:` line IN `Raw_Body__c`, so a demotion of that value cannot fail a text
+     * search of the same body; and `applyEnvelopeEmailFallback`'s value can never reach the
+     * demotion at all, because `applySenderFirstBrokerIdentity` returns early when the sender and
+     * `brokerEmail` are equal. So call 2 is a no-op on every Apex-derived value and fires only on
+     * something the model produced.
+     *
+     * ═══ 🔴 THE COMPLETENESS METRIC REWARDED THE FABRICATION. THAT IS HOW THIS HID AT SCALE ═══
+     * On `00Qiw000000x9fCEAQ` — the Lead that LOST a real phone and a real title and GAINED an
+     * invented address — `Extraction_Score_Pct__c` ROSE from 56 to 78 against the same broker and
+     * the same sender. A populated `listing_broker_email` counts as captured in the nine-key
+     * denominator, and the denominator cannot ask whether the value is real. So the one number a
+     * human would scan to spot a degraded extraction moved in the WRONG DIRECTION, and it is the
+     * exact INVERSE of the ~11.1-point drop documented one section down as this guard's expected
+     * signal. Read the two together: a drop means the guard fired, a rise on an email like this
+     * one means it did not. 🔴 THIS IS NOT AN ARGUMENT FOR CHANGING `SCORED_KEYS` — that nine-key
+     * denominator is signed off (2026-08-14) and is deliberately untouched. It is an argument for
+     * never treating the score as a fabrication detector.
+     *
+     * ═══ 🔴 WHY CODE AND NOT ONLY PROMPT — THE PROMPT RULE EXISTS AND IS NOT SUFFICIENT ═══
+     * A prompt bullet was added in the same change ("listing_broker_email must be an address
+     * WRITTEN IN THE EMAIL … NEVER construct one"). It is kept, and it is not the control. Three
+     * reasons this needs a deterministic guard as well:
+     *   1. THE MODEL HAS ALREADY BEEN MEASURED DISOBEYING THIS EXACT INSTRUCTION'S SUBJECT
+     *      MATTER. Asking the component that just fabricated an address to stop fabricating
+     *      addresses may help; it cannot be relied on.
+     *   2. A PROMPT RULE IS NOT TESTABLE HERE, AT ALL. `LLMExtractionCalloutService`'s header
+     *      says so twice: the model is mocked in every Apex test, so a green suite proves
+     *      nothing about any prompt sentence. A text-presence guard is testable with a
+     *      fabricated-address fixture, and is tested — see
+     *      `ExtractAddressQueueableTest.fabricatedListingBrokerEmail_isDropped...` and its
+     *      grounded negative control, which is what stops a guard that drops EVERYTHING from
+     *      passing.
+     *   3. The live prompt is `Broker_Protection_Config__mdt.Default.Extraction_Prompt__c`,
+     *      which an admin can edit in Setup without touching Apex. A prompt-only mitigation can
+     *      therefore be removed by someone who has no idea it was load-bearing. This guard
+     *      cannot.
+     *
+     * ═══ LAYER — WHY THIS METHOD IS HERE AND NOT IN THE PARSER OR A SELECTOR ═══
+     * `.claude/rules/apex-layering-rule.md` forbids business rules in orchestration, and this is
+     * a rule. It nonetheless belongs in this class, for the same reason
+     * `applySenderFirstBrokerIdentity`, `applyRegexFallback`, `applyEnvelopeEmailFallback` and
+     * `demoteBodyBroker` do: they are the extraction-post-processing stage, they are pure
+     * in-memory operations over an already-fetched `LLMExtractionResult` plus the already-fetched
+     * `staging` row, and — decisively — THEY ARE ORDER-DEPENDENT ON EACH OTHER. This guard is
+     * only correct BEFORE the demotion (see the call site), and only this class knows that
+     * ordering. No SOQL, no DML, no callout is added.
+     *   ⚠ `LLMExtractionParser` WAS CONSIDERED AND REJECTED ON TWO GROUNDS. It never sees the
+     *   source text — it is handed the response JSON alone, so grounding it would mean widening
+     *   `parse(...)` to take the email body, which is a signature change rippling through every
+     *   caller and test for one field. And it is documented as NEVER THROWING: an unexpected
+     *   shape yields an empty-but-valid result. That contract is compatible with this fix (the
+     *   guard DROPS the value and raises nothing) but it does not make the parser the right
+     *   home — grounding is a question about the EMAIL, and the parser's whole contract is that
+     *   it knows nothing about the email.
+     *
+     * ═══ 🔴 SCOPED TO THE LISTING-BROKER ADDRESS. `broker_email` IS DELIBERATELY NOT GUARDED ═══
+     * `broker_email` is HALF THE `Property_Registry__c` CLAIM KEY (with `property_address`), so
+     * any rule that can empty it changes WHO WINS a property. It also already has a stronger,
+     * deterministic backstop that this one could never be: `applySenderFirstBrokerIdentity`
+     * OVERWRITES it with the envelope sender, a value that by construction cannot be
+     * hallucinated. `listing_broker_email` has no equivalent — `EmailToLeadService`'s DTO says
+     * in terms that it is "NOT a claim-engine value" — which is exactly why it needed one here
+     * and exactly why the guard must not spread to its neighbour. Do not "generalise" this to
+     * `broker_email` for symmetry.
+     *
+     * ═══ `listing_broker_name` IS NOT GUARDED, AND THAT IS A MEASURED DECISION ═══
+     * On the same defective extraction the NAME behaved correctly: "Yvette Marchetti" was
+     * DEMOTED into the listing slot rather than promoted or invented. So there is no observed
+     * fabrication on the name path. Guarding it would also be materially riskier than guarding
+     * the address: a name is legitimately re-spaced, initialised or de-titled by the model
+     * ("Y. Marchetti", "Yvette Marchetti, CCIM"), so a literal-substring test would drop
+     * CORRECT values, whereas an email address is an exact token that either appears or does
+     * not. Names stay unguarded until something is measured going wrong with one.
+     *
+     * ═══ WHAT COUNTS AS "IN THE EMAIL" ═══
+     * ⚠ THE PREDICATE NOW LIVES IN `appearsInEmailText`, SHARED WITH `demoteBodyBroker`'s
+     * same-person test (2026-08-31, DEFECT B). One expression, one answer — the same "one rule,
+     * one expression" reason `senderIsOurOwnForwarder` is shared by two callers. If the two ever
+     * needed to differ, that would be a decision to argue in both headers, not to fork silently.
+     * `buildLlmText(Subject__c, Raw_Body__c)` — the SAME composition the model was given, not
+     * the body alone. The subject is prepended before the callout, so an address quoted only in
+     * the subject line is genuinely present and must survive. (This is the same correction the
+     * exemplar-leak sweep needed for the same reason.) The UNCLIPPED body is used even though
+     * `extract(...)` clips to `MAX_INPUT_CHARS`: that errs toward KEEPING a value, which is the
+     * safe direction for a guard whose failure mode is data loss.
+     *
+     * ⚠ FALSE-POSITIVE RESIDUAL, ACCEPTED AND NAMED. An address the model read from an ATTACHED
+     * FLYER IMAGE is not in the text and will be dropped. That is deliberate: the alternative —
+     * standing the guard down whenever an image is present — would disable it on marketing
+     * blasts, which is precisely the traffic that produced the defect. The value is NOT
+     * destroyed: it is recorded via `LLMExtractionResult.addNote`, which
+     * `EmailToLeadService.buildDealNotes` files on `Deal_Notes__c` under "-- Extraction notes --"
+     * with the parser's other rejections, and the raw response survives verbatim on
+     * `Inbound_Email_Staging__c.Extracted_JSON__c` regardless. A note here is the parser's
+     * documented "every rejection is recorded" contract, NOT a revival of the demotion note that
+     * was removed in 2026-08-03 — that one narrated a SUCCESSFUL arbitration as if it were deal
+     * information; this one reports a value that was thrown away.
+     *   ⚠ A SECOND, NARROWER FALSE POSITIVE: A BODY THAT SPLITS THE ADDRESS. `Raw_Body__c` is the
+     *   text as received, so a soft-wrapped line, a quoted-printable `=` continuation, or any other
+     *   transfer encoding that breaks `dana.lister@firm.example` across two lines makes the address
+     *   absent as a LITERAL SUBSTRING even though a human reads it plainly. It is narrower than the
+     *   flyer case: the model was handed the same broken text, so it had to reassemble the address to
+     *   emit the joined form — a value that was inferred rather than read. Accepted on the same
+     *   grounds (the guard errs toward dropping, the value survives on `Deal_Notes__c` and
+     *   `Extracted_JSON__c`), and none has been measured yet. If one ever is, normalize the SOURCE
+     *   TEXT — unfold and decode it — and never loosen the comparison to a fuzzy match.
+     *
+     * ═══ 🔴 WHAT ELSE MOVES WHEN THIS GUARD FIRES — TWO CONSUMERS NOT VISIBLE AT THE CALL SITE ═══
+     *   1. THE EXTRACTION-COMPLETENESS SCORE MOVES. INTENDED, AND DELIBERATELY NOT PINNED BY A TEST.
+     *      `listing_broker_email` is 1 OF ONLY 9 MEMBERS of `ExtractionScoreUtil.SCORED_KEYS`, and
+     *      `EmailToLeadService.applyExtractionScore` scores WHAT THE LEAD WILL CARRY, not what the
+     *      model returned. So on every email where this guard fires, `Fields_Captured_Count__c` is
+     *      one LOWER, `Fields_Missing_Count__c` one HIGHER, and `Extraction_Score_Pct__c` roughly
+     *      11.1 points (1/9) lower than the same email scored before this change. That is the
+     *      CORRECT answer — the Lead genuinely captured no listing broker email, and a score that
+     *      counted a fabricated address as "captured" was reporting a worse extraction as a better
+     *      one — but it is an unstated movement in a NINE-KEY DENOMINATOR SIGNED OFF 2026-08-14, so
+     *      it is stated here. 🔴 THE FIX IS NEVER TO REMOVE `listing_broker_email` FROM
+     *      `SCORED_KEYS`. That denominator is signed off; a lower score on a fabricating email is
+     *      the signal, not the defect.
+     *   2. THE CALL-FOR-OFFERS STAMP ON A LIVE DEAL. `buildLeadRequest` copies
+     *      `extraction.listingBrokerEmail` onto `request.listingBrokerEmail`, which
+     *      `CallForOffersStampService` writes to `Opportunity.Listing_Broker_Email__c` on an ALREADY
+     *      MATCHED, ALREADY CONVERTED deal. A dropped value is a no-op there (that stamp is itself
+     *      guarded by `String.isNotBlank`), so this guard also NARROWS THE W1-2026-08-10
+     *      BLAST-OVERWRITE PATH: a marketing blast can no longer replace a real listing broker's
+     *      address on a live transaction with an address the model invented. A genuine second
+     *      benefit — and a second consumer, so any future change to this guard's aggressiveness must
+     *      be judged against the DEAL record as well as the Lead.
+     *
+     * ⚠ `Field_Confidence_JSON__c` STILL CARRIES A `listing_broker_email` SCORE FOR A VALUE THE LEAD
+     * DOES NOT CARRY. The per-field confidence map is not pruned when a value is dropped. That is the
+     * PRE-EXISTING PATTERN here, not an inconsistency this change introduced: `demoteBodyBroker`
+     * already clears `brokerPhone` / `brokerMobile` / `brokerTitle` and leaves their map entries
+     * standing. The map is an audit record of what the MODEL said, which is precisely what a reader
+     * diagnosing a fabrication needs to see, so do not "tidy" it here alone — pruning would have to
+     * change the demotion path in the same pass or the two would disagree.
+     *
+     * @param extraction The extraction to mutate in place. A blank listing address is a no-op.
+     */
+    private void dropUngroundedListingBrokerEmail(LLMExtractionResult extraction) {
+        if (String.isBlank(extraction.listingBrokerEmail)) {
+            return;
+        }
+        if (appearsInEmailText(extraction.listingBrokerEmail)) {
+            return;
+        }
+        extraction.addNote(
+            'listing_broker_email "' + extraction.listingBrokerEmail + '" does not appear '
+            + 'anywhere in the email text and was discarded as fabricated.');
+        extraction.listingBrokerEmail = null;
+    }
+
+    /**
+     * IS THIS EXACT STRING WRITTEN IN THE EMAIL THE MODEL WAS GIVEN?
+     *
+     * ⚠ SHARED BY TWO CALLERS ON PURPOSE, and extracted 2026-08-31 when the second one appeared.
+     * `dropUngroundedListingBrokerEmail` asks it of the listing address; `isMistypedSenderAddress`
+     * asks it of the body-named broker's address. Both are asking the identical question — "did
+     * the email ever actually say this, or did the model construct it?" — and one expression is
+     * what stops the two drifting into different answers, exactly as `senderIsOurOwnForwarder`
+     * does for its own pair of callers.
+     *
+     * "The email" is `buildLlmText(Subject__c, Raw_Body__c)` — SUBJECT AND BODY, the same
+     * composition passed to `extract(...)`, never the body alone. The full rationale, including
+     * the two named and accepted false-positive shapes (an address read from an attached flyer
+     * image; an address split across lines by transfer encoding), is in
+     * `dropUngroundedListingBrokerEmail`'s header and is not repeated here.
+     *
+     * ZERO SOQL, ZERO DML — `staging` is already loaded and `buildLlmText` is pure string work.
+     *
+     * @param value The candidate string; blank always returns false (a blank was not "found").
+     * @return true when the source text contains the value, case-insensitively.
+     */
+    private Boolean appearsInEmailText(String value) {
+        if (String.isBlank(value)) {
+            return false;
+        }
+        String sourceText = buildLlmText(staging.Subject__c, staging.Raw_Body__c);
+        return String.isNotBlank(sourceText) && sourceText.containsIgnoreCase(value);
+    }
+
+    /**
      * TRUE when the envelope's "original sender" is really OUR OWN FORWARDER rather than a broker.
      *
      * `EmailToLeadHandler` sets `Forwarded_By__c` to the monitored inbox when a forwarding header
@@ -3212,6 +3557,72 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
      * recoverable outcome. The firm name is not lost — it survives verbatim in the staging row's
      * `Extracted_JSON__c` (see the NO NOTE section above).
      *
+     * ═══ 🔴 DEFECT B (2026-08-31) — THE CONTACT BLOCK IS NO LONGER CLEARED UNCONDITIONALLY ═══
+     * THE PARAGRAPH ABOVE IS STILL THE RULE. What changed is that it had ONE unstated premise —
+     * that the body-named person is a DIFFERENT person — and the premise is false on a shape this
+     * pipeline actually produces.
+     *
+     * MEASURED ON THE SAME BROKER, THE SAME SENDER, BEFORE AND AFTER, hours apart:
+     *   | field                     | 14:10 `00Qiw000000wtx0EAA` | 18:30 `00Qiw000000x9fCEAQ` |
+     *   | Email                     | tomas.berger@beaconridgeadvisors.com (both)             |
+     *   | Listing_Broker_Email__c   | null ✅                     | tomas.berger@beaconridge.com 🔴 |
+     *   | Phone                     | 4695550288                  | null 🔴                    |
+     *   | Title                     | Senior Vice President, ...  | null 🔴                    |
+     * The email genuinely carried that phone and that title, and they belong to the ENVELOPE
+     * SENDER — a registered broker. They were destroyed because the model mistyped ONE WORD of the
+     * firm's domain in an unrelated field, which was enough to make `sender != brokerEmail` and
+     * fire a demotion of the sender onto themselves.
+     *
+     * ═══ THE CONDITION, AND WHY IT IS THIS ONE ═══
+     * `isMistypedSenderAddress` requires ALL THREE, and the third is the load-bearing one:
+     *   1. The COMPACTED local parts are equal, case-insensitively (`t.berger` == `tberger`).
+     *   2. That local part is not a ROLE mailbox token (`info`, `listings`, `deals`, ...).
+     *   3. 🔴 THE BODY-NAMED ADDRESS APPEARS NOWHERE IN THE EMAIL TEXT — the same
+     *      `appearsInEmailText` predicate the listing-address guard uses. This is what separates
+     *      the two cases the demotion must tell apart, and it does so on EVIDENCE rather than on
+     *      similarity: an email that genuinely names a different broker WRITES THAT BROKER'S
+     *      ADDRESS DOWN. An address the email never states was constructed by the model, so it is
+     *      not evidence of a second human at all — and when its local part is also the sender's,
+     *      the only thing the model was plausibly describing is the sender.
+     * Both live records above resolve correctly under it: `00Qiw000000x9fCEAQ` matches on all
+     * three (phone and title kept), and `00Qiw000000xEVBEA2` — whose fabricated address is
+     * `info@kestrelmoor.com` — is refused at (2), so its contact block still clears.
+     *
+     * ═══ WHAT WAS REJECTED, AND WHY ═══
+     *   • DELETING THE CLEARING. Rejected outright — it is the reason this method exists. A
+     *     colleague does not share a direct line or a job title, and attributing one person's
+     *     contact details to another is the incident class the demotion prevents.
+     *   • NAME COMPARISON (`From_Name__c` vs `brokerName`). Rejected. `From_Name__c` is routinely
+     *     blank or decorated ("Tomas Berger via Crexi"), so requiring agreement would disable the
+     *     fix on ordinary traffic; and names are legitimately re-spaced, initialised and
+     *     suffixed ("T. Berger", "Tomas Berger, CCIM"), so any comparison loose enough to be
+     *     useful is loose enough to match two different people with a common name. This is the
+     *     same reasoning that keeps `listing_broker_name` unguarded one method up.
+     *   • DOMAIN-STEM SIMILARITY (`beaconridge` is a prefix of `beaconridgeadvisors`). Rejected,
+     *     though it fits the measured case exactly. It invents a notion of "similar enough" with
+     *     no principled boundary, it silently fails on a character-substitution typo
+     *     (`beacomridge`) which is just as likely as a dropped word, and condition (3) already
+     *     supplies HARDER evidence from the email itself. A weaker signal added on top of a
+     *     stronger one only adds a way to be wrong.
+     *   • SAME-DOMAIN (`isSameFirmDomain`, already present). Rejected as the wrong test entirely,
+     *     and worth stating because it is the nearest existing helper: same-domain is precisely
+     *     the COLLEAGUE case (`colleague@jll.com` naming `mark.stern@jll.com`), where the two ARE
+     *     different people and clearing the contact block is CORRECT. Reusing it here would have
+     *     broken the rule in the exact scenario the rule was written for.
+     *
+     * ⚠ SCOPE: `brokerCompany` IS DELIBERATELY NOT INCLUDED IN THIS EXCEPTION. It keeps its own,
+     * older `sameFirm` condition. The reported data loss was phone and title only, and
+     * `brokerCompany` reaches `Lead.Company` -> `LeadConvertMatchService` -> Account matching —
+     * a conversion-path behaviour that is not this fix's to move. Under a mistyped-domain demotion
+     * the company therefore still clears to the placeholder, which `LeadConvertMatchService` (D1b)
+     * excludes from matching: recoverable, and the firm name survives on `Extracted_JSON__c`.
+     *
+     * ⚠ RESIDUAL, NAMED: two DIFFERENT people sharing a compacted local part, where the model
+     * also fabricated the second one's address, keep the wrong phone. Accepted — it requires a
+     * fabrication AND a handle collision AND a non-role handle simultaneously — and the failure
+     * direction is bounded: the value shown is one the model returned for this email, not one
+     * carried in from anywhere else.
+     *
      * ═══ THE ONE EXCEPTION: SAME-FIRM (TEAM-BLAST) SENDS KEEP THE COMPANY ═══
      * When the envelope sender and the body-named broker share an email DOMAIN, they are
      * colleagues, so the firm is correct for BOTH and clearing it would throw away a good value
@@ -3253,6 +3664,9 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
         // Computed BEFORE brokerEmail is overwritten — it compares the sender's domain against the
         // BODY-NAMED broker's, and the next few lines destroy that value.
         Boolean sameFirm = isSameFirmDomain(sender, extraction.brokerEmail);
+        // DEFECT B (2026-08-31) — computed HERE for the same reason `sameFirm` is: it reads the
+        // BODY-NAMED address, which the next few lines destroy.
+        Boolean samePersonMistyped = isMistypedSenderAddress(sender, extraction.brokerEmail);
 
         // ⚠ CAPTURE BEFORE CLEARING. Everything below destroys the values these two hold, and they
         // are what the listing-contact slot is filled from.
@@ -3264,9 +3678,19 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
         if (!sameFirm) {
             extraction.brokerCompany = null;
         }
-        extraction.brokerPhone = null;
-        extraction.brokerMobile = null;
-        extraction.brokerTitle = null;
+        // DEFECT B (2026-08-31) — THE CLEARING IS NOW CONDITIONAL. It still fires for every
+        // genuinely-different body-named broker, which is the case it was written for and the
+        // case that must keep working. It stands down ONLY when the demoted identity is the
+        // SENDER THEMSELVES under an address the model invented — see isMistypedSenderAddress.
+        // ⚠ THIS BRANCH CAN ONLY EVER *KEEP* A VALUE THE MODEL ALREADY RETURNED. It never writes
+        // one, so the role-mailbox carve-out in the prompt (which leaves broker_phone /
+        // broker_mobile / broker_title EMPTY when broker_email is a platform or role address)
+        // survives untouched BY CONSTRUCTION: empty in, empty out.
+        if (!samePersonMistyped) {
+            extraction.brokerPhone = null;
+            extraction.brokerMobile = null;
+            extraction.brokerTitle = null;
+        }
 
         if (String.isBlank(extraction.listingBrokerEmail)) {
             extraction.listingBrokerEmail = InboundEmailFieldUtil.sanitizeEmail(oldEmail);
@@ -3317,6 +3741,72 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
             return null;
         }
         return address.substring(at + 1).trim().toLowerCase();
+    }
+
+    /**
+     * The COMPACTED local part of an email address — lower-cased with every separator removed —
+     * or null when there is not one.
+     *
+     * Compaction is deliberate and matches `matchAutomatedSender`'s treatment of the same
+     * substring: it makes `t.berger`, `t_berger` and `tberger` one token, which is the point when
+     * the question being asked is "is this the same human?". It also normalises `no-reply` and
+     * `no.reply` onto the `noreply` entry in `ROLE_LOCAL_PARTS`.
+     *
+     * Reads the LAST '@', mirroring `emailDomain`, so the two always split the same string at the
+     * same index and cannot disagree about which half is which.
+     *
+     * @param address The address to read; null/blank, no '@', or a leading '@' all return null.
+     * @return The lower-cased, separator-stripped local part, or null when it is empty.
+     */
+    private static String emailLocalPart(String address) {
+        if (String.isBlank(address)) {
+            return null;
+        }
+        Integer at = address.lastIndexOf('@');
+        if (at <= 0) {
+            return null;
+        }
+        String compacted = address.substring(0, at).trim().toLowerCase().replaceAll('[^a-z0-9]', '');
+        return String.isBlank(compacted) ? null : compacted;
+    }
+
+    /**
+     * DEFECT B (2026-08-31) — IS THE BODY-NAMED BROKER ACTUALLY THE SENDER, UNDER AN ADDRESS THE
+     * MODEL INVENTED?
+     *
+     * Used ONLY to decide whether `demoteBodyBroker` keeps the contact block (phone / mobile /
+     * title). It never writes a value and never influences an arbitration key. The full
+     * rationale — the two live Leads, the alternatives rejected, the named residual — is in
+     * `demoteBodyBroker`'s header; this Javadoc states the contract, not the argument.
+     *
+     * TRUE requires ALL THREE:
+     *   1. Both addresses yield a compacted local part and the two are EQUAL.
+     *   2. That local part is not in `ROLE_LOCAL_PARTS` — a shared mailbox is not an identity.
+     *   3. `bodyEmail` appears NOWHERE in the email text (`appearsInEmailText`). An email that
+     *      genuinely names a second broker writes that broker's address down; an address the
+     *      email never states is one the model constructed, so it is not evidence of a second
+     *      person. THIS IS THE DISCRIMINATOR — (1) and (2) alone would be a similarity heuristic.
+     *
+     * ⚠ ASYMMETRY BY DESIGN: every false answer here degrades to the pre-2026-08-31 behaviour
+     * (clear the block), so the failure direction of this predicate is recoverable data loss, not
+     * mis-attribution. Do not loosen it to "fix" a missed case without re-reading that sentence.
+     *
+     * ZERO SOQL, ZERO DML.
+     *
+     * @param sender    The sanitized envelope sender that is becoming the broker identity.
+     * @param bodyEmail The address the MODEL returned in `broker_email`, before it is overwritten.
+     * @return true only when the demoted identity is the sender under a fabricated address.
+     */
+    private Boolean isMistypedSenderAddress(String sender, String bodyEmail) {
+        String senderLocal = emailLocalPart(sender);
+        String bodyLocal = emailLocalPart(bodyEmail);
+        if (senderLocal == null || bodyLocal == null || !senderLocal.equals(bodyLocal)) {
+            return false;
+        }
+        if (ROLE_LOCAL_PARTS.contains(senderLocal)) {
+            return false;
+        }
+        return !appearsInEmailText(bodyEmail);
     }
 
     /**

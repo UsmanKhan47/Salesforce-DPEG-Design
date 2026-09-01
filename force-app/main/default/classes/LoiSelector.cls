@@ -5,14 +5,25 @@
  * P4 Module A1 (Acquisitions — Deal Core). Consumers:
  *   - OpportunityDocStatusController — Deal Summary card's LOI row
  *     (primary-else-latest, read-for-display, null-on-empty).
- *   - OpportunityApprovalService.resolveApprovalTargetId — resolves the parent deal Id
- *     from a clicked LOI record (fetch-for-use, throws on miss).
+ *   - OpportunityApprovalService — ⚠ TWO ENTRIES SINCE 2026-09-01, AND THE FIRST IS RETRACTED:
+ *       · `resolveApprovalTargetId` USED to call `selectOpportunityIdRequiredById` to resolve the
+ *         parent deal Id from a clicked LOI record (fetch-for-use, throws on miss). W4 of the LOI
+ *         approval cutover repointed that branch to return the LOI's OWN Id, so it queries
+ *         NOTHING. That method now has no production caller; it is KEPT and annotated rather than
+ *         deleted, the same treatment `UnderwritingSelector.selectIdsByOpportunityIds` got when
+ *         the Underwriting cutover stranded it.
+ *       · `submitForApproval`'s signed-NDA gate calls `selectNdaGateByLoiId` (below), which is
+ *         `without sharing` + `WITH SYSTEM_MODE` for reasons argued at its own declaration.
+ *       · `submitForApproval`'s catch-block refusal derivation calls `selectStageRequiredById`.
  *   - RecordStageAdvanceService — selectStageRequiredById, the stage-advance quick action.
  *   - CounterOfferService — selectNegotiationContextById, added Tranche 3B (2026-08-09).
  *   - DispositionStageEntryService — selectByDispositionIds, the disposition LOI-stage
  *     idempotency read, added 2026-08-10 (Tranche 3B fix pass).
  *   - DispositionDealSummaryService — selectLatestByDispositionId, the disposition Deal Summary
  *     card's LOI row, added 2026-08-20 (Tranche 2 Workstream C).
+ *   - LoiApprovalStampService — via the ApprovalAutomationReads inner class at the bottom of this
+ *     file (NOT via the USER_MODE methods above; see that class's header for the two separate
+ *     justifications). Added 2026-09-01 with W1 of the LOI approval cutover.
  *
  * ⚠ MODE COUNT — CORRECTED 2026-08-20, AND THE OLD SENTENCE IS QUOTED RATHER THAN DELETED SO A
  * READER CARRYING IT KNOWS IT WAS WRONG. This header used to read:
@@ -23,8 +34,14 @@
  * ARCHITECTURE.md twice, and it is not cosmetic — ARCHITECTURE.md §2 makes these headers the
  * authoritative SYSTEM_MODE inventory, so the number here is what a reviewer reconciles the doc
  * against. Re-count against the method list, never against this sentence.
- *   NOW: **EIGHT** public methods. **TWO** are `WITH SYSTEM_MODE` — `selectNegotiationContextById`
- *   and `selectByDispositionIds`. The **SIX** remaining stay `WITH USER_MODE`: `selectById`,
+ *   ⚠ AMENDED AGAIN 2026-09-01 (W4): `selectNdaGateByLoiId` was added, so the figures below moved
+ *   from EIGHT/TWO/SIX to NINE/THREE/SIX. Re-count against the method list, as this block's own
+ *   instruction says — do not trust either sentence.
+ *   NOW: **NINE** public methods ON THE OUTER CLASS. **THREE** are `WITH SYSTEM_MODE` —
+ *   `selectNegotiationContextById`, `selectByDispositionIds`
+ *   and `selectNdaGateByLoiId` (⚠ the third is ALSO `without sharing`, via its own
+ *   `NdaGateReads` inner class — a SEPARATE decision, argued at its own declaration). The **SIX**
+ *   remaining stay `WITH USER_MODE`: `selectById`,
  *   `selectLatestByOpportunityId`, `selectOpportunityIdRequiredById`, `selectStageRequiredById`,
  *   `selectByOpportunityIds` and `selectLatestByDispositionId`. LOI__c is a custom object (P3
  *   custom-field FLS gap = 0), so USER_MODE is the correct default for every read a human asked
@@ -35,6 +52,18 @@
  * exception. The mode is a property of the METHOD, never of the class — read the method, not the
  * class header. Each full justification lives at its own declaration, which is where §2's table
  * says the authoritative inventory lives.
+ *
+ * ⚠ AND SINCE 2026-09-01 THE COUNT ABOVE NO LONGER COVERS THE WHOLE FILE. The
+ * `ApprovalAutomationReads` inner class at the bottom is `without sharing` and `WITH SYSTEM_MODE`,
+ * and it is the documented exception — exactly the shape UnderwritingSelector already carries. It
+ * is deliberately NOT folded into the outer count, because the two escapes it makes (FLS *and*
+ * sharing) are a different decision from the mode question the count answers. Read that class's
+ * own header before reusing it.
+ * ⚠ THERE ARE NOW **TWO** SUCH INNER CLASSES, ADDED FOUR HOURS APART AND DELIBERATELY NOT MERGED:
+ * `NdaGateReads` (W4 — the SUBMITTER's pre-`Approval.process` gate, failure mode = a wrong
+ * REFUSAL) and `ApprovalAutomationReads` (W1 — the APPROVER's post-decision mirror read, failure
+ * mode = a silently unstamped deal). Same two keywords, different principals, different moments,
+ * different justifications. Read the one you are reusing, not the one you found first.
  *
  * Two not-found contracts (see UnderwritingSelector for the shared rationale):
  * selectById / selectLatestByOpportunityId return null; selectOpportunityIdRequiredById,
@@ -105,8 +134,18 @@ public with sharing class LoiSelector {
     }
 
     /**
-     * Loads an LOI for parent-deal resolution — backs
-     * OpportunityApprovalService.resolveApprovalTargetId.
+     * Loads an LOI for parent-deal resolution.
+     *
+     * 🔴 NO PRODUCTION CALLER SINCE 2026-09-01 (W4 of the LOI approval cutover). It backed
+     * `OpportunityApprovalService.resolveApprovalTargetId`, whose `LOI__c` branch now returns the
+     * clicked record's OWN Id and issues no query at all. KEPT, not deleted, and the reasoning is
+     * the same one `UnderwritingSelector.selectIdsByOpportunityIds` carries: the method is
+     * correct, tested (`LoiSelectorTest.selectOpportunityIdRequiredById_*`, both the found and the
+     * throws-on-miss halves), and a plausible future caller wanting a throwing child -> parent
+     * resolution should find it here rather than write a fourth one.
+     * ⚠ IT IS NOT THE RIGHT METHOD FOR APPROVAL AUTOMATION. It is `WITH USER_MODE`,
+     * single-record, and THROWS — see `ApprovalAutomationReads.selectByIds` for why routing
+     * automation through it turns a deleted LOI into a rolled-back approval.
      *
      * FETCH-FOR-USE: the caller dereferenced `.Opportunity__c` off a single-row
      * assignment, so a miss is an error. Preserved via a single-row SOQL
@@ -381,5 +420,200 @@ public with sharing class LoiSelector {
             WHERE Disposition__c IN :dispositionIds
             WITH SYSTEM_MODE
         ];
+    }
+
+    /**
+     * 🔴 THE SIGNED-NDA SUBMISSION GATE'S INPUTS, READ FROM THE **LOI** SIDE. Added 2026-09-01
+     * with W4 of the LOI approval cutover, when `OpportunityApprovalService` stopped resolving an
+     * `LOI__c` click to its parent deal and started submitting the LOI itself.
+     *
+     * It is the LOI-rooted twin of `OpportunitySelector.selectNdaGateById`. Read that method's
+     * header — the argument, the 2026-08-30 measurement behind it, and the not-found contract are
+     * all made in full there and are not repeated here; what follows is only what DIFFERS.
+     *
+     * ── WHY A NEW METHOD RATHER THAN "resolve the parent, then call the existing one" ─────────
+     * Two queries instead of one, on a synchronous path a human is waiting on, to answer one
+     * question. And the two-step version would re-introduce the throwing
+     * `selectOpportunityIdRequiredById` (or a second read of the same row) into a gate whose whole
+     * contract is that it must NOT change where an unexpected failure originates.
+     *
+     * ── 🔴 THE TRAVERSAL IS NOW TWO HOPS, WHICH DOUBLES THE THING THAT WAS MEASURED WRONG ────
+     * `Opportunity__r.Primary_NDA__r.NDA_Signed__c` crosses TWO Private-OWD parents
+     * (`Opportunity`, then `NDA__c`). A `WITH SYSTEM_MODE` spanning read IS sharing-filtered on
+     * the parent — MEASURED on 2026-08-30 (test run `707iw000003bQwp`), one hop, on this exact
+     * gate: the parent came back NULL and the gate REFUSED a deal whose NDA was signed. With two
+     * hops there are two independent ways to get that null, and BOTH fabricate "this deal has no
+     * signed NDA". The failure does not degrade, it INVERTS — it blocks a legitimate submission —
+     * which is the test ARCHITECTURE.md §2 sets for whether a read may stay `with sharing`. It
+     * may not. Hence `without sharing`, on this ONE query, exactly as the Opportunity-side twin.
+     *
+     * ⚠ AND `WITH SYSTEM_MODE` FOR THE SEPARATE, SECOND REASON: the submitter never asked to read
+     * an NDA. Under USER_MODE this read needs object read on `Opportunity` AND on `NDA__c` plus
+     * FLS on three fields, for every persona that can click Submit for Approval — and a single
+     * gap raises `No such column`, which the controller then masks as "The deal could not be
+     * submitted for approval." Nobody could diagnose that. 🔴 That is not hypothetical here: the
+     * SAME WEEK, `OpportunitySelector.selectPrimaryLoiByIds` was measured throwing exactly that
+     * on `Opportunity.Primary_LOI__c` for a persona that HELD the FLS grant, because it lacked
+     * whole-object read on the lookup's target.
+     *
+     * ⚠ IT WIDENS NOTHING A USER CAN OBSERVE: a `Boolean` and two Ids are consumed by a guard;
+     * no NDA field is returned to the caller, rendered or logged.
+     *
+     * NOT-FOUND CONTRACT — returns NULL for a null Id or an Id that resolves to no row, matching
+     * the Opportunity-side twin and DELIBERATELY not the throwing fetch-for-use contract the
+     * three `...RequiredById` methods above carry. A null row means "cannot evaluate the gate",
+     * the gate is skipped, and `Approval.process` fails exactly as it would have anyway.
+     * ⚠ A row whose `Opportunity__c` is BLANK is a legal state, not a miss — a sell-side LOI
+     * hangs off `Disposition__c` — and the caller skips it.
+     *
+     * @param loiId LOI__c Id; null-safe.
+     * @return The LOI with Id, Opportunity__c, Opportunity__r.Primary_NDA__c and
+     *         Opportunity__r.Primary_NDA__r.NDA_Signed__c populated, or null when the input is
+     *         null or the Id resolves to no row.
+     * @example
+     * LOI__c loi = LoiSelector.selectNdaGateByLoiId(targetId);
+     */
+    public static LOI__c selectNdaGateByLoiId(Id loiId) {
+        if (loiId == null) {
+            return null;
+        }
+        return new NdaGateReads().ndaGateByLoiId(loiId);
+    }
+
+    /**
+     * 🔴 THE SHARING ESCAPE FOR THE SIGNED-NDA GATE'S LOI-ROOTED READ, AND NOTHING ELSE.
+     *
+     * `without sharing` is confined to this inner class so it applies to ONE query. The enclosing
+     * `LoiSelector` stays `with sharing` and must: it backs six user-facing `USER_MODE` reads
+     * whose entire job is to respect what the running user may see. This is the
+     * `OpportunitySelector.NdaGateReads` shape, which is itself the
+     * `InboundEmailStagingSelector.RoutingReads` shape ARCHITECTURE.md §2 prescribes.
+     *
+     * ⚠ IT IS A SEPARATE INNER CLASS FROM `ApprovalAutomationReads` BELOW, DELIBERATELY, EVEN
+     * THOUGH BOTH ARE `without sharing` + `WITH SYSTEM_MODE`. They are escapes argued for
+     * DIFFERENT principals at DIFFERENT moments: that one runs as the APPROVER, after the
+     * decision, from a record-triggered flow, and its failure mode is a silently unstamped deal;
+     * this one runs as the SUBMITTER, before `Approval.process`, and its failure mode is a
+     * refusal. Folding them together would let either read inherit the other's justification.
+     *
+     * ⚠ DO NOT ADD A SECOND METHOD HERE — the instruction `OpportunitySelector.NdaGateReads`
+     * already carries, for the same reason.
+     */
+    private without sharing class NdaGateReads {
+
+        /**
+         * The gate's fields, read without sharing so neither the `Opportunity__r` nor the
+         * `Primary_NDA__r` hop is filtered by the submitter's access to a Private-OWD parent.
+         *
+         * @param loiId The LOI to read; never null (the wrapper guards it).
+         * @return The row, or null when no row matches.
+         */
+        private LOI__c ndaGateByLoiId(Id loiId) {
+            List<LOI__c> rows = [
+                SELECT Id, Opportunity__c,
+                       Opportunity__r.Primary_NDA__c,
+                       Opportunity__r.Primary_NDA__r.NDA_Signed__c
+                FROM LOI__c
+                WHERE Id = :loiId
+                WITH SYSTEM_MODE
+                LIMIT 1
+            ];
+            return rows.isEmpty() ? null : rows[0];
+        }
+    }
+
+    /**
+     * LOI reads performed ON A PRINCIPAL'S BEHALF by approval automation, rather than at the
+     * running user's request. Added 2026-09-01 with W1 of the LOI approval cutover
+     * (agent-output/loi-approval-cutover-design.md), which moves the principal LOI approval OFF
+     * the Opportunity and ONTO the LOI__c record and therefore needs a child -> parent edge that
+     * an approving principal can traverse.
+     *
+     * 🔴 THIS INNER CLASS ESCAPES BOTH FLS *AND* SHARING, AND THOSE ARE TWO SEPARATE DECISIONS.
+     * ARCHITECTURE.md §2 requires each to be justified at its own declaration, so:
+     *
+     * 1. `WITH SYSTEM_MODE` (the automation-path exception, ARCHITECTURE.md §2). The caller runs
+     *    inside an after-save record-triggered flow fired by the APPROVER's decision, not by a
+     *    user asking to read anything. Under USER_MODE a single field the approving principal
+     *    lacks FLS on raises `System.QueryException: No such column` — an FLS denial wearing a
+     *    schema error — which from a flow-invoked Apex action aborts the approval save itself.
+     *    Every DPEG persona is on Minimum Access and a Metadata-API-deployed field arrives with no
+     *    FLS for anyone, System Administrator included, so this is the default case for automation
+     *    here, not an edge case. This selector has already been bitten by exactly that on this
+     *    very object — see `selectNegotiationContextById`, ground 2, where `LOI__c.Disposition__c`
+     *    reproduced the denial on 2026-08-09.
+     *
+     * 2. `without sharing` (the inner class). SYSTEM_MODE lifts CRUD/FLS but NEVER sharing, and
+     *    that distinction has already cost this project a live incident: an approval's parent
+     *    write "silently wrote nothing" for every approver who did not OWN the record, and worked
+     *    only when approver == owner — which is exactly what every test does, so no test caught
+     *    it. Three facts make the same hole reachable here:
+     *      (a) `LOI__c` is OWD `Private` (LOI__c.object-meta.xml:165);
+     *      (b) an auto-created acquisition LOI is owned by the **`Acquisition` QUEUE**, not by any
+     *          person (OpportunityReviewService's header, :170-186), so an approving principal is
+     *          never the owner — non-ownership is the NORMAL case here, not the exception;
+     *      (c) the approver's read today comes from a single `viewAllRecords` line on
+     *          `DPEG_Acquisition_View` (:1908-1909), and a PermissionSet deploy REPLACES its whole
+     *          permission set — this repo has lost grants that way twice.
+     *    🔴 THE FAILURE MODE IS SILENT AND IT INVERTS THE FEATURE, WHICH IS WHY THIS IS NOT
+     *    BELT-AND-BRACES. An empty list here is indistinguishable from "no such LOI", so
+     *    `LoiApprovalStampService` skips instead of throwing, `Opportunity.LOI_Approved__c` is
+     *    never written, and `Approved_LOI_Before_PSA` then blocks that deal out of
+     *    `Under Contract (PSA)` FOREVER with no error anywhere and no route out.
+     *    Inner classes do not inherit the outer class's sharing, so `without sharing` is stated
+     *    explicitly; the outer LoiSelector stays `with sharing` and every method above it is
+     *    unchanged.
+     *
+     * Scope is kept as narrow as the rule demands: ONE read, Id + Opportunity__c only. Apex forbids
+     * static methods on inner classes, so this is an instance method — call
+     * `new LoiSelector.ApprovalAutomationReads().selectByIds(...)`.
+     *
+     * @see force-app/main/default/classes/UnderwritingSelector.cls (ApprovalAutomationReads — the
+     *      sibling this mirrors exactly, added by the Underwriting cutover on 2026-08-28)
+     * @see force-app/main/default/classes/ProcessInstanceStepSelector.cls (AuditReads — the
+     *      original precedent for the shape)
+     */
+    public without sharing class ApprovalAutomationReads {
+
+        /**
+         * The parent Opportunity of each of a set of LOIs — backs LoiApprovalStampService, which
+         * mirrors an approved LOI's decision onto its deal and therefore needs the child -> parent
+         * edge in bulk.
+         *
+         * NOT-FOUND CONTRACT — read-for-automation: returns a List (never null), and deliberately
+         * NOT the throwing fetch-for-use contract `selectOpportunityIdRequiredById` carries three
+         * methods above. A missing row, or a row whose `Opportunity__c` is blank, simply does not
+         * appear / carries null, and the caller skips it. An orphan LOI is a LEGAL state —
+         * `LOI__c.Opportunity__c` is a Lookup with `deleteConstraint SetNull`
+         * (objects/LOI__c/fields/Opportunity__c.field-meta.xml — both lines verified 2026-09-01),
+         * and a sell-side LOI hangs off `Disposition__c`
+         * instead and has no Opportunity at all — so it must not throw.
+         *
+         * ⚠ IT IS A SEPARATE METHOD FROM `selectOpportunityIdRequiredById` rather than a reuse of
+         * it, and the difference is not cosmetic: that one is `WITH USER_MODE`, single-record, and
+         * THROWS. Routing approval automation through it would reintroduce both failures this
+         * class exists to prevent, and would do so one row at a time.
+         *
+         * ⚠ NO RECORD-TYPE FILTER, DELIBERATELY. The caller is invoked only from the acquisition
+         * LOI approval's own mirror flow, so the scoping is done by the approval's entry criteria
+         * where it belongs. Filtering here as well would mean a Master-typed row — a real shape in
+         * this org until the record-type post-deploy gate runs — is silently dropped and its deal
+         * never stamped.
+         *
+         * @param loiIds LOI__c Ids; null/empty-safe.
+         * @return LOIs with Id and Opportunity__c populated; empty when the input is null or empty
+         *         (never null).
+         */
+        public List<LOI__c> selectByIds(Set<Id> loiIds) {
+            if (loiIds == null || loiIds.isEmpty()) {
+                return new List<LOI__c>();
+            }
+            return [
+                SELECT Id, Opportunity__c
+                FROM LOI__c
+                WHERE Id IN :loiIds
+                WITH SYSTEM_MODE
+            ];
+        }
     }
 }

@@ -85,7 +85,7 @@ private class ContractReviewTriggerHandlerTest {
             + 'stamped Contract_Signed__c on the parent deal');
         Assert.isNotNull(after.Contract_Executed_Date__c,
             'and stamped Day 0 — the value openTransactionsOnAboutToClose later reads back to date '
-            + 'the 75-task checklist, which is why the two remain coupled after the 2026-08-05 split');
+            + 'the 82-task checklist, which is why the two remain coupled after the 2026-08-05 split');
 
         // And: NOT a Transaction. See the class header — creation moved to
         // openTransactionsOnAboutToClose and ContractExecutionService's header forbids re-adding it

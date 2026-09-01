@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY. A comment placed ABOVE
+        <CustomField> breaks `sf` deploy at source conversion with a misleading "unable to find
+        matching parent xml file" error.
+
+        DISPOSITION GAP CLOSURE TRANCHE 2, ITEM 5b (agent-output/disposition-gap-closure-t2-design.md
+        §3 item 5b; Gate 1 decisions D-12/D-13/D-14, 2026-08-31). Captures the free-text reason a
+        Principal gives when overriding the Sell Meter and starting a disposition on a YELLOW-band
+        asset (stories 12/14). This REVERSES a recorded scope decision — lwc/sellMeterList's
+        _confirmOverride header previously stated "there is still no override REASON field ... a
+        deliberate scope decision, not an oversight." That paragraph is retracted in place, quoting
+        it, by the developer agent building 5b's LWC/Apex half — not in this file.
+
+        Shape (LongTextArea, length 4000, visibleLines 3) per the design doc's item 5b table.
+        Not required at the platform level (see below for why "required" is enforced elsewhere) and
+        no default value.
+
+        =====================================================================================
+        FLS (to be applied in the consolidated permission-set pass, NOT this file — owned by
+        salesforce-solution-architect per design §4).
+        =====================================================================================
+        READ-ONLY FLS in BOTH DPEG_Disposition_View AND DPEG_Disposition_Edit (editable=false in
+        both). This is a MACHINE-WRITTEN AUDIT FACT stamped by SYSTEM-mode Apex
+        (DispositionService.initiateAndSubmit, step 4, at insert, only when the band is YELLOW) —
+        not an analyst-editable judgement field. Precedent, quoted from
+        objects/NDA__c/fields/Principal_Approved__c.field-meta.xml, itself citing
+        BOV_Broker_Change__c's 2026-08-20 code-review reconciliation (C3): a similarly
+        approval/audit-written field's allowEdit grant was refused "on the grounds that granting
+        allowEdit would let the very analyst who replaced a broker go back and rewrite who did it
+        and when." The same reasoning applies here: the analyst who triggers the override must not
+        be able to rewrite the reason after the fact. A Metadata-API-deployed field carries NO FLS
+        for anyone, System Administrator included, until that consolidated pass lands.
+
+        WHY "REQUIRED" IS NOT SET ON THE FIELD ITSELF: per design D-14, mandatoriness on the
+        override path is enforced client-side by c/sellMeterOverrideModal's confirm-disabled
+        getter (the same idiom sellMeterInitiateModal.confirmDisabled already uses, because
+        `required` on a lightning-* input only fires on reportValidity(), which nothing calls) and
+        server-side by the fact that DispositionService only stamps this field on the override
+        path at all. Making the FIELD itself platform-required would block every other DML against
+        Disposition__c that does not go through the override path.
+
+        RELATED: the paired audit signal, Sell_Decision_Trigger__c = 'Principal Decision', is
+        stamped in the SAME DML — no new picklist value, no record-type surgery; that value
+        already exists on both record types (design P-7). See DispositionService.cls's header for
+        that stamp once the developer agent's pass lands.
+
+        NOT a child/log object (contrast BOV_Broker_Change__c, which IS append-only because a
+        broker can be replaced many times per disposition). The override happens AT MOST ONCE per
+        Disposition__c — both create paths early-return on an existing disposition, and the meter
+        governs starting a sale, never reopening one. Cardinality 1 ⇒ a field on the parent.
+
+        Risk: LOW as schema. One new field, no picklist change, no record-type edit. The risk in
+        this item lives entirely in the Apex/LWC half (developer agent) and the FLS grant
+        (solution-architect agent), not here.
+    -->
+    <fullName>Sell_Meter_Override_Reason__c</fullName>
+    <description>Machine-written audit fact: the Principal&apos;s free-text reason for overriding the Sell Meter and starting a disposition on a YELLOW-band asset. Stamped by DispositionService.initiateAndSubmit at insert, only on the override path. Read-only FLS in both disposition sets - see this file&apos;s XML comment.</description>
+    <inlineHelpText>Reason given by the Principal for overriding the Sell Meter on a YELLOW-band asset. Machine-written at the time of override; not editable afterwards.</inlineHelpText>
+    <label>Sell Meter Override Reason</label>
+    <length>4000</length>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>LongTextArea</type>
+    <visibleLines>3</visibleLines>
+</CustomField>

@@ -15,6 +15,15 @@
  * SAME aggregate, because the traction clock now pauses at the first offer. Read that method's
  * javadoc before reintroducing a count-only read — a second query would break the 2-SOQL budget
  * `DispositionTractionServiceTest` asserts.
+ * 🔴 THAT WARNING WAS TESTED AND HELD ON 2026-08-31 (Tranche 1 item 7). The Tranche 1 design and
+ * `agent-output/listing-alerts-and-escalation.md` §401 BOTH instruct the implementer to "reuse the
+ * EXISTING `DispositionOfferSelector.countByDispositionIds`" — a method that had been gone for ten
+ * days. Two design documents inherited the same stale premise from each other. The instruction was
+ * satisfied by reusing `selectOfferTractionByDispositionIds` (whose `offerCount` IS the number the
+ * new `Disposition__c.Offers_Received__c` counter needs, filtered identically — every row, every
+ * status, per D-9), NOT by resurrecting the retired method. ⚠ IF A THIRD DOCUMENT NAMES
+ * `countByDispositionIds`, IT IS QUOTING THE SAME DEAD PREMISE; check this paragraph before
+ * writing the method back.
  *
  * ── 🔴 WHY THE COUNT LIVES IN A `private without sharing` INNER CLASS ────────
  * `Disposition_Offer__c` is `sharingModel = Private` (measured in the object file). The count this
@@ -129,6 +138,18 @@ public with sharing class DispositionOfferSelector {
      * MIN'd — so the clock fails to pause and the listing escalates to "Week 6 — Hard Stop" while a
      * buyer it cannot see is in negotiation. That is the same silent INVERSION of an automated
      * verdict the count escapes sharing to avoid, not a degraded read.
+     *
+     * ── ⚠ SECOND CONSUMER SINCE 2026-08-31, AND IT USES ONLY HALF THE RESULT ─────────────────
+     * `DispositionCounterRollupService.recalculateOffersFor` reads `offerCount` and ignores
+     * `firstOfferDate`, to maintain `Disposition__c.Offers_Received__c`. That is deliberate reuse,
+     * not laziness: the date rides the SAME aggregate at zero extra query cost, so a count-only
+     * twin would be a second query against one table for one number. 🔴 CONSEQUENCE FOR ANYONE
+     * NARROWING THIS METHOD: `firstOfferDate` may now look unused from the traction side alone —
+     * it is not, and neither is `offerCount` from the counter side. BOTH consumers must be checked
+     * before either field leaves this SELECT.
+     * ⚠ AND THE FILTER IS NOW LOAD-BEARING FOR A SECOND REASON. It has no status predicate, which
+     * is what the counter needs (D-9: story 37 keeps Rejected / Countered / Withdrawn visible, so
+     * they are counted). Adding one to serve traction would silently redefine the counter.
      *
      * @param dispositionIds Disposition__c Ids to read offer traction for; null/empty safe.
      * @return Disposition__c Id -> OfferTraction, omitting dispositions with zero offers.

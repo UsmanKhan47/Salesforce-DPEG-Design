@@ -2,9 +2,13 @@
  * c/dispositionApprovalHistory
  * ---------------------------------------------------------------------------------------------
  * 🔴 THE RAIL, THE GRID AND THE TOKEN VOCABULARY ARE DELIBERATELY IDENTICAL TO
- * `bovBrokerChangeHistory.css` AND `dispositionBuyerTimeline.css`. Those two cards sit directly
- * above this one in the ~340px Disposition sidebar; three stacked cards with three visual
- * vocabularies read as three unrelated widgets. Only the class PREFIX differs (`dah-`), because a
+ * `bovBrokerChangeHistory.css` AND `dispositionBuyerTimeline.css`. Those two cards sit in the
+ * ~340px Disposition sidebar and this one is BUILT FOR that column — ⚠ it is not currently placed
+ * on any FlexiPage (see `dispositionApprovalHistory.js`'s opening block, corrected 2026-08-31), so
+ * read this as the constraint the styling is written to, not as a description of a live page.
+ * Three stacked cards with three visual vocabularies read as three unrelated widgets, and this
+ * card must not be the odd one out on the day it IS placed. Only the class PREFIX differs
+ * (`dah-`), because a
  * shared prefix across component-scoped stylesheets would suggest a sharing that cannot exist.
  *
  * ⚠ A TIMELINE IS SINGLE-COLUMN BY DEFINITION. The repo's usual narrow-column recipe

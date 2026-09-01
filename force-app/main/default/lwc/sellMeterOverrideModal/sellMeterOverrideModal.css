@@ -1,0 +1,54 @@
+/* SLDS 2 design tokens only (--slds-g-*), each with the documented fallback so the
+   component still renders sanely on a surface that has not loaded the token set.
+   No hardcoded brand colours anywhere.
+
+   ⚠ THIS FILE DELIBERATELY DOES NOT COPY c/sellMeterList's BAND PILLS. That component
+   styles its three meter pills with hardcoded hex in inline styles — a PRE-EXISTING
+   SLDS 2 deviation that is out of this tranche's scope and must not be propagated into
+   a new bundle. A new file has no legacy to preserve. */
+
+/* ⚠ NO `min-height`. c/sellMeterInitiateModal carries `min-height: 120px` here and this
+   file deliberately does not copy it: that value exists to stop its spinner overlay
+   collapsing while the Apex call is in flight, and this dialog makes no server call and
+   has no spinner. It is also a bare pixel value the SLDS linter flags with no token
+   replacement available (the --slds-g-sizing-* scale jumps 5rem -> 10rem), so copying it
+   would have imported a warning to hold a box open that its own content already fills.
+
+   `overflow-wrap` is kept and is not cosmetic: the reason is free text a user types or
+   pastes, and a single long unbroken token would otherwise widen the modal body. */
+.smo-body {
+    overflow-wrap: anywhere;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   THE WARNING BAND
+   ---------------------------------------------------------------------------
+   🔴 `*-base-95` BACKGROUND + `*-base-40` TEXT — NOT `warning-container-1`.
+   `--slds-g-color-warning-container-1` reads like a pale container and is a
+   SOLID mid-orange (#dd7a01) wherever the `slds` base theme is active, so the
+   natural-looking "pale container + dark text" pairing is dark-on-dark. The
+   `*-base-95` / `*-base-40` pairing is a real pale tint in light themes and a
+   near-black with a bright tint of text in dark ones. Warning is the one
+   semantic whose readable text step is `-40` rather than `-30`.
+
+   ⚠ NO AUTOMATED GATE IN THIS PIPELINE CATCHES THAT SUBSTITUTION. The SLDS
+   linter only checks that a hook was USED, Jest asserts class names, and axe's
+   colour-contrast rule is inert in jsdom. The suite therefore asserts the
+   RULE TEXT of this block directly, over the comment-stripped stylesheet — see
+   `sellMeterOverrideModal.test.js`. That assertion is the only falsifier.
+
+   ⚠ THE RING IS `box-shadow: inset`, NOT `border`. A border would change the
+   element's box and shift the text; an inset shadow paints inside the existing
+   one. `--slds-g-sizing-border-1` is the token for its width.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.smo-warning {
+    margin: 0;
+    padding: var(--slds-g-spacing-3, 0.75rem);
+    border-radius: var(--slds-g-radius-border-2, 0.25rem);
+    background: var(--slds-g-color-warning-base-95, #fff1ea);
+    color: var(--slds-g-color-warning-base-40, #825101);
+    box-shadow: inset 0 0 0 var(--slds-g-sizing-border-1, 0.0625rem)
+        var(--slds-g-color-warning-base-80, #ffba90);
+    font-size: var(--slds-g-font-scale-base, 0.8125rem);
+    font-weight: var(--slds-g-font-weight-6, 600);
+}

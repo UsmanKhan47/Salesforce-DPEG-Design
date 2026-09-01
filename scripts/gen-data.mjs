@@ -22,14 +22,14 @@ const contacts = brokers.map(([name, first, last], i) =>
 // --- Properties + Opportunities across all 9 stages ---
 // [dealName, address, city, assetType, askingPrice, myCap, marketCap, stage, dealStatus, dealCategory, brokerIdx]
 const deals = [
-  ['Magnolia Crossing', '2410 FM 1488', 'Magnolia', 'Retail Strip', 31500000, 6.5, 6.5, 'LOI Signed', 'LOI Signed', 'Live', 0],
-  ['Hwy 290 Retail Center', '12900 US-290', 'Cypress', 'Retail Strip', 18800000, 7.0, 6.8, 'New', 'Evaluating', 'Live', 1],
-  ['Katy Mills Outparcel', '5000 Katy Mills Cir', 'Katy', 'Retail Strip', 9400000, 6.75, 6.6, 'Under Review', 'Working', 'Live', 2],
+  ['Magnolia Crossing', '2410 FM 1488', 'Magnolia', 'Retail', 31500000, 6.5, 6.5, 'LOI Signed', 'LOI Signed', 'Live', 0],
+  ['Hwy 290 Retail Center', '12900 US-290', 'Cypress', 'Retail', 18800000, 7.0, 6.8, 'New', 'Evaluating', 'Live', 1],
+  ['Katy Mills Outparcel', '5000 Katy Mills Cir', 'Katy', 'Retail', 9400000, 6.75, 6.6, 'Under Review', 'Working', 'Live', 2],
   ['Westwood Industrial Pk', '8800 Westpark Dr', 'Houston', 'Industrial', 42300000, 6.25, 6.1, 'Underwriting', 'Working', 'Live', 3],
   ['Greenway Plaza Office', '3 Greenway Plaza', 'Houston', 'Office', 55600000, 7.5, 7.2, 'LOI Submitted', 'Countered', 'Live', 4],
   ['Memorial City Office', '900 Gessner Rd', 'Houston', 'Office', 38900000, 7.25, 7.0, 'LOI Signed', 'LOI Signed', 'Live', 5],
   ['Riverside Commons', '1200 Riverside Dr', 'Austin', 'Mixed-Use', 27400000, 6.4, 6.3, 'Under Contract', 'Contract Signed', 'Live', 1],
-  ['Oak Street Center', '450 Oak St', 'Dallas', 'Retail Strip', 21100000, 6.6, 6.5, 'Closed Won', 'Asset Under Management', 'Closed', 2],
+  ['Oak Street Center', '450 Oak St', 'Dallas', 'Retail', 21100000, 6.6, 6.5, 'Closed Won', 'Asset Under Management', 'Closed', 2],
   ['Texas City Storage', '2800 Palmer Hwy', 'Texas City', 'Industrial', 12750000, 7.8, 7.9, 'Dead/Pass', 'Killed', 'Dead', 3],
   // Stage was 'Portfolio Deal' until the legacy Opportunity Portfolio Deal concept was retired
   // (Portfolio Deal rename, Phase A1). Reassigned to 'New' — the stage the seed set's other
@@ -39,7 +39,15 @@ const deals = [
 ];
 const properties = deals.map((d, i) =>
   rec('Property__c', `prop_${i}`, {
-    Name: d[0], Address__c: d[1], City__c: d[2], State__c: 'TX', Asset_Type__c: d[3].split(' ')[0],
+    // 🔴 NO `.split(' ')[0]` HERE. This line read `d[3].split(' ')[0]` until 2026-08-31, and it
+    // existed for exactly ONE reason: to turn the Opportunity's 'Retail Strip' into the
+    // Property__c's 'Retail'. Gap 1 aligned the two value sets, so the split is not merely
+    // redundant — it is now ACTIVELY HARMFUL. Both sets contain 'Medical Office', which the split
+    // would silently truncate to 'Medical': not a valid value on either restricted picklist, so
+    // the import fails, or (worse, on a non-restricted field) writes a value nothing matches.
+    // Asset_Type__c is now copied VERBATIM from d[3]; ASSET_CORE ⊆ ASSET_PROPERTY guarantees
+    // every Opportunity value is legal on the Property. Do not reintroduce any string surgery.
+    Name: d[0], Address__c: d[1], City__c: d[2], State__c: 'TX', Asset_Type__c: d[3],
     Market_Cap_Rate__c: d[6], Monthly_Visits__c: 8000 + i * 1500, YoY_Growth__c: 3 + (i % 6),
     Placer_Fetch_Status__c: 'Success',
   }));

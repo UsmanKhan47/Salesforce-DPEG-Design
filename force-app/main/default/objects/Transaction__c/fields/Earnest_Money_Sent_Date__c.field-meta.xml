@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Earnest_Money_Sent_Date__c</fullName>
+    <description>Date the earnest money wire was sent, stamped alongside Earnest_Money_Sent__c. DISTINCT FROM THE EXISTING EM_Wired_Date__c, WHICH IS NOT BEING REPLACED OR REPOINTED: the transactionCriticalDates sidebar already reads EM_Wired_Date__c and the two must not be conflated by assumption. If the business confirms they are the same event, retiring one is a separate additive-pattern decision with its own backfill, not a silent merge.</description>
+    <inlineHelpText>Date the earnest money wire was sent. Set from the checklist alongside the Earnest Money Sent flag.</inlineHelpText>
+    <label>Earnest Money Sent Date</label>
+    <required>false</required>
+    <trackHistory>true</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Date</type>
+</CustomField>

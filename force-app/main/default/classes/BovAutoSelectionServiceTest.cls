@@ -443,9 +443,20 @@ private class BovAutoSelectionServiceTest {
             '🔴 NOTHING may be appointed when no candidate is scoreable. Selecting the oldest row '
             + 'here would be "auto-select whichever BOV arrived first", appointing a broker for a '
             + 'sale nobody has priced.');
-        Assert.areEqual(1, dmlUsed,
-            'and it must cost ZERO extra DML — only this test\'s own insert. A write here means '
-            + 'the null-score guard was removed.');
+        // ── 🔴 RE-DERIVED 2026-08-31 (Tranche 1 item 7). WAS `areEqual(1, dmlUsed, …)`. ───────────
+        // The claim is unchanged and must not be weakened: THIS SERVICE must write NOTHING when no
+        // candidate is scoreable. What joined the count is `DispositionCounterRollupService`'s
+        // `Responses_Received__c` parent write in `afterInsert` — which is CORRECT here and must
+        // NOT be guarded by anything score-related: three unscoreable responses are still three
+        // responses received, and the counter says nothing about who is appointed.
+        //   1  this test's own `insert rows`
+        //   1  the counter's parent Database.update (ONE per chunk)
+        //   0  BovAutoSelectionService — the subject, and still zero
+        // 🔴 A THIRD STATEMENT MEANS THE NULL-SCORE GUARD WAS REMOVED. Same failure, new baseline.
+        Assert.areEqual(2, dmlUsed,
+            'and the auto-selection service must cost ZERO extra DML — the two statements are this '
+            + 'test\'s own insert and the Responses_Received__c recompute. A THIRD write means the '
+            + 'null-score guard was removed. DML used: ' + dmlUsed);
     }
 
     /**
@@ -1018,9 +1029,22 @@ private class BovAutoSelectionServiceTest {
         Integer dmlUsed = Limits.getDmlStatements() - dmlBefore;
         Test.stopTest();
 
-        Assert.areEqual(1, dmlUsed,
-            'Only this delete itself — the answer did not change, so the idempotency short-circuit '
-            + 'must write nothing');
+        // ── 🔴 RE-DERIVED 2026-08-31 (Tranche 1 item 7). THIS WAS `areEqual(1, dmlUsed, …)`. ──────
+        // The claim being asserted has NOT changed and must not be weakened: THIS SERVICE still
+        // writes nothing when the answer did not move. What changed is that `afterDelete` gained a
+        // SECOND job — `DispositionCounterRollupService`, maintaining
+        // `Disposition__c.Responses_Received__c` — and that one has no idempotency short-circuit
+        // and must not have one: a deleted submission is one fewer response, unconditionally.
+        //   1  this test's own `delete weak`
+        //   1  the counter's parent `Database.update` (ONE per chunk; this is one chunk)
+        //   0  BovAutoSelectionService — the subject of this test, and still zero
+        // 🔴 IF THIS READS 3, THE IDEMPOTENCY SHORT-CIRCUIT THIS TEST EXISTS FOR IS GONE. The
+        // assertion still fails for exactly the reason it always did; only the baseline moved.
+        Assert.areEqual(2, dmlUsed,
+            'ONE for this delete itself and ONE for the Responses_Received__c recompute — the '
+            + 'answer did not change, so BovAutoSelectionService\'s idempotency short-circuit must '
+            + 'still write NOTHING. A third statement means that short-circuit is gone. '
+            + 'DML used: ' + dmlUsed);
         assertExactlyOneSelected(d.Id, strong.Id, 'and the appointment is untouched');
     }
 
@@ -1116,10 +1140,22 @@ private class BovAutoSelectionServiceTest {
         Integer dmlUsed = Limits.getDmlStatements() - dmlBefore;
         Test.stopTest();
 
-        Assert.areEqual(2, dmlUsed,
-            'ONE for this test\'s own insert, ONE for the service\'s swap. A third would mean the '
-            + 'service\'s own write re-entered it and wrote again — the shape this repo has a '
-            + 'measured incident for (trigger-cascade-on-bulk-insert).');
+        // ── 🔴 RE-DERIVED 2026-08-31 (Tranche 1 item 7). THIS WAS `areEqual(2, dmlUsed, …)` with
+        // the message "ONE for this test's own insert, ONE for the service's swap." Both of those
+        // are still true and still counted; a THIRD joined them:
+        //   1  this test's own `insert challenger`
+        //   1  BovAutoSelectionService's swap — the subject of this test
+        //   1  DispositionCounterRollupService's parent write (Responses_Received__c), ONE per
+        //      chunk, in afterInsert. It runs AFTER the swap and the swap's own re-fired
+        //      afterUpdate costs it NOTHING (the lookup did not move -> zero-query fast path).
+        // 🔴 A FOURTH STILL MEANS THE SERVICE'S OWN WRITE RE-ENTERED ITSELF — the shape this repo
+        // has a measured incident for (trigger-cascade-on-bulk-insert). The failure mode this
+        // assertion guards is unchanged; only the baseline moved.
+        Assert.areEqual(3, dmlUsed,
+            'ONE for this test\'s own insert, ONE for the service\'s swap, ONE for the '
+            + 'Responses_Received__c recompute. A FOURTH would mean the service\'s own write '
+            + 're-entered it and wrote again — the shape this repo has a measured incident for '
+            + '(trigger-cascade-on-bulk-insert). DML used: ' + dmlUsed);
         // ── 🔴 THE QUERY ASSERTION IS THE ONLY THING THAT CAN FALSIFY `suppressReentry` ────────
         // MEASURED 2026-08-24: deleting the flag's early return leaves EVERY OTHER TEST IN THIS
         // TRANCHE GREEN. The recursion terminates on its own (the second pass finds the winner
@@ -1137,10 +1173,36 @@ private class BovAutoSelectionServiceTest {
         //      service's OWN swap — the challenger is becoming Selected there, so the guard's
         //      zero-query fast path does not apply.
         // A FOURTH would be the re-entrant selection read the flag exists to prevent.
-        Assert.areEqual(3, queriesUsed,
-            '🔴 A FOURTH QUERY MEANS `suppressReentry` IS GONE: the service\'s own Database.update '
+        //   ⚠ RE-DERIVED 2026-08-31 (Tranche 1 item 7). THE THREE ABOVE ARE UNCHANGED AND ARE
+        //   STILL THE POINT. A FOURTH JOINED THEM, AND IT IS NOT THE RE-ENTRANT ONE:
+        //   4. BovSubmissionSelector.countByDispositionIds — the Responses_Received__c aggregate,
+        //      ONE per chunk, in afterInsert. The counter's own parent `Database.update` on
+        //      Disposition__c adds ZERO queries.
+        //      ⚠ CORRECTED 2026-08-31 (Tranche 1 code review, W-1). RETRACTED: "DispositionTrigger
+        //      Handler's TWO consumers are change-keyed on Disposition_Stage__c and
+        //      Approval_Advance_Pending__c, neither of which this shell touches (VERIFIED against
+        //      those methods, not assumed)." Two things were wrong with it, and the CONCLUSION —
+        //      zero queries — survives both.
+        //        (a) There are FOUR consumers, not two. `DispositionTrigger` is `(before insert,
+        //            before update, after insert, after update)` and the shell `Database.update`
+        //            fires the before contexts too: `DispositionStageEntryService.stampListing
+        //            Dates` (pure in-memory, zero SOQL on every path) and `DispositionBrokerStamp
+        //            Service.stampSelectedBrokerLabel` (change-keyed on `Broker__c`, returns
+        //            before its one Contact query). Both are free for this shell, which is why
+        //            the 4 below does not move. The full four-way audit is in
+        //            `DispositionCounterRollupService.applyCounts`'s javadoc.
+        //        (b) "VERIFIED" overclaimed. Nothing in this tranche has been compiled, deployed
+        //            or run — every governor figure here is DERIVED FROM SOURCE. The deploy will
+        //            settle them.
+        //   🔴 SO A **FIFTH** IS NOW THE RE-ENTRANT SELECTION READ. That is the whole reason this
+        //   assertion exists and the reason it must stay EXACT rather than becoming `<=`: it is the
+        //   ONLY observable that can falsify `suppressReentry` — measured 2026-08-24, deleting the
+        //   flag's early return leaves every other test in this tranche green.
+        Assert.areEqual(4, queriesUsed,
+            '🔴 A FIFTH QUERY MEANS `suppressReentry` IS GONE: the service\'s own Database.update '
             + 're-fired afterUpdate, which routed straight back into reselect because '
-            + 'Submission_Status__c had just changed. Queries used: ' + queriesUsed);
+            + 'Submission_Status__c had just changed. The fourth is the Responses_Received__c '
+            + 'aggregate (2026-08-31) and is expected. Queries used: ' + queriesUsed);
         Assert.isFalse(BovAutoSelectionService.suppressReentry,
             '🔴 The re-entrancy flag must be RESET after every run. Left true it would silently '
             + 'disable auto-selection for the rest of the transaction — which is exactly why it is '
@@ -1276,15 +1338,25 @@ private class BovAutoSelectionServiceTest {
         Integer dmlUsed = Limits.getDmlStatements() - dmlBefore;
         Test.stopTest();
 
-        Assert.areEqual(3, dmlUsed,
-            'ONE for this line\'s own insert, plus ONE selection write PER CHUNK — 251 rows is TWO '
-            + 'chunks, so exactly 1 + 2 = 3. A per-record write would read close to 251 and would '
-            + 'exhaust the 150-statement limit long before reaching 251.');
-        Assert.isTrue(queriesUsed <= 8,
-            'PER-CHUNK CONSTANT BUDGET: one selection query, one broker-stamp Contact query, and '
-            + 'one exclusivity-guard query on the service\'s own write — three per chunk, two '
-            + 'chunks, plus headroom. A per-record query would read close to 251. Queries used: '
-            + queriesUsed);
+        // ── 🔴 RE-DERIVED 2026-08-31 (Tranche 1 item 7). WAS `areEqual(3, dmlUsed)` / `<= 8`. ─────
+        // The CLAIM is unchanged and is the only thing that matters: cost is CONSTANT PER CHUNK,
+        // never per record. Two new terms joined it, both per chunk:
+        //   DML   1 own insert + 2 selection writes (1/chunk) + 2 counter writes (1/chunk) = 5
+        //   SOQL  as before, plus ONE Responses_Received__c aggregate per chunk = +2
+        // 🔴 THE DML ASSERTION STAYS EXACT. A per-record counter write would read ~251 here and is
+        // precisely the defect this line catches; loosening it to `<=` would forfeit that.
+        Assert.areEqual(5, dmlUsed,
+            'ONE for this line\'s own insert, plus ONE selection write PER CHUNK and ONE '
+            + 'Responses_Received__c write PER CHUNK — 251 rows is TWO chunks, so exactly '
+            + '1 + 2 + 2 = 5. A per-record write would read close to 251 and would exhaust the '
+            + '150-statement limit long before reaching 251. DML used: ' + dmlUsed);
+        Assert.isTrue(queriesUsed <= 12,
+            'PER-CHUNK CONSTANT BUDGET: one selection query, one broker-stamp Contact query, one '
+            + 'exclusivity-guard query on the service\'s own write, and (since 2026-08-31) one '
+            + 'Responses_Received__c aggregate — FOUR per chunk, two chunks, plus headroom. '
+            + '⚠ THE BOUND MOVED FROM 8 TO 12 BECAUSE THE BUDGET GREW, NOT TO MAKE A FAILURE PASS: '
+            + '8 was 3/chunk + headroom and the fourth query consumed all of it. A per-record query '
+            + 'would still read close to 251. Queries used: ' + queriesUsed);
 
         assertScoresAreRanked(d.Id);
         assertExactlyOneSelected(d.Id, highestScorerOn(d.Id).Id,
@@ -1371,10 +1443,17 @@ private class BovAutoSelectionServiceTest {
         Integer queriesUsed = Limits.getQueries() - queriesBefore;
         Test.stopTest();
 
-        Assert.isTrue(queriesUsed <= 8,
-            '🔴 ONE selection query PER CHUNK keyed on the whole Set<Id> of parents, never one per '
-            + 'disposition. 251 dispositions would be 251 queries and would fail at row 101. '
-            + 'Queries used: ' + queriesUsed);
+        // ⚠ BOUND RAISED FROM 8 TO 12 ON 2026-08-31 (Tranche 1 item 7), FOR A BUDGET THAT GREW
+        // RATHER THAN A FAILURE THAT NEEDED HIDING. `DispositionCounterRollupService` adds ONE
+        // aggregate PER CHUNK (two chunks = +2), and it is keyed on the whole `Set<Id>` of parents
+        // exactly as the selection read is — which is the property this test measures. 🔴 THE
+        // CLAIM IS UNCHANGED AND IS THE ONLY THING THAT MATTERS: 251 SEPARATE DISPOSITIONS MUST NOT
+        // COST 251 QUERIES. Both new queries are per-chunk, so this bound is still a constant and
+        // still fails at row 101 if either read is ever moved inside a per-disposition loop.
+        Assert.isTrue(queriesUsed <= 12,
+            '🔴 ONE selection query and ONE Responses_Received__c aggregate PER CHUNK, each keyed '
+            + 'on the whole Set<Id> of parents, never one per disposition. 251 dispositions would '
+            + 'be 251+ queries and would fail at row 101. Queries used: ' + queriesUsed);
         Assert.areEqual(BULK_N,
             [SELECT COUNT() FROM BOV_Submission__c
              WHERE Disposition__c IN :dispositions AND Submission_Status__c = :SELECTED],
@@ -1398,9 +1477,33 @@ private class BovAutoSelectionServiceTest {
      * which `BovPreferredBrokerService` normally makes unreachable by deleting it — so the fixture
      * uses the UNDELETE GAP, exactly as
      * `DispositionApprovalServiceTest.submitAtBovOutreach_twoSelectedSubmissions...` does, and for
-     * the same reason: the platform has no `before undelete` context and this trigger declares no
-     * `after undelete` one, so a restored row arrives with no automation having seen it. That is a
-     * real production path, not a contrivance.
+     * the same reason: a restored row arrives with no SELECTION automation having seen it. That is
+     * a real production path, not a contrivance.
+     *
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * ⚠ RETRACTED IN PLACE 2026-08-31 (Tranche 1 code review, W-3 — this file was missed by the
+     *   D-5 sweep of the same day, which stopped one file short).
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     *     RETRACTED: "the platform has no `before undelete` context and this trigger declares no
+     *     `after undelete` one".
+     *
+     * THE SECOND CLAUSE IS FALSE. `BovSubmissionTrigger` gained `after undelete` on 2026-08-31
+     * (design decision D-5), to route `DispositionCounterRollupService` and nothing else.
+     *
+     * THE FIRST CLAUSE IS TRUE AND IS THE ONE THIS FIXTURE ACTUALLY DEPENDS ON, which is why the
+     * fixture is unchanged and still works. TWO SEPARATE REASONS, and they are not the same one:
+     *   - `BovSubmissionSelectionGuardService` runs in `before insert` / `before update`, and the
+     *     platform still has no `before undelete` context AT ALL, so it cannot run on a restore
+     *     however the trigger is wired.
+     *   - `BovPreferredBrokerService.retireReplacedPreferred` and `BovAutoSelectionService.reselect`
+     *     are AFTER-context (routed from `afterInsert` / `afterUpdate`), so for them the protection
+     *     is not the platform — it is that `BovSubmissionTriggerHandler.afterUndelete` routes the
+     *     counter and NOTHING ELSE. That is a standing rule recorded at that method, argued at
+     *     `BovAutoSelectionService.reselectForDeleted`, and it is deliberately revocable by a
+     *     single line of code. ⚠ Do not conflate the two: the first is a platform fact, the second
+     *     is a decision, and only the second can be undone by accident.
+     * 🔴 IF THIS FIXTURE EVER STARTS PRODUCING ONE ROW, THE CAUSE IS SOMETHING NEW BEING ROUTED
+     * INTO `afterUndelete` — not a bug in the service under test. Read that standing rule first.
      *
      * ⚠ NOT A DUPLICATE of `nonOwnerSaver_swapsAnUnownedSiblingAcrossTheSharingBoundary`, which
      * covers the SCORED demotion. Two branches, two falsifiers.
@@ -1416,15 +1519,23 @@ private class BovAutoSelectionServiceTest {
         delete stale;                       // SOQL stops seeing it, so the retirement service does too
         BOV_Submission__c current = unquotedPreferredBov(d.Id);
         insert current;                     // retirement finds ONE preferred row: nothing to retire
-        undelete stale;                     // no undelete context anywhere on this trigger
+        // ⚠ CORRECTED 2026-08-31 (W-3). This line read "no undelete context anywhere on this
+        // trigger". `BovSubmissionTrigger` HAS declared `after undelete` since 2026-08-31 (D-5) —
+        // it routes the response counter ONLY. What the fixture depends on is untouched: no
+        // BEFORE undelete context exists on the platform, and neither the retirement service nor
+        // auto-selection is routed into the new after context.
+        undelete stale;                     // no SELECTION automation sees a restore
 
         Assert.areEqual(2, [
             SELECT COUNT() FROM BOV_Submission__c
             WHERE Disposition__c = :d.Id AND Submission_Status__c = 'Selected'
               AND Is_Preferred_Broker__c = TRUE
         ], 'PREMISE — two Selected preferred rows must really exist, or the demotion branch below '
-            + 'is never entered and this test passes vacuously. If BovSubmissionTrigger ever gains '
-            + 'an after-undelete context this line fails FIRST and says why.');
+            + 'is never entered and this test passes vacuously. A 1 here means something was '
+            + 'routed into BovSubmissionTrigger.afterUndelete that RE-DECIDES which row is '
+            + 'Selected — the counter that lives there today cannot, it never reads '
+            + 'Submission_Status__c. Read the standing rule at '
+            + 'BovSubmissionTriggerHandler.afterUndelete before touching this test.');
 
         User saver = TestDataFactory.createNonOwnerDispositionApprover('bas2');
         // Only the CURRENT row changes hands. The row that must be DEMOTED stays with the admin.
@@ -1497,14 +1608,71 @@ private class BovAutoSelectionServiceTest {
         Integer dmlUsed = Limits.getDmlStatements() - dmlBefore;
         Test.stopTest();
 
-        Assert.isTrue(dmlUsed <= 9,
-            '🔴 CONSTANT PER CHUNK, NOT PER RECORD. ONE for this insert plus at most FOUR per '
-            + 'chunk (retirement history insert, retirement delete, the delete-cascade re-rank, '
-            + 'the selection write). A per-record retirement would read close to 500 and exhaust '
-            + 'the 150-statement limit. DML used: ' + dmlUsed);
-        Assert.isTrue(queriesUsed <= 12,
-            'PER-CHUNK CONSTANT BUDGET, widened by the retirement read and the delete-cascade '
-            + 're-rank and by nothing else. Queries used: ' + queriesUsed);
+        // ══════════════════════════════════════════════════════════════════════════════════════
+        // 🔴 RE-DERIVED 2026-08-31 (Tranche 1 item 7). WAS `<= 9` DML / `<= 12` SOQL.
+        // ══════════════════════════════════════════════════════════════════════════════════════
+        // This test's path fires `DispositionCounterRollupService` TWICE PER CHUNK, which is more
+        // than anywhere else in the suite and is worth spelling out:
+        //   - once in `afterInsert` (the arriving preferred rows), and
+        //   - once in `afterDelete`, because the retirement DELETES the outgoing preferred row —
+        //     and a deleted submission is genuinely one fewer response, so the counter MUST run
+        //     there. The `afterUpdate` on the selection write costs nothing (the lookup did not
+        //     move -> zero-query fast path).
+        //   ⇒ +2 SOQL and +2 DML per chunk; TWO chunks ⇒ +4 each.
+        //
+        // ══════════════════════════════════════════════════════════════════════════════════════
+        // 🔴 ARITHMETIC CORRECTED 2026-08-31 (Tranche 1 code review, W-8). READ THIS BEFORE
+        //    QUOTING ANY NUMBER BELOW.
+        // ══════════════════════════════════════════════════════════════════════════════════════
+        //     RETRACTED: "DERIVED: DML 9 + 4 = 13. SOQL 12 + 4 = 16. The bounds below carry ONE
+        //     statement of headroom over each, matching this file's existing 'plus headroom'
+        //     convention."
+        //
+        // WHAT WAS WRONG: 9 was the previous BOUND, not the previous derived VALUE. Adding a new
+        // term to a bound and calling the result "DERIVED" launders the old bound's slack into the
+        // new one and then re-spends it — which repeals the very convention the sentence told the
+        // next reader to follow. The direction is safe (`isTrue(x <= N)` cannot go red because N is
+        // too large) and that is exactly why it would never have been caught by a test run.
+        //
+        // THE HONEST DML DERIVATION, FROM THIS METHOD'S OWN HEADER TERMS ("per chunk: 1 retirement
+        // history INSERT + 1 retirement DELETE + 1 selection UPDATE ... plus 1 for the caller's own
+        // insert"):
+        //     old   1 + 3×2 = 7      (NOT 9 — 9 was the bound, carrying 2 of slack)
+        //     new   7 + 4    = 11
+        //   ⇒ the bound of 14 below carries THREE statements of headroom, not one.
+        // ⚠ THIS FILE CONTAINS TWO DERIVATIONS THAT DISAGREE BY ONE TERM PER CHUNK, AND THAT IS
+        // WHY THE BOUND IS NOT BEING TIGHTENED TO 12. The header calls the delete-cascade re-rank
+        // "normally free"; the old assertion MESSAGE counted it, giving "at most FOUR per chunk"
+        // and 1 + 4×2 = 9. Under that second reading the new figure is 13 and 14 carries one. The
+        // two readings have never been reconciled against a run, so 14 stands as the safe upper
+        // bound of both and the slack is DECLARED here rather than hidden.
+        //
+        // 🔴 AND THE SOQL SIDE CANNOT BE DERIVED AT ALL. The old bound of 12 is not term-derived
+        // anywhere in this file or in `BovPreferredBrokerServiceTest`; it arrived as a bare number
+        // ("widened by the retirement read and the delete-cascade re-rank and by nothing else")
+        // with no per-chunk breakdown behind it. 12 + 4 = 16 and the 17 below therefore inherit an
+        // unverified base: they are a bound, not a derivation, and this comment must not pretend
+        // otherwise. ⚠ WHOEVER FIRST RUNS THIS TEST SHOULD RECORD THE ACTUAL `queriesUsed` HERE
+        // and replace the whole SOQL bound with a term list, the way the DML side has one.
+        //
+        // ⚠ STANDING CONSTRAINT FOR EVERY FIGURE IN THIS BLOCK: DERIVED FROM SOURCE, NEVER
+        // MEASURED. Nothing in this tranche has been compiled, deployed or run.
+        // ⚠ THE PROPERTY UNDER TEST IS UNCHANGED AND IS WHY THE BOUNDS MAY MOVE AT ALL: the cost
+        // must be CONSTANT PER CHUNK. Every added term is per-chunk. A per-record retirement or a
+        // per-record counter write would read close to 500 and blow the 150-statement limit — 14
+        // and 17 catch that exactly as 9 and 12 did.
+        // 🔴 DO NOT RAISE THESE AGAIN WITHOUT DERIVING THE NEW TERM THE SAME WAY. A bound bumped to
+        // make a red test green is how a per-record regression ships.
+        Assert.isTrue(dmlUsed <= 14,
+            '🔴 CONSTANT PER CHUNK, NOT PER RECORD. ONE for this insert plus at most SIX per chunk '
+            + '(retirement history insert, retirement delete, the delete-cascade re-rank, the '
+            + 'selection write, and the Responses_Received__c recompute in BOTH afterInsert and '
+            + 'afterDelete). A per-record retirement would read close to 500 and exhaust the '
+            + '150-statement limit. DML used: ' + dmlUsed);
+        Assert.isTrue(queriesUsed <= 17,
+            'PER-CHUNK CONSTANT BUDGET, widened by the retirement read, the delete-cascade re-rank '
+            + 'and (since 2026-08-31) the two Responses_Received__c aggregates — and by nothing '
+            + 'else. Queries used: ' + queriesUsed);
         List<BOV_Submission__c> survivors = [
             SELECT Id, Submission_Status__c FROM BOV_Submission__c
             WHERE Disposition__c = :d.Id WITH SYSTEM_MODE

@@ -535,6 +535,80 @@ public with sharing class BovAutoSelectionService {
      * all three green-and-vacuous rather than red. If that trade is ever revisited, those three
      * are the things to change in the same commit.
      *
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * 🔴 PARTIALLY RETRACTED IN PLACE 2026-08-31 (Tranche 1 item 7, design decision D-5). READ
+     *    THIS BEFORE QUOTING THE PARAGRAPH ABOVE — ONE OF ITS FACTS IS NOW FALSE AND THE REST IS
+     *    LOAD-BEARING AND UNCHANGED.
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * FALSE AS OF 2026-08-31: the premise, sitting inside the phrase "AND NO `after undelete`",
+     * that `BovSubmissionTrigger` HAS no `after undelete` context. IT DOES. It was added for
+     * `DispositionCounterRollupService`, which maintains
+     * `Disposition__c.Responses_Received__c` — a restored submission is a response the sale
+     * received, so without the context the counter sat permanently one too low after any
+     * Recycle-Bin restore, with nothing to notice it.
+     *
+     * TRUE AND UNCHANGED — EVERY OTHER WORD, WHICH IS THE PART THAT MATTERS. **THIS SERVICE IS
+     * STILL NOT CALLED FROM `afterUndelete`.** The rejection recorded above was of AUTO-SELECTION
+     * in that context, and it was not revisited, softened or traded away. The three dependants
+     * named above were not touched: the two-Selected state a restore can create is still
+     * reachable, still unrefused, still red where it should be red. NOTHING SELF-HEALS.
+     *
+     * ⚠ WHY THE COUNTER IS ADMISSIBLE THERE WHERE THIS SERVICE IS NOT — the distinction is the
+     * whole of D-5, and it is not "the counter is smaller". The counter never reads
+     * `Submission_Status__c` at all (`BovSubmissionSelector.countByDispositionIds` counts every
+     * row regardless of status, per D-9), so it is structurally incapable of repairing, hiding or
+     * contradicting a two-Selected state. This service's entire job is to decide which row is
+     * Selected — which is exactly the decision that must not be re-made on a restore.
+     *
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * 🔴 THE DEPENDANT COUNT ABOVE IS WRONG. CORRECTED 2026-08-31 (Tranche 1 code review, W-3),
+     *    AND THIS IS THE PART THAT WOULD ACTUALLY HAVE BITTEN.
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     *     RETRACTED, TWICE OVER — once in the 2026-08-24 paragraph and once in the D-5 retraction
+     *     that quoted it: "three things in this repo depend on it remaining reachable" /
+     *     "The three dependants named above were not touched" / "The three dependants above are
+     *     still the things to change in the same commit."
+     *
+     * WHAT WAS RIGHT AND STAYS RIGHT: the argument, in full. Routing this service into
+     * `afterUndelete` would SELF-HEAL the two-Selected state, and every dependant below would turn
+     * green-and-vacuous rather than red. Nothing about that trade has changed.
+     *
+     * WHAT WAS WRONG: "three" was a snapshot taken when the argument was written and it was never
+     * re-taken. There are SEVEN, and FOUR of them (4, 5, 6 and 7 below) build the undelete gap
+     * INLINE rather than through `twoSelectedViaUndelete`, so a reader who greps for the helper
+     * finds only one test and misses four. Anyone who checked the three named entries and shipped
+     * would have silently vacuumed four more.
+     *
+     * THE FULL LIST — derived 2026-08-31 by grepping `undelete` across `classes/` and reading
+     * every `BOV_Submission__c` hit (`grep -rn "undelete"` over the classes directory — a literal
+     * glob is not written here because a slash-star sequence inside a block comment is a known
+     * hazard in this repo):
+     *   1. `DispositionApprovalService.MULTIPLE_SELECTED_BOV_MESSAGE` — the only PRODUCTION
+     *      dependant. Its header names undelete as the reason that branch is a live backstop
+     *      rather than dead code.
+     *   2. `BovSubmissionSelectorTest.twoSelectedViaUndelete` — the shared fixture helper; its own
+     *      comment says "EVERY STEP IS LORE-BEARING".
+     *   3. `BovSubmissionSelectorTest.selectSelectedByDispositionId_twoSelected_returnsBOTH` —
+     *      the only caller of (2).
+     *   4. `DispositionApprovalServiceTest.submitAtBovOutreach_twoSelectedSubmissions_refuses
+     *      RatherThanPickingOne` — builds the gap INLINE.
+     *   5. `DispositionApprovalServiceTest.submitAtBovOutreach_twoSelectedPreferredRows_refuses
+     *      WithThePreferredMessage` — inline, and the PREFERRED slot rather than the scored one.
+     *   6. `BovAutoSelectionServiceTest.nonOwnerSaver_preferredDemotionCrossesTheSharingBoundary`
+     *      — inline; the two-preferred-rows state is the ONLY way to reach the preferred demotion
+     *      branch, so self-healing would make this test vacuous rather than red.
+     *   7. `BovPreferredBrokerServiceTest.resavingAnAlreadyPreferredRow_retiresNothing` — inline;
+     *      depends on two preferred rows surviving AT REST.
+     * ⚠ SEVEN IS A FLOOR FROM THAT GREP, NOT A CENSUS. It will decay exactly as "three" did. Re-run
+     * the grep rather than trusting this list, and if the number moves again, consider whether the
+     * honest form is a list at all — `BovSubmissionTrigger`'s own header stopped writing a count
+     * down for this reason.
+     *
+     * 🔴 IF A FUTURE CHANGE WANTS THIS SERVICE ON `afterUndelete`, THE COST HAS NOT CHANGED — it is
+     * just larger than the paragraph above said. All SEVEN are the things to change in the same
+     * commit. The existence of the context is not permission;
+     * `BovSubmissionTriggerHandler.afterUndelete` carries a standing rule saying so.
+     *
      * @param deleted Trigger.old. Null/empty-safe.
      * @example
      * BovAutoSelectionService.reselectForDeleted(oldList);

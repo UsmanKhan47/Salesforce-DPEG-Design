@@ -9,6 +9,11 @@
  * contexts on 2026-08-20, and THIS handler now has THREE contexts. Retracted in place rather than
  * deleted because what it was actually explaining — why the offer's own status is written in the
  * BEFORE context — is unchanged and is argued in full below.
+ * ⚠ RE-COUNTED 2026-08-31 (Tranche 1 item 7, the disposition counters). "THIS handler now has
+ * THREE contexts" is retracted in place for the same reason the sentence above it was: it is a
+ * COUNT, and this is the second time this file's count has decayed. There are now SIX — `after
+ * insert`, `after delete` and `after undelete` were added, and all three exist for ONE job, the
+ * `Offers_Received__c` recompute. 🔴 DO NOT TRUST THIS NUMBER EITHER; read the overrides.
  *
  *   before insert -> 🔴 NEW 2026-08-20. The single-selected guard, and (later the same day,
  *                    Workstream D) the buyer-name stamp. `stampAcceptedStatus` is deliberately NOT
@@ -21,6 +26,27 @@
  *                    single-selected guard, and the buyer-name stamp.
  *   after update  -> the PARENT Disposition: stage `Offer Selection` -> `LOI` (guarded), and
  *                    `Accepted_Offer_Price__c` stamped from `Offer_Amount__c` (unguarded)
+ *                    ⚠ PLUS, since 2026-08-31, the `Offers_Received__c` recompute — but ONLY for
+ *                    a REPARENT. An offer whose `Disposition__c` moved must decrement the sale it
+ *                    left as well as increment the one it joined, and an update context is the
+ *                    only place both Ids exist. Any other update returns at zero query and zero
+ *                    DML cost.
+ *
+ *   after insert  -> 🔴 NEW 2026-08-31. `Offers_Received__c` recompute, nothing else. Before this
+ *   after delete     change this object had NO after-insert, after-delete or after-undelete
+ *   after undelete   context at all — an offer could be created, withdrawn or restored with
+ *                    nothing to notice it. All three exist for the one counter, they all route to
+ *                    `DispositionCounterRollupService`, and each RECOMPUTES from an aggregate
+ *                    rather than incrementing (a counter that cannot self-heal is a counter that
+ *                    is silently wrong forever). `after delete` reads `Trigger.old`, the only
+ *                    place the parent Id still exists.
+ *
+ * 🔴 BLAST RADIUS OF THE 2026-08-31 EXPANSION, STATED PLAINLY: this trigger now fires on EVERY
+ * `Disposition_Offer__c` INSERT, DELETE AND UNDELETE IN THE ORG, and each costs ONE aggregate
+ * query plus ONE `Database.update` PER CHUNK — never per record. The `after update` half costs
+ * NOTHING unless a lookup moved. That is the honest price of a field the platform cannot roll up
+ * (both child links are Lookups, so no roll-up summary is available), and it is asserted rather
+ * than asserted-about in `DispositionCounterRollupServiceTest`'s 251-row budget tests.
  *
  * The two approval-driven halves fire on the same detection: `Approval_Status__c` CHANGING to
  * 'Approved' on an offer whose `Is_Selected__c` is true. `Offer_Selection_Approval` runs on the
@@ -219,6 +245,29 @@ public with sharing class DispositionOfferTriggerHandler extends TriggerHandler 
     }
 
     /**
+     * AFTER INSERT — 🔴 NEW 2026-08-31 (Tranche 1 item 7). The context did not exist before this
+     * change; this is its only job.
+     *
+     * A new offer arriving is the primary event `Disposition__c.Offers_Received__c` exists to
+     * track. It must be an AFTER context: the count is read back from the database by an aggregate,
+     * so the rows have to be committed for the query to see them. A before-context recompute would
+     * read the count from BEFORE this save and write a number that is always one chunk stale.
+     *
+     * ⚠ THE PARENT WRITE'S JUSTIFICATION IS NOT RESTATED HERE. It lives at
+     * `DispositionCounterRollupService.ParentCounterWrites` — SYSTEM_MODE for FLS, a narrow
+     * `private without sharing` inner class for record-level access, `allOrNone = false` so a
+     * refused counter can never roll back the user's own offer save. Three separate decisions, one
+     * home. ⚠ Note this handler's OWN `ParentAdvanceWrites` below is a DIFFERENT write with the
+     * same shape; they are deliberately not merged (one is an approval outcome, one is a count).
+     */
+    protected override void afterInsert() {
+        DispositionCounterRollupService.recalculateOffersForRows(
+            (List<Disposition_Offer__c>) newList,
+            null
+        );
+    }
+
+    /**
      * ⚠ THE GUARD MUST NOT REFUSE `DispositionApprovalService.selectOffer`'S OWN EXCLUSIVITY SWEEP,
      * AND IT DOES NOT — STRUCTURALLY. That method builds a CHANGE-ONLY list and applies it in ONE
      * `Database.update`, so this context sees the de-selected incumbent and the newly selected
@@ -244,6 +293,66 @@ public with sharing class DispositionOfferTriggerHandler extends TriggerHandler 
         advanceParents(
             (List<Disposition_Offer__c>) newList,
             (Map<Id, Disposition_Offer__c>) oldMap
+        );
+        // 🔴 ADDED 2026-08-31 (Tranche 1 item 7). It is here for the REPARENT and nothing else: an
+        // offer whose `Disposition__c` moved leaves the old sale one too high and the new one too
+        // low, and only an update context can see both sides. Every other kind of update — a
+        // status change, an amount edit, the approval stamp two lines above — leaves the lookup
+        // alone and returns from the service after ONE in-memory pass, before any SOQL and any
+        // DML. That zero-cost fast path is why this line does not move
+        // `BovSubmissionTriggerHandlerTest`-style budget assertions on ordinary offer saves, and
+        // why `DispositionApprovalService.selectOffer`'s 251-row exclusivity sweep still costs the
+        // same as it did.
+        DispositionCounterRollupService.recalculateOffersForRows(
+            (List<Disposition_Offer__c>) newList,
+            (Map<Id, Disposition_Offer__c>) oldMap
+        );
+    }
+
+    /**
+     * AFTER DELETE — 🔴 NEW 2026-08-31 (Tranche 1 item 7). The context did not exist before.
+     *
+     * ⚠ IT READS `Trigger.old`, WHICH IS THE ONLY PLACE THE PARENT ID STILL EXISTS. The rows are
+     * gone from the database by the time the aggregate runs, which is exactly what makes the
+     * recount correct — the deleted offer cannot be counted.
+     *
+     * 🔴 THIS IS THE HALF AN INCREMENTING COUNTER COULD NOT HAVE. Deleting the LAST offer on a
+     * sale produces no `GROUP BY` row at all, so the recompute must default the miss to 0 rather
+     * than skip it; `DispositionCounterRollupService.applyCounts` iterates the parent Id set for
+     * precisely that reason. Without this context a withdrawn offer stays counted forever.
+     *
+     * ⚠ A DISPOSITION DELETE CASCADES HERE TOO. `Disposition_Offer__c.Disposition__c` is
+     * `deleteConstraint SetNull`, so deleting a sale can put its own (now doomed) Id in play. The
+     * parent write is `allOrNone = false` and the resulting `ENTITY_IS_DELETED` is logged rather
+     * than thrown — see `DispositionCounterRollupService.recordFailures`, which names this case.
+     */
+    protected override void afterDelete() {
+        DispositionCounterRollupService.recalculateOffersForRows(
+            (List<Disposition_Offer__c>) oldList,
+            null
+        );
+    }
+
+    /**
+     * AFTER UNDELETE — 🔴 NEW 2026-08-31 (Tranche 1 item 7). The context did not exist before.
+     *
+     * A restored offer must be counted again. `Trigger.new` carries the restored rows with their
+     * lookups intact, so the recompute is identical to the insert case.
+     *
+     * ⚠ UNLIKE `BovSubmissionTrigger`, THIS OBJECT CARRIED NO RECORDED REFUSAL OF THE UNDELETE
+     * CONTEXT — there was simply no after context at all here before today. Nothing is being
+     * retracted on this side; the BOV side is a different story and is written up in
+     * `BovSubmissionTrigger`'s header and `BovAutoSelectionService.reselectForDeleted`'s.
+     * 🔴 CONSEQUENCE WORTH NAMING: `DispositionOfferSelectionGuardService` runs in BEFORE contexts
+     * and the platform has no `before undelete`, so restoring an `Is_Selected__c = true` offer onto
+     * a sale that has since selected another one produces two selected offers, unrefused. That
+     * state is UNCHANGED by this method — the counter recomputes and says nothing about selection —
+     * and it is deliberately left reachable, mirroring the BOV side's argument.
+     */
+    protected override void afterUndelete() {
+        DispositionCounterRollupService.recalculateOffersForRows(
+            (List<Disposition_Offer__c>) newList,
+            null
         );
     }
 

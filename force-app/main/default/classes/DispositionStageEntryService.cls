@@ -359,6 +359,15 @@ public with sharing class DispositionStageEntryService {
      * 2026-08-25 before the user removed 'Review' from the record type in Setup as well. THIS
      * CONSTANT DID NOT MOVE and needed no change — 'Prepare' is still the first step. The value
      * that WAS affected was the next hop in RecordStageAdvanceService's map; see that class.
+     * ⚠ AMENDED 2026-08-31 (Tranche 3, Gate 1 decision D-7) — THIS CONSTANT STILL DID NOT MOVE, AND
+     * WHAT LEAVES 'Prepare' HAS CHANGED. The sequence named above is the RECORD TYPE's picklist
+     * order and is unchanged. But `RecordStageAdvanceService.NDA_DISPOSITION_NEXT_STAGE` no longer
+     * carries 'Prepare' => 'Approved': that transition is now owned by the `NDA_Issue_Approval`
+     * approval process, because the Advance/Move_to_Approved route was gated on
+     * Disposition_Deal_Actions, which the ANALYST set grants and the PRINCIPAL set is forbidden to
+     * hold. So an NDA seeded here now sits at 'Prepare' until a principal approves it, and the
+     * Advance button REFUSES with a hint naming the approval. That is the intended shape, not a
+     * stuck record — see NDA_DISPOSITION_NEXT_STAGE's 2026-08-31 retraction.
      * Seeding blank was rejected: a blank status on a record the user did not create reads as a
      * failed creation, and `NDA_Signed_Rollup` would count it as outstanding either way.
      */
@@ -1453,6 +1462,18 @@ public with sharing class DispositionStageEntryService {
      * broker with no schema change. Auto-create must never be the thing that appends it — a stage
      * re-entry is not a broker change.
      *
+     * ✅ AND THE APPEND EXISTS AS OF 2026-09-01 — `BovSubmissionService.replaceSelectedBroker`,
+     * write 3a. The prediction held: no schema change, no edit to
+     * `selectMostRecentByDispositionId`, and `c/brokerListing` follows the new row for free.
+     * 🔴 THE PRESENCE-BASED IDEMPOTENCY ABOVE IS NOW LOAD-BEARING IN A SECOND DIRECTION, AND THIS
+     * IS THE SENTENCE TO READ BEFORE CHANGING EITHER SIDE. Because "any listing" satisfies this
+     * guard, a listing created by a Replace Broker at BOV OUTREACH — where the button is also
+     * rendered (`dispositionMain.html:42`) — would make THIS BLOCK A PERMANENT NO-OP for that
+     * sale, leaving it forever with a listing that predates its own listing period and whose
+     * `Broker_Firm__c` was never stamped. That is why write 3a is conditional on a listing
+     * ALREADY existing. If this guard is ever narrowed (e.g. keyed on the broker), that condition
+     * must be re-derived, not inherited.
+     *
      * ── WHAT IS STAMPED, AND WHAT IS DELIBERATELY LEFT BLANK ────────────────
      *   `List_Date__c`      = the PARENT's Listing_Date__c, copied rather than re-derived from
      *                         Date.today(), so the child's date and the clock the badge reads can
@@ -1475,8 +1496,30 @@ public with sharing class DispositionStageEntryService {
      *   `Contact_Name__c`   — LEFT BLANK. The named contact lives on the `Selected` BOV_Submission__c
      *                         and would cost a query per chunk to fetch, for a display string.
      *                         A human fills it, or the future broker-change action supplies it.
+     *                         ✅ THAT ACTION SHIPPED ON 2026-09-01 (Tranche 4 item 5). It is
+     *                         `BovSubmissionService.replaceSelectedBroker`, which APPENDS a second
+     *                         `Broker_Listing__c` carrying the incoming broker's `Contact_Name__c`
+     *                         and `Broker_Firm__c` — exactly as the paragraph below predicted, with
+     *                         no schema change. 🔴 THIS BLOCK IS STILL CORRECT TO LEAVE IT BLANK:
+     *                         a stage entry is not a broker change, and the append is CONDITIONAL
+     *                         on a listing already existing precisely so it can never run here.
      *   `Days_On_Market__c` — LEFT BLANK ON PURPOSE. It is the hand-keyed Number nothing writes;
      *                         seeding a 0 would resurrect the very field the clock was moved OFF.
+     *                         ⚠ AMENDED IN PLACE 2026-08-31 (Tranche 1 item 6). The sentence above
+     *                         is UNCHANGED AND STILL CORRECT for the STORED `Days_On_Market__c`,
+     *                         which still exists (additive retirement — it is not deleted) and is
+     *                         still left blank here for exactly that reason. What changed is that
+     *                         "the field the clock was moved OFF" now has a sibling:
+     *                         `Days_On_Market_Live__c`, a NUMBER FORMULA
+     *                         (`IF(ISBLANK(List_Date__c), null, TODAY() - List_Date__c)`).
+     *                         🔴 THE FORMULA CANNOT BE SEEDED AT ALL — a formula field is not
+     *                         assignable in Apex, so it is not "left blank on purpose" here; it is
+     *                         structurally absent from this block and always will be. Do not add
+     *                         it to the shell below: that is a compile error, not a decision.
+     *                         ⚠ AND IT IS NOT THE ESCALATION CLOCK EITHER (design decision D-3).
+     *                         `DispositionTractionService` still owns the clock and is to gain a
+     *                         PAUSE at the first offer; the formula is RAW ELAPSED DAYS and keeps
+     *                         counting. Two numbers, two questions. Nothing here reads either.
      *   `Offers_Received__c`— LEFT BLANK. Same reason; the real count is `Disposition_Offer__c`
      *                         children, read live by DispositionTractionService.
      *

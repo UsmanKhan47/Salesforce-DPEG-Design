@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ListView xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        DISPOSITION GAP CLOSURE TRANCHE 1, ITEM 13 (agent-output/disposition-gap-closure-t1-design.md
+        §3 Item 13, decision D-13). ONE OF SIX PROPOSED LIST VIEWS - READ THIS FILE'S COMMENT
+        BEFORE DEPLOYING ANY OF THE SIX.
+
+        🔴 GATE D-13, NOT RESOLVED HERE - REPORTED, PER INSTRUCTION, NOT ACTED ON.
+        Disposition__c has NO listViews/ folder in this repo today, which means either the org
+        genuinely has no custom list views on this object, or hand-made org list views were never
+        retrieved into source. Deploying a source ListView whose fullName MATCHES a hand-made org
+        list view REPLACES that org list view silently (Metadata API upsert-by-fullName
+        semantics). None of the six fullNames below (All_Dispositions, My_Dispositions,
+        Active_Sales, Awaiting_Approval, On_Market_Sales, Off_Market_Sales) have been checked
+        against usman-dpeg's live list views before writing these files - that retrieve-and-diff
+        step was explicitly out of this agent's scope for this pass ("do not resolve that
+        yourself; report it"). ANY of these six names could collide with something an end user
+        already built by hand. Retrieve and diff before deploying.
+
+        filterScope Everything is used throughout: both disposition permission sets carry
+        viewAllRecords=true on Disposition__c, so an Everything scope is safe for every persona
+        that can see this object at all.
+
+        Columns are the same seven across all six views: NAME, Property_Asset__c,
+        Disposition_Stage__c, Selected_Broker__c, Listing_Date__c, Closing_Date__c, LAST_UPDATE -
+        modelled on the Lease_Inquiry__c listViews/ precedent (the closest in-repo shape).
+
+        <sharedTo> is deliberately OMITTED on all six, matching the Lease_Inquiry__c precedents -
+        a list view with no sharedTo is visible to everyone who can already see the object.
+    -->
+    <fullName>All_Dispositions</fullName>
+    <columns>NAME</columns>
+    <columns>Property_Asset__c</columns>
+    <columns>Disposition_Stage__c</columns>
+    <columns>Selected_Broker__c</columns>
+    <columns>Listing_Date__c</columns>
+    <columns>Closing_Date__c</columns>
+    <columns>LAST_UPDATE</columns>
+    <filterScope>Everything</filterScope>
+    <label>All Dispositions</label>
+</ListView>

@@ -2,12 +2,17 @@
     <div class="card">
         <div class="hd">
             <lightning-icon icon-name="standard:task" size="small" class="hd__icon"></lightning-icon>
-            <span class="hd__title">Task Progress</span>
+            <span class="hd__title">Checklist Progress</span>
         </div>
         <template if:true={hasError}>
             <div class="kpi-error slds-p-around_medium slds-text-color_error" role="alert">{errorMessage}</div>
         </template>
-        <template if:false={hasError}>
+        <!-- Distinct from the error state AND from four 0/0 cards: an absent checklist says
+             something different from a checklist with nothing done yet. -->
+        <template if:true={isEmpty}>
+            <div class="kpi-empty slds-p-around_medium">{emptyMessage}</div>
+        </template>
+        <template if:true={showCards}>
             <div class="cards-grid">
                 <template for:each={cards} for:item="c">
                     <c-onboarding-card-child

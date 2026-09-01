@@ -1,5 +1,50 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        DISPOSITION GAP CLOSURE TRANCHE 2, ITEM 1c (agent-output/disposition-gap-closure-t2-design.md
+        §3 Item 1c; Gate 1 decision D-3(a), 2026-08-31). NO METADATA CHANGE TO THIS FIELD - comment
+        only, recording its re-scoped status now that item 1a/1b have repointed the two formulas
+        that used to read it.
+
+        🔴 AS OF THIS CHANGE, THIS FIELD HAS NO DERIVED CONSUMER. Sell_Readiness_Band__c (this
+        folder) now derives from Peak_Sell_Date__c via days-until-peak, and Readiness_Score__c
+        derives from Sell_Readiness_Band__c - neither formula reads Argus_Signal__c any longer.
+        Do NOT assume a future reader will infer this from the two formula files alone; it is
+        recorded here because this is the field whose meaning changed underneath it.
+
+        ✅ KEPT, NOT RETIRED (D-3a, explicit user decision at Gate 1, 2026-08-31). It survives as a
+        Property-Management-maintained market-data input. It is editable in exactly ONE permission
+        set - DPEG_PropertyMgmt_Edit - and read-only everywhere else on the disposition side
+        (design P-13); the disposition analyst cannot set it today and will not be able to after
+        this tranche. A retirement sweep would have to repoint one report filter, four report
+        columns, SellMeterController.getPortfolio's argusSignal payload plus its test assertion, and
+        four seed scripts - out of scope for T2, and not requested.
+
+        STILL A LIVE CONSUMER, DIRECTLY (not through a formula):
+          - Dispositions/Sell_Ready_Argus - FILTER (Argus_Signal__c equals 'Sell Now') AND
+            grouping; backs the dashboard's "Disposition Readiness" KPI tile.
+          - Dispositions/Readiness_Mix, Readiness_Signal_By_Value_Avk, Properties_in_AUM - as a
+            report column.
+          - SellMeterController.getPortfolio -> PropertyRow.argusSignal - selected, returned,
+            NEVER RENDERED by lwc/sellMeterList (no column binds it). A dead payload, flagged, not
+            removed in T2 (removing it is a USER_MODE selector narrowing plus a test edit).
+
+        🔴 A3's KNOWN GAP LEFT OPEN BY THIS TRANCHE (D-3(b), REFUSED AT GATE 1 2026-08-31 - user
+        chose to keep Tranche 2 to its five scoped items; repointing Sell_Ready_Argus is CANCELLED
+        for T2). A3's stated goal was "so Home and the Dashboard can no longer disagree." Item
+        1a/1b close ONLY the band-DEFINITION disagreement. Two disagreements survive after this
+        tranche ships:
+          1. POPULATION: the Home-page meter is WHERE Property__c != null AND
+             Peak_Sell_Date__c != null (no Status__c filter - a Disposed asset stays on the
+             meter), while the dashboard donuts are WHERE Status__c = 'Active' (no peak/property
+             filter). Entangled with story 49's "nothing sets Status__c = 'Disposed'" gap -
+             Tranche 6.
+          2. THE "DISPOSITION READINESS" KPI TILE: Sell_Ready_Argus still filters THIS field
+             directly (Argus_Signal__c equals 'Sell Now'), not the band, and has no Status__c
+             filter either. It will keep disagreeing with the Home page's GREEN-band "Sell now"
+             count after this tranche ships.
+        DO NOT REPORT A3 AS FULLY CLOSED BY THIS TRANCHE. Only the band-definition half is.
+    -->
     <fullName>Argus_Signal__c</fullName>
     <label>Argus Signal</label>
     <required>false</required>

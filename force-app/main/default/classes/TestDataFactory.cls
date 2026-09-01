@@ -2530,6 +2530,44 @@ public with sharing class TestDataFactory {
         return createTransactions(count, null, null, doInsert);
     }
 
+    /**
+     * Transactions for CHECKLIST-model tests, created with the LEGACY fan-out already marked done.
+     *
+     * 🔴 WITHOUT THIS, ANY TEST THAT ASSERTS A `Transaction__c` COUNTER IS ASSERTING AGAINST THE
+     * WRONG WRITER, AND THE NUMBER IT GETS BACK IS 70. `flows/Transaction_Task_Fanout` is
+     * `CreateAndUpdate` on `Transaction__c` and fires on `Contract_Executed_Date__c`, which
+     * `createTransactions` sets - so every plain test Transaction enqueues the legacy Task fan-out,
+     * which runs at `Test.stopTest()` and writes `Tasks_Total__c` itself. 82 definitions minus the
+     * 12 in the loan-only group F (the factory creates deals with `Loan_Required__c = false`) = 70.
+     * Four fields are contested this way: `Tasks_Total__c`, `Tasks_Complete__c`, `Tasks_Overdue__c`
+     * and `Wire_Open_Risks__c`, all written by BOTH `TaskRollupService` and
+     * `ChecklistRollupService`.
+     *
+     * Setting `Tasks_Fanned_Out__c = true` AT INSERT is what suppresses it: the flow filters on that
+     * field, and `TaskFanoutService.fanOutNow` skips any deal already flagged. It must be set in the
+     * INSERT payload, not afterwards - the Queueable re-reads the deal when it executes at
+     * `stopTest`, so a later update is a race rather than a guard.
+     *
+     * ⚠ THIS IS TEST ISOLATION, NOT A PRODUCTION FIX. The two models genuinely contend for those
+     * four fields on any deal where both guards are true, which is precisely the state the Phase 4
+     * migration creates at step M1. See `ChecklistRollupService`s header.
+     *
+     * @param count    Number of Transactions.
+     * @param doInsert Insert when true.
+     * @return Transactions with the legacy fan-out guard pre-set.
+     */
+    public static List<Transaction__c> createTransactionsOnChecklistModel(
+        Integer count,
+        Boolean doInsert
+    ) {
+        List<Transaction__c> transactions = createTransactions(count, null, null, false);
+        for (Transaction__c deal : transactions) {
+            deal.Tasks_Fanned_Out__c = true;
+        }
+        insertIf(doInsert, transactions);
+        return transactions;
+    }
+
     /** Single Transaction. @param opportunityId Parent Opp. @param propertyId Parent Property. @param doInsert Insert when true. @return The Transaction. */
     public static Transaction__c createTransaction(Id opportunityId, Id propertyId, Boolean doInsert) {
         return createTransactions(1, opportunityId, propertyId, doInsert)[0];

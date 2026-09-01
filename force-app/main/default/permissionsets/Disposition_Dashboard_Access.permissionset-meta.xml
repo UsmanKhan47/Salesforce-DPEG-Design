@@ -31,8 +31,27 @@
         <field>Disposition__c.Next_Broker_Checkin__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!--
+        AMENDED 2026-08-31, TRANCHE 1 ITEM 11. Property_Asset__c.Argus_Value__c editable true to
+        FALSE. readable stays true. This is the ONLY true downgrade in item 11: the two disposition
+        sets never granted any Argus or CoStar field at all, so their entries are new grants at
+        read only, and this set is the one place where an existing edit grant is being withdrawn.
+        Argus_Value__c is a valuation carried from an external model and read by 8 of the 13
+        disposition reports; a hand edit here changes what those reports say with no audit trail.
+
+        ⚠ DELIBERATELY NOT CHANGED IN THIS PASS: Property_Asset__c.Property_Type__c and
+        Property_Asset__c.Sell_Readiness_Score__c are still editable=true below. Neither is an
+        Argus or CoStar field, so neither is in item 11's scope. They are flagged for a future
+        pass, not silently fixed here.
+
+        ⚠ THIS SET STILL CARRIES NO objectPermissions AT ALL, and that is reported rather than
+        fixed. Its field grants are inert unless the running user gets Property_Asset__c object
+        read from another set. After item 10 the two disposition personas have it; anyone holding
+        ONLY this set does not, and their dashboard renders empty rather than erroring. Widening
+        it is a decision, not a tidy up.
+    -->
     <fieldPermissions>
-        <editable>true</editable>
+        <editable>false</editable>
         <field>Property_Asset__c.Argus_Value__c</field>
         <readable>true</readable>
     </fieldPermissions>

@@ -230,8 +230,19 @@ for (Transaction__c t : txnByDeal.values()) {
 //     `Insurance Binding`, `Earnest Money Due`, and `Loan Commitment` until `Loan__c` is wired in
 //     Phase 5. Those are DEMO DATA with a fabricated offset, which is exactly why they do not belong
 //     in the service: the service PROJECTS the deal record and never invents a deadline.
-// ⚠ The service runs in the RUNNER'S sharing context here (anonymous Apex cannot use SYSTEM_MODE),
-//   so run this as an administrator or the pinned rows are created only for deals you can see.
+// ⚠ RUN THIS AS AN ADMINISTRATOR, or the pinned rows are created only for the deals you can SEE.
+//   🔴 THE REASON GIVEN HERE UNTIL 2026-08-31 WAS FALSE: it said "anonymous Apex cannot use
+//   SYSTEM_MODE". It can — `Database.insert(rows, false, AccessLevel.SYSTEM_MODE)` and
+//   `Database.query(q, AccessLevel.SYSTEM_MODE)` are both legal in anonymous Apex. (What IS refused
+//   there is the STATIC-SOQL clause form, `[SELECT ... WITH SYSTEM_MODE]`, with "Cannot use
+//   SYSTEM_MODE access level in anonymous execution of Apex" — that is a narrower fact, and
+//   conflating the two would let someone "fix" a future script by reaching for a workaround it does
+//   not need.)
+//   THE ADVICE IS STILL RIGHT, FOR A DIFFERENT REASON: this script does not perform the DML itself,
+//   it calls `CriticalDateService`, whose own mode is fixed inside that class and is not something
+//   the caller can raise from out here. And SYSTEM_MODE would not help anyway — it lifts CRUD/FLS
+//   and NEVER sharing, while the exposure being warned about is precisely a sharing one (a runner
+//   who cannot see a deal seeds nothing for it, silently).
 Integer projected = CriticalDateService.ensureFor(txnIds);
 System.debug(LoggingLevel.ERROR, 'CRITDATE pinned rows created by CriticalDateService :: ' + projected);
 

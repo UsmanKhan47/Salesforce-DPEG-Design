@@ -32,6 +32,22 @@
  * exists — the same class of stale signal the retired `listingAlerts` mock was. `lwc/brokerListing`
  * and both test files move with it.
  *
+ * ── 🔴 THIS CARD CARRIES TWO CLOCKS SINCE 2026-09-01, AND ONLY ONE OF THEM IS THE LADDER ──
+ * Tranche 4 item 5 (decision D-17) added `daysWithThisBroker` beside `daysOnMarket`. They are two
+ * different questions and the card labels them as such:
+ *   `daysOnMarket`       — how long the PROPERTY has been on the market. Parent-derived
+ *                          (`Disposition__c.Listing_Date__c` via `DispositionTractionService`),
+ *                          SURVIVES a broker change, and is the traction band's ONLY input.
+ *   `daysWithThisBroker` — how long THIS broker has had it. Child-derived
+ *                          (`Broker_Listing__c.Days_On_Market_Live__c`), RESTARTS on a broker
+ *                          change because `BovSubmissionService.replaceSelectedBroker` appends a
+ *                          new listing row. DISPLAY ONLY — see that member's own comment.
+ * ⚠ THE PARAGRAPH ABOVE ABOUT WHY THE CLOCK IS THE PARENT'S IS UNCHANGED AND STILL BINDING. The
+ * second number is an ADDITION, not a repoint: `Disposition__c.Listing_Date__c` is still never
+ * written by the replacement, and the band, the badge and the at-risk styling still key on it
+ * alone. A reader who takes the new member as "the clock finally moved to the listing" has it
+ * exactly backwards.
+ *
  * ── QUERY BUDGET: 2 SOQL ────────────────────────────────────────────────────
  * One for the listing (which now carries `Disposition__r.Listing_Date__c` on the grandparent path
  * it was already traversing, so the clock itself is free) and one aggregate carrying BOTH the offer
@@ -86,6 +102,40 @@ public with sharing class BrokerListingController {
          * started (no listing date), which is NOT the same as 0.
          */
         @AuraEnabled public Integer daysOnMarket;
+        /**
+         * `Broker_Listing__c.Days_On_Market_Live__c` — days since THIS listing row's own
+         * `List_Date__c`. The BROKER clock, beside `daysOnMarket`'s MARKETING clock. Added
+         * 2026-09-01 (Tranche 4 item 5, decision D-17).
+         *
+         * 🔴 NOTHING MAY READ THIS FORMULA TO DRIVE AN ALERT OR ESCALATION.
+         * That prohibition is the field's own, repeated here verbatim because a DTO member is
+         * where the next person will look. `DispositionTractionService` owns the escalation ladder,
+         * computes days in Apex from the PARENT's `Disposition__c.Listing_Date__c`, and is to gain
+         * a PAUSE at the first offer; this formula is RAW ELAPSED DAYS and keeps counting after an
+         * offer arrives. The two WILL disagree on this same card, by design, because they answer
+         * different questions. `daysOnMarket` above stays the band's ONLY input.
+         *
+         * ⚠ DISPLAY-ONLY IS A REAL CONSTRAINT, NOT A STYLE NOTE. Computing a band, a colour or an
+         * `isAtRisk` from this member would be the SECOND COPY of the ladder that this class's own
+         * header says was the original defect ("the defect was never the numbers, it was having a
+         * SECOND COPY of them here. Do not put one back.").
+         *
+         * ⚠ IT COSTS NOTHING. The field has been in `selectMostRecentByDispositionId`'s SELECT
+         * since 2026-08-31 (Tranche 1 item 6's repoint) and granted read in both disposition
+         * permission sets since the same pass — it was simply UNREAD. Zero selector change, zero
+         * FLS change, zero extra query.
+         *
+         * ⚠ NULL, NOT 0, WHEN THE ROW HAS NO `List_Date__c` — the formula is
+         * `IF(ISBLANK(List_Date__c), null, TODAY() - List_Date__c)`. `c/brokerListing` renders a
+         * dash for that, exactly as it does for `daysOnMarket`; the two nulls mean different things
+         * ("this broker has no start date" vs "the property has no listing date") and neither
+         * means zero.
+         *
+         * ⚠ ON A SALE WITH A REPLACED BROKER THIS READS 0 ON THE DAY OF THE SWAP while
+         * `daysOnMarket` keeps its accumulated value. That divergence is the feature. See
+         * `BovSubmissionService`'s class header for why the marketing clock is never reset.
+         */
+        @AuraEnabled public Integer daysWithThisBroker;
         @AuraEnabled public String listingStatus;
         /**
          * ⚠ `offersReceived` WAS HERE AND WAS REMOVED AT UAT ON 2026-08-21, NOT RENAMED. The user's
@@ -159,6 +209,13 @@ public with sharing class BrokerListingController {
             r.contactName = bl.Contact_Name__c;
             r.listDate = bl.List_Date__c;
             r.callForOffersDate = bl.Call_For_Offers_Date__c;
+            // The BROKER clock — see ListingRow.daysWithThisBroker. Straight passthrough of a
+            // Number formula, narrowed to Integer because the formula has scale 0 (whole days) and
+            // the DTO's sibling `daysOnMarket` is an Integer; a Decimal here would render "12.0
+            // days" beside "34 days" on the same card. Null-guarded: the formula is null when the
+            // listing row has no List_Date__c, and null is NOT zero.
+            r.daysWithThisBroker = bl.Days_On_Market_Live__c == null
+                ? null : bl.Days_On_Market_Live__c.intValue();
             r.listingStatus = bl.Listing_Status__c;
 
             // The clock is the PARENT's listing date, not this row's List_Date__c: the marketing

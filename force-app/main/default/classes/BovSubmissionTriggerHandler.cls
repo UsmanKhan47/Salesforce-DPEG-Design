@@ -9,6 +9,11 @@
  * THREE JOBS" (and "TWO JOBS" before 2026-08-20). THERE ARE NOW **FOUR CONTEXTS AND FOUR JOBS** —
  * `after insert` was added and the automatic appointment is the fourth job. 🔴 DO NOT TRUST THIS
  * COUNT EITHER; it has now decayed twice. Read the overrides.
+ * ⚠ RE-COUNTED 2026-08-31 (Tranche 1 item 7): `after undelete` was added, making SIX contexts and
+ * FIVE jobs. THE NUMBER IS RECORDED HERE ONLY TO SHOW IT MOVED A THIRD TIME — the instruction
+ * above ("read the overrides") is the part that has never gone stale. 🔴 The new context is the
+ * one this file previously said, in terms, that it would never have; the retraction is on
+ * `afterDelete`, not here, because that is where the claim lived.
  *
  *   before insert -> (1) derive `Broker_Firm__c` and `Contact_Name__c` from the `Broker__c` Contact
  *   before update        lookup, via `BovSubmissionBrokerStampService`. See LAYERING below.
@@ -27,6 +32,19 @@
  *                   `Submission_Status__c` is 'Selected', move the PARENT Disposition from
  *                   `BOV Outreach` to `Broker Selection` and stamp `Selected_Broker__c` from the
  *                   submission's `Broker_Firm__c`.
+ *
+ *   after insert  -> (5) 🔴 NEW 2026-08-31 (Tranche 1 item 7).
+ *   after update         `Disposition__c.Responses_Received__c`, via
+ *   after delete         `DispositionCounterRollupService`. `BOV_Submission__c.Disposition__c` is
+ *   after undelete       a LOOKUP, so no roll-up summary is possible and this handler is the
+ *                        substitute. The service RECOMPUTES from ONE aggregate per chunk and never
+ *                        increments. On insert / delete / undelete it has no fast path — a row
+ *                        appearing or disappearing IS the event — so those three contexts now cost
+ *                        one query + one `Database.update` per chunk. On UPDATE it is keyed on the
+ *                        `Disposition__c` lookup MOVING and costs nothing otherwise, which is what
+ *                        keeps `bulk251ApprovesAtConstantCost` (exactly 2 queries / 3 DML) green.
+ *                        🔴 `after undelete` ROUTES ONLY THIS. `BovAutoSelectionService` is
+ *                        deliberately NOT called there — see the retraction on `afterDelete`.
  *
  * ══════════════════════════════════════════════════════════════════════════════
  * 🔴 WHY THE APPOINTMENT IS IN AN **AFTER** CONTEXT AND THE STAMP/GUARD ARE IN **BEFORE**
@@ -246,6 +264,19 @@ public with sharing class BovSubmissionTriggerHandler extends TriggerHandler {
             null
         );
         BovAutoSelectionService.reselect((List<BOV_Submission__c>) newList, null);
+        // 🔴 THIRD JOB HERE SINCE 2026-08-31 (Tranche 1 item 7) —
+        // `Disposition__c.Responses_Received__c`. IT GOES LAST DELIBERATELY, and the reason is the
+        // opposite of the ordering argument above: the two services above may DELETE and RE-RANK
+        // submission rows, so a count taken before them would be a count of a population that no
+        // longer exists by the end of this context. Counting last means the number matches what a
+        // user reloading the page will see.
+        // ⚠ It is the only job in this handler with NO zero-cost fast path on insert — a row
+        // arriving IS the event. One aggregate query and one Database.update per chunk; see
+        // DispositionCounterRollupService's budget block.
+        DispositionCounterRollupService.recalculateResponsesForRows(
+            (List<BOV_Submission__c>) newList,
+            null
+        );
     }
 
     /**
@@ -315,6 +346,20 @@ public with sharing class BovSubmissionTriggerHandler extends TriggerHandler {
             (List<BOV_Submission__c>) newList,
             (Map<Id, BOV_Submission__c>) oldMap
         );
+        // 🔴 ADDED 2026-08-31 (Tranche 1 item 7). It is here for the REPARENT and nothing else: a
+        // submission whose `Disposition__c` moved leaves the old sale one too high and the new one
+        // too low, and only an update context can see both Ids. Every other update — the approval
+        // stamp above, `replaceSelectedBroker`'s swap, `BovAutoSelectionService`'s own promotion
+        // write — leaves the lookup alone and returns after ONE in-memory pass, before any SOQL and
+        // any DML.
+        // ⚠ THAT FAST PATH IS LOAD-BEARING FOR AN EXISTING TEST, NOT JUST FOR PRODUCTION.
+        // `BovSubmissionTriggerHandlerTest.bulk251ApprovesAtConstantCost` asserts EXACTLY 2 queries
+        // and 3 DML around a 251-row approval update. If this line ever starts costing anything on
+        // a non-reparenting save, that test is the falsifier and it is not to be relaxed.
+        DispositionCounterRollupService.recalculateResponsesForRows(
+            (List<BOV_Submission__c>) newList,
+            (Map<Id, BOV_Submission__c>) oldMap
+        );
     }
 
     /**
@@ -329,13 +374,86 @@ public with sharing class BovSubmissionTriggerHandler extends TriggerHandler {
      * It is bounded by the service's own budget (ONE query and AT MOST ONE `Database.update` per
      * chunk) and by the fact that neither disposition permission set grants `allowDelete` on this
      * object — so in practice only an administrator or an automated cleanup reaches it.
-     * ⚠ NO `after undelete` COMPANION, DELIBERATELY. `BovAutoSelectionService.reselectForDeleted`'s
-     * own header explains at length which three tests and which authored refusal depend on the
-     * undelete duplicate REMAINING reachable; do not add one without changing those in the same
-     * commit.
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * 🔴 RETRACTED IN PLACE 2026-08-31 (Tranche 1 item 7, design decision D-5). The claim below is
+     *    quoted rather than deleted because IT IS STILL TRUE OF THE SERVICE IT NAMES, and a reader
+     *    who found only an `afterUndelete` override would conclude the opposite:
+     *
+     *        RETRACTED: "⚠ NO `after undelete` COMPANION, DELIBERATELY.
+     *        `BovAutoSelectionService.reselectForDeleted`'s own header explains at length which
+     *        three tests and which authored refusal depend on the undelete duplicate REMAINING
+     *        reachable; do not add one without changing those in the same commit."
+     *
+     * WHAT WAS RIGHT AND STAYS RIGHT — ALL OF IT, ABOUT `BovAutoSelectionService`. The undelete
+     * context now EXISTS, and `BovAutoSelectionService` is still NOT called from it. The three
+     * things that depend on a restored `Selected` duplicate remaining reachable
+     * (`DispositionApprovalService.MULTIPLE_SELECTED_BOV_MESSAGE`,
+     * `BovSubmissionSelectorTest.twoSelectedViaUndelete`,
+     * `selectSelectedByDispositionId_twoSelected_returnsBOTH`) are UNCHANGED and were not touched.
+     * Nothing self-heals.
+     *
+     * WHAT WAS WRONG: it generalised ONE service's requirement into a property of the TRIGGER —
+     * the same over-generalisation this file's own header calls out twice already ("nothing needs
+     * it" → `BovAutoSelectionService` needed it; "this trigger needs no before context" → it did).
+     * A counter DOES need the context: a restored submission is a response the sale received, and
+     * without this override `Responses_Received__c` would stay permanently one too low after any
+     * Recycle-Bin restore, with nothing to notice it.
+     *
+     * 🔴 THE RULE THAT REPLACES THE RETRACTED ONE: `afterUndelete` ROUTES THE COUNTER AND NOTHING
+     * ELSE. Do not add a second job here without re-reading
+     * `BovAutoSelectionService.reselectForDeleted`'s header — the refusal it records is a refusal
+     * of AUTO-SELECTION in this context, and it still stands.
+     * ══════════════════════════════════════════════════════════════════════════════════════════
      */
     protected override void afterDelete() {
         BovAutoSelectionService.reselectForDeleted((List<BOV_Submission__c>) oldList);
+        // 🔴 ADDED 2026-08-31 (Tranche 1 item 7). LAST, for the same reason it is last in
+        // `afterInsert`: `reselectForDeleted` may write to surviving rows, and the count must
+        // describe the population as it stands when this context ends.
+        // ⚠ `Trigger.old` is the only place the parent Id still exists — the rows themselves are
+        // already gone, which is exactly what makes the recount correct. Deleting the LAST
+        // submission produces no `GROUP BY` row at all, and the service defaults that miss to 0
+        // rather than skipping it; that default IS the decrement.
+        DispositionCounterRollupService.recalculateResponsesForRows(
+            (List<BOV_Submission__c>) oldList,
+            null
+        );
+    }
+
+    /**
+     * AFTER UNDELETE — 🔴 NEW 2026-08-31 (Tranche 1 item 7, design decision D-5). This context did
+     * not exist on `BovSubmissionTrigger` before today, and its absence was a RECORDED, ARGUED
+     * DECISION rather than an oversight. See the retraction block on `afterDelete` above, and
+     * `BovAutoSelectionService.reselectForDeleted`'s header, before adding anything else here.
+     *
+     * 🔴 ONE JOB. THE COUNTER. `BovAutoSelectionService` MUST NOT BE CALLED FROM THIS METHOD.
+     * Restoring a `Selected` submission onto a sale that has since appointed someone else is the
+     * one path that can produce two `Selected` rows — the platform has no `before undelete`, so
+     * `BovSubmissionSelectionGuardService` never runs — and SEVEN things in this repo depend on
+     * that state remaining REACHABLE rather than silently self-healed. Wiring auto-selection here
+     * would turn all seven green-and-vacuous instead of red.
+     * ⚠ COUNT CORRECTED 2026-08-31 (Tranche 1 code review, W-3). RETRACTED: "three things in this
+     * repo depend on that state remaining REACHABLE ... would turn all three green-and-vacuous".
+     * It is seven — one production branch plus six test-side entries (five `@isTest` methods and
+     * one shared fixture helper) across four test classes. FOUR of the five tests build the
+     * undelete gap INLINE rather than through the shared `twoSelectedViaUndelete` helper, so a
+     * grep for that helper finds one test and misses four. 🔴 THE
+     * AUTHORITATIVE, ENUMERATED LIST IS AT `BovAutoSelectionService.reselectForDeleted` AND IS
+     * DELIBERATELY NOT COPIED HERE — a list duplicated in four files is a list that will disagree
+     * with itself, which is exactly how "three" survived in four places at once.
+     *
+     * ⚠ WHY THE COUNTER IS SAFE WHERE AUTO-SELECTION IS NOT — the distinction is the whole of
+     * D-5. The counter asserts nothing about WHICH broker is appointed; it answers "how many
+     * responses does this sale have", and a restored row is unambiguously one of them. It cannot
+     * repair, hide or contradict the two-Selected state, because it never reads
+     * `Submission_Status__c` at all (`BovSubmissionSelector.countByDispositionIds` counts every
+     * row regardless of status, per D-9).
+     */
+    protected override void afterUndelete() {
+        DispositionCounterRollupService.recalculateResponsesForRows(
+            (List<BOV_Submission__c>) newList,
+            null
+        );
     }
 
     /**

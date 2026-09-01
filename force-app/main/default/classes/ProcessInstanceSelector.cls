@@ -8,6 +8,16 @@
  *   2. `DispositionApprovalHistoryService.getHistory` — the consolidated Approval History card on
  *      the Disposition record page (`selectHistoryByTargetIds`, MANY targets, full trail). Added
  *      2026-08-26; see that method's own Javadoc for why the target set spans three objects.
+ *   3. `DispositionApprovalTrackerService.getTracker` — the five-approval CHECKLIST on the same
+ *      page (`selectTrackerStatesByTargetIds`, MANY targets across FOUR objects, no trail, keyed on
+ *      `ProcessDefinition.DeveloperName`). Added 2026-08-31.
+ *      🔴 CONSUMERS 2 AND 3 LOOK ALIKE AND ASK DIFFERENT QUESTIONS. #2 asks "what happened, in
+ *      order, in words a human recognises" and selects the process LABEL plus the full step trail.
+ *      #3 asks "which of the five approval TYPES is where", and a label cannot answer it — four of
+ *      the five processes were RELABELLED on 2026-08-26 with no API-name change, so a label-keyed
+ *      checklist reclassifies itself the next time someone edits copy, silently. Do not merge the
+ *      two methods to save a query: they are read by two different cards and only #3 is narrow
+ *      enough to be safe without the subquery's extra USER_MODE gates.
  *
  * MODE — USER_MODE on BOTH methods (per P4 design §5, flagged as the one internal case worth a
  * manual smoke-test). ProcessInstance is a system object; its fields are
@@ -125,6 +135,87 @@ public with sharing class ProcessInstanceSelector {
                        SELECT Id, StepStatus, Comments, CreatedDate, ActorId, Actor.Name
                        FROM StepsAndWorkitems
                    )
+            FROM ProcessInstance
+            WHERE TargetObjectId IN :targetObjectIds
+            WITH USER_MODE
+            ORDER BY CreatedDate DESC, Id DESC
+        ];
+    }
+
+    /**
+     * The STATE of every approval ever raised against a set of records, newest submission first,
+     * each row carrying the approval process's **API NAME**. Backs the five-approval tracker
+     * (`DispositionApprovalTrackerService.getTracker` -> `c/dispositionApprovalTracker`,
+     * 2026-08-31, Tranche 3 item 3).
+     *
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * 🔴 IT SELECTS `ProcessDefinition.DeveloperName`. THE METHOD ABOVE SELECTS
+     *    `ProcessDefinition.Name`. THAT IS THE ENTIRE REASON THIS METHOD EXISTS.
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * `Name` is the process's LABEL — display copy, and copy that has already moved inside this
+     * programme. On 2026-08-26 FOUR of the five disposition approval processes were relabelled in
+     * one change ("Sale Decision Approval" -> "Decide to Sell Approval"; "Broker Finalize Approval"
+     * -> "Broker Selection Approval (BOV)"; "Broker Selection Approval" -> "Broker Selection
+     * Approval (Off-Market)"), and NOT ONE of the `<fullName>` API names changed. A card that
+     * IDENTIFIES which approval type a row belongs to by matching that string is keyed on copy: the
+     * next relabel silently reclassifies every row, and nothing throws — the tracker would simply
+     * report five "Not started" rows on a sale that had passed four approvals. `DeveloperName` is
+     * the stable key and is what this method is for.
+     *
+     * ⚠ THE OTHER METHOD IS DELIBERATELY LEFT ALONE, AND NOT ONLY OUT OF CAUTION. `Name` is exactly
+     * right for what it feeds — the consolidated Approval History card HEADLINES each row with the
+     * label a human recognises, and `DispositionApprovalHistoryServiceTest` asserts on those labels
+     * as a signal that `Name` is not returning an API name in this org. Adding `DeveloperName`
+     * there would widen a query whose consumer does not need it; and widening it would not have
+     * given this caller what it needs anyway, because it also drags a `ProcessInstanceHistory`
+     * subquery this one has no use for. TWO CALLERS, TWO QUESTIONS, TWO METHODS — the same
+     * per-caller split `NdaSelector` and `DispositionSelector` both make.
+     *
+     * ── ⚠ NO `StepsAndWorkitems` SUBQUERY, AND THAT IS THE OTHER HALF OF THE SPLIT ─────────────
+     * A checklist needs an OUTCOME per approval, not a trail. Omitting the subquery drops the three
+     * extra `USER_MODE` gates it carries (the child entity itself, and the polymorphic `Name`
+     * behind `Actor`), so this read is materially NARROWER than the one above rather than merely
+     * different — which matters because the tracker fails HARD on a `QueryException`.
+     * ⚠ `SubmittedBy.Name` IS ALSO OMITTED for the same reason: the tracker shows WHETHER each
+     * approval happened, not who moved it. The card beside it shows that.
+     *
+     * ── ORDER IS LOAD-BEARING, NOT COSMETIC ───────────────────────────────────────────────────
+     * `CreatedDate DESC, Id DESC` — NEWEST FIRST — and the caller relies on it: it takes the FIRST
+     * row it sees per (target, process) pair and ignores the rest, so "newest" is what makes a
+     * RESUBMITTED approval report its CURRENT state rather than its first. `Id DESC` is the
+     * tie-break that makes the order total; `CreatedDate` is second-granular and three approvals
+     * submitted from one screen in one minute is a real shape here.
+     * 🔴 IF YOU EVER CHANGE THIS ORDER, `DispositionApprovalTrackerService` SILENTLY REPORTS STALE
+     * OUTCOMES. It does not throw and no row count changes — a recalled-then-resubmitted approval
+     * would read "Recalled" forever. There is no second copy of this rule to disagree with; the
+     * service documents its dependence on it at the point of use.
+     *
+     * ── MODE: `WITH USER_MODE` ─────────────────────────────────────────────────────────────────
+     * Same argument as both methods above, and it is the class-header argument: a human opened a
+     * record page. `ProcessInstance` and `ProcessDefinition` are system entities whose fields are
+     * non-permissionable and whose row visibility follows access to the TARGET record — which is
+     * why `DPEG_Apex_Access` records that they *"need no objectPermissions block anywhere"*.
+     * 🔴 IF THIS EVER THROWS FOR A PERSONA, THE FIX IS A PERMISSION SET AND NEVER `SYSTEM_MODE`
+     * HERE. A system-mode read would show a user the approval outcomes of records their sharing
+     * hides — the inversion ARCHITECTURE.md §2 warns about, on an audit surface.
+     *
+     * @param targetObjectIds The records the approvals target — the Disposition plus its
+     *                        `BOV_Submission__c`, `Disposition_Offer__c` and `NDA__c` children.
+     *                        Null/empty safe and issues NO query when the set is empty.
+     * @return ProcessInstance rows for those targets, NEWEST SUBMISSION FIRST, each carrying its
+     *         status, its target, its timestamps and its process's API name. An empty list when the
+     *         input is null/empty or nothing has ever been submitted; never null.
+     * @example
+     * List&lt;ProcessInstance&gt; states =
+     *     ProcessInstanceSelector.selectTrackerStatesByTargetIds(targetIds);
+     */
+    public static List<ProcessInstance> selectTrackerStatesByTargetIds(Set<Id> targetObjectIds) {
+        if (targetObjectIds == null || targetObjectIds.isEmpty()) {
+            return new List<ProcessInstance>();
+        }
+        return [
+            SELECT Id, Status, TargetObjectId, CreatedDate, CompletedDate,
+                   ProcessDefinitionId, ProcessDefinition.DeveloperName
             FROM ProcessInstance
             WHERE TargetObjectId IN :targetObjectIds
             WITH USER_MODE

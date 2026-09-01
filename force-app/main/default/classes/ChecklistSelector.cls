@@ -13,6 +13,10 @@
  * │ AUTOMATION path (a trigger-driven rollup, a Queueable fan-out, a reconcile fired from a    │
  * │ Transaction save). The first UI read added here must be `WITH USER_MODE` and must NOT      │
  * │ inherit these justifications.                                                              │
+ * │                                                                                            │
+ * │ ✅ UPDATED (Phase 3): that first UI read now exists and is `WITH USER_MODE` —              │
+ * │    `selectForDisplayByTransactionIds`, called by `ChecklistController.getChecklist`. The   │
+ * │    class is therefore MIXED-MODE from here on. Read the METHOD, never the class.           │
  * └───────────────────────────────────────────────────────────────────────────────────────────┘
  *
  * ⚠ SHARING IS NOT LIFTED, AND ON THIS OBJECT IT DOES NOT NEED TO BE — WHICH IS A REAL
@@ -108,5 +112,50 @@ public with sharing class ChecklistSelector {
             WHERE Id IN :checklistIds
             WITH SYSTEM_MODE
         ]);
+    }
+
+    /**
+     * Checklists on the supplied Transactions, for DISPLAY — the group half of the read behind
+     * `ChecklistController.getChecklist`.
+     *
+     * ✅ `WITH USER_MODE` — AND IT IS THE FIRST METHOD IN THIS CLASS THAT IS. The class header
+     * says explicitly that every Phase 2 method here is an automation path and that "the first UI
+     * read added here must be `WITH USER_MODE` and must NOT inherit these justifications". This is
+     * that read: a human opened a Transaction record page and asked to see its checklist. Per
+     * ARCHITECTURE.md §2 a throw here reports a REAL provisioning gap and the fix is a permission
+     * set, not a mode change — so do not "fix" a No such column error by copying the SYSTEM_MODE
+     * justification from `selectByTransactionIds` above. The two methods read almost the same
+     * columns for opposite reasons.
+     *
+     * ⚠ `Transaction__c` IS A MASTER-DETAIL FIELD and therefore non-permissionable — it can never
+     * appear in a `fieldPermissions` block and has no FLS to deny, so it is safe in either mode.
+     * `Pct_Complete__c`, `Items_Total__c` and `Items_Complete__c` DO need read grants.
+     *
+     * ⚠ `Pct_Complete__c` IS A FORMULA and must be granted `editable=false` in every permission
+     * set — `editable=true` on a formula field FAILS THE DEPLOY.
+     *
+     * NOT-FOUND CONTRACT: a list read. An empty list is MEANINGFUL, not exceptional — a deal that
+     * has never been fanned out has no checklists, and the caller renders that as a visible empty
+     * state rather than a blank screen. Returns an empty list, never null.
+     *
+     * @param transactionIds Parent `Transaction__c` ids; null/empty-safe.
+     * @return Checklists on those deals ordered by group sequence then letter, with the display
+     *         fields populated.
+     * @example
+     * List<Checklist__c> groups = ChecklistSelector.selectForDisplayByTransactionIds(dealIds);
+     */
+    public static List<Checklist__c> selectForDisplayByTransactionIds(Set<Id> transactionIds) {
+        if (transactionIds == null || transactionIds.isEmpty()) {
+            return new List<Checklist__c>();
+        }
+        return [
+            SELECT Id, Transaction__c, Group_Letter__c, Group_Name__c, Owner_Label__c,
+                   Sequence__c, Stage__c, Is_Conditional__c,
+                   Items_Total__c, Items_Complete__c, Pct_Complete__c
+            FROM Checklist__c
+            WHERE Transaction__c IN :transactionIds
+            WITH USER_MODE
+            ORDER BY Sequence__c ASC NULLS FIRST, Group_Letter__c ASC
+        ];
     }
 }

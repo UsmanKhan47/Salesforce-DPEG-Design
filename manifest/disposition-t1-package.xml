@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        DISPOSITION BA GAP CLOSURE - TRANCHE 1 ONLY.
+        Built 2026-08-31 for agent-output/disposition-gap-closure-t1-design.md.
+
+        WHY THIS FILE EXISTS, AND WHY manifest/package.xml MUST NOT BE USED INSTEAD:
+        manifest/package.xml is the FULL-ORG RETRIEVE manifest (82 type blocks). Deploying it -
+        or a source-dir deploy of force-app, would sweep several OTHER concurrent streams'
+        undeployed, unreviewed work into usman-dpeg. Confirmed non-Tranche-1 work present in this
+        shared working tree at build time includes BrokerProtectionConfigSelector(+Test),
+        Transaction__c.Tasks_Open__c, two Transactions reports, the
+        Transaction_Stage_Closed_Sets_Status flow, Activity.Blocked_By__c /
+        Is_Prerequisite_Met__c + Activity validationRules, ~6 seed scripts, and several
+        session-start modifications (LLMExtractionCalloutService, BrokerProtectionConfig, three
+        dashboards, six tabs, DPEG_Transaction_Edit/_View).
+
+        SCOPE IS EXPLICIT AND CLOSED. Every member below was verified to exist on disk on
+        2026-08-31. Nothing is wildcarded - a wildcard is what re-introduces the sweep.
+
+        ONE MEMBER IS NOT A ONE-FILE DEPLOY:
+        - CustomObjectTranslation Broker_Listing__c-en_US deploys the WHOLE translation folder
+          (11 field translations), not just the new Days_On_Market_Live__c. The other 10 are
+          pre-existing and unchanged, so this is expected - but it is not a single-field ship.
+
+        PERMISSION SETS REPLACE, THEY DO NOT MERGE. All four sets below were reconciled against
+        the live org by SOQL on 2026-08-31 (FieldPermissions / ObjectPermissions /
+        SetupEntityAccess) and showed ZERO org-only grants. Re-run that reconciliation if this
+        manifest is deployed later than that date - the org is being actively modified by other
+        streams (a batch landed at 12:03-12:17 UTC on 2026-08-31).
+    -->
+
+    <types>
+        <members>BovAutoSelectionService</members>
+        <members>BovAutoSelectionServiceTest</members>
+        <members>BovControllerTest</members>
+        <members>BovPreferredBrokerServiceTest</members>
+        <members>BovSubmissionSelector</members>
+        <members>BovSubmissionSelectorTest</members>
+        <members>BovSubmissionTriggerHandler</members>
+        <members>BrokerListingSelector</members>
+        <members>BrokerListingSelectorTest</members>
+        <members>DispositionApprovalServiceTest</members>
+        <members>DispositionBuyerTimelineTest</members>
+        <members>DispositionCounterRollupService</members>
+        <members>DispositionCounterRollupServiceTest</members>
+        <members>DispositionDomainTest</members>
+        <members>DispositionMaterialsStampTest</members>
+        <members>DispositionOfferSelector</members>
+        <members>DispositionOfferTriggerHandler</members>
+        <members>DispositionStageEntryService</members>
+        <members>RecordStageAdvanceServiceTest</members>
+        <name>ApexClass</name>
+    </types>
+
+    <types>
+        <members>BovSubmissionTrigger</members>
+        <members>DispositionOfferTrigger</members>
+        <name>ApexTrigger</name>
+    </types>
+
+    <types>
+        <members>BOV_Submission__c.Is_Buyer_Ready__c</members>
+        <members>BOV_Submission__c.Is_Known_Performer__c</members>
+        <members>Broker_Listing__c.Broker__c</members>
+        <members>Broker_Listing__c.Days_On_Market_Live__c</members>
+        <members>Disposition__c.Offers_Received__c</members>
+        <members>NDA__c.Buyer_Response_Date__c</members>
+        <members>NDA__c.Is_Approved_For_Release__c</members>
+        <members>NDA__c.Principal_Approved__c</members>
+        <members>NDA__c.Principal_Approved_Date__c</members>
+        <name>CustomField</name>
+    </types>
+
+    <types>
+        <members>Disposition__c.Property_Asset_Required_On_Save</members>
+        <members>Disposition__c.Record_Type_Is_Immutable</members>
+        <members>Wire__c.Verified_DateTime_Not_Backdatable</members>
+        <name>ValidationRule</name>
+    </types>
+
+    <types>
+        <members>Disposition_Record_Type_Override</members>
+        <name>CustomPermission</name>
+    </types>
+
+    <types>
+        <members>Disposition__c.Active_Sales</members>
+        <members>Disposition__c.All_Dispositions</members>
+        <members>Disposition__c.Awaiting_Approval</members>
+        <members>Disposition__c.My_Dispositions</members>
+        <members>Disposition__c.Off_Market_Sales</members>
+        <members>Disposition__c.On_Market_Sales</members>
+        <name>ListView</name>
+    </types>
+
+    <types>
+        <members>DPEG_Admin_Access</members>
+        <members>DPEG_Disposition_Edit</members>
+        <members>DPEG_Disposition_View</members>
+        <members>Disposition_Dashboard_Access</members>
+        <name>PermissionSet</name>
+    </types>
+
+    <types>
+        <members>Broker_Listing__c-en_US</members>
+        <name>CustomObjectTranslation</name>
+    </types>
+
+    <version>67.0</version>
+</Package>

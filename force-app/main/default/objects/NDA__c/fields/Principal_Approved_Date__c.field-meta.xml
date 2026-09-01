@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY. A comment placed ABOVE
+        <CustomField> breaks `sf` deploy at source conversion with a misleading "unable to find
+        matching parent xml file" error.
+
+        DISPOSITION GAP CLOSURE TRANCHE 1, ITEM 1 (agent-output/disposition-gap-closure-t1-design.md
+        §3 Item 1). Pairs with Principal_Approved__c - see that field's XML comment for the full
+        "two representations of one approval" reasoning (Status__c = 'Approved' is the lifecycle
+        position; this pair is the machine-written audit fact). Not designed with a writer in this
+        tranche - Tranche 3's approval action is expected to stamp both fields together.
+
+        =====================================================================================
+        🔴 SHIPPED AS Date, AS REQUESTED - BUT RAISED, NOT DECIDED, HERE FOR TRANCHE 3.
+        =====================================================================================
+        ARCHITECTURE.md §1 forbids a `Date` suffix on a DateTime field, and a Date-only field is
+        correctly suffixed `Date` on that rule alone. But every OTHER approval fact already
+        recorded in this module is captured with a full timestamp (see ApprovalAuditService's
+        callers elsewhere in the app). If Tranche 3's final approval action stamps NOW() rather
+        than TODAY(), this field is the wrong type and must become a DateTime named
+        Principal_Approved_DateTime__c instead - additively, per the same delete+create
+        constraint that governs every other field-shape change in this codebase (Salesforce has
+        no in-place type change from Date to DateTime). Confirm the required precision before
+        Tranche 3 wires a writer to this field.
+
+        FLS: same posture as Principal_Approved__c - read in DPEG_Disposition_View, read-only
+        (editable=false) in DPEG_Disposition_Edit. Applied in the consolidated permission-set
+        pass, not this file.
+
+        Risk: LOW. No reader, no writer in T1.
+    -->
+    <fullName>Principal_Approved_Date__c</fullName>
+    <description>Date a principal approved this NDA for release. Machine-written audit fact, paired with Principal_Approved__c. Type raised for Tranche 3 confirmation - see the XML comment in this file.</description>
+    <inlineHelpText>Set by the approval process when a principal approves this NDA for release.</inlineHelpText>
+    <label>Principal Approved Date</label>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Date</type>
+</CustomField>

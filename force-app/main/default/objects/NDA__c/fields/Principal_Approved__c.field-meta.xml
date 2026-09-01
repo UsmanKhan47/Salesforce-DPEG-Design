@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY. A comment placed ABOVE
+        <CustomField> breaks `sf` deploy at source conversion with a misleading "unable to find
+        matching parent xml file" error.
+
+        DISPOSITION GAP CLOSURE TRANCHE 1, ITEM 1 (agent-output/disposition-gap-closure-t1-design.md
+        §3 Item 1). Machine-written audit fact: WHO approved this NDA for release and WHEN.
+        Paired with Principal_Approved_Date__c. The approval PROCESS ITSELF (who may set these two
+        fields, and how) is Tranche 3 and is NOT designed or built here - this field and its date
+        sibling are schema only, with no writer in this tranche.
+
+        =====================================================================================
+        🔴 THIS OBJECT ALREADY HAS A REPRESENTATION OF "A PRINCIPAL APPROVED THIS NDA" - RECORD
+        THAT NOW SO TRANCHE 3 DOES NOT REDISCOVER IT.
+        =====================================================================================
+        The Disposition_NDA record type carries Status__c = 'Approved' as a lifecycle position
+        (Prepare -> Approved -> Sent -> Signed, Declined terminal, no default - see
+        objects/NDA__c/fields/Status__c.field-meta.xml and
+        objects/NDA__c/recordTypes/Disposition_NDA.recordType-meta.xml). After this field is added,
+        the object holds TWO representations of the same real-world event, deliberately:
+
+            Status__c = 'Approved'          the LIFECYCLE POSITION. Drives the Path. A picklist
+                                             VALUE - it cannot carry a timestamp or an audit trail.
+            Principal_Approved__c + date    the MACHINE-WRITTEN AUDIT FACT (who/when). A workflow
+                                             field update cannot capture "who" - that is precisely
+                                             why ApprovalAuditService exists elsewhere in this repo.
+
+        Tranche 3's final approval action should set BOTH — the stage-position picklist AND this
+        audit pair — in the same transaction. Do not treat one as redundant with the other.
+
+        =====================================================================================
+        FLS (to be applied in the consolidated permission-set pass, not this file).
+        =====================================================================================
+        Read in DPEG_Disposition_View. READ-ONLY in DPEG_Disposition_Edit too (editable=false) -
+        this is an approval-written fact, not an analyst judgement. Precedent:
+        BOV_Broker_Change__c's 2026-08-20 code-review reconciliation, which refused an
+        allowEdit grant on a similarly approval-written field on the grounds that "granting
+        allowEdit would let the very analyst who replaced a broker go back and rewrite who did it
+        and when." A Metadata-API-deployed field carries NO FLS for anyone, System Administrator
+        included, until that pass lands.
+
+        Risk: LOW. Two new fields, no reader and no writer in T1.
+    -->
+    <fullName>Principal_Approved__c</fullName>
+    <defaultValue>false</defaultValue>
+    <description>Machine-written audit fact: TRUE once a principal has approved this NDA for release. Distinct from Status__c = &apos;Approved&apos;, which is the lifecycle position that drives the Path. Tranche 3&apos;s approval action sets both together. See the XML comment in this file.</description>
+    <inlineHelpText>Ticked by the approval process once a principal has approved this NDA for release. This is the audit fact, not the Path position - see Status.</inlineHelpText>
+    <label>Principal Approved</label>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Checkbox</type>
+</CustomField>

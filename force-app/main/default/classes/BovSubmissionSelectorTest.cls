@@ -54,9 +54,18 @@
  * Disposition — the TestDataFactory header warns the static scaffold cache does
  * NOT survive the @TestSetup boundary.
  *
- * No System.runAs USER_MODE test: BOV_Submission__c is a custom object and P3
- * proved the custom-field FLS gap is 0, so the running user reads every selected
- * field (the runAs assertion is reserved for standard-object selectors).
+ * ⚠ RETRACTED IN PART 2026-08-31 (Tranche 1 item 7). The line below is quoted rather than deleted
+ * because it is still true of every `WITH USER_MODE`/`WITH SYSTEM_MODE`-but-still-`with sharing`
+ * method in this class — no runAs FLS test is needed for any of them:
+ *
+ *     RETRACTED, IN PART: "No System.runAs USER_MODE test: BOV_Submission__c is a custom object
+ *     and P3 proved the custom-field FLS gap is 0, so the running user reads every selected field
+ *     (the runAs assertion is reserved for standard-object selectors)."
+ *
+ * What it did not anticipate: `countByDispositionIds`' `CounterReads` is `private without
+ * sharing` — a RECORD-LEVEL escape, not an FLS one, and P3's FLS-gap measurement says nothing
+ * about record-level sharing. `countByDispositionIds_sharingBlindPrincipal_stillGetsTheFullCount`
+ * is the one `System.runAs` test in this file, and it exists for that reason alone.
  */
 @isTest
 private class BovSubmissionSelectorTest {
@@ -216,6 +225,19 @@ private class BovSubmissionSelectorTest {
      *   4. UNDELETE row A           — `BovSubmissionTrigger` has no undelete context, so no guard
      *                                 runs at all and the second Selected row simply appears.
      * Swap 3 and 4 and the insert is refused, which is the guard working correctly.
+     *
+     * ⚠ STEP 4 AMENDED IN PLACE 2026-08-31 (Tranche 1 item 7, design decision D-5). The clause
+     * "`BovSubmissionTrigger` has no undelete context" IS NO LONGER TRUE — the trigger gained
+     * `after undelete` to maintain `Disposition__c.Responses_Received__c`. THE STEP AND THE FIXTURE
+     * ARE UNCHANGED AND STILL WORK, and the retained wording explains why they do:
+     *   - the guard (`BovSubmissionSelectionGuardService`) runs in BEFORE contexts, and the
+     *     platform still has no `before undelete`, so it still never runs here. That half of the
+     *     sentence is what the step actually depends on and it is untouched.
+     *   - `BovAutoSelectionService` is DELIBERATELY NOT ROUTED in the new context (a standing rule
+     *     recorded at `BovSubmissionTriggerHandler.afterUndelete`), precisely so this fixture keeps
+     *     producing two Selected rows instead of silently self-healing into one.
+     * 🔴 IF THIS FIXTURE EVER STARTS RETURNING ONE SELECTED ROW, THE CAUSE IS SOMETHING NEW BEING
+     * ROUTED INTO `afterUndelete` — not a bug here. Read that standing rule before changing a line.
      *
      * @return {A, B} in that order, both Selected, both committed.
      */
@@ -844,5 +866,203 @@ private class BovSubmissionSelectorTest {
             'EXACTLY ONE query for 251 parents. One per disposition would fail at row 101 on the '
             + 'SOQL limit, inside a trigger, taking the user\'s save with it.');
         Assert.areEqual(BULK_N, result.size(), 'Every parent\'s submission is returned');
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // countByDispositionIds — the Responses_Received__c aggregate (2026-08-31, Tranche 1 item 7),
+    // backing DispositionCounterRollupService.recalculateResponsesFor.
+    //
+    // 🔴 `CounterReads` IS THE FIRST METHOD IN THIS CLASS TO ESCAPE SHARING, NOT JUST FLS — the
+    // class header's sixth correction names it explicitly. `WITH SYSTEM_MODE` lifts CRUD/FLS;
+    // `private without sharing` lifts record-level access; two separate decisions, tested
+    // separately below (the bulk/shape tests run as the admin owner and cannot see the sharing
+    // question at all — see the dedicated section at the bottom of this block).
+    // ═════════════════════════════════════════════════════════════════════════
+
+    /**
+     * 🔴 D-9: EVERY STATUS COUNTS, NOT JUST SELECTED. `Responses_Received__c` answers "how many
+     * brokers responded", not "how many are currently appointed" — `BovController
+     * .getOutreachSummary`'s "3 responses generates the matrix" rule has always meant three
+     * brokers came back, not three of one kind.
+     */
+    @isTest
+    static void countByDispositionIds_countsEveryStatus_notJustSelected() {
+        Id dispId = dispositionId();
+        BOV_Submission__c backup = TestDataFactory.createBovSubmission(dispId, false);
+        backup.Submission_Status__c = 'Backup';
+        BOV_Submission__c selected = TestDataFactory.createBovSubmission(dispId, false);
+        selected.Submission_Status__c = 'Selected';
+        insert new List<BOV_Submission__c>{ backup, selected };
+
+        Test.startTest();
+        Map<Id, Integer> result =
+            BovSubmissionSelector.countByDispositionIds(new Set<Id>{ dispId });
+        Test.stopTest();
+
+        Assert.areEqual(2, result.get(dispId),
+            '🔴 A 1 HERE MEANS A Submission_Status__c PREDICATE CREPT INTO THE AGGREGATE, and '
+            + 'Responses_Received__c now answers a different question from the one design decision '
+            + 'D-9 signed off — every submission counts, whatever its status.');
+    }
+
+    /** The SET is the point: one query must answer for MANY dispositions, each with its own count. */
+    @isTest
+    static void countByDispositionIds_spansManyParentsInOneQuery() {
+        Id firstDisp = dispositionId();
+        Property_Asset__c asset = [SELECT Id FROM Property_Asset__c LIMIT 1];
+        Disposition__c secondDisp = TestDataFactory.createDisposition(asset.Id, true);
+        TestDataFactory.createBovSubmissions(2, firstDisp, true);
+        TestDataFactory.createBovSubmissions(3, secondDisp.Id, true);
+
+        Test.startTest();
+        Integer queriesBefore = Limits.getQueries();
+        Map<Id, Integer> result = BovSubmissionSelector.countByDispositionIds(
+            new Set<Id>{ firstDisp, secondDisp.Id });
+        Integer queriesUsed = Limits.getQueries() - queriesBefore;
+        Test.stopTest();
+
+        Assert.areEqual(1, queriesUsed,
+            'ONE aggregate for BOTH dispositions — the caller runs inside a trigger chunk spanning '
+            + 'arbitrarily many parents, so a per-parent query would blow the 100-SOQL limit');
+        Assert.areEqual(2, result.get(firstDisp), 'the first parent\'s own count');
+        Assert.areEqual(3, result.get(secondDisp.Id),
+            'and the second parent\'s own count — NOT merged with the first, which is what a '
+            + 'missing GROUP BY Disposition__c would produce');
+    }
+
+    /**
+     * 🔴 THE EMPTY-GROUP CASE. `GROUP BY` emits no row for a Disposition with zero submissions, so
+     * it is ABSENT from the map — never present with a value of 0. This IS the entire decrement
+     * path `DispositionCounterRollupService.applyCounts` depends on: it iterates the INPUT Id set
+     * and defaults a map MISS to 0, which only works if a childless parent is truly missing from
+     * this map rather than present with a stale or zero value the caller might mistake for "leave
+     * alone".
+     */
+    @isTest
+    static void countByDispositionIds_noSubmissions_isAbsentFromTheMapNotZero() {
+        Id dispId = dispositionId();
+
+        Test.startTest();
+        Map<Id, Integer> result =
+            BovSubmissionSelector.countByDispositionIds(new Set<Id>{ dispId });
+        Test.stopTest();
+
+        Assert.isFalse(result.containsKey(dispId),
+            'A Disposition with no submissions must be ABSENT from the map, not present with 0 — '
+            + 'GROUP BY emits no row for an empty group. A present-with-0 entry here would be a '
+            + 'different contract than the one DispositionCounterRollupService.applyCounts is '
+            + 'written against.');
+    }
+
+    /** Null/empty-safe and, on empty, issues NO query — the counter service\'s zero-cost fast path. */
+    @isTest
+    static void countByDispositionIds_nullAndEmptyInput_returnEmptyMapWithoutQuerying() {
+        Test.startTest();
+        Integer queriesBefore = Limits.getQueries();
+        Map<Id, Integer> fromNull = BovSubmissionSelector.countByDispositionIds(null);
+        Map<Id, Integer> fromEmpty = BovSubmissionSelector.countByDispositionIds(new Set<Id>());
+        Integer queriesUsed = Limits.getQueries() - queriesBefore;
+        Test.stopTest();
+
+        Assert.isTrue(fromNull.isEmpty(), 'A null input returns an empty map, never null');
+        Assert.isTrue(fromEmpty.isEmpty(), 'and so does an empty set');
+        Assert.areEqual(0, queriesUsed,
+            'Neither may query — DispositionCounterRollupService.recalculateResponsesFor\'s '
+            + 'own null/empty guard depends on this being free');
+    }
+
+    /**
+     * 251 parents, ONE query — `.claude/rules/bulk-test-rule.md`. Never one per disposition, or
+     * the 100-SOQL limit fails at row 101 inside the trigger this method is called from.
+     */
+    @isTest
+    static void countByDispositionIds_bulk251_countsEveryParentInOneQuery() {
+        Property_Asset__c asset = [SELECT Id FROM Property_Asset__c LIMIT 1];
+        List<Disposition__c> dispositions =
+            TestDataFactory.createDispositions(BULK_N, asset.Id, true);
+        List<BOV_Submission__c> submissions = new List<BOV_Submission__c>();
+        Set<Id> dispositionIds = new Set<Id>();
+        for (Disposition__c d : dispositions) {
+            submissions.add(TestDataFactory.createBovSubmission(d.Id, false));
+            dispositionIds.add(d.Id);
+        }
+        insert submissions; // built in the loop, inserted once — never DML in a loop
+
+        Test.startTest();
+        Integer queriesBefore = Limits.getQueries();
+        Map<Id, Integer> result = BovSubmissionSelector.countByDispositionIds(dispositionIds);
+        Integer queriesUsed = Limits.getQueries() - queriesBefore;
+        Test.stopTest();
+
+        Assert.areEqual(1, queriesUsed,
+            'EXACTLY ONE aggregate for 251 dispositions. One per disposition would fail at row 101 '
+            + 'on the SOQL limit, inside a trigger, taking the user\'s own save with it.');
+        Assert.areEqual(BULK_N, result.size(), 'Every one of the 251 parents has its own entry');
+        for (Disposition__c d : dispositions) {
+            Assert.areEqual(1, result.get(d.Id), 'each parent counts its own single submission');
+        }
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // 🔴 SHARING — `CounterReads` (the selector-side half of design decision D-10). THE ONLY TEST
+    // IN THIS FILE THAT CAN FAIL ON THE `without sharing` ESCAPE. Every other method in this class
+    // is deliberately sharing-scoped and stays that way — this section is not a template for them.
+    // ═════════════════════════════════════════════════════════════════════════
+
+    /**
+     * 🔴 A PRINCIPAL WHO CANNOT SEE THE SUBMISSION AT ALL MUST STILL COUNT IT.
+     *
+     * `BOV_Submission__c` is `sharingModel = Private` (measured in the object file). An
+     * UNDER-count here does not merely degrade `Disposition__c.Responses_Received__c`, it CORRUPTS
+     * it: the field would read a smaller, VIEWER-DEPENDENT number instead of the one true count
+     * every viewer of the same Disposition is entitled to see — exactly the failure shape
+     * ARCHITECTURE.md §2 describes for a sharing-filtered automation-path aggregate.
+     *
+     * ⚠ `createNonOwnerLoiSubmitter`, DELIBERATELY NOT `createNonOwnerDispositionApprover`. The
+     * disposition persona already carries `viewAllRecords = true` on `BOV_Submission__c` (this
+     * class's own header, at `selectSelectedByDispositionIds` and `selectSelectedBrokerByDispositionIds`),
+     * so a test built on it could pass whether or not the `without sharing` escape exists — it
+     * would already see every row through ordinary sharing, and the test would be vacuous.
+     * `createNonOwnerLoiSubmitter` grants `DPEG_Base_Access` + `DPEG_Opportunity_View` only —
+     * MEASURED to touch neither `BOV_Submission__c` nor `Disposition__c` in either file — so it is
+     * the one fixture in this repo that can actually fail if the escape is removed.
+     *
+     * ⚠ `RecordId` MUST BE IN THE SELECT even though nothing reads it — `UserRecordAccess` rejects
+     * a query without it at COMPILE time. ⚠ AND IT MUST BE `UserRecordAccess`, NEVER A SOQL PROBE.
+     * An Apex test class carries no sharing keyword and therefore runs `without sharing`, so a raw
+     * `[SELECT COUNT() FROM BOV_Submission__c ...]` inside `System.runAs` would "prove" the
+     * opposite of the truth.
+     */
+    @isTest
+    static void countByDispositionIds_sharingBlindPrincipal_stillGetsTheFullCount() {
+        Id dispId = dispositionId();
+        List<BOV_Submission__c> subs = TestDataFactory.createBovSubmissions(3, dispId, true);
+
+        User outsider = TestDataFactory.createNonOwnerLoiSubmitter('bsc1');
+
+        System.runAs(outsider) {
+            UserRecordAccess access = [
+                SELECT RecordId, HasReadAccess
+                FROM UserRecordAccess
+                WHERE UserId = :UserInfo.getUserId() AND RecordId = :subs[0].Id
+            ];
+            Assert.isFalse(access.HasReadAccess,
+                'FIXTURE PRECONDITION: the running user must NOT be able to see this submission '
+                + 'through ordinary sharing or CRUD. If this is true the persona acquired access '
+                + 'from somewhere and the assertion below is vacuous. Investigate the org; do NOT '
+                + 'delete this assertion.');
+
+            Test.startTest();
+            Map<Id, Integer> result =
+                BovSubmissionSelector.countByDispositionIds(new Set<Id>{ dispId });
+            Test.stopTest();
+
+            Assert.areEqual(3, result.get(dispId),
+                '🔴 A SHARING-BLIND PRINCIPAL MUST STILL SEE THE TRUE COUNT. A missing entry or a '
+                + 'number below 3 means CounterReads\' `without sharing` escape has been removed — '
+                + 'the count would then depend on WHO ran the trigger rather than on how many '
+                + 'submissions actually exist, which is precisely the defect ARCHITECTURE.md §2 '
+                + 'and this class\'s header warn against.');
+        }
     }
 }

@@ -1,0 +1,205 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ApprovalProcess xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY. A comment placed ABOVE
+        <ApprovalProcess> breaks `sf` deploy at source conversion with a misleading "unable to
+        find matching parent xml file" error.
+
+        NEW 2026-09-01. W2 of the LOI approval cutover (agent-output/loi-approval-cutover-design.md
+        §4, and the task's own settled-decisions list). Moves principal sign-off OFF
+        Opportunity.LOI_Approval (which STAYS ACTIVE — deactivating it is W5, not authorised yet)
+        and ONTO the LOI__c child record itself. User request, verbatim: "Make sure that we must
+        have approval on LOI record page not on opportunity." Direct sibling of
+        approvalProcesses/Underwriting__c.Underwriting_Approval (2026-08-28) — same shape, same
+        reasoning, different object; read that file's own header alongside this one.
+
+        USER DECISIONS THIS FILE IS BUILT TO (do not re-open — see the task's own
+        "Settled decisions" list):
+          D-1 Full cutover approved. The approval process moves onto LOI__c.
+          D-3 ON REJECTION THE LOI STAYS AT Stage__c = 'Under Review'. Quoted: "The LOI stage will
+              remain on Under review after rejection." finalRejectionActions is intentionally
+              ABSENT below — not an oversight. The retired Opportunity.LOI_Approval's
+              Set_Stage_Underwriting rejection rewind is an ACCEPTED, DOCUMENTED regression — see
+              LoiApprovalStampService.cls's own header and workflows/LOI__c.workflow-meta.xml for
+              the tests that pin the old behaviour and the reasoning for not rebuilding it (an
+              Apex substitute would newly have to satisfy NDA_Signed_Before_Deal_Progression and
+              No_Backward_Stage_Movement, which the old approval's field update bypassed).
+          D-4 The marker is LOI_Status__c = 'Approved', written DIRECTLY by this process's own
+              finalApprovalActions (NOT left to ApprovalAuditService, which only runs downstream
+              of Opportunity.LOI_Approved__c flipping — routing through it here would be
+              circular and the mirror flow would never fire). Consumed by
+              flows/LOI_Approval_Sync.flow-meta.xml (recordTriggerType = Update,
+              doesRequireRecordChangedToMeetCriteria = true — both load-bearing; see that flow's
+              own header for the 251-record bulk callers this exact pair keeps immune).
+          D-5 approvalPageFields DROP StageName, Amount, Asking_Price__c and My_Price__c
+              (Opportunity-only fields; LOI__c has no counterpart for any of the four — confirmed
+              against objects/LOI__c/fields/, 25 fields, none of these). Approvers who need
+              deal-level context open the parent deal via the Opportunity__c lookup shown on the
+              approval page — the same resolution Underwriting__c.Underwriting_Approval's own
+              header records for the identical problem.
+          D-6 CLOSED BY MEASUREMENT — allowedSubmitters type=owner, UNCHANGED from the retiring
+              process. Proven this session with a positive/negative control on a throwaway
+              object: a queue member submitted successfully (isSuccess=true, Pending); a
+              non-member with IDENTICAL FLS got NO_APPLICABLE_PROCESS. Every Acquisition_LOI is
+              owned by the Acquisition queue, so owner correctly means "the Acquisition queue's
+              members may submit". <type>queue</type> is rejected at schema level;
+              <type>group</type> rejects a real live queue name identically to a bogus one
+              (Public-Groups-only). There is no valid shape that names a queue directly.
+          Approvers UNCHANGED — nikhil.dhanani@usmandpeg.uat + aftab.ali.dpeg.usman@
+              avanzasolutions.com, whenMultipleApprovers = FirstResponse, allowDelegate false,
+              allowRecall true — matching "Nikhil or any other principal".
+
+        🔴 RECORD-TYPE DISCRIMINATION — THE CRITERION IS LABEL-VALUED. READ THIS BEFORE TOUCHING
+        THE SECOND criteriaItems ENTRY. LOI__c has TWO record types (Acquisition_LOI,
+        Disposition_LOI) sharing the SAME Stage__c value 'Under Review'. A stage-only entry
+        criterion would pull disposition LOIs into an acquisition approval.
+          1. TRIED FIRST, PER THE DESIGN'S OWN "SAFE ROUTE": criteriaItems on
+             LOI__c.Opportunity__c notEqual blank (a Disposition_LOI carries a blank
+             Opportunity__c). MEASURED, REJECTED AT DEPLOY, 2026-09-01: "A criteriaItems entry
+             references the field LOI__c.Opportunity__c, which isn't supported in approval
+             processes." Lookup/reference fields are not usable in ApprovalProcess entryCriteria
+             criteriaItems at all — a platform restriction, not an XML-shape guess.
+          2. TRIED SECOND, DEPLOYED, AND BROKEN IN PRODUCTION FOR ~1.5 HOURS: LOI__c.RecordTypeId
+             equals the 18-char Id 012iw0000009yeXAAQ. It passed a check-only dry-run and a real
+             deploy with zero errors, AND IT MATCHED NOTHING. The org silently normalises the
+             field to LOI__c.RecordType, which is a LABEL-VALUED pseudo-field; an Id can never
+             equal the label 'Acquisition LOI', so criterion 2 was permanently FALSE, the
+             '1 AND 2' filter never matched, and the process accepted ZERO submissions. A record
+             built to satisfy the criteria literally returned NO_APPLICABLE_PROCESS from a direct
+             Approval.process call, and the ProcessDefinition held 0 ProcessInstance rows for its
+             entire life.
+             🔴 THE LESSON, NOT THE TYPO: A GREEN DEPLOY / DRY-RUN ON AN ApprovalProcess PROVES
+             ONLY THAT THE XML PARSES. It says NOTHING about whether entryCriteria evaluate true
+             at runtime. entryCriteria have NO server-side readback (ProcessDefinition exposes
+             Id/DeveloperName/Name/State/TableEnumOrId/Type and nothing else) — the ONLY ways to
+             verify are (a) RETRIEVE the process and read the stored <field>/<value> pair, and
+             (b) a real Approval.process submission. Do BOTH; (a) alone cannot catch a
+             well-formed value that never matches.
+          3. USED HERE, FIXED 2026-09-01: <field>LOI__c.RecordType</field> equals the record
+             type's LABEL, 'Acquisition LOI' (note the SPACE — this is Name, not DeveloperName,
+             which is Acquisition_LOI). Deploy 0Afiw000000UsB3CAK, then RETRIEVED BACK from
+             usman-dpeg and confirmed stored as exactly this field/value pair. The field name is
+             written as RecordType (not RecordTypeId) purely to match what the org normalises to,
+             so a future retrieve produces no spurious diff — deploying either spelling lands the
+             same stored criterion.
+          🟢 NO HARDCODED ID REMAINS IN THIS FILE. The previous version's hardcoded RecordType Id
+          (and its documented portability cost) is GONE — a label survives an org rebuild, so the
+          old "re-query RecordType and replace the value before redeploying" instruction no longer
+          applies. If the record type is ever RELABELLED, however, this value must change with it.
+
+        🔴 finalApprovalActions WRITE ONLY THIS RECORD'S OWN FIELD (LOI_Status__c). An approval
+        process can field-update ONLY its own record or a MASTER-DETAIL parent, and
+        LOI__c.Opportunity__c is a LOOKUP — so this process structurally CANNOT touch the
+        Opportunity. The parent mirror write is therefore a separate, decoupled step: the
+        after-save flow named above, entry-scoped on LOI_Status__c changing TO 'Approved', calling
+        LoiApprovalStampService. That flow is a SEPARATE deploy unit (landed with this file in W1);
+        nothing in this file depends on it existing for THIS record's own LOI_Status__c to update
+        correctly.
+
+        entryCriteria is "LOI__c.Stage__c equals 'Under Review' AND LOI__c.RecordType equals
+        'Acquisition LOI'". As of W4 (2026-09-01) the matching button rule on
+        flexipages/LOI_Record_Page.flexipage-meta.xml is its FIFTH criterion,
+        {!Record.RecordType.DeveloperName} EQUAL 'Acquisition_LOI' — changed from
+        NE 'Disposition_LOI' in the same cutover so the button and this criterion agree on a
+        MASTER-typed row too. Both now fail CLOSED on Master; the old NE form failed OPEN and
+        rendered the button where this approval would refuse.
+
+        recordEditability = AdminOnly LOCKS THIS LOI RECORD, NOT THE PARENT DEAL. This is a
+        behaviour change from the retired process (which locked the Opportunity) — deliberate, and
+        recorded as F2/5.3 in the design: the deal stays editable throughout, and only the LOI
+        itself locks while its own approval is pending.
+
+        🔴 RECALL ROUTE IS A SEPARATE, MANDATORY DEPLOY, ALREADY LANDED IN W1 (SAME PAYLOAD AS
+        THIS FILE'S OWN PREREQUISITE WAVE). See layouts/LOI__c-LOI Layout.layout-meta.xml
+        (RelatedProcessHistoryList) AND flexipages/LOI_Record_Page.flexipage-meta.xml
+        (force:relatedListContainer) — TWO FILES, NEITHER WORKS ALONE (measured on
+        Disposition_Record_Page / Disposition__c-Disposition Layout: force:relatedListSingleContainer
+        returns INVALID_TYPE for approval history; only force:relatedListContainer renders it).
+        Both were verified live in this org before this file was deployed.
+
+        DEPLOY ORDER — LOAD-BEARING. workflows/LOI__c.workflow-meta.xml (the LOI_Status_Approved
+        field update referenced below) and classes/LoiApprovalStampService.cls +
+        flows/LOI_Approval_Sync.flow-meta.xml (W1) were deployed and verified live BEFORE this
+        file, exactly as this process's finalApprovalActions requires.
+
+        🔴 PENDING ProcessInstance COUNT RE-CHECKED IMMEDIATELY BEFORE THE 2026-09-01 CRITERION
+        FIX: across BOTH LOI_Approval definitions (Opportunity 04aiw0000001sxdAAA and LOI__c
+        04aiw0000005ub3AAA) the org held exactly ONE ProcessInstance, an already-Approved one on
+        the Opportunity process. ZERO on this one, Pending or otherwise. Re-run before W5 (not
+        authorised yet) — the old submit route stays live throughout.
+
+        🔴 THIS IS THE IRREVERSIBLE STEP. Deactivating this file later (redeploy
+        <active>false</active>) returns BEHAVIOUR to the pre-W2 state but does not return the ORG
+        to it — once one ProcessInstance exists against this definition, a destructiveChanges
+        delete is refused, exactly as Opportunity.Underwriting_Approval is kept forever as a
+        deactivated file. This ProcessDefinition row and its history are permanent from this
+        deploy onward.
+
+        ⚠ Both processes coexist on different objects and cannot conflict — Approval.process
+        routes by object + entry criteria, and an LOI__c submission can only match this process.
+        As of W4 (2026-09-01) OpportunityApprovalService.resolveApprovalTargetId returns the LOI
+        itself, so the LOI page's Submit for Approval button now reaches THIS process; before W4
+        it submitted the parent deal. Opportunity.LOI_Approval remains ACTIVE as the escape hatch
+        until W5, which is still NOT authorised.
+    -->
+    <active>true</active>
+    <allowRecall>true</allowRecall>
+    <allowedSubmitters>
+        <type>owner</type>
+    </allowedSubmitters>
+    <approvalPageFields>
+        <field>Name</field>
+        <field>Owner</field>
+        <field>Opportunity__c</field>
+        <field>Stage__c</field>
+        <field>Offer_Price__c</field>
+        <field>Offer_Cap_Rate__c</field>
+        <field>NOI__c</field>
+        <field>Earnest_Money__c</field>
+        <field>Due_Diligence_Days__c</field>
+        <field>Closing_Period_Days__c</field>
+    </approvalPageFields>
+    <approvalStep>
+        <allowDelegate>false</allowDelegate>
+        <assignedApprover>
+            <approver>
+                <name>aftab.ali.dpeg.usman@avanzasolutions.com</name>
+                <type>user</type>
+            </approver>
+            <approver>
+                <name>nikhil.dhanani@usmandpeg.uat</name>
+                <type>user</type>
+            </approver>
+            <whenMultipleApprovers>FirstResponse</whenMultipleApprovers>
+        </assignedApprover>
+        <label>Principal approves LOI</label>
+        <name>Principal_Review_Step</name>
+    </approvalStep>
+    <description>Principal decision to approve this LOI. Entry: Stage equals Under Review AND Record Type equals Acquisition LOI (excludes Disposition_LOI, which shares the same Stage value). Approval sets LOI Status to Approved; a flow mirrors the decision onto the Opportunity. Rejection leaves the LOI at Under Review (D-3) — no deal-stage rewind.</description>
+    <enableMobileDeviceAccess>false</enableMobileDeviceAccess>
+    <entryCriteria>
+        <booleanFilter>1 AND 2</booleanFilter>
+        <criteriaItems>
+            <field>LOI__c.Stage__c</field>
+            <operation>equals</operation>
+            <value>Under Review</value>
+        </criteriaItems>
+        <criteriaItems>
+            <field>LOI__c.RecordType</field>
+            <operation>equals</operation>
+            <value>Acquisition LOI</value>
+        </criteriaItems>
+    </entryCriteria>
+    <finalApprovalActions>
+        <action>
+            <name>LOI_Status_Approved</name>
+            <type>FieldUpdate</type>
+        </action>
+    </finalApprovalActions>
+    <finalApprovalRecordLock>false</finalApprovalRecordLock>
+    <finalRejectionRecordLock>false</finalRejectionRecordLock>
+    <label>LOI Approval</label>
+    <processOrder>1</processOrder>
+    <recordEditability>AdminOnly</recordEditability>
+    <showApprovalHistory>true</showApprovalHistory>
+</ApprovalProcess>

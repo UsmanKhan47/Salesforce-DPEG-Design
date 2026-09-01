@@ -332,9 +332,22 @@ public with sharing class ChecklistItemPrerequisiteService {
             candidate.record = item;
             candidate.priorBlockedBy = priorBlockedBy;
             candidate.wasDone = prior != null && ChecklistItemDomain.isDone(prior.Flag__c);
-            candidate.entering = !candidate.wasDone && ChecklistItemDomain.isDone(item.Flag__c);
+            Boolean nowDone = ChecklistItemDomain.isDone(item.Flag__c);
+            candidate.entering = !candidate.wasDone && nowDone;
+            // 🔴 `pastTheGate` REPLACED A BARE `wasDone` (EXPLOIT C, carried over from the LIVE
+            // Phase 0 gate where it was found). "Already past the gate" is a property of the SAVE,
+            // not of the stored record: a row that WAS done and is being REOPENED is walking back
+            // through the gate, and exempting it allowed a two-save bypass with ordinary Edit
+            // access and no override — reopen-and-blank in save 1 (branch (A) declines because the
+            // row is LEAVING done, branch (B) declines on `!wasDone`), then complete in save 2 with
+            // no link on either side, so the row is not even a candidate.
+            // ⚠ THE PRECEDENCE MOVES WITH THE BRANCH-(B) GUARD, NOT JUST THE GUARD: gating (B) on
+            // `pastTheGate` while leaving this ternary on `wasDone` would still let a
+            // reopen-and-REPOINT resolve the caller's chosen link and stamp a satisfied flag for
+            // save 2 to reuse.
+            candidate.pastTheGate = candidate.wasDone && nowDone;
             // Non-null by construction: at least one of the two was non-null to get here.
-            candidate.survivingBlockedBy = candidate.wasDone
+            candidate.survivingBlockedBy = candidate.pastTheGate
                 ? (item.Blocked_By__c != null ? item.Blocked_By__c : priorBlockedBy)
                 : (priorBlockedBy != null ? priorBlockedBy : item.Blocked_By__c);
             // A previously-set link being blanked or repointed. GAINING a link for the first time
@@ -441,7 +454,9 @@ public with sharing class ChecklistItemPrerequisiteService {
      *     nothing — the resolution is the one branch (A) already needed.
      *
      * ⚠ (B) IS DELIBERATELY NARROW, AND EACH NARROWING KEEPS SOMETHING WORKING:
-     *   - `!wasDone` — an already-done item is past the gate, so its link stays editable. This is
+     *   - `!pastTheGate` — an item done before AND after this save is past the gate, so its link
+     *     stays editable (NOT `!wasDone`: a REOPEN was done but is not past anything — EXPLOIT C).
+     *     This is
      *     what keeps the Phase 4 migration and ordinary maintenance working.
      *   - `prerequisite != null && sameDeal` — an UNRESOLVABLE or already-illegitimate link stays
      *     REPAIRABLE. Without this the feature could brick the very data it depends on with no
@@ -515,14 +530,23 @@ public with sharing class ChecklistItemPrerequisiteService {
                 // CLOSED rather than being written and discovered later by branch (A).
                 return MSG_UNRESOLVED;
             }
-            if (storedSelf != null
-                    && written.Checklist__r.Transaction__c != storedSelf.Checklist__r.Transaction__c) {
+            // 🔴 FAILS CLOSED ON A MISSING `storedSelf`. This read `storedSelf != null && ...`, which
+            // made the ONE null-check in this method that failed PERMISSIVE: an item whose own
+            // stored row could not be resolved — deleted mid-transaction, or hidden from this
+            // principal by sharing on the parent `Checklist__c` — skipped the cross-deal check
+            // entirely and was allowed to point anywhere. Every other null-check here refuses. A
+            // link write whose OWN deal cannot be established is exactly the case that must not be
+            // trusted, so it is now refused with the same message as a genuine cross-deal write.
+            if (storedSelf == null
+                    || written.Checklist__r.Transaction__c != storedSelf.Checklist__r.Transaction__c) {
                 return MSG_CROSS_DEAL;
             }
         }
 
         // (B) — refuse disarming a live gate.
-        if (!candidate.wasDone
+        // `!pastTheGate`, NOT `!wasDone`: a row being REOPENED was done but is not past anything.
+        // See the candidate loop for the two-save bypass that distinction closes.
+        if (!candidate.pastTheGate
                 && !met
                 && prerequisite != null
                 && sameDeal
@@ -551,9 +575,16 @@ public with sharing class ChecklistItemPrerequisiteService {
         Id priorBlockedBy;
         /** The stored record's done-ness, from `Trigger.old` — authoritative. */
         Boolean wasDone;
+        /**
+         * Done BEFORE this save AND still done AFTER it. THE ONLY STATE IN WHICH THIS SAVE MAY
+         * RE-AIM THE GATE. 🔴 Not the same as `wasDone` — a row being REOPENED was done but is not
+         * past anything, and exempting it was EXPLOIT C. Anywhere this class asks "is this row past
+         * the gate?", it must ask THIS.
+         */
+        Boolean pastTheGate;
         /** Open -> done transition. */
         Boolean entering;
-        /** Stored-wins while the row is open. Never null (a candidate had one on some side). */
+        /** Stored-wins unless the row is past the gate. Never null (a candidate had one on some side). */
         Id survivingBlockedBy;
         /** This save blanks or repoints a link that already existed. */
         Boolean linkChanged;

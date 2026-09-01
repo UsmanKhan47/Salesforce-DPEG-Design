@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Stage_Entry_Date__c</fullName>
+    <description>The date this deal ENTERED its current stage. NAME AND SHAPE MIRROR Opportunity.Stage_Entry_Date__c AND OpportunityStageEntryService DELIBERATELY - the concept already has an established name, a working before-context stamp, a selector read and a backfill script in this org, and inventing Stage_Entered_Date__c would give one concept two names. Re-stamped, not preserved, on re-entry: the clock restarts. Stamped by Apex in Phase 2 on every writer, so do NOT add an if-null guard - the Opportunity service records that such a guard silently reintroduces the bug it was meant to fix. Deploys with FieldPermissions for NOBODY, System Administrator included, so its permission-set grant is part of the work.</description>
+    <inlineHelpText>Set automatically when the deal Stage changes. Do not edit unless correcting a known data error.</inlineHelpText>
+    <externalId>false</externalId>
+    <label>Stage Entry Date</label>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Date</type>
+</CustomField>

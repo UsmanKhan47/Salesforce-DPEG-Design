@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        DISPOSITION BA GAP CLOSURE - TRANCHE 2 ONLY (Sell Meter / Home page).
+        Built 2026-08-31 for agent-output/disposition-gap-closure-t2-design.md.
+
+        WHY THIS FILE EXISTS. manifest/package.xml is the FULL-ORG RETRIEVE manifest (82 type
+        blocks); a source-dir deploy of force-app has the same problem. Either would sweep several
+        OTHER concurrent streams' undeployed, unreviewed work into usman-dpeg. Non-Tranche-2 work
+        confirmed present in this shared working tree at build time:
+          permissionsets  DPEG_Task_Edit, DPEG_Checklist_Edit, DPEG_Checklist_View,
+                          Transaction_Prereq_Override_Access, DPEG_Transaction_Edit/_View
+          customPermissions  Transaction_Prereq_Override
+          classes         BrokerProtectionConfigSelector(+Test)
+          objects         Transaction__c.Tasks_Open__c, Activity.Blocked_By__c,
+                          Activity.Is_Prerequisite_Met__c, Activity validationRules
+          flows           Transaction_Stage_Closed_Sets_Status
+          reports         Transactions/Total_Open_Tasks, Total_Completed_Tasks
+        None of it is listed below. Nothing is wildcarded - a wildcard re-introduces the sweep.
+
+        DELIBERATELY EXCLUDED, though modified in the tree:
+        - reports/Dispositions/Total_Argus_Value - the T2 edit is a COMMENT ONLY. Deploying a
+          Report has no org value here and carries a real risk of overwriting a UI-side edit.
+        - permissionsets/DPEG_Admin_Access - its change belongs to TRANCHE 1 and is already live
+          (deploy 0Afiw000000UCLVCA4, 2026-08-31 14:18 UTC).
+        - scripts/** - anonymous Apex, not deployable metadata.
+        - Every Tranche 1 component. All are already deployed; re-shipping them would widen the
+          blast radius of this deploy for no gain.
+
+        DEPLOY ORDER IS LOAD-BEARING AND FAILS SILENTLY IF INVERTED.
+        CustomField + CustomPermission must land no later than the PermissionSets. A
+        customPermissions entry naming a permission the org does not hold fails the deploy of the
+        WHOLE permission set; a field with no FLS aborts the entire DML statement rather than
+        degrading. Shipping the Apex WITHOUT the permission-set grant is the worst case: it denies
+        every principal silently - disabled button everywhere, server refuses every YELLOW create,
+        no error anywhere. One package keeps all of it in one transaction.
+
+        PERMISSION SETS REPLACE, THEY DO NOT MERGE. Both sets below were reconciled against the
+        live org by SOQL across FieldPermissions + ObjectPermissions + SetupEntityAccess and
+        showed ZERO org-only grants. That third read is not optional: Disposition_Deal_Actions on
+        DPEG_Disposition_Edit is invisible to the first two. Re-run the three-way reconciliation
+        immediately before deploying - the org is being modified by other streams today.
+    -->
+
+    <types>
+        <members>DispositionController</members>
+        <members>DispositionControllerTest</members>
+        <members>DispositionService</members>
+        <members>DispositionServiceTest</members>
+        <members>PropertyAssetService</members>
+        <members>PropertyAssetServiceTest</members>
+        <members>SellMeterController</members>
+        <members>SellMeterControllerTest</members>
+        <members>SellMeterOverridePermissionService</members>
+        <members>SellMeterOverridePermissionServiceTest</members>
+        <name>ApexClass</name>
+    </types>
+
+    <types>
+        <members>Disposition__c.Sell_Meter_Override_Reason__c</members>
+        <members>Property_Asset__c.Argus_Signal__c</members>
+        <members>Property_Asset__c.Peak_Sell_Date__c</members>
+        <members>Property_Asset__c.Readiness_Score__c</members>
+        <members>Property_Asset__c.Sell_Readiness_Band__c</members>
+        <name>CustomField</name>
+    </types>
+
+    <types>
+        <members>Disposition_Sell_Meter_Override</members>
+        <name>CustomPermission</name>
+    </types>
+
+    <types>
+        <members>sellMeterInitiateModal</members>
+        <members>sellMeterList</members>
+        <members>sellMeterOverrideModal</members>
+        <members>sellMeterStats</members>
+        <name>LightningComponentBundle</name>
+    </types>
+
+    <types>
+        <members>DPEG_Disposition_Edit</members>
+        <members>DPEG_Disposition_View</members>
+        <name>PermissionSet</name>
+    </types>
+
+    <version>67.0</version>
+</Package>

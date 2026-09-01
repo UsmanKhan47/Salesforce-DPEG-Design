@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ListView xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        DISPOSITION GAP CLOSURE TRANCHE 1, ITEM 13. See All_Dispositions.listView-meta.xml in this
+        same folder for the shared GATE D-13 collision warning and the column/sharedTo rationale -
+        not repeated here. Filter: Approval_Pending__c equals true - the system-written flag set
+        by initialSubmissionActions and cleared by final approval/rejection/recall (see that
+        field's own XML comment). Read FLS on Approval_Pending__c must already be granted to
+        DPEG_Disposition_View / _Edit for the Dynamic Actions that rely on it; this list view
+        adds no new FLS requirement of its own.
+
+        🔴 MEASURED, NOT INFERRED - 2026-08-31, deploy id 0Afiw000000UAoOCAW, validate-only against
+        usman-dpeg. A ListView filter <value> on a Checkbox field MUST be "0" or "1" - "true"
+        produced a hard component error ("Use \"0\" or \"1\""), even though the XML is well-formed,
+        the field is real, and "equals" is a valid operation. This is a green-source/red-deploy
+        defect: nothing but an actual deploy catches it. DO NOT "clean this back up" to true/false -
+        1 is correct and true was not.
+    -->
+    <fullName>Awaiting_Approval</fullName>
+    <columns>NAME</columns>
+    <columns>Property_Asset__c</columns>
+    <columns>Disposition_Stage__c</columns>
+    <columns>Selected_Broker__c</columns>
+    <columns>Listing_Date__c</columns>
+    <columns>Closing_Date__c</columns>
+    <columns>LAST_UPDATE</columns>
+    <filterScope>Everything</filterScope>
+    <filters>
+        <field>Approval_Pending__c</field>
+        <operation>equals</operation>
+        <value>1</value>
+    </filters>
+    <label>Awaiting Approval</label>
+</ListView>

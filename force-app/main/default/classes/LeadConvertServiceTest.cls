@@ -98,6 +98,38 @@ private class LeadConvertServiceTest {
     private static final Integer SCALE_N = 50;
 
     /**
+     * The Asset_Type__c value set, aligned across Lead and Opportunity on 2026-08-31 (Gap 1).
+     *
+     * 🔴 THIS LIST IS DELIBERATELY HARDCODED AND MUST NOT BE REPLACED BY A DESCRIBE. A describe
+     * would read whatever the field currently offers and then assert the service copied it — it
+     * would go green against a field that had silently lost 'Hospitality' again, which is the
+     * regression the list exists to catch. It is a statement of the AGREED value set, not a
+     * mirror of the org's.
+     *
+     * ⚠ It is also NOT the Property__c set. Property__c carries these eight PLUS 'C-Store' and
+     * 'Storage'; using this list against a Property assertion would under-test it, and using the
+     * Property list here would push values the Opportunity picklist refuses.
+     */
+    private static final List<String> ASSET_TYPES = new List<String>{
+        'Retail', 'Land', 'Industrial', 'Office',
+        'Multifamily', 'Mixed-Use', 'Hospitality', 'Medical Office'
+    };
+
+    /**
+     * The Deal Type states a Lead can reach conversion in — the two stated values AND the
+     * UNSTATED one (2026-08-31). The null is the point of this list: extraction returns
+     * deal_type = null for any asset class that is neither obviously Land nor obviously Retail
+     * (measured: null for a medical-office and an industrial deal on the same day two hotels
+     * came back 'Retail'), and the broker portal and manual Lead entry can both leave it blank
+     * with no LLM involved at all. A blank Deal Type is a NORMAL input to conversion, so the
+     * bulk fixture has to contain some.
+     *
+     * ⚠ LENGTH 3 IS LOAD-BEARING. It is coprime with ASSET_TYPES.size() (8), which is what makes
+     * the 251-row cycle walk every (deal type x asset type) pair — see the fixture loop.
+     */
+    private static final List<String> DEAL_TYPES = new List<String>{ 'Land', 'Retail', null };
+
+    /**
      * Slack allowed between a 1-record and a SCALE_N-record invocation. Deliberately small: the
      * service's own cost is constant (2 SOQL / ≤5 DML — raised from ≤4 in the IR segregation
      * change, which added the Contact/Account record-type stamp), and a change that added ONE
@@ -310,6 +342,74 @@ private class LeadConvertServiceTest {
         System.assertEquals('Retail', o.RecordType.DeveloperName, 'Should get the Retail record type');
     }
 
+    /**
+     * 🔴 THE FALSIFYING TEST FOR THE 2026-08-31 BLANK-DEAL-TYPE DEFAULT. It fails against the
+     * code that shipped before that change — `if (String.isNotBlank(l.Deal_Type__c))` skipped the
+     * whole block, so the Opportunity came out with a null Deal_Type__c AND a null RecordTypeId.
+     *
+     * THE FIXTURE IS THE LIVE DEFECT, NOT A SYNTHETIC ONE. Measured on usman-dpeg 2026-08-31:
+     * Opportunity 006iw000000fgpiAAA ("Marrowbrook Station Medical Plaza") — RecordTypeId null,
+     * Deal_Type__c null, Asset_Type__c 'Medical Office' — produced by an extraction that returned
+     * deal_type = null for a medical-office deal. So the Lead here carries a blank Deal Type and
+     * a NON-Land, NON-Retail asset type, which is the combination the LLM actually fails on: a
+     * fixture whose asset type were 'Retail' would look like the defect and prove less.
+     *
+     * ⚠ ASSERTING RecordTypeId DIRECTLY IS NOT REDUNDANT WITH THE DeveloperName ASSERTION. The
+     * Id is the field the record type's downstream consumers key on (the Path, the record-type
+     * picklist subsets); DeveloperName is the readable proof it is the RIGHT one. The first
+     * assertion states the defect is gone, the second states it was fixed correctly rather than
+     * by landing on whatever record type happened to be default for the running user.
+     *
+     * ⚠ AND THE ASSET TYPE MUST SURVIVE. Stamping a record type where there was none newly
+     * subjects every picklist on the deal to that record type's value SUBSET, which is enforced
+     * by Apex DML for a restricted picklist on this org. Opportunity.Asset_Type__c is restricted,
+     * so if the Retail record type ever loses 'Medical Office' this conversion stops failing
+     * quietly and starts throwing INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST for the whole chunk.
+     * That is the one way this fix could be WORSE than the defect, so it is pinned here.
+     */
+    @isTest
+    static void blankDealTypeDefaultsToRetailAndStillGetsARecordType() {
+        Lead l = TestDataFactory.createLead(false);
+        l.LastName = 'Tester';
+        l.Company = 'Marrowbrook Medical Partners';
+        // TestDataFactory seeds Deal_Type__c = 'Retail'; the defect is the ABSENCE of a value, so
+        // it has to be cleared explicitly or this test passes for the wrong reason.
+        l.Deal_Type__c = null;
+        l.Asset_Type__c = 'Medical Office';
+        insert l;
+        Assert.isNull(
+            [SELECT Deal_Type__c FROM Lead WHERE Id = :l.Id].Deal_Type__c,
+            'Fixture sanity: the Lead really has NO deal type. Nothing on the intake side may '
+            + 'fill this in — the Lead stays an honest record of what the email said, and the '
+            + 'default is applied at conversion only');
+
+        Test.startTest();
+        Database.LeadConvertResult res = convertOne(l);
+        Test.stopTest();
+
+        Opportunity o = [
+            SELECT Id, RecordTypeId, RecordType.DeveloperName, Deal_Type__c, Asset_Type__c
+            FROM Opportunity
+            WHERE Id = :res.getOpportunityId()
+            WITH SYSTEM_MODE
+        ];
+        Assert.isNotNull(o.RecordTypeId,
+            'A deal converted from a Lead with NO deal type must still get a record type. A null '
+            + 'here is the live defect: no Path, no record-type picklist subset, and neither the '
+            + 'Development nor the Construction tab renders on Opportunity_Record_Page');
+        Assert.areEqual('Retail', o.RecordType.DeveloperName,
+            'and it is the Retail record type specifically. Deal_Type__c is a LAND / NOT-LAND '
+            + 'discriminator, so "unstated" belongs in the not-land bucket');
+        Assert.areEqual('Retail', o.Deal_Type__c,
+            'The default is applied to the FIELD, not only to RecordTypeId. The record page gates '
+            + 'its two feasibility tabs on Deal_Type__c, so defaulting the record type alone '
+            + 'would leave the page half-broken');
+        Assert.areEqual('Medical Office', o.Asset_Type__c,
+            'and the asset type survives the newly-stamped record type. Deal_Type__c and '
+            + 'Asset_Type__c share the token "Retail" with DIFFERENT meanings — a Retail-typed '
+            + 'deal is not thereby a retail asset, and nothing may reconcile the two fields');
+    }
+
     @isTest
     static void createsAndLinksPropertyFromLead() {
         Lead l = TestDataFactory.createLead(false);
@@ -435,6 +535,152 @@ private class LeadConvertServiceTest {
             'ALL THREE numbers must carry together, not just the percent: captured + missing is '
             + 'what recovers the denominator from the Opportunity, and dropping either count '
             + 'silently destroys that property on every converted deal');
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // 2a-bis. GAP 1 (2026-08-31) — ASSET TYPE SURVIVES CONVERSION.
+    //
+    // Until 2026-08-31 LeadConvertService wrote Lead.Asset_Type__c to the Property__c and to
+    // NOTHING else, so every email-born deal reached OpportunityFunnelController with a null
+    // asset type. The fix is one guarded assignment in applyDealFields.
+    //
+    // 🔴 WHY THESE TESTS ARE NOT REDUNDANT WITH stampsDealProcessFieldsOntoOpportunity, WHICH
+    // WOULD ALSO GO GREEN ON THE 'Retail' CASE: Asset_Type__c is the FIRST guarded picklist in
+    // this service whose value set is constrained BY RECORD TYPE. The field describe that backs
+    // opportunityAssetTypeValues() cannot see that constraint (see activePicklistValues' header),
+    // so a value present on the field but missing from the Land/Retail record-type blocks passes
+    // the guard and is then refused at DML with INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST — rolling
+    // back the all-or-none `update updates` for EVERY Lead in the chunk. MEASURED on usman-dpeg
+    // 2026-08-31, before the record types were widened: a Retail-typed Opportunity insert
+    // carrying 'Hospitality' failed with exactly that error.
+    //
+    // ⇒ The 'Retail' case proves the ASSIGNMENT. Only the Hospitality / Medical Office cases
+    // prove the RECORD TYPES, and they are the reason this section exists. Deleting them would
+    // leave the alignment assumed rather than tested, and the failure it hides is a whole-chunk
+    // rollback in production, not a null field.
+    // ═════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Converts one Lead carrying `assetType` on the given deal type, and returns the deal.
+     *
+     * ⚠ The address is derived from `assetType` so two calls in one test get two DISTINCT
+     * buildings. GATE_ADDRESS for both would make the WS3 reuse lookup collapse them onto ONE
+     * Property — harmless for the Opportunity assertions here, but it would quietly make any
+     * future Property assertion in this section test the wrong record.
+     */
+    private static Opportunity convertWithAssetType(String dealType, String assetType, String company) {
+        Lead l = TestDataFactory.createLead(false);
+        l.Company = company;
+        l.Deal_Type__c = dealType;
+        l.Asset_Type__c = assetType;
+        l.Property_Address__c = assetType + ' Way, Austin TX';
+        insert l;
+
+        Database.LeadConvertResult res = convertOne(l);
+        return [
+            SELECT Id, Asset_Type__c, Property__c, RecordType.DeveloperName
+            FROM Opportunity WHERE Id = :res.getOpportunityId()
+        ];
+    }
+
+    @isTest
+    static void assetTypeCarriesFromTheLeadToTheOpportunity() {
+        Test.startTest();
+        Opportunity o = convertWithAssetType('Retail', 'Retail', 'Bayou Retail Partners');
+        Test.stopTest();
+
+        Assert.areEqual('Retail', o.Asset_Type__c,
+            'Opportunity.Asset_Type__c must carry Lead.Asset_Type__c. This is the column '
+            + 'OpportunityFunnelController reads for its asset-type breakdown; before this write '
+            + 'existed every email-born deal reported a NULL asset type there');
+        Assert.areEqual('Retail', o.RecordType.DeveloperName,
+            'Fixture sanity: a Retail deal type resolves the Retail record type, so the assertion '
+            + 'above is about the RETAIL record-type value subset');
+
+        Property__c p = [SELECT Asset_Type__c FROM Property__c WHERE Id = :o.Property__c];
+        Assert.areEqual('Retail', p.Asset_Type__c,
+            'and the pre-existing Property write is UNTOUCHED. The two writes are guarded by two '
+            + 'DIFFERENT caches (assetTypeValues = Property__c, opportunityAssetTypeValues = '
+            + 'Opportunity); swapping them would still pass on this value, which is why the '
+            + 'Hospitality and C-Store cases below exist');
+    }
+
+    /**
+     * 🔴 THE TEST THAT ACTUALLY PROVES GAP 1. 'Hospitality' and 'Medical Office' are the two
+     * values the Opportunity field and BOTH record types gained on 2026-08-31. Before that
+     * change this method could not go green by any code path: the value was refused at DML.
+     *
+     * Both record types are exercised, because the record-type picklist subsets are two separate
+     * XML blocks in two separate files and widening one is not widening the other. A single-record
+     * -type test would leave half the fix unproven — and this repo has a recorded incident
+     * (`disjoint-recordtype-picklist-subsets`) where exactly that assumption was wrong.
+     *
+     * ⚠ THE ASSET TYPE IS DELIBERATELY NOT THE DEAL TYPE. A Hospitality asset on a RETAIL deal and
+     * a Medical Office asset on a LAND deal are both legitimate, and pairing them the "obvious"
+     * way would make a record-type block that only carried its own namesake value look correct.
+     */
+    @isTest
+    static void widenedAssetTypesCarryOnBothRecordTypes() {
+        Test.startTest();
+        Opportunity retailDeal = convertWithAssetType(
+            'Retail', 'Hospitality', 'Gulf Coast Hospitality Group');
+        Opportunity landDeal = convertWithAssetType(
+            'Land', 'Medical Office', 'Westheimer Medical Holdings');
+        Test.stopTest();
+
+        Assert.areEqual('Retail', retailDeal.RecordType.DeveloperName, 'Fixture sanity: Retail record type');
+        Assert.areEqual('Hospitality', retailDeal.Asset_Type__c,
+            '🔴 A Hospitality Lead must land Hospitality on a RETAIL-typed Opportunity. A null here '
+            + 'means the value is missing from the FIELD value set (the describe guard dropped it '
+            + 'silently — the original Gap 1 symptom, returned). A DML failure here means the value '
+            + 'is missing from the RETAIL RECORD TYPE, which in production rolls back the entire '
+            + 'conversion stamp for every Lead in the chunk');
+
+        Assert.areEqual('Land', landDeal.RecordType.DeveloperName, 'Fixture sanity: Land record type');
+        Assert.areEqual('Medical Office', landDeal.Asset_Type__c,
+            'and the second widened value must land on the LAND-typed Opportunity. Same two failure '
+            + 'modes as above, against the other record-type file');
+    }
+
+    /**
+     * The guard's real job on this field. 'C-Store' is not an arbitrary bad string: it is a value
+     * that genuinely exists on Property__c.Asset_Type__c and genuinely does not exist on
+     * Opportunity.Asset_Type__c, so it is exactly what a future widening of Lead or Property
+     * without a matching widening of Opportunity would produce.
+     *
+     * The in-memory re-invoke is the same technique unknownPicklistValueIsDroppedNotThrown uses
+     * and for the same reason (see its header): restriction is enforced at DML, not at assignment,
+     * so no INSERTABLE Lead can carry a value the Lead picklist lacks.
+     */
+    @isTest
+    static void anAssetTypeMissingFromTheOpportunityFieldIsDroppedNotThrown() {
+        Lead l = TestDataFactory.createLead(false);
+        l.Company = 'C-Store Holdings LLC';
+        l.Deal_Type__c = 'Retail';
+        l.Property_Address__c = '77 Fuel Court, Houston TX';
+        insert l;
+        Database.LeadConvertResult res = convertOne(l);
+
+        Lead reRun = reReadForReRun(new Set<Id>{ l.Id })[0];
+        reRun.Asset_Type__c = 'C-Store';                // on Property__c, NOT on Opportunity
+        reRun.Listing_Broker_Name__c = 'Kevin Girard';  // an unguarded field on the same update
+
+        Test.startTest();
+        LeadConvertService.stampConvertedOpportunities(new List<Lead>{ reRun }, null);
+        Test.stopTest();
+
+        Opportunity o = [
+            SELECT Asset_Type__c, Listing_Broker_Name__c, RecordTypeId, Property__c
+            FROM Opportunity WHERE Id = :res.getOpportunityId()
+        ];
+        Assert.isNull(o.Asset_Type__c,
+            'A value the Opportunity field does not carry is DROPPED, never pushed. Deleting the '
+            + 'opportunityAssetTypeValues() guard fails this with a DmlException');
+        Assert.areEqual('Kevin Girard', o.Listing_Broker_Name__c,
+            'and — the actual point — the REST of the stamp still landed. `update updates` is '
+            + 'all-or-none, so an unguarded illegal value would have rolled this back too');
+        Assert.isNotNull(o.RecordTypeId, 'The structural record type survived');
+        Assert.isNotNull(o.Property__c, 'and the structural Property link');
     }
 
     // ═════════════════════════════════════════════════════════════════════════
@@ -1612,7 +1858,7 @@ private class LeadConvertServiceTest {
             SELECT Name, Property__c, Asking_Price__c, Guidance_Price_Low__c, Guidance_Price_High__c,
                    Guidance_Cap_Rate__c, Offer_Due_Date__c, Sale_Process__c, Parse_Confidence__c,
                    Deal_Room_Link__c, Listing_Broker_Name__c, Listing_Broker_Email__c,
-                   Listing_Status__c, Extraction_Score_Pct__c,
+                   Listing_Status__c, Extraction_Score_Pct__c, Asset_Type__c,
                    Fields_Captured_Count__c, Fields_Missing_Count__c
             FROM Opportunity WHERE Id = :res.getOpportunityId()
         ];
@@ -1627,6 +1873,13 @@ private class LeadConvertServiceTest {
         Assert.isNull(o.Listing_Broker_Name__c, 'and the listing broker');
         Assert.isNull(o.Listing_Broker_Email__c, 'and their email');
         Assert.isNull(o.Listing_Status__c, 'and the listing status');
+        // Gap 1 (2026-08-31): the null branch of the asset-type carry-over. `picklistValueOrNull`
+        // returns null for a blank source, so the conversion must succeed and leave the field
+        // empty rather than throw — the LLM-down shape, where nothing was extracted at all.
+        Assert.isNull(o.Asset_Type__c,
+            'and the asset type. A blank Lead.Asset_Type__c leaves the Opportunity blank and does '
+            + 'NOT throw — the fixture above sets it to null explicitly, so this assertion is the '
+            + 'null branch of the Gap 1 carry-over');
         // 🔴 NULL AND ZERO ARE DIFFERENT ANSWERS, AND THE CARRY-FORWARD MUST PRESERVE THE
         // DIFFERENCE. A not-scored Lead (the LLM-down path) means "there was nothing to score";
         // a 0 would claim the model ran and gave us none of the nine, which would put the most
@@ -1827,8 +2080,21 @@ private class LeadConvertServiceTest {
         Datetime firstSeenBase = Datetime.newInstance(
             Date.today().addDays(-1), Time.newInstance(12, 0, 0, 0));
         Set<Datetime> expectedFirstSeen = new Set<Datetime>();
+        Set<String> expectedAssetTypes = new Set<String>();
+        Integer blankDealTypes = 0;
         for (Integer i = 0; i < leads.size(); i++) {
-            leads[i].Deal_Type__c = Math.mod(i, 2) == 0 ? 'Land' : 'Retail';
+            // 🔴 THREE SLOTS, NOT TWO — 'Land', 'Retail' and BLANK (2026-08-31). The blank slot is
+            // the bulk half of the blank-deal-type default: the per-record proof lives in
+            // blankDealTypeDefaultsToRetailAndStillGetsARecordType, and this puts the default
+            // inside the loop it is actually applied in, across BOTH convertLead chunks. It is
+            // falsifying at volume by way of the "Record type resolved for every deal" assertion
+            // in assertBulkOpportunitiesAndProperties, which goes red for ~84 of the 251 deals
+            // against the pre-fix code. Cycling rather than a contiguous block is deliberate: a
+            // block of blanks could be satisfied by a chunk-level branch, a stride cannot.
+            leads[i].Deal_Type__c = DEAL_TYPES[Math.mod(i, DEAL_TYPES.size())];
+            if (String.isBlank(leads[i].Deal_Type__c)) {
+                blankDealTypes++;
+            }
             // A representative slice of the enriched field set, one field per target object plus
             // one guarded picklist, so the bulk path exercises all three write shapes.
             leads[i].Building_SF__c = 10000 + i;
@@ -1837,7 +2103,25 @@ private class LeadConvertServiceTest {
             leads[i].Offer_Due_Date__c = Date.today().addDays(30);
             leads[i].First_Seen_Date__c = firstSeenBase.addDays(-i);
             expectedFirstSeen.add(leads[i].First_Seen_Date__c);
+            // Gap 1 (2026-08-31). Cycling 8 asset types against the deal-type stride on a 251-row
+            // run walks EVERY (record type x asset type) pair — gcd(8, 3) = 1, so every deal type
+            // (including the BLANK one, which resolves to Retail) sees all eight values. That is
+            // the combination that matters: the value set lives on the field but the SUBSET lives
+            // per record type, and a value missing from ONE record-type block fails only for the
+            // deals that resolved to it. A fixture with one asset type could not see that at any
+            // volume. ⚠ The 3-slot deal-type cycle above is load-bearing for this claim — if it
+            // is ever changed to a length sharing a factor with 8, the pairs stop being walked
+            // and this comment stops being true.
+            leads[i].Asset_Type__c = ASSET_TYPES[Math.mod(i, ASSET_TYPES.size())];
+            expectedAssetTypes.add(leads[i].Asset_Type__c);
         }
+        Assert.isTrue(blankDealTypes > 0,
+            'Fixture sanity: at least one of the 251 Leads reaches conversion with NO deal type, '
+            + 'or the "Record type resolved for every deal" assertion could not detect the '
+            + 'blank-deal-type defect at volume. Counted ' + blankDealTypes);
+        Assert.areEqual(ASSET_TYPES.size(), expectedAssetTypes.size(),
+            'Fixture sanity: all ' + ASSET_TYPES.size() + ' asset types are represented across the '
+            + '251 Leads, or the set assertion below could not detect a dropped value');
         Assert.areEqual(BULK_N, expectedFirstSeen.size(),
             'Fixture sanity: 251 DISTINCT first-seen instants, or the cross-contamination check '
             + 'below could not detect anything');
@@ -1876,7 +2160,7 @@ private class LeadConvertServiceTest {
             oppIds.add(l.ConvertedOpportunityId);
             contactIds.add(l.ConvertedContactId);
         }
-        assertBulkOpportunitiesAndProperties(oppIds, expectedFirstSeen);
+        assertBulkOpportunitiesAndProperties(oppIds, expectedFirstSeen, expectedAssetTypes);
         assertBulkBrokerRoles(oppIds, contactIds);
     }
 
@@ -1884,33 +2168,49 @@ private class LeadConvertServiceTest {
      * 251 Opportunities carry the enriched deal fields; their 251 Properties carry the physical
      * ones.
      *
-     * @param oppIds            The converted Opportunities.
-     * @param expectedFirstSeen The 251 distinct instants stamped on the source Leads (WS2). The
-     *                          SET is compared rather than a per-record map because set equality
-     *                          already falsifies the failure mode that matters — one Lead's value
-     *                          landing on several deals collapses the set and fails on size.
+     * @param oppIds             The converted Opportunities.
+     * @param expectedFirstSeen  The 251 distinct instants stamped on the source Leads (WS2). The
+     *                           SET is compared rather than a per-record map because set equality
+     *                           already falsifies the failure mode that matters — one Lead's value
+     *                           landing on several deals collapses the set and fails on size.
+     * @param expectedAssetTypes The eight asset types cycled across the 251 Leads (Gap 1).
      */
     private static void assertBulkOpportunitiesAndProperties(
         Set<Id> oppIds,
-        Set<Datetime> expectedFirstSeen
+        Set<Datetime> expectedFirstSeen,
+        Set<String> expectedAssetTypes
     ) {
         List<Opportunity> converted = [
-            SELECT Id, Property__c, RecordType.DeveloperName, Lead_Approved_By__c,
-                   Asking_Price__c, Sale_Process__c, Offer_Due_Date__c,
-                   Broker_First_Seen__c, DPEG_First__c
+            SELECT Id, Property__c, RecordTypeId, RecordType.DeveloperName, Lead_Approved_By__c,
+                   Asking_Price__c, Sale_Process__c, Offer_Due_Date__c, Asset_Type__c,
+                   Deal_Type__c, Broker_First_Seen__c, DPEG_First__c
             FROM Opportunity WHERE Id IN :oppIds
             WITH SYSTEM_MODE
         ];
         System.assertEquals(BULK_N, converted.size(), 'Every converted lead produced its own Opportunity');
         Set<Datetime> actualFirstSeen = new Set<Datetime>();
+        Set<String> actualAssetTypes = new Set<String>();
         Set<Id> propertyIds = new Set<Id>();
         for (Opportunity o : converted) {
             actualFirstSeen.add(o.Broker_First_Seen__c);
+            actualAssetTypes.add(o.Asset_Type__c);
             Assert.areEqual(UserInfo.getUserId(), o.DPEG_First__c,
                 'Every deal carries its Lead\'s DPEG First. All 251 fixture Leads are owned by '
                 + 'the running user, so Lead_Intake_Stamp stamped that Id on each of them');
             System.assertNotEquals(null, o.Property__c, 'Every converted deal gets a linked Property');
+            // 🔴 THE BULK FALSIFIER FOR THE BLANK-DEAL-TYPE DEFAULT (2026-08-31). A third of the
+            // 251 fixture Leads now reach conversion with NO deal type; before the default they
+            // produced Opportunities with a null RecordTypeId, so these two lines go red for ~84
+            // deals against the pre-fix code. RecordTypeId is asserted alongside DeveloperName
+            // because the Id is what the Path and the record-type picklist subsets key on.
             System.assertNotEquals(null, o.RecordType.DeveloperName, 'Record type resolved for every deal');
+            Assert.isNotNull(o.RecordTypeId,
+                'and every deal carries the record-type Id itself — including the ones whose Lead '
+                + 'stated no deal type, which is the 2026-08-31 defect');
+            Assert.isNotNull(o.Deal_Type__c,
+                'and a non-null Deal Type, which is the field Opportunity_Record_Page gates its '
+                + 'Development and Construction tabs on. A null matches neither rule, so the '
+                + 'feasibility section vanishes from the page');
             System.assertEquals(UserInfo.getUserId(), o.Lead_Approved_By__c,
                 'Converting user stamped on every deal');
             Assert.isNotNull(o.Asking_Price__c, 'Every deal carries the guidance price as its asking price');
@@ -1932,6 +2232,20 @@ private class LeadConvertServiceTest {
             'and they are the SAME 251 instants the Leads carried, not merely 251 distinct ones. '
             + 'Set equality also proves nothing was truncated to a date on the way across — both '
             + 'fields are DateTime as of WS2');
+
+        // 🔴 GAP 1 AT VOLUME, AND THE SHARPEST FORM THIS CLAIM HAS. Set equality over the whole
+        // 251 rows says: every one of the eight values reached an Opportunity, across BOTH record
+        // types and across BOTH convertLead chunks. A value missing from one record-type block
+        // does not merely go null here — it throws INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST and
+        // rolls the chunk back, so this test fails LOUDLY on the exact production failure mode
+        // §1.5 of the design describes. A null anywhere in the set means the describe guard
+        // dropped a value, i.e. the FIELD and the Lead drifted apart again.
+        Assert.areEqual(expectedAssetTypes, actualAssetTypes,
+            'All eight asset types must survive 251 conversions across two record types and two '
+            + 'convertLead chunks. A missing value = that record type never gained it; a null in '
+            + 'the set = the field value set drifted from Lead\'s and the guard dropped it');
+        Assert.isFalse(actualAssetTypes.contains(null),
+            'and no deal came out with a NULL asset type, which is the original Gap 1 symptom');
 
         List<Property__c> properties = [
             SELECT Id, Square_Footage__c, Unit_Count__c, Lot_Size__c

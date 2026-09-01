@@ -728,7 +728,13 @@ private class RecordStageAdvanceServiceTest {
     }
 
     @isTest
-    static void dispositionNdaWalksPrepareToSigned() {
+    static void dispositionNdaWalksApprovedToSigned() {
+        // 🔴 READ THE 2026-08-31 BLOCK AT THE FOOT OF THIS COMMENT FIRST. Every paragraph between
+        // here and it is RETAINED HISTORY: this method was named ...WalksPrepareToSigned and it
+        // seeded 'Prepare' until that day, when the Prepare hop was retired in favour of
+        // NDA_Issue_Approval. The paragraphs are kept because the record-type history they record
+        // is still the reason this fixture is shaped the way it is.
+        //
         // The disposition sequence starts on a value the acquisition record type does not carry at
         // all ('Prepare'). If the service fell back to the acquisition map, the very first hop
         // would be refused with "no next step available from the Prepare stage" — so this walk
@@ -763,7 +769,34 @@ private class RecordStageAdvanceServiceTest {
         // sequence keeps 'Sent' MID-sequence and 'Signed' TERMINAL, which is now the exact mirror of
         // the acquisition map. Anyone who "reconciles" the two maps — in either direction — reds
         // this walk or the acquisition one, never neither.
-        Id ndaId = insertNdaOnRecordType(RT_DISPOSITION_NDA, 'Prepare').Id;
+        // ═════════════════════════════════════════════════════════════════════════════════════
+        // 🔴 INVERTED 2026-08-31 (Tranche 3, Gate 1 decision D-7). THE WALK NOW STARTS AT
+        //    'Approved', AND THE 'Prepare' HOP IS PINNED AS A **REFUSAL** BY THE SIBLING TEST
+        //    BELOW. EVERY PARAGRAPH ABOVE IS RETAINED AS HISTORY AND IS NO LONGER CURRENT.
+        // ═════════════════════════════════════════════════════════════════════════════════════
+        // The retired assertion read, verbatim:
+        //
+        //   > new List<String>{ 'NDA moved to Approved.', 'NDA moved to Sent.',
+        //   >                   'NDA moved to Signed.',
+        //   >                   'BLOCKED: There is no next step available from the Signed stage.' }
+        //
+        // 🔴 IT WAS INVERTED, NOT DELETED, AND THAT IS THE WHOLE POINT. `NDA_Issue_Approval` now
+        // owns the Prepare -> Approved transition; the map hop and the Move_to_Approved quick
+        // action that performed it in one click were held by the ANALYST persona
+        // (Disposition_Deal_Actions is on DPEG_Disposition_Edit and is FORBIDDEN on
+        // DPEG_Disposition_View), so leaving them in place would have shipped an approval anyone
+        // could walk around. A DELETED test would let that hop return silently — nothing else in
+        // this suite asserts on the ABSENCE of a map entry. See
+        // dispositionNdaRefusesPrepareAndNamesTheApproval.
+        //
+        // ⚠ THIS METHOD KEEPS ITS SECOND JOB UNCHANGED — the shared-'Sent' divergence guard
+        // described three paragraphs up. 'Sent' is still MID-sequence here and TERMINAL on the
+        // acquisition map; 'Signed' is still TERMINAL here and a hop there. Seeding at 'Approved'
+        // rather than 'Prepare' costs that guard nothing: both divergent values are still walked.
+        // ⚠ AND THE FIXTURE STILL EXERCISES THE RECORD-TYPE RESOLUTION IT WAS BUILT FOR, because
+        // 'Approved' is ALSO absent from the Acquisition_NDA value set (Pending | Received |
+        // Signed). A fall-back to the acquisition map would still refuse on the very first hop.
+        Id ndaId = insertNdaOnRecordType(RT_DISPOSITION_NDA, 'Approved').Id;
 
         Test.startTest();
         List<String> messages = advanceUntilBlocked(ndaId);
@@ -771,22 +804,184 @@ private class RecordStageAdvanceServiceTest {
 
         Assert.areEqual(
             new List<String>{
-                'NDA moved to Approved.',
                 'NDA moved to Sent.',
                 'NDA moved to Signed.',
                 'BLOCKED: There is no next step available from the Signed stage.'
             },
             messages,
-            'The Disposition_NDA map must be exactly Prepare -> Approved -> Sent -> Signed '
+            'The Disposition_NDA map must be exactly Approved -> Sent -> Signed as of 2026-08-31 '
             + '(⚠ it was Not Sent -> Sent -> Signed until 2026-08-25, then briefly '
-            + 'Prepare -> Review -> Approved -> Sent -> Signed on that same day). '
-            + 'There is no "Review" step — the user removed that value from the record type in '
-            + 'Setup, and because Status__c is restricted, a map that still names it makes the '
-            + 'FIRST Advance click on every new NDA throw INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST. '
-            + 'There is no "Received" step either — DPEG issues the NDA on a sale, so it never '
-            + 'comes back TO us as a separate milestone');
+            + 'Prepare -> Review -> Approved -> Sent -> Signed the same day, then '
+            + 'Prepare -> Approved -> Sent -> Signed until 2026-08-31). '
+            + 'A red here carrying a leading "NDA moved to Approved." line means the '
+            + 'Prepare => Approved hop is BACK and NDA_Issue_Approval has a one-click bypass '
+            + 'again — held by the analyst persona, which is the defect D-7 retired. '
+            + 'There is no "Review" step and no "Received" step, for the reasons above');
         Assert.areEqual('Signed', [SELECT Status__c FROM NDA__c WHERE Id = :ndaId].Status__c,
             'The walk must leave the NDA at its terminal status');
+    }
+
+    /**
+     * 🔴 THE REFUSAL THAT REPLACED A HOP. A disposition NDA at 'Prepare' — which is where EVERY new
+     * one is seeded by `DispositionStageEntryService` — must NOT advance from this button, and the
+     * refusal must NAME the approval that owns the transition.
+     *
+     * ⚠ THIS IS AN ABSENCE PIN, SO IT CARRIES ITS PRESENCE CONTROL IN THE SAME METHOD. "advance()
+     * refused" would also be satisfied by a service that refused EVERYTHING on this record type —
+     * by a broken record-type resolution, a broken gate, or a config lookup that threw. The status
+     * assertion (the row is still at 'Prepare', unwritten) plus the WORDING assertion (the specific
+     * hint, not the generic sentence) are what distinguish "the hop is retired" from "the button is
+     * broken". The forward half of the sequence is proved by the walk test above, which is the
+     * other half of the control.
+     *
+     * ⚠ THE WORDING IS ASSERTED, NOT JUST THE REFUSAL, and that is deliberate. If
+     * NO_NEXT_STEP_HINTS['NDA|Disposition_NDA|Prepare'] were dropped, this still refuses — with
+     * "There is no next step available from the Prepare stage", which is indistinguishable from a
+     * regression to the user who reads it and is precisely the symptom the 2026-08-25 hop was added
+     * to cure.
+     *
+     * ⚠ THE KEY IS THREE-SEGMENT AS OF 2026-08-31 and this method is the DISPOSITION half of the
+     * pair that pins it. `masterTypedNdaAtPrepareGetsNoDispositionHint` below is the other half and
+     * is the one that fails if the key is narrowed back to `NDA|Prepare`. Neither test alone
+     * distinguishes the two key shapes — read them together.
+     */
+    @isTest
+    static void dispositionNdaRefusesPrepareAndNamesTheApproval() {
+        Id ndaId = insertNdaOnRecordType(RT_DISPOSITION_NDA, 'Prepare').Id;
+
+        Test.startTest();
+        List<String> messages = advanceUntilBlocked(ndaId);
+        Test.stopTest();
+
+        Assert.areEqual(1, messages.size(),
+            'A disposition NDA at Prepare must refuse on the FIRST click and write nothing. More '
+            + 'than one message means a hop out of Prepare exists again: ' + messages);
+        Assert.areEqual(
+            'BLOCKED: A disposition NDA moves to Approved when the NDA Issue approval is approved, '
+            + 'not from this action. Use Submit for Approval.',
+            messages[0],
+            'The refusal must NAME NDA_Issue_Approval as the owner of the Prepare hop. The generic '
+            + '"There is no next step available from the Prepare stage" here means '
+            + 'NO_NEXT_STEP_HINTS lost its NDA|Disposition_NDA|Prepare entry — every new '
+            + 'disposition NDA then '
+            + 'refuses its first Advance click with wording that reads exactly like a defect');
+
+        Assert.areEqual('Prepare', [SELECT Status__c FROM NDA__c WHERE Id = :ndaId].Status__c,
+            'PRESENCE CONTROL for the absence pin above: the refusal must leave the row UNWRITTEN '
+            + 'at Prepare. A row that moved anyway would mean the map hop is back and only the '
+            + 'message changed');
+    }
+
+    /**
+     * 🔴 THE OTHER HALF OF THE HINT-KEY PAIR, AND THE ONLY TEST THAT CAN TELL A TWO-SEGMENT
+     * `NDA|Prepare` KEY FROM A THREE-SEGMENT `NDA|Disposition_NDA|Prepare` ONE.
+     *
+     * The hint above names `NDA_Issue_Approval`, whose entry criterion is
+     * `Is_Disposition_NDA__c = True`. A MASTER-typed NDA is the third record-type state and it does
+     * NOT satisfy that criterion — but `sequenceKeyFor` routes Master to `config.defaultTypeKey`,
+     * which on NDA__c is the ACQUISITION sequence, and the Master value set is the object's full
+     * unrestricted one, so a Master row CAN hold 'Prepare'. Under the two-segment key such a row
+     * matched the disposition hint and was instructed to submit an approval that cannot possibly
+     * accept it. This test pins that it no longer does.
+     *
+     * ⚠ THE STATE IS REAL, NOT HYPOTHETICAL. `DispositionStageEntryService` stamps the disposition
+     * record type behind an `isActive()` guard, so before post-deploy gate T-A1 its auto-created
+     * NDAs land on Master at 'Prepare' — the exact row this test builds.
+     * `DispositionStageEntryServiceTest.autoCreatedNdaCarriesTheDispositionRecordType` describes the
+     * same state from the other side.
+     *
+     * ⚠ WHAT IS ASSERTED IS THE GENERIC WORDING, NOT MERELY "not the disposition hint". A test that
+     * only asserted inequality would pass if the hint were replaced by any other wrong string. The
+     * assertion below is also the PRESENCE CONTROL for `advance()` still being reached at all — a
+     * refusal thrown earlier (unsupported record type, no stage) carries a different message.
+     */
+    @isTest
+    static void masterTypedNdaAtPrepareGetsNoDispositionHint() {
+        Id ndaId = insertMasterTypedNda('Prepare').Id;
+
+        Test.startTest();
+        List<String> messages = advanceUntilBlocked(ndaId);
+        Test.stopTest();
+
+        Assert.areEqual(1, messages.size(),
+            'A Master-typed NDA falls back to the ACQUISITION sequence, which has no hop out of '
+            + 'Prepare, so it must refuse on the first click: ' + messages);
+        Assert.areEqual(
+            'BLOCKED: There is no next step available from the Prepare stage.',
+            messages[0],
+            'A Master-typed NDA must get the GENERIC refusal. Reading "A disposition NDA moves to '
+            + 'Approved when the NDA Issue approval is approved" here means the hint key was '
+            + 'narrowed back to the two-segment NDA|Prepare — under which this row is told to '
+            + 'submit NDA_Issue_Approval, whose Is_Disposition_NDA__c = True entry criterion is '
+            + 'FALSE on Master, so the instruction cannot be followed');
+    }
+
+    /**
+     * An NDA on NO record type — the Master state, which is neither of the two named ones and is
+     * where every row sat before post-deploy gate T-A1.
+     *
+     * ⚠ Built from the acquisition fixture and then UNSTAMPED, rather than by a factory overload,
+     * because `TestDataFactory.createNdas` always resolves and stamps a named type. The read-back
+     * is a PRECONDITION and not decoration: a default record type on the running user's profile
+     * would stamp one silently, and every Master-fallback assertion would be vacuous rather than
+     * red.
+     *
+     * ═══════════════════════════════════════════════════════════════════════════════════════════
+     * 🔴 IT IS HAND-BUILT RATHER THAN FACTORY-BUILT, AND THAT IS THE WHOLE POINT OF THIS HELPER.
+     *    AN EXPLICIT `RecordTypeId = null` IS **NOT** THE SAME AS OMITTING THE FIELD — IT THROWS.
+     * ═══════════════════════════════════════════════════════════════════════════════════════════
+     * This helper first read `TestDataFactory.createNdas(...)` and then assigned
+     * `nda.RecordTypeId = null` over the stamp. Every fixture built that way FAILED:
+     *
+     *     System.DmlException: INVALID_CROSS_REFERENCE_KEY,
+     *     Record Type ID: this ID value isn't valid for the user: : [RecordTypeId]
+     *
+     * Assigning null over a POPULATED field leaves it in the row's populated-field map, so the DML
+     * sends `RecordTypeId` explicitly blank and the platform rejects the blank. Omitting the field
+     * sends nothing and the platform applies the profile's default record-type mapping — which on
+     * this org is **Master** for both `NDA__c` and `Disposition__c`.
+     *
+     * MEASURED on usman-dpeg at API 67.0 on 2026-08-31, savepoint-probed and rolled back, both
+     * arms in one transaction so the difference cannot be attributed to anything else:
+     *
+     *   RecordTypeId never touched          -> ACCEPTED, reads back RecordTypeId = null,
+     *                                          Status__c = 'Prepare' (a Disposition_NDA-only value
+     *                                          that a MASTER row can legitimately hold)
+     *   RecordTypeId set, then set to null  -> REFUSED, the exact message above
+     *
+     * ⚠ SO THE FACTORY CANNOT BE USED HERE AT ALL. `createNdas` always populates `RecordTypeId`
+     * when the type resolves, and Apex offers no way to UN-populate a field once assigned. Every
+     * other fixture in this class is factory-built and must stay that way; this one, and only this
+     * one, hand-builds the row. Keep the field list in step with `TestDataFactory.createNdas`.
+     *
+     * ⚠ SAME TRAP AS `OwnerId`, which this repo has already measured: an explicit `OwnerId = null`
+     * throws `INVALID_CROSS_REFERENCE_KEY, Owner ID: owner cannot be blank`. Id-typed system
+     * fields reject a blank they are perfectly happy to be left out of.
+     */
+    private static NDA__c insertMasterTypedNda(String status) {
+        // 🔴 DO NOT set RecordTypeId here, and do NOT route this through TestDataFactory. Read the
+        // block above before "tidying" this into a factory call — the tidy version cannot insert.
+        NDA__c nda = new NDA__c(
+            Counterparty_Name__c = RT_FIXTURE_TAG + ' Master',
+            Method__c = 'DocuSign',
+            Status__c = status,
+            Date_Sent__c = Date.today(),
+            Is_Non_Expiring__c = false,
+            NDA_Expiry_Date__c = Date.today().addYears(1)
+        );
+        insert nda;
+
+        NDA__c stored = [SELECT Id, Status__c, RecordTypeId FROM NDA__c WHERE Id = :nda.Id];
+        Assert.isNull(stored.RecordTypeId,
+            'PRECONDITION FAILED, not a service defect: the fixture was meant to be MASTER-typed '
+            + 'and came back on record type ' + stored.RecordTypeId + '. That means the profile\'s '
+            + 'default record-type mapping is no longer Master, which would make every '
+            + 'Master-fallback assertion in this class vacuous rather than red.');
+        Assert.areEqual(status, stored.Status__c,
+            'PRECONDITION FAILED: the Master fixture did not start at "' + status + '". A Master '
+            + 'row carries the object\'s FULL value set, so this failing means a before-save '
+            + 'automation rewrote the status.');
+        return stored;
     }
 
     @isTest
@@ -814,7 +1009,7 @@ private class RecordStageAdvanceServiceTest {
         // acquisition fixture — insertNdaOnRecordType(RT_ACQUISITION_NDA, 'Sent') — no longer
         // FAILS AN ASSERTION, IT FAILS THE INSERT, with INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST.
         // That is a fixture failure wearing a service failure's clothes (the same trap
-        // dispositionNdaWalksPrepareToSigned records for 'Not Sent' on 2026-08-25), so the
+        // dispositionNdaWalksApprovedToSigned records for 'Not Sent' on 2026-08-25), so the
         // acquisition half is rewritten to assert the DML refusal DIRECTLY and deliberately does
         // not go through the shared helper.
         //
@@ -2230,8 +2425,23 @@ private class RecordStageAdvanceServiceTest {
     // this service.
     // ═════════════════════════════════════════════════════════════════════════
 
+    /**
+     * 🔴 THE ASSET ARGUMENT WAS `null` UNTIL 2026-08-31 (Tranche 1 item 8). It is now the SHARED,
+     * lazily-built `TestDataFactory.defaultPropertyAsset()` — ONE asset for the whole run, never one
+     * per fixture — because `Disposition__c.Property_Asset__c` is gaining a rule requiring it.
+     * ⚠ THIS SITE IS `doInsert = false` AND STILL BREAKS, which is the trap worth naming: the
+     * method inserts on the very next line. A grep for `createDisposition(null, …, true)` would
+     * have missed it.
+     * ⚠ The mechanism is a VALIDATION RULE rather than `required = true` (design decision D-6 — a
+     * required lookup is forced onto `deleteConstraint Restrict`). A VR fires on DML just as a
+     * required field does, so this repair is needed under either mechanism.
+     * ⚠ Nothing in this class reads the asset; the null was incidental. And the call is safe here
+     * because every caller sits above `Test.startTest()` — `defaultPropertyAsset()` performs two
+     * inserts on first use and must never be evaluated inside a governor bracket.
+     */
     private static Disposition__c insertDispositionOnRecordType(String recordTypeDeveloperName, String stage) {
-        Disposition__c d = TestDataFactory.createDisposition(null, recordTypeDeveloperName, false);
+        Disposition__c d = TestDataFactory.createDisposition(
+            TestDataFactory.defaultPropertyAsset().Id, recordTypeDeveloperName, false);
         d.Disposition_Stage__c = stage;
         insert d;
         return d;

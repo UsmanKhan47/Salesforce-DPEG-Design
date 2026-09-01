@@ -1,41 +1,69 @@
 <template>
     <div class="tg">
-        <template if:false={isEmpty}>
+        <!-- Four mutually exclusive states. An empty checklist is VISIBLY empty; it never
+             renders as blank space that reads like a successful load of nothing. -->
+
+        <!-- 1. The model discriminator (Transaction__c.Checklist_Fanned_Out__c) could not be
+                read. NEITHER model is rendered — a migrated deal still has its old Task rows,
+                so guessing legacy would show a complete, plausible, silently stale checklist. -->
+        <template if:true={hasModelError}>
+            <div class="tg-error" role="alert">
+                <lightning-icon icon-name="utility:error" size="x-small" variant="error"></lightning-icon>
+                <span>{modelErrorMessage}</span>
+            </div>
+        </template>
+
+        <!-- 2. The model is known but its data failed to load. -->
+        <template if:true={hasDataError}>
+            <div class="tg-error" role="alert">
+                <lightning-icon icon-name="utility:error" size="x-small" variant="error"></lightning-icon>
+                <span>{dataErrorMessage}</span>
+            </div>
+        </template>
+
+        <!-- 3. Genuinely empty, with a message that names which model produced the emptiness. -->
+        <template if:true={showEmpty}>
+            <div class="tg-empty">{emptyMessage}</div>
+        </template>
+
+        <!-- 4. Content. -->
+        <template if:true={showContent}>
             <!-- Phase cards (hidden when this instance is pinned to a phase via its tab) -->
             <template if:true={showPhaseButtons}>
-            <div class="tg-phases">
-                <template for:each={phases} for:item="p">
-                    <button key={p.key} class={p.cls} data-phase={p.key} onclick={selectPhase} disabled={p.disabled}>
-                        <span class="tg-phase-top">
-                            <span class="tg-phase-ico">
-                                <lightning-icon icon-name={p.icon} size="x-small"></lightning-icon>
+                <div class="tg-phases">
+                    <template for:each={phases} for:item="p">
+                        <button key={p.key} class={p.cls} data-phase={p.key} onclick={selectPhase}
+                            disabled={p.disabled} type="button" aria-pressed={p.selected}>
+                            <span class="tg-phase-top">
+                                <span class="tg-phase-ico">
+                                    <lightning-icon icon-name={p.icon} size="x-small"></lightning-icon>
+                                </span>
+                                <span class="tg-phase-name">{p.name}</span>
+                                <template if:true={p.done}>
+                                    <lightning-icon icon-name="utility:check" size="xx-small"
+                                        class="tg-phase-check"></lightning-icon>
+                                </template>
                             </span>
-                            <span class="tg-phase-name">{p.name}</span>
-                            <template if:true={p.done}>
-                                <lightning-icon icon-name="utility:check" size="xx-small"
-                                    class="tg-phase-check"></lightning-icon>
-                            </template>
-                        </span>
-                        <span class="tg-phase-stats">
-                            <span class="tg-phase-count">{p.countLabel}</span>
-                            <span class="tg-phase-pct">{p.pctLabel}</span>
-                        </span>
-                        <span class="tg-phase-bar"><span class="tg-phase-fill" style={p.barStyle}></span></span>
-                    </button>
-                </template>
-            </div>
+                            <span class="tg-phase-stats">
+                                <span class="tg-phase-count">{p.countLabel}</span>
+                                <span class="tg-phase-pct">{p.pctLabel}</span>
+                            </span>
+                            <span class="tg-phase-bar"><span class={p.barClass} style={p.barStyle}></span></span>
+                        </button>
+                    </template>
+                </div>
             </template>
 
             <template if:true={phaseEmpty}>
-                <div class="tg-empty">No tasks in this phase yet.</div>
+                <div class="tg-empty">No checklist items in this phase yet.</div>
             </template>
 
-            <!-- Group tabs (for the selected phase) above the full-width task list -->
+            <!-- Group tabs (for the selected phase) above the full-width item list -->
             <div class="tg-pane" if:false={phaseEmpty}>
                 <div class="tg-groups">
                     <template for:each={railItems} for:item="s">
-                        <button key={s.key} class={s.itemClass} data-key={s.key} onclick={select}>
-                            <span class="tg-ring" style={s.ringStyle}>
+                        <button key={s.key} class={s.itemClass} data-key={s.key} onclick={select} type="button">
+                            <span class={s.ringClass} style={s.ringStyle}>
                                 <span class="tg-ring-inner">{s.letter}</span>
                             </span>
                             <span class="tg-gchip-body">
@@ -54,7 +82,7 @@
 
                 <div class="tg-detail">
                     <div class="tg-detail-head">
-                        <span class="tg-badge tg-badge--lg" style={current.badgeStyle}>{current.letter}</span>
+                        <span class={current.badgeClass}>{current.letter}</span>
                         <div class="tg-detail-titles">
                             <div class="tg-detail-name">
                                 <span>{current.name}</span>
@@ -66,18 +94,28 @@
                             </div>
                         </div>
                     </div>
-                    <div class="tg-detail-track"><div class="tg-bar" style={current.barStyle}></div></div>
+                    <div class="tg-detail-track"><div class={current.barClass} style={current.barStyle}></div></div>
                     <ul class="tg-tasks">
                         <template for:each={current.rows} for:item="r">
                             <li key={r.id} class={r.rowClass}>
-                                <input type="checkbox" class="tg-check" checked={r.done} disabled={r.done}
+                                <input type="checkbox" class="tg-check" checked={r.done} disabled={r.disabled}
                                     data-id={r.id} data-wire={r.wire} data-subject={r.subject}
-                                    onchange={handleCheck} />
+                                    aria-label={r.subject} onchange={handleCheck} />
                                 <span class="tg-subject">{r.subject}</span>
                                 <template if:true={r.showCritical}>
                                     <span class="tg-flag" title="Critical control — verify before proceeding">
                                         <lightning-icon icon-name="utility:shield" size="xx-small"
                                             class="tg-flag-icon"></lightning-icon>Critical
+                                    </span>
+                                </template>
+                                <!-- Advisory only. The enforcement is the before-update trigger plus the
+                                     Prerequisite_Must_Be_Met_To_Complete validation rule; this pill just
+                                     tells the truth BEFORE the user types a comment and gets refused. -->
+                                <template if:true={r.blocked}>
+                                    <span class="tg-blocked"
+                                        title="An earlier step must be completed first. This is the wire-fraud prerequisite control.">
+                                        <lightning-icon icon-name="utility:lock" size="xx-small"
+                                            class="tg-blocked-icon"></lightning-icon>Blocked
                                     </span>
                                 </template>
                                 <template if:true={r.verified}>
@@ -89,7 +127,7 @@
                                 <span class="tg-meta">{r.meta}</span>
                                 <template if:true={r.hasDetails}>
                                     <button class="tg-view-btn" data-id={r.id} onclick={viewTask}
-                                        title="View saved details">View</button>
+                                        type="button" title="View saved details">View</button>
                                 </template>
                             </li>
                         </template>
@@ -97,36 +135,26 @@
                 </div>
             </div>
         </template>
-
-        <template if:true={hasWireError}>
-            <div class="tg-error" role="alert">
-                <lightning-icon icon-name="utility:error" size="x-small" variant="error"></lightning-icon>
-                <span>{wireErrorMessage}</span>
-            </div>
-        </template>
-
-        <template if:true={showEmpty}>
-            <div class="tg-empty">No tasks yet. Set the Contract Executed Date to generate the checklist.</div>
-        </template>
     </div>
 
     <!-- Wire-fraud verification modal (DPEG brief Section 06) -->
     <template if:true={showWireModal}>
-        <section role="dialog" tabindex="-1" aria-modal="true" class="slds-modal slds-fade-in-open tg-modal">
+        <section role="dialog" tabindex="-1" aria-modal="true" aria-labelledby="tg-wire-heading"
+            class="slds-modal slds-fade-in-open tg-modal tg-modal--wire">
             <div class="slds-modal__container">
                 <header class="slds-modal__header">
                     <button class="slds-button slds-button_icon slds-modal__close"
-                        title="Close" onclick={cancelWire}>
+                        title="Close" type="button" onclick={cancelWire}>
                         <lightning-icon icon-name="utility:close" size="small" variant="inverse"></lightning-icon>
                     </button>
-                    <h2 class="slds-modal__title slds-hyphenate">Complete Wire Verification</h2>
+                    <h2 id="tg-wire-heading" class="slds-modal__title slds-hyphenate">Complete Wire Verification</h2>
                     <p class="tg-modal-sub">{wireSubject}</p>
                 </header>
                 <div class="slds-modal__content slds-p-around_medium">
                     <div class="tg-verify-banner">
                         <lightning-icon icon-name="utility:shield" size="x-small" class="tg-flag-icon"></lightning-icon>
                         <span>Anti-fraud control: call the title company / lender on an independently looked-up number
-                            and verify every digit by phone before closing this task.</span>
+                            and verify every digit by phone before closing this item.</span>
                     </div>
                     <lightning-input type="text" label="Confirmed by (name)" value={wireVerifiedBy}
                         onchange={handleVerifiedBy} required field-level-help="Person who verbally confirmed the wiring instructions">
@@ -139,14 +167,15 @@
                         onchange={handleWireComments} class="tg-notes-input slds-m-top_small"
                         placeholder="Add comments for this verification…">
                     </lightning-textarea>
-                    <template if:true={wireError}>
-                        <p class="tg-modal-error">{wireError}</p>
+                    <template if:true={hasWireError}>
+                        <p class="tg-modal-error" role="alert">{wireError}</p>
                     </template>
-                    <p class="tg-modal-note">Your comments and a verification note will be saved to this task automatically.</p>
+                    <p class="tg-modal-note">Your comments and a verification note will be saved to this item automatically.</p>
                 </div>
                 <footer class="slds-modal__footer">
-                    <button class="slds-button slds-button_neutral" onclick={cancelWire}>Cancel</button>
-                    <button class="slds-button slds-button_brand" onclick={submitWire} disabled={wireSaveDisabled}>
+                    <button class="slds-button slds-button_neutral" type="button" onclick={cancelWire}>Cancel</button>
+                    <button class="slds-button slds-button_brand" type="button" onclick={submitWire}
+                        disabled={wireSaveDisabled}>
                         Mark Verified &amp; Complete
                     </button>
                 </footer>
@@ -158,25 +187,26 @@
     <!-- Confirm-complete dialog -->
     <template if:true={showConfirmModal}>
         <section role="dialog" tabindex="-1" aria-modal="true" aria-labelledby="tg-confirm-heading"
-            class="slds-modal slds-fade-in-open tg-modal">
+            class="slds-modal slds-fade-in-open tg-modal tg-modal--confirm">
             <div class="slds-modal__container">
                 <header class="slds-modal__header">
                     <button class="slds-button slds-button_icon slds-modal__close"
-                        title="Close" onclick={cancelConfirm}>
+                        title="Close" type="button" onclick={cancelConfirm}>
                         <lightning-icon icon-name="utility:close" size="small" variant="inverse"></lightning-icon>
                     </button>
-                    <h2 id="tg-confirm-heading" class="slds-modal__title slds-hyphenate">Complete Task?</h2>
+                    <h2 id="tg-confirm-heading" class="slds-modal__title slds-hyphenate">Complete Item?</h2>
                 </header>
                 <div class="slds-modal__content slds-p-around_medium">
                     <p class="tg-confirm-subject">{confirmSubject}</p>
                     <lightning-textarea label="Comments" value={confirmNotes}
                         onchange={handleConfirmNotes} class="tg-notes-input slds-m-top_small"
-                        placeholder="Add comments for this task…">
+                        placeholder="Add comments for this item…">
                     </lightning-textarea>
                 </div>
                 <footer class="slds-modal__footer">
-                    <button class="slds-button slds-button_neutral" onclick={cancelConfirm}>Cancel</button>
-                    <button class="slds-button slds-button_brand" onclick={confirmComplete}>Confirm</button>
+                    <button class="slds-button slds-button_neutral" type="button" onclick={cancelConfirm}>Cancel</button>
+                    <button class="slds-button slds-button_brand" type="button" onclick={confirmComplete}
+                        disabled={confirmSaveDisabled}>Confirm</button>
                 </footer>
             </div>
         </section>
@@ -186,14 +216,14 @@
     <!-- View-details dialog (read-only) -->
     <template if:true={showViewModal}>
         <section role="dialog" tabindex="-1" aria-modal="true" aria-labelledby="tg-view-heading"
-            class="slds-modal slds-fade-in-open tg-modal">
+            class="slds-modal slds-fade-in-open tg-modal tg-modal--view">
             <div class="slds-modal__container">
                 <header class="slds-modal__header">
                     <button class="slds-button slds-button_icon slds-modal__close"
-                        title="Close" onclick={closeView}>
+                        title="Close" type="button" onclick={closeView}>
                         <lightning-icon icon-name="utility:close" size="small" variant="inverse"></lightning-icon>
                     </button>
-                    <h2 id="tg-view-heading" class="slds-modal__title slds-hyphenate">Task Details</h2>
+                    <h2 id="tg-view-heading" class="slds-modal__title slds-hyphenate">Item Details</h2>
                     <p class="tg-modal-sub">{viewData.subject}</p>
                 </header>
                 <div class="slds-modal__content slds-p-around_medium">
@@ -216,11 +246,11 @@
                         <p class="tg-view-notes">{viewData.notes}</p>
                     </template>
                     <template if:false={viewData.hasAny}>
-                        <p class="tg-modal-note">No additional details were recorded for this task.</p>
+                        <p class="tg-modal-note">No additional details were recorded for this item.</p>
                     </template>
                 </div>
                 <footer class="slds-modal__footer">
-                    <button class="slds-button slds-button_brand" onclick={closeView}>Close</button>
+                    <button class="slds-button slds-button_brand" type="button" onclick={closeView}>Close</button>
                 </footer>
             </div>
         </section>

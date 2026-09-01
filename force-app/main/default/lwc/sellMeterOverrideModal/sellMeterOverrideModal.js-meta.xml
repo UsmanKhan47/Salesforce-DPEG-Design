@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<LightningComponentBundle xmlns="http://soap.sforce.com/2006/04/metadata">
+    <apiVersion>67.0</apiVersion>
+    <!-- isExposed=false: a LightningModal is opened from JS by c/sellMeterList,
+         never dropped on a page, so it needs no target and must not appear in
+         App Builder. Same shape as c/sellMeterInitiateModal. -->
+    <isExposed>false</isExposed>
+    <masterLabel>Sell Meter Override</masterLabel>
+    <!-- ⚠ KEEP THIS UNDER 255 CHARACTERS. The cap applies to an LWC bundle
+         description and ONLY A DEPLOY CATCHES IT — Jest, the SLDS linter and code
+         review have all passed a 258-character one on this project before. -->
+    <description>Sell Meter override dialog: asks the YELLOW-band override question and collects the principal's mandatory written reason, resolving { confirmed, reason }. Replaces lightning/confirm, which can only return a boolean.</description>
+</LightningComponentBundle>

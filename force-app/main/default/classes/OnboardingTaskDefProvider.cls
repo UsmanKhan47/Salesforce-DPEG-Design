@@ -14,6 +14,10 @@
  * all of Category__c / Subject__c / Sequence__c / Owner_Label__c /
  * Source_System__c / Due_Day_Offset__c / Default_Status__c / Conditional__c
  * regardless of which subset they read.
+ * 🔴 "NON-LONG-TEXT" IS THE LOAD-BEARING WORD, AND IT COST A LIVE P0 ON 2026-08-31 WHEN NOBODY
+ * CONNECTED IT: `getAll()`/`getInstance()` SILENTLY CLIP LongTextArea and Html to 255 chars.
+ * Adding a long-text field to this type would need a selector for that field —
+ * see `.claude/skills/sf-apex/SKILL.md` (CMDT rule) and `ARCHITECTURE.md` §2.
  *
  * ⚠ THE 45 ROWS ARE NOT IN THE REPO AND CANNOT BE. `.forceignore` excludes
  * the customMetadata directory glob because a file-based CMDT record deploy throws

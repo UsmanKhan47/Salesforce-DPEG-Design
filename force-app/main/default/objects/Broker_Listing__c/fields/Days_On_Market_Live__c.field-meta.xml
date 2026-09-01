@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY. A comment placed ABOVE
+        <CustomField> breaks `sf` deploy at source conversion with a misleading "unable to find
+        matching parent xml file" error.
+
+        DISPOSITION GAP CLOSURE TRANCHE 1, ITEM 6 (agent-output/disposition-gap-closure-t1-design.md
+        §3 Item 6, premises P-1/P-2/P-3, decisions D-3/D-4, both settled at Gate 1 2026-08-31).
+
+        =====================================================================================
+        🔴 THIS IS AN ADDITIVE NEW FIELD, NOT A CONVERSION OF Days_On_Market__c. SALESFORCE
+        CANNOT CHANGE AN EXISTING CUSTOM FIELD INTO A FORMULA FIELD - THERE IS NO IN-PLACE TYPE
+        CHANGE TO FORMULA VIA THE UI OR THE METADATA API (P-1). Converting in place would be a
+        DELETE + CREATE, and a deleted API name stays RESERVED until manually ERASED in Setup
+        (irreversible, and blocked while any Apex still references it). The additive route below
+        is this repo's standing pattern (see Asking_Price__c and BOV_Score__c's own headers:
+        "the field itself is NOT deleted (additive retirement, per this repo's standing rule)").
+
+        Days_On_Market__c (the existing stored Number(4,0)) IS NOT TOUCHED, IS NOT DELETED, AND
+        ITS editable=true GRANT IN DPEG_Disposition_Edit STAYS LEGAL - none of that would be true
+        under an in-place conversion, where editable=true on a formula field is a hard Metadata
+        API deploy error. Its own field header in BrokerListingSelector.cls:53-57 already states
+        it is "LEGACY: a hand-keyed Number that nothing writes", retained on purpose.
+
+        =====================================================================================
+        API NAME: Days_On_Market_Live__c (decision D-4). Shorthand, flagged as such, not
+        invented independently - Days_On_Market__c is occupied on this same object by the stored
+        field, so the additive pattern forces a new name.
+        =====================================================================================
+
+        =====================================================================================
+        🔴 THIS IS RAW ELAPSED DAYS. IT IS NOT, AND MUST NEVER BE TREATED AS, THE ESCALATION
+        CLOCK (decision D-3, premise P-3).
+        =====================================================================================
+        DispositionStageEntryService:1008-1011 leaves this listing's Days_On_Market__c blank on
+        purpose on auto-create - "seeding a 0 would resurrect the very field the clock was moved
+        OFF." The marketing clock was deliberately moved OFF the listing entirely and into
+        DispositionTractionService.evaluate, which computes days in Apex and, per the pending
+        design at agent-output/listing-alerts-and-escalation.md §7.2, is to gain a PAUSE at first
+        offer. This formula has NO pause and NO knowledge of offers - it is TODAY() minus
+        List_Date__c, unconditionally, for as long as the listing has a list date. It WILL
+        disagree with the badge DispositionTractionService renders beside it once an offer
+        arrives and the traction clock pauses while this formula keeps counting. THAT IS
+        EXPECTED AND ACCEPTED (D-3: ship the formula now) - not a bug to reconcile.
+        NOTHING MAY READ THIS FORMULA TO DRIVE AN ALERT OR ESCALATION. Alert/escalation logic
+        belongs to DispositionTractionService alone. This is now the THIRD days-on-market
+        definition in this application, on purpose: Disposition__c.Days_On_Market__c (a separate,
+        also-raw formula off Listing_Date__c on the Disposition), this field (raw, off
+        Broker_Listing__c.List_Date__c), and DispositionTractionService's paused Apex clock. Do
+        not merge them.
+
+        =====================================================================================
+        THE FORMULA - MIRRORS Disposition__c.Days_On_Market__c EXACTLY, PER INSTRUCTION.
+        =====================================================================================
+            IF(ISBLANK(List_Date__c), null, TODAY() - List_Date__c)
+        Returns null, not 0, for a listing with no list date - the in-repo precedent for a Number
+        formula answering "not yet datable" (see BOV_Score__c's header for the general form of
+        the 0-vs-null trap this avoids). formulaTreatBlanksAs is BlankAsZero, matching the
+        Disposition__c precedent's exact shape - the explicit ISBLANK guard makes the blanks
+        setting moot in practice, mirrored rather than varied because this exact enum spelling on
+        a fresh Number formula field cannot be confirmed without MCP (GATE G-4, per
+        salesforce-global-rule.md; mcp=unavailable). A bad enum spelling fails loudly at deploy,
+        which is the safe direction if the mirroring is somehow wrong.
+
+        =====================================================================================
+        CONSUMERS - NONE REPOINTED BY THIS FILE. LISTED SO THE DEVELOPER AGENT'S SCOPE IS CLEAR.
+        =====================================================================================
+        - BrokerListingSelector.selectMostRecentByDispositionId:71 - DEV TASK: repoint
+          Days_On_Market__c -> Days_On_Market_Live__c. Widening that WITH USER_MODE field list is
+          an FLS change; the read grant for THIS field must land in the SAME deploy as the
+          selector change (consolidated permission-set pass owns the grant; this file does not).
+        - lwc/brokerListing / BrokerListingController:132-139 - NO CHANGE. Computes days in Apex
+          from the raw date; reads neither Number field.
+        - DispositionStageEntryService:1008-1011 - NO SCHEMA CHANGE, but its own comment ("seeding
+          a 0 would resurrect the very field the clock was moved OFF") is now stale wording since
+          a formula cannot be seeded at all - DEV TASK to amend that comment in place.
+        - DPEG_Disposition_Edit's editable=true grant on Days_On_Market__c - UNCHANGED, and
+          correctly so: it names the STORED field, not this one.
+        - 3 seed scripts (seed-disposition.apex:217, seed-disposition-bulk.apex:372/377/382/387,
+          seed-disp0002.apex:183) assign Days_On_Market__c (the stored field) - UNCHANGED, not
+          this field, no compile risk under the additive route.
+        - objectTranslations/Broker_Listing__c-en_US/ gains a sibling translation file for this
+          field in the same pass as this file (see that directory).
+
+        =====================================================================================
+        🔴 RETIRING Disposition__c.Days_On_Market__c IS NOT PART OF THIS CHANGE AND IS BLOCKED.
+        =====================================================================================
+        reports/Dispositions/Avg_Days_on_Market.report-meta.xml is reportType
+        CustomEntity$Disposition__c and its only measure is Disposition__c.Days_On_Market__c. A
+        report on the Disposition report type cannot show a Broker_Listing__c field - no
+        Disposition-with-Broker-Listing report type exists in this repo, so repointing that report
+        needs a NEW report type, out of scope here. Reports do not block field deletion; they
+        break silently (memory: field-rename-traps) - so deleting the Disposition copy without
+        repointing the report first would leave a dashboard component rendering nothing with no
+        error anywhere. NEITHER Disposition__c.Days_On_Market__c NOR its
+        Disposition_Dashboard_Access grant is touched by this change; retirement is a named,
+        deferred follow-up (design doc §5 wave 8), not actioned here.
+
+        FLS: read-only in both disposition sets (this is a computed field; editable=true on a
+        formula is a deploy error regardless). Applied in the consolidated permission-set pass,
+        not this file.
+
+        Risk: HIGH per the design doc - the highest-risk item in the tranche, though the hazards
+        (formula-conversion mechanics, editable=true trap, report/report-type blocker) all apply
+        to the CONVERSION route this file deliberately does NOT take. As shipped (purely additive)
+        the residual risk is the D-3 "third definition" disagreement, which is accepted by design.
+    -->
+    <fullName>Days_On_Market_Live__c</fullName>
+    <externalId>false</externalId>
+    <formula>IF(ISBLANK(List_Date__c), null, TODAY() - List_Date__c)</formula>
+    <formulaTreatBlanksAs>BlankAsZero</formulaTreatBlanksAs>
+    <description>RAW ELAPSED DAYS since List_Date__c. NOT the escalation clock - DispositionTractionService owns pause semantics for alerting; nothing may read this formula to drive an alert. See the XML comment in this file for the full reasoning (additive vs conversion, and why a third days-on-market definition exists on purpose).</description>
+    <inlineHelpText>Days since this listing&apos;s List Date, computed live. This is a raw count, not the paused marketing/escalation clock shown elsewhere - it will keep counting after an offer arrives.</inlineHelpText>
+    <label>Days on Market (Live)</label>
+    <precision>18</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

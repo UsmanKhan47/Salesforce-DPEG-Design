@@ -311,7 +311,7 @@ private class ContractExecutionServiceTest {
         System.assertEquals('Active', txns[0].Status__c, 'Transaction opens Active');
         System.assertEquals(12000000, txns[0].Contract_Value__c, 'Contract value carried over');
         // 🔴 Day 0 is the CONTRACT EXECUTION date, not the date the stage changed. Every one of the
-        // ~75 checklist tasks is dated by offset from this field, so anchoring it to "now" would
+        // 82 checklist tasks is dated by offset from this field, so anchoring it to "now" would
         // silently shift every deadline on a deal that executed weeks before it closed.
         System.assertEquals(signed.Contract_Executed_Date__c.date(), txns[0].Contract_Executed_Date__c,
             'Day 0 comes from the contract execution date, not from today');
@@ -549,7 +549,7 @@ private class ContractExecutionServiceTest {
             'UNCHANGED BEHAVIOUR: an executed acquisition PSA still stamps Contract Signed');
         Assert.isNotNull(o.Contract_Executed_Date__c,
             'UNCHANGED BEHAVIOUR: Day 0 is still stamped, and openTransactionsOnAboutToClose still '
-            + 'reads it back to date the 75-task checklist');
+            + 'reads it back to date the 82-task checklist');
         Assert.areEqual('Contract Signed', o.Deal_Status__c,
             'UNCHANGED BEHAVIOUR: the deal status is still stamped');
 
@@ -826,7 +826,7 @@ private class ContractExecutionServiceTest {
      *
      * Under a global repoint, this fixture's `-> Signed` step would fire the whole acquisition
      * handoff one hop EARLY: Contract_Signed__c, Deal_Status__c, four notifications, the Offering
-     * shell — and, worst, `Contract_Executed_Date__c`, which is DAY 0 for the ~75-task transaction
+     * shell — and, worst, `Contract_Executed_Date__c`, which is DAY 0 for the 82-task transaction
      * checklist. Every deadline on every acquisition deal would shift to the signature date.
      *
      * ⚠ THE ASSERTIONS ARE ON THE STATE AT 'Signed', BEFORE ANY EXECUTION HAPPENS. Asserting the
@@ -867,7 +867,7 @@ private class ContractExecutionServiceTest {
             + 'Contract_Signed__c. The terminal constant was repointed globally instead of split '
             + 'per record type — see ContractExecutionService.DISPOSITION_TERMINAL.');
         Assert.isNull(atSigned.Contract_Executed_Date__c,
-            '🔴 AND THIS IS THE EXPENSIVE ONE. Contract_Executed_Date__c is DAY 0 for the ~75-task '
+            '🔴 AND THIS IS THE EXPENSIVE ONE. Contract_Executed_Date__c is DAY 0 for the 82-task '
             + 'Day-0 checklist that openTransactionsOnAboutToClose reads back. Stamping it at '
             + 'SIGNATURE instead of EXECUTION silently shifts every deadline on every acquisition '
             + 'deal, with no error anywhere.');
@@ -1181,7 +1181,7 @@ private class ContractExecutionServiceTest {
             'The refusal takes the ENTIRE execution with it, not just the date: Contract Signed is '
             + 'not stamped. Observed refusal: ' + observed);
         Assert.isNull(after.Contract_Executed_Date__c,
-            'and Day 0 is not stamped, so a Transaction opened later would date its ~75-task '
+            'and Day 0 is not stamped, so a Transaction opened later would date its 82-task '
             + 'checklist from today instead. Observed refusal: ' + observed);
         Assert.areNotEqual('Contract Signed', after.Deal_Status__c,
             'and the deal status is not advanced either. Observed refusal: ' + observed);
@@ -1381,7 +1381,7 @@ private class ContractExecutionServiceTest {
             + 'this change exists to fix (TXN-0267, owned by Junior Dhanani).');
 
         // ── CONSEQUENCE (a): the Day-0 checklist follows the Transaction owner ──
-        // TaskFanoutService line ~117 does `tk.OwnerId = t.OwnerId`, so the ~75-row checklist the
+        // TaskFanoutService line ~117 does `tk.OwnerId = t.OwnerId`, so the 82-row checklist the
         // Transaction_Task_Fanout flow builds is now owned by the transactions owner too. Asserted
         // rather than assumed, and the count is asserted non-zero so this cannot pass vacuously if
         // the fan-out ever stops firing.
@@ -1400,7 +1400,7 @@ private class ContractExecutionServiceTest {
         }
         Assert.areEqual(new Set<Id>{ danishStandIn.Id }, taskOwners,
             'INTENDED CASCADE: every fanned-out checklist Task inherits the Transaction owner, so '
-            + 'the whole ~75-row checklist now lands on the transactions owner rather than on the '
+            + 'the whole 82-row checklist now lands on the transactions owner rather than on the '
             + 'deal driver. If this ever needs to differ, route in TaskFanoutService — not here.');
     }
 
@@ -1414,7 +1414,7 @@ private class ContractExecutionServiceTest {
         Assert.areEqual('danish.rehman@usmandpeg.uat',
             ContractExecutionService.transactionOwnerUsername,
             'Transactions are assigned to Danish on creation (user requirement, 2026-08-28). '
-            + 'Changing this literal reassigns every future Transaction AND its ~75-task '
+            + 'Changing this literal reassigns every future Transaction AND its 82-task '
             + 'checklist, so it is pinned here on purpose.');
     }
 

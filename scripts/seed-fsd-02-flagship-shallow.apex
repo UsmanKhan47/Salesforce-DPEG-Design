@@ -76,7 +76,11 @@ if ([SELECT COUNT() FROM Opportunity WHERE Name = :N2] == 0) {
         'Georgetown', '78626', 'Land', 'Land', 6200000, 5800000, 6600000, null,
         'Sofia Delgado', 'sofia.delgado@transwestern.com', '469-555-0119');
     update new Opportunity(Id = opp2, StageName = 'Under Review', CloseDate = Date.today().addMonths(4));
-    helper.progressNda(opp2, 'Sent');
+    // 'Sent' was REMOVED from the Acquisition_NDA record type on 2026-08-27 (user decision);
+    // this NDA is acquisition-side, so 'Sent' now throws INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST
+    // and rolls this whole seed back. The acquisition sequence is Pending -> Received -> Signed.
+    // progressNda already stamps both Date_Sent__c and Date_Received__c for 'Received'.
+    helper.progressNda(opp2, 'Received');
 }
 
 // ---------- Flagship 3: Development Review (Land) ----------

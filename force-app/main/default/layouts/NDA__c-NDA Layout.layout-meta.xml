@@ -117,6 +117,31 @@
         <layoutColumns/>
         <style>CustomLinks</style>
     </layoutSections>
+    <!-- APPROVAL HISTORY, ADDED 2026-08-31 (Tranche 3, item 2e - MANDATORY, per design P-7, not a
+         nicety). RelatedProcessHistoryList IS the Approval History list (see
+         layouts/Disposition__c-Disposition Layout.layout-meta.xml's 2026-08-19 comment for the
+         live describeLayout evidence - not re-derived here). The five columns are the same
+         standard Approval History set used there, copied rather than invented.
+         🔴 THIS BLOCK IS ONE HALF OF A TWO-FILE FIX AND IS USELESS ALONE. NDA__c renders through
+         flexipages/NDA_Record_Page.flexipage-meta.xml, which gained a force:relatedListContainer
+         in the SAME change; that component is what surfaces this list in Lightning. Adding the
+         list here without the component shows nothing, and the component without this list shows
+         nothing at all (this layout's only other related list, RelatedNoteList, is NOT
+         approval-history-shaped).
+         WHY IT IS NEEDED AT ALL: the new approvalProcesses/NDA__c.NDA_Issue_Approval sets
+         allowRecall=true and recordEditability=AdminOnly, and Recall Approval Request exists ONLY
+         on this list. Without it, the first submitted disposition NDA locks with no visible
+         pending approval and no recall route.
+         FIRST IN THE FILE ON PURPOSE, so it renders above RelatedNoteList in the container,
+         matching Disposition__c-Disposition Layout's own placement convention. -->
+    <relatedLists>
+        <fields>CreatedDate</fields>
+        <fields>StepStatus</fields>
+        <fields>OriginalActor</fields>
+        <fields>Actor</fields>
+        <fields>Comments</fields>
+        <relatedList>RelatedProcessHistoryList</relatedList>
+    </relatedLists>
     <relatedLists>
         <relatedList>RelatedNoteList</relatedList>
     </relatedLists>

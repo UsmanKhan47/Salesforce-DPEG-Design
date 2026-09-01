@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Flow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT MUST STAY INSIDE THE ROOT <Flow> ELEMENT. A comment placed ABOVE <Flow>
+        breaks `sf` deploy at source conversion.
+
+        Gap 2 (E2E gap-fix, 2026-08-31): Transaction__c.Status__c had exactly one writer
+        (ContractExecutionService, which sets it to 'Active' at Transaction creation) and no
+        writer ever advanced it to 'Closed'. This flow supplies the missing terminal write.
+
+        BEFORE-SAVE, deliberately, not after-save and not a branch added to
+        RecordStageAdvanceService.setStage: a before-save assignment mutates the in-flight
+        record with zero SOQL and zero DML, and it fires for EVERY writer of Stage__c - the
+        advanceRecordStage quick action, an inline Path edit, the API, a data loader, or a
+        seed script - not just the one button. setStage (RecordStageAdvanceService.cls:2457)
+        is deliberately generic across eight objects; adding a Transaction-specific branch
+        there would be the first object special-case in a dispatcher whose entire design
+        argument is that per-object behaviour must not be flattened into shared code, and it
+        would still miss the Path and the API. See agent-output/gap-fixes-design.md Section 4.
+
+        Do NOT change flows/Transaction_Complete_Close.flow-meta.xml's trigger condition to
+        key on Stage__c instead of Status__c - that flow's Status__c = 'Closed' filter stays
+        as-is (explicit user decision). Status__c is the field TransactionSelector,
+        TransactionController and the Active-Transactions KPI surface all read; this flow
+        exists to make that field trustworthy again, not to replace it.
+
+        CreateAndUpdate (not Update-only): two seed scripts insert a Transaction with
+        Stage__c='Closed' directly, and this flow must catch that case too so Status__c never
+        drifts out of sync with Stage__c on an inserted row.
+    -->
+    <apiVersion>67.0</apiVersion>
+    <assignments>
+        <name>Set_Status_Closed</name>
+        <label>Set Status Closed</label>
+        <locationX>176</locationX>
+        <locationY>134</locationY>
+        <assignmentItems>
+            <assignToReference>$Record.Status__c</assignToReference>
+            <operator>Assign</operator>
+            <value>
+                <stringValue>Closed</stringValue>
+            </value>
+        </assignmentItems>
+    </assignments>
+    <description>Sets Status__c=Closed when Stage__c reaches Closed. Status__c=Closed triggers Transaction_Complete_Close, closing the parent Opportunity. Inserting Stage__c=Closed with Opportunity__c set will therefore close that Opportunity on insert.</description>
+    <environments>Default</environments>
+    <interviewLabel>Transaction Stage Closed Sets Status {!$Flow.CurrentDateTime}</interviewLabel>
+    <label>Transaction Stage Closed Sets Status</label>
+    <processType>AutoLaunchedFlow</processType>
+    <start>
+        <locationX>50</locationX>
+        <locationY>0</locationY>
+        <connector>
+            <targetReference>Set_Status_Closed</targetReference>
+        </connector>
+        <doesRequireRecordChangedToMeetCriteria>true</doesRequireRecordChangedToMeetCriteria>
+        <filterLogic>and</filterLogic>
+        <filters>
+            <field>Stage__c</field>
+            <operator>EqualTo</operator>
+            <value>
+                <stringValue>Closed</stringValue>
+            </value>
+        </filters>
+        <object>Transaction__c</object>
+        <recordTriggerType>CreateAndUpdate</recordTriggerType>
+        <triggerType>RecordBeforeSave</triggerType>
+    </start>
+    <status>Active</status>
+</Flow>

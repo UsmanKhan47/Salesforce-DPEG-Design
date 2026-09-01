@@ -23,8 +23,8 @@ private class ChecklistSelectorTest {
     @TestSetup
     static void setupTestData() {
         Transaction__c deal = TestDataFactory.createTransactions(1, true)[0];
-        Checklist__c group = TestDataFactory.createChecklist(deal.Id, true);
-        TestDataFactory.createChecklistItems(BULK_ROWS, group.Id, true);
+        Checklist__c checklistGroup = TestDataFactory.createChecklist(deal.Id, true);
+        TestDataFactory.createChecklistItems(BULK_ROWS, checklistGroup.Id, true);
     }
 
     @isTest
@@ -45,13 +45,13 @@ private class ChecklistSelectorTest {
 
     @isTest
     static void selectsChecklistsByIdKeyedForTheHandler() {
-        Checklist__c group = [SELECT Id, Transaction__c FROM Checklist__c LIMIT 1];
+        Checklist__c checklistGroup = [SELECT Id, Transaction__c FROM Checklist__c LIMIT 1];
 
         Test.startTest();
-        Map<Id, Checklist__c> byId = ChecklistSelector.selectByIds(new Set<Id>{ group.Id });
+        Map<Id, Checklist__c> byId = ChecklistSelector.selectByIds(new Set<Id>{ checklistGroup.Id });
         Test.stopTest();
 
-        Assert.areEqual(group.Transaction__c, byId.get(group.Id).Transaction__c,
+        Assert.areEqual(checklistGroup.Transaction__c, byId.get(checklistGroup.Id).Transaction__c,
             'The checklist-to-deal projection is what the item trigger cannot get from Trigger.new');
     }
 

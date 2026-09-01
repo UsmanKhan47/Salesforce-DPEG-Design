@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ListView xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        DISPOSITION GAP CLOSURE TRANCHE 1, ITEM 13. See On_Market_Sales.listView-meta.xml in this
+        same folder for the full GATE G-6 fallback rationale (RECORD_TYPE filter shape unproven,
+        no dry-run available in a file-only pass) - not repeated here. This is its complement:
+        Is_On_Market__c equals false.
+
+        ⚠ Because Is_On_Market__c reads FALSE on a Master-record-type row too (see that field's
+        own header), this view is really "everything that is NOT confirmed on_market", not a
+        strict complement of a true off_market predicate. Acceptable under the same reasoning as
+        the on-market view - no Master-type disposition rows are expected in this org.
+
+        🔴 MEASURED, NOT INFERRED - 2026-08-31, deploy id 0Afiw000000UAoOCAW, validate-only against
+        usman-dpeg. A ListView filter <value> on a Checkbox field MUST be "0" or "1" - "false"
+        produced a hard component error ("Use \"0\" or \"1\""), even though the XML is well-formed,
+        the field is real, and "equals" is a valid operation. This is a green-source/red-deploy
+        defect: nothing but an actual deploy catches it.
+        ⚠ THIS DOES NOT UNDERMINE THE GATE G-6 FALLBACK (see On_Market_Sales.listView-meta.xml).
+        The checkbox-on-Is_On_Market__c SHAPE is still correct and still the right call over the
+        unproven RECORD_TYPE filter - only the boolean LITERAL inside that shape was wrong. DO NOT
+        "clean this back up" to true/false - 0 is correct and false was not.
+    -->
+    <fullName>Off_Market_Sales</fullName>
+    <columns>NAME</columns>
+    <columns>Property_Asset__c</columns>
+    <columns>Disposition_Stage__c</columns>
+    <columns>Selected_Broker__c</columns>
+    <columns>Listing_Date__c</columns>
+    <columns>Closing_Date__c</columns>
+    <columns>LAST_UPDATE</columns>
+    <filterScope>Everything</filterScope>
+    <filters>
+        <field>Is_On_Market__c</field>
+        <operation>equals</operation>
+        <value>0</value>
+    </filters>
+    <label>Off Market Sales</label>
+</ListView>

@@ -42,7 +42,19 @@ private class BrokerListingSelectorTest {
         Assert.areEqual('Test Broker 0', result.Contact_Name__c, 'Contact_Name__c should be selected');
         Assert.areEqual(Date.today(), result.List_Date__c, 'List_Date__c should be selected');
         Assert.areEqual(Date.today().addDays(30), result.Call_For_Offers_Date__c, 'Call_For_Offers_Date__c should be selected');
-        Assert.areEqual(0, result.Days_On_Market__c, 'Days_On_Market__c should be selected');
+        // 🔴 REPOINTED 2026-08-31 (Tranche 1 item 6). This line read
+        // `Assert.areEqual(0, result.Days_On_Market__c, 'Days_On_Market__c should be selected')`.
+        // The selector no longer selects the stored `Days_On_Market__c`, so that assertion would
+        // now throw `System.SObjectException: SObject row was retrieved via SOQL without querying
+        // the requested field` — a LOUD failure, which is the safe direction.
+        // ⚠ THE EXPECTED VALUE IS STILL 0 AND THE COINCIDENCE IS WORTH NAMING, because it makes
+        // this test look unchanged when it is not. The old 0 was the factory's hand-keyed
+        // `Days_On_Market__c = 0`; the new 0 is the FORMULA `TODAY() - List_Date__c` evaluated on a
+        // fixture whose `List_Date__c` is today. Same number, different source. A future fixture
+        // that back-dates `List_Date__c` will move this assertion — and should.
+        Assert.areEqual(0, result.Days_On_Market_Live__c,
+            'Days_On_Market_Live__c should be selected — the formula reads 0 because the factory '
+            + 'lists TODAY, not because anything wrote a 0');
         Assert.areEqual('On Track', result.Listing_Status__c, 'Listing_Status__c should be selected');
         Assert.areEqual(0, result.Offers_Received__c, 'Offers_Received__c should be selected');
         // Tranche 5B: the MARKETING CLOCK the traction badge is computed from. It rides the

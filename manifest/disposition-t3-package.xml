@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        DISPOSITION BA GAP CLOSURE - TRANCHE 3 ONLY (Approvals).
+        Built 2026-08-31 for agent-output/disposition-gap-closure-t3-design.md.
+
+        WHY THIS FILE EXISTS. manifest/package.xml is the FULL-ORG RETRIEVE manifest and a
+        source-dir deploy of force-app has the same problem: either would sweep several OTHER
+        concurrent streams' undeployed, unreviewed work into usman-dpeg. Nothing below is
+        wildcarded; a wildcard re-introduces the sweep.
+
+        DELIBERATELY EXCLUDED, though modified in the tree:
+        - flexipages/Opportunity_Record_Page - belongs to a concurrent stream, NOT Tranche 3.
+        - Every Tranche 1 and Tranche 2 component. Both are already live
+          (0Afiw000000UCLVCA4 at 14:18 UTC, 0Afiw000000UJwTCAW at 16:55 UTC on 2026-08-31);
+          re-shipping them widens this deploy's blast radius for no gain.
+        - quickActions/NDA__c.Move_to_Approved - DELETED from disk in this tranche. A deletion
+          is not expressible here; it is PREPARED, NOT AUTHORISED in
+          manifest/disposition-t3-destructive/ and needs explicit sign-off. The bypass it
+          represented is already closed by other means (its FlexiPage placement is removed and
+          RecordStageAdvanceService no longer maps 'Prepare'), so this is drift hygiene, not a
+          live hole.
+
+        DEPLOY ORDER IS LOAD-BEARING AND ONE CONSTRAINT IS NEW THIS TRANCHE.
+        DPEG_Apex_Access now names DispositionApprovalTrackerController, which is NOT yet in the
+        org. A classAccesses entry naming a missing class fails the deploy of the WHOLE
+        permission set, taking all 75 grants with it. The permission set must therefore land in
+        the SAME payload as the Apex or LATER - never earlier. One package satisfies that.
+        The mirror hazard is worse and silent: shipping the Apex WITHOUT the grant deploys green
+        and renders the new tracker "unavailable" on every Disposition record page for every
+        principal and analyst, while an admin smoke test passes (Modify All Data bypasses class
+        access). Both halves ship together or neither does.
+
+        PERMISSION SETS REPLACE, THEY DO NOT MERGE - AND ONE OF THESE IS THE ADMIN-ADJACENT SET.
+        All three below were reconciled against the live org by SOQL across FieldPermissions +
+        ObjectPermissions + SetupEntityAccess. DPEG_Apex_Access measured 74/74 classAccesses with
+        zero org-only grants and carries no field or object permissions at all. Re-run the
+        three-way reconciliation immediately before deploying: other streams are active in this
+        working tree and the org has taken two deploys today.
+
+        WHAT A DEPLOY CANNOT PROVE HERE. The org holds ZERO Disposition__c records, so neither
+        headline AC is discharged by shipping this: "three assignees appear on the approval
+        request" and "the override reason renders on the approval page" are browser facts on a
+        seeded sale. NDA_Issue_Approval is AdminOnly, so a submitted NDA LOCKS - the Recall route
+        added to NDA_Record_Page and the NDA layout in this same wave is unverified until a real
+        record exists. Do not report those ACs as met on a green deploy.
+    -->
+
+    <types>
+        <members>BOV_Submission__c.Broker_Finalize_Approval</members>
+        <members>Disposition_Offer__c.Offer_Selection_Approval</members>
+        <members>Disposition__c.Broker_Selection_Approval</members>
+        <members>Disposition__c.Closing_Approval</members>
+        <members>Disposition__c.Sale_Decision_Approval</members>
+        <members>NDA__c.NDA_Issue_Approval</members>
+        <name>ApprovalProcess</name>
+    </types>
+
+    <types>
+        <members>NDA__c</members>
+        <name>Workflow</name>
+    </types>
+
+    <types>
+        <members>NDA__c.Move_to_Sent</members>
+        <members>NDA__c.Move_to_Signed</members>
+        <members>NDA__c.Submit_NDA_Approval</members>
+        <name>QuickAction</name>
+    </types>
+
+    <types>
+        <members>Disposition_Record_Page</members>
+        <members>NDA_Record_Page</members>
+        <name>FlexiPage</name>
+    </types>
+
+    <types>
+        <members>NDA__c-NDA Layout</members>
+        <name>Layout</name>
+    </types>
+
+    <types>
+        <members>DispositionApprovalController</members>
+        <members>DispositionApprovalControllerTest</members>
+        <members>DispositionApprovalTrackerController</members>
+        <members>DispositionApprovalTrackerService</members>
+        <members>DispositionApprovalTrackerServiceTest</members>
+        <members>DispositionSelector</members>
+        <members>DispositionSelectorTest</members>
+        <members>DispositionStageEntryService</members>
+        <members>DispositionStageEntryServiceTest</members>
+        <members>NdaApprovalService</members>
+        <members>NdaApprovalServiceTest</members>
+        <members>NdaSelector</members>
+        <members>NdaSelectorTest</members>
+        <members>ProcessInstanceSelector</members>
+        <members>ProcessInstanceSelectorTest</members>
+        <members>RecordStageAdvanceService</members>
+        <members>RecordStageAdvanceServiceTest</members>
+        <name>ApexClass</name>
+    </types>
+
+    <types>
+        <members>dispositionApprovalHistory</members>
+        <members>dispositionApprovalTracker</members>
+        <members>ndaSubmitForApproval</members>
+        <name>LightningComponentBundle</name>
+    </types>
+
+    <types>
+        <members>DPEG_Apex_Access</members>
+        <members>DPEG_Disposition_Edit</members>
+        <members>DPEG_Disposition_View</members>
+        <name>PermissionSet</name>
+    </types>
+
+    <version>67.0</version>
+</Package>

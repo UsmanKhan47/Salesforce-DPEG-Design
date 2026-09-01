@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Flow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        NEW FILE, 2026-09-01. Mirrors a principal's approval of an LOI__c record back onto its
+        parent Opportunity, as part of W1 of the LOI approval cutover
+        (agent-output/loi-approval-cutover-design.md). Direct sibling of
+        flows/Underwriting_Approval_Sync.flow-meta.xml (2026-08-28) — same shape, same reasoning,
+        different object. Read that flow alongside this one; where the two diverge it is called
+        out below.
+
+        🔴 THIS CONTRACT IS PINNED — the developer stream built LoiApprovalStampService to it; do
+        not vary the action name or input variable name:
+            Apex action:     LoiApprovalStampService (label 'Stamp LOI Approval To Deal')
+            input variable:  loiId (Id)
+
+        ENTRY — TWO SETTINGS, BOTH LOAD-BEARING (D-4, LoiApprovalStampService.cls's own header):
+          - recordTriggerType = Update, NOT CreateAndUpdate. TestDataFactory.placeApprovedLoi
+            INSERTS LOI__c rows already at LOI_Status__c = 'Approved'. Three of its callers insert
+            251 rows in one DML (ContractExecutionServiceTest.
+            bulkExecution251ContractsHandsOffToTransactions,
+            .bulkExecution251AcquisitionPsasOpen251Offerings,
+            ContractReviewTriggerHandlerTest.bulk251ExecutedContractsHandOff). CreateAndUpdate
+            would fire this flow on every one of those inserts.
+          - doesRequireRecordChangedToMeetCriteria = true. Two of those same three test methods
+            THEN update those same 251 rows again (Stage__c -> 'Signed') while LOI_Status__c stays
+            unchanged at 'Approved'. Without this setting that second save would still match the
+            filter and fire the flow a second time — 251 more Opportunity saves cascading into a
+            test that is measuring a governor budget.
+          With both set, no existing fixture, seed or production path produces the TRANSITION: the
+          only other production writers of LOI_Status__c are CounterOfferService ('Countered') and
+          ApprovalAuditService ('Approved', but only downstream of THIS write, so no loop).
+
+        🔴 NO REJECTED BRANCH. Per user decision D-3 (quoted verbatim in
+        workflows/LOI__c.workflow-meta.xml and LoiApprovalStampService.cls), LOI_Status__c never
+        moves to a value this flow's filter would see on rejection — the approval process has no
+        finalRejectionActions at all, and Stage__c stays at 'Under Review'. This is not an
+        oversight; there is nothing here to add.
+
+        🔴 runInMode = SystemModeWithoutSharing, MATCHING Underwriting_Approval_Sync. This flow
+        runs as the APPROVER, who is READ-ONLY on Opportunity and does not own the deal (measured:
+        DPEG_Acquisition_View carries Opportunity with allowEdit=false / modifyAllRecords=false;
+        ApprovalAuditService's header records the same finding from production). Without
+        SystemModeWithoutSharing on the flow the downstream write has, in this project's own
+        measured history, silently done nothing.
+
+        🔴 THE PARENT WRITE IS DONE IN APEX (LoiApprovalStampService), NOT IN A FLOW recordUpdate.
+        This repo has measured that SystemModeWithoutSharing on the FLOW does not, by itself, lift
+        the access mode far enough for a read-only, non-owning approver's write to stick —
+        AccessLevel.SYSTEM_MODE combined with a `without sharing` writer must be stated at the DML
+        itself (see LoiApprovalStampService.cls's ParentStampWriter). Routing through the proven
+        Apex path also keeps the "ONE DML, ONE field" contract in one place, matching
+        Underwriting_Approval_Sync's own reasoning for why a second, later write on the same
+        transition would be wrong.
+
+        ⚠ DO NOT ADD ANY OTHER PARENT WRITE TO THIS FLOW. flows/LOI_Approval_Stamp (the existing,
+        UNCHANGED, Opportunity-side after-save flow — entry LOI_Approved__c EqualTo true,
+        doesRequireRecordChangedToMeetCriteria) depends on the mirror stamp landing in exactly one
+        Opportunity DML so its own entry filter sees the transition. A second write here would
+        consume that transition before LOI_Approval_Stamp's filter can see it.
+
+        DEPLOY ORDER. This flow depends on LoiApprovalStampService (Apex, developer stream) and
+        workflows/LOI__c.workflow-meta.xml (the field update that drives its own entry filter)
+        landing in the same deploy — the actionCalls below resolve the Apex action by name at
+        deploy/activation time.
+    -->
+    <actionCalls>
+        <name>Stamp_LOI_Approval</name>
+        <label>Stamp LOI Approval To Deal</label>
+        <locationX>176</locationX>
+        <locationY>134</locationY>
+        <actionName>LoiApprovalStampService</actionName>
+        <actionType>apex</actionType>
+        <flowTransactionModel>CurrentTransaction</flowTransactionModel>
+        <inputParameters>
+            <name>loiId</name>
+            <value>
+                <elementReference>$Record.Id</elementReference>
+            </value>
+        </inputParameters>
+        <nameSegment>LoiApprovalStampService</nameSegment>
+    </actionCalls>
+    <apiVersion>67.0</apiVersion>
+    <environments>Default</environments>
+    <interviewLabel>LOI Approval Sync {!$Flow.CurrentDateTime}</interviewLabel>
+    <label>LOI Approval Sync</label>
+    <processType>AutoLaunchedFlow</processType>
+    <runInMode>SystemModeWithoutSharing</runInMode>
+    <start>
+        <locationX>50</locationX>
+        <locationY>0</locationY>
+        <connector>
+            <targetReference>Stamp_LOI_Approval</targetReference>
+        </connector>
+        <doesRequireRecordChangedToMeetCriteria>true</doesRequireRecordChangedToMeetCriteria>
+        <filterLogic>and</filterLogic>
+        <filters>
+            <field>LOI_Status__c</field>
+            <operator>EqualTo</operator>
+            <value>
+                <stringValue>Approved</stringValue>
+            </value>
+        </filters>
+        <object>LOI__c</object>
+        <recordTriggerType>Update</recordTriggerType>
+        <triggerType>RecordAfterSave</triggerType>
+    </start>
+    <status>Active</status>
+</Flow>

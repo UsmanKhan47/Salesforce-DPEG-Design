@@ -465,7 +465,11 @@ private class DispositionApprovalServiceTest {
         second.Is_Preferred_Broker__c = true;
         second.Submission_Status__c = 'Selected';
         insert second;
-        undelete first;                                 // no undelete context on the trigger at all
+        // ⚠ CORRECTED 2026-08-31 (W-3). This line read "no undelete context on the trigger at
+        // all". `BovSubmissionTrigger` HAS declared `after undelete` since 2026-08-31 (D-5); it
+        // routes the response counter and nothing else. See this method's twin below for the full
+        // retraction — the fixture is unchanged and still works for the reason recorded there.
+        undelete first;                                 // no SELECTION automation sees a restore
 
         Assert.areEqual(2, [
             SELECT COUNT() FROM BOV_Submission__c
@@ -512,14 +516,44 @@ private class DispositionApprovalServiceTest {
      * API / data-loader writes, and against the gap this fixture uses.
      *
      * ── THE FIXTURE IS THE REAL PATH, NOT A CONTRIVANCE ─────────────────────────
-     * `BovSubmissionTrigger` declares no `after undelete` context and the platform has no BEFORE
-     * undelete context at all, so restoring a previously-Selected submission from the Recycle Bin
-     * onto a disposition that has since appointed someone else creates a second Selected row NO
-     * guard sees. That is residual R-1 in the guard's own header, and it is how this state actually
-     * arises in production. 🔴 NO `@TestVisible` BYPASS WAS ADDED TO THE GUARD, and none should be
-     * — the guard's header records that trade being considered and rejected, because it would put
-     * a production-reachable escape hatch in the class in order to build the state the class exists
-     * to prevent.
+     * The platform has no BEFORE undelete context at all, so restoring a previously-Selected
+     * submission from the Recycle Bin onto a disposition that has since appointed someone else
+     * creates a second Selected row NO guard sees. That is residual R-1 in the guard's own header,
+     * and it is how this state actually arises in production. 🔴 NO `@TestVisible` BYPASS WAS
+     * ADDED TO THE GUARD, and none should be — the guard's header records that trade being
+     * considered and rejected, because it would put a production-reachable escape hatch in the
+     * class in order to build the state the class exists to prevent.
+     *
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * ⚠ RETRACTED IN PLACE 2026-08-31 (Tranche 1 code review, W-3 — this file was missed by the
+     *   D-5 sweep of the same day, which corrected `BovSubmissionSelectorTest` and stopped there).
+     *   COVERS BOTH TESTS IN THIS PAIR: the preferred twin above uses the identical fixture.
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     *     RETRACTED: "`BovSubmissionTrigger` declares no `after undelete` context and the platform
+     *     has no BEFORE undelete context at all".
+     *     ALSO RETRACTED, from the fixture body of both tests: "no undelete context on the trigger
+     *     at all".
+     *
+     * FALSE HALF: the trigger declares `after undelete` as of 2026-08-31 (design decision D-5). It
+     * routes `DispositionCounterRollupService` — `Disposition__c.Responses_Received__c` — and
+     * nothing else.
+     *
+     * TRUE HALF, AND IT IS THE HALF THE FIXTURE RESTS ON: there is still no BEFORE undelete
+     * context anywhere on the platform, so `BovSubmissionSelectionGuardService` — which runs in
+     * `before insert` / `before update` — still never sees a restore. R-1 is untouched, the
+     * two-Selected state is still reachable, and this test still refuses.
+     *
+     * ⚠ AND THE COUNTER IN THE NEW CONTEXT CANNOT COLLAPSE THIS FIXTURE, WHICH IS WHY D-5 ALLOWED
+     * IT THERE. It never reads `Submission_Status__c` (`BovSubmissionSelector.countByDisposition
+     * Ids` counts every row regardless of status, per D-9), so it is structurally incapable of
+     * repairing, hiding or contradicting a two-Selected state. `BovAutoSelectionService`, which
+     * COULD, is deliberately not routed there — standing rule at
+     * `BovSubmissionTriggerHandler.afterUndelete`.
+     *
+     * 🔴 THE ASSERTION MESSAGE BELOW STILL SAYS "if the GUARD ever gains an after-undelete
+     * context", and that is deliberate and still accurate: the guard has not, and routing it there
+     * is the right fix for R-1. Do not "harmonise" it with the trigger sentence above — they are
+     * about different things, and conflating them is what produced this retraction.
      */
     @isTest
     static void submitAtBovOutreach_twoSelectedSubmissions_refusesRatherThanPickingOne() {
@@ -534,7 +568,10 @@ private class DispositionApprovalServiceTest {
         BOV_Submission__c second = TestDataFactory.createBovSubmission(d.Id, false);
         second.Submission_Status__c = 'Selected';
         insert second;                                  // guard counts ZERO committed Selected rows
-        undelete first;                                 // no undelete context on the trigger at all
+        // ⚠ CORRECTED 2026-08-31 (W-3) — see this method's header. The trigger DOES have an
+        // `after undelete` context now; it carries the response counter only, and no before
+        // undelete context exists on the platform, so the guard still never runs here.
+        undelete first;                                 // no guard, and no SELECTION automation
 
         Assert.areEqual(2, [
             SELECT COUNT() FROM BOV_Submission__c

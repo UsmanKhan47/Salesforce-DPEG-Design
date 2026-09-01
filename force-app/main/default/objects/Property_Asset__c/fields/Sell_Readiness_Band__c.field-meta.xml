@@ -1,8 +1,78 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        DISPOSITION GAP CLOSURE TRANCHE 2, ITEM 1a (agent-output/disposition-gap-closure-t2-design.md
+        §3 Item 1a; Gate 1 decision D-1, 2026-08-31). Repoints this formula from
+        CASE(TEXT(Argus_Signal__c), ...) onto days-until-peak, so it MIRRORS
+        SellMeterService.bandForPeak EXACTLY (<= 30 GREEN, <= 90 YELLOW, else/null RED). This is an
+        IN-PLACE formula edit, not a delete+create - <type>Text</type> is unchanged.
+
+        🔴 THE THREE OUTPUT STRINGS ARE A CONTRACT AND ARE BYTE-IDENTICAL TO THE PRIOR FORMULA'S
+        VALUES: "Sell now", "Getting Close", "Hold - Not yet". Four reports
+        (Dispositions/Readiness_Mix, Readiness_Signal_By_Value_Avk, Portfolio_Sell_Readiness,
+        Total_Argus_Value) GROUP on this field's VALUE (verified: all four group, none filters on
+        a value), and Disposition_Dashboard_Junior.dashboard-meta.xml groups on the FIELD
+        (<groupingColumn>Property_Asset__c.Sell_Readiness_Band__c</groupingColumn>), not a value -
+        so preserving the strings is what buys ZERO report/dashboard edits in this tranche. They are
+        also byte-identical to lwc/sellMeterList's METER labels and lwc/sellMeterStats's card
+        labels. DO NOT CHANGE THEM.
+
+        🔴 THIS FIELD IS NOW NON-DETERMINISTIC - THE MORE IMPORTANT CHANGE THAN THE RE-BUCKETING
+        BELOW. It used to be a function of Argus_Signal__c, a manually-maintained picklist that
+        only changed when someone edited a record. It is now a function of TODAY() (via
+        Peak_Sell_Date__c), so its VALUE can flip from one day to the next with no record edit, no
+        metadata diff and no audit trail. An asset silently crosses from "Getting Close" to
+        "Sell now" the morning its peak date comes within 30 days.
+
+        Consequence: the four reports named above all GROUP on this field, and
+        Sell_Readiness_By_Type (Dispositions folder) sums Readiness_Score__c
+        (Readiness_Score__c.field-meta.xml, this folder), which itself now derives from this
+        field - so all five reports, plus both Disposition_Dashboard_Junior donuts
+        (groupingColumn Property_Asset__c.Sell_Readiness_Band__c, two places), will change from
+        one day to the next with nothing to point to. This is CORRECT and INTENDED - it is what
+        "days to peak" means - but it is exactly the shape that gets reported as a data bug weeks
+        later ("the donut changed and nobody touched anything"). Anyone investigating that report
+        should start here.
+
+        Mechanical safety check performed before making this acceptable: a repo-wide grep for
+        Sell_Readiness_Band__c and Readiness_Score__c finds no list-view filter, no validation
+        rule, no roll-up summary and no SOQL WHERE clause anywhere under force-app. Every consumer
+        is a report GROUPING, a dashboard groupingColumn, a permission set field grant, an
+        objectTranslation, or a profile field-level-security entry. Nothing branches on the value,
+        which is why a value that changes daily is tolerable rather than a functional defect.
+
+        ⚠ THE FORMER 4TH BRANCH IS GONE, DELIBERATELY (design P-4 / Gate 1 D-1). The prior else-
+        branch was the literal unresolved-entity string "&#8212;" (not a real em dash) - a
+        pre-existing cosmetic defect, not introduced here. Under days-to-peak that branch is
+        UNREACHABLE (bandForPeak returns exactly three values and null peak -> RED), so it is
+        removed outright: the "&#8212;" donut segment disappears and every asset that sat in it
+        moves into "Hold - Not yet". Both are correct under A3 and both are user-visible screen
+        changes - see Gate G-1 in the design doc (measure the divergence in usman-dpeg before
+        deploy).
+
+        ISBLANK(Peak_Sell_Date__c) is evaluated FIRST, matching bandForPeak's own null check -
+        Peak_Sell_Date__c - TODAY() on a null date evaluates to a null comparison (false), which
+        would silently fall through to the wrong branch if the null guard were not first.
+        <= 30 has NO lower bound, matching bandForPeak: an already-past peak still bands GREEN
+        ("sell now") by design.
+
+        ⚠ GATE G-3, UNRESOLVED BY THIS PASS - RECORDED, NOT GUESSED. This field carries no
+        <formulaTreatBlanksAs> today (it referenced only a picklist). It now references a Date
+        field instead. Whether the Metadata API requires, accepts or rejects that element on a
+        Date-referencing Text formula at API 67.0 is NOT exercised anywhere in this repo and
+        salesforce-api-context MCP is not configured for this project (.mcp.json carries only the
+        `salesforce` server) - so this element is deliberately left ABSENT, unchanged from before
+        this edit, rather than guessed. Per the standing rule (ARCHITECTURE.md §3.4's precedent):
+        deploy this ONE field as a dry-run first and READ THE FORMULA BACK before any dependent
+        change (Readiness_Score__c, item 1b, references this field and must deploy AFTER it).
+
+        A3's stated goal ("Home and the Dashboard can no longer disagree") is only PARTIALLY closed
+        by this edit - see the comment in Argus_Signal__c.field-meta.xml in this folder for the two
+        disagreements this item does NOT close.
+    -->
     <fullName>Sell_Readiness_Band__c</fullName>
     <externalId>false</externalId>
-    <formula>CASE(TEXT(Argus_Signal__c), &quot;Sell Now&quot;, &quot;Sell now&quot;, &quot;12 mo&quot;, &quot;Getting Close&quot;, &quot;Hold&quot;, &quot;Hold - Not yet&quot;, &quot;&amp;#8212;&quot;)</formula>
+    <formula>IF( ISBLANK(Peak_Sell_Date__c), &quot;Hold - Not yet&quot;, IF( Peak_Sell_Date__c - TODAY() &lt;= 30, &quot;Sell now&quot;, IF( Peak_Sell_Date__c - TODAY() &lt;= 90, &quot;Getting Close&quot;, &quot;Hold - Not yet&quot; )))</formula>
     <label>Sell Readiness Band</label>
     <required>false</required>
     <trackHistory>false</trackHistory>

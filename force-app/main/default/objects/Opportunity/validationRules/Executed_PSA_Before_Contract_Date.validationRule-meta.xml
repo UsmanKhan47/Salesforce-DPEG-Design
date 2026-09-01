@@ -13,16 +13,16 @@
         🔴 THE FSD'S STATED RATIONALE IS WRONG. THIS COMMENT CORRECTS IT RATHER THAN
         PROPAGATING IT INTO METADATA (Gate 1, Q3.4 = accept).
         =====================================================================
-        FSD Gap Tranche 1 §29.1 asks for this rule so the Day-0 75-task fan-out cannot fire
+        FSD Gap Tranche 1 §29.1 asks for this rule so the Day-0 82-task fan-out cannot fire
         early. It does NOT: flows/Transaction_Task_Fanout.flow-meta.xml is RecordAfterSave on
         Transaction__c, filtered on Transaction__c.Contract_Executed_Date__c IsNull=false AND
         Tasks_Fanned_Out__c EqualTo false. It never reads Opportunity.Contract_Executed_Date__c
         at all, so a rule on THIS field cannot arm or disarm that flow.
 
-        WHAT THIS RULE ACTUALLY PREVENTS: a MIS-DATED 75-task checklist, not an early one.
+        WHAT THIS RULE ACTUALLY PREVENTS: a MIS-DATED 82-task checklist, not an early one.
         ContractExecutionService.openTransactionsOnAboutToClose copies
         Opportunity.Contract_Executed_Date__c into Transaction__c.Contract_Executed_Date__c as
-        Day 0, and every one of the ~75 checklist tasks is dated by offset from that value. A
+        Day 0, and every one of the ~82 checklist tasks is dated by offset from that value. A
         hand-typed Opportunity date - entered before the PSA is actually executed - produces a
         checklist whose every deadline is silently wrong, not a checklist that never should have
         existed. That is a real defect worth guarding against; it is simply not the defect the
@@ -171,7 +171,7 @@
     -->
     <fullName>Executed_PSA_Before_Contract_Date</fullName>
     <active>true</active>
-    <description>Blocks setting/changing Contract_Executed_Date__c unless the deal's Primary Contract Review is Executed. Guards against a mis-dated 75-task Transaction checklist, not the fan-out itself. See the XML comment in this file for full rationale.</description>
+    <description>Blocks setting/changing Contract_Executed_Date__c unless the deal's Primary Contract Review is Executed. Guards against a mis-dated 82-task Transaction checklist, not the fan-out itself. See the XML comment in this file for full rationale.</description>
     <errorConditionFormula>AND(
     ISCHANGED(Contract_Executed_Date__c),
     NOT(ISBLANK(Contract_Executed_Date__c)),

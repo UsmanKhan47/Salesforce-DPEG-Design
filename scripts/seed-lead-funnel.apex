@@ -18,8 +18,15 @@
 //   Guidance_Price__c, Broker_First__c, Asset_Type__c
 //   First_Seen_Date__c    (1-45 days back, so the Age column shows a range; all 15 are inside
 //                          the 90-day broker-protection window, so bpActive = true on every row)
-// All picklist values below were verified against DPEG-Acq-5 with getDescribe().getPicklistValues()
-// before this script was written — do not substitute values without re-verifying.
+// PICKLIST VALUES — RE-VERIFIED 2026-08-29 against usman-dpeg. The prior claim here (verified
+// against DPEG-Acq-5) had gone STALE: `Lead.Deal_Type__c` is a RESTRICTED picklist whose only
+// valid values are now `Land` and `Retail`. The old value `Commercial` was migrated to `Retail`
+// and no longer exists, so all 13 `Deal_Type__c = 'Commercial'` rows below were repointed to
+// `'Retail'` — `insert seeds` is all-or-none, so a single stale literal failed the whole seed
+// with INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST.
+// ⚠ This file is NOT compiled by any deploy or by RunLocalTests, so a stale literal only
+// surfaces mid-run. Re-verify against force-app/main/default/objects/Lead/fields/<Field>.field-meta.xml
+// (not against another org) before substituting any value.
 //
 // Idempotent: deletes ONLY its own previously-seeded rows, matched on the exact
 // SEED_ADDRESSES set below AND `IsConverted = false`, then re-inserts. Re-running does not
@@ -79,7 +86,7 @@ seeds.add(new Lead(
     Email = 'marcus.delgado@delgadoretail.example.com', Phone = '(713) 555-0142',
     Status = 'New', LeadSource = 'Email-to-Lead', Parse_Confidence__c = 'HIGH',
     Broker_Priority__c = 'High', Broker_First__c = 'Marcus Delgado',
-    Property_Address__c = SEED_ADDRESSES[0], Asset_Type__c = 'Retail', Deal_Type__c = 'Commercial',
+    Property_Address__c = SEED_ADDRESSES[0], Asset_Type__c = 'Retail', Deal_Type__c = 'Retail',
     Guidance_Price__c = 12400000, Guidance_Cap_Rate__c = 6.25,
     First_Seen_Date__c = now.addDays(-2)));
 
@@ -88,7 +95,7 @@ seeds.add(new Lead(
     Email = 'priya.raman@gulfcoastind.example.com', Phone = '(713) 555-0188',
     Status = 'New', LeadSource = 'Broker Portal', Parse_Confidence__c = 'MEDIUM',
     Broker_Priority__c = 'Standard', Broker_First__c = 'Priya Raman',
-    Property_Address__c = SEED_ADDRESSES[1], Asset_Type__c = 'Industrial', Deal_Type__c = 'Commercial',
+    Property_Address__c = SEED_ADDRESSES[1], Asset_Type__c = 'Industrial', Deal_Type__c = 'Retail',
     Guidance_Price__c = 8750000, Guidance_Cap_Rate__c = 7.10,
     First_Seen_Date__c = now.addDays(-4)));
 
@@ -97,7 +104,7 @@ seeds.add(new Lead(
     Email = 'devin.okafor@beltwaylogistics.example.com', Phone = '(281) 555-0116',
     Status = 'New', LeadSource = 'Manual Entry', Parse_Confidence__c = 'LOW',
     Broker_Priority__c = 'Standard', Broker_First__c = 'Devin Okafor',
-    Property_Address__c = SEED_ADDRESSES[2], Asset_Type__c = 'Industrial', Deal_Type__c = 'Commercial',
+    Property_Address__c = SEED_ADDRESSES[2], Asset_Type__c = 'Industrial', Deal_Type__c = 'Retail',
     Guidance_Price__c = 21900000, Guidance_Cap_Rate__c = 6.80,
     First_Seen_Date__c = now.addDays(-6)));
 
@@ -106,7 +113,7 @@ seeds.add(new Lead(
     Email = 'alicia.nunez@northbeltoffice.example.com', Phone = '(281) 555-0173',
     Status = 'New', LeadSource = 'Email-to-Lead', Parse_Confidence__c = 'HIGH',
     Broker_Priority__c = 'Standard', Broker_First__c = 'Alicia Nunez',
-    Property_Address__c = SEED_ADDRESSES[3], Asset_Type__c = 'Office', Deal_Type__c = 'Commercial',
+    Property_Address__c = SEED_ADDRESSES[3], Asset_Type__c = 'Office', Deal_Type__c = 'Retail',
     Guidance_Price__c = 16250000, Guidance_Cap_Rate__c = 8.05,
     First_Seen_Date__c = now.addDays(-9)));
 
@@ -115,7 +122,7 @@ seeds.add(new Lead(
     Email = 'grant.whitmore@energycorridorcap.example.com', Phone = '(832) 555-0121',
     Status = 'New', LeadSource = 'Broker Portal', Parse_Confidence__c = 'HIGH',
     Broker_Priority__c = 'High', Broker_First__c = 'Grant Whitmore',
-    Property_Address__c = SEED_ADDRESSES[4], Asset_Type__c = 'Retail', Deal_Type__c = 'Commercial',
+    Property_Address__c = SEED_ADDRESSES[4], Asset_Type__c = 'Retail', Deal_Type__c = 'Retail',
     Guidance_Price__c = 34000000, Guidance_Cap_Rate__c = 5.90,
     First_Seen_Date__c = now.addDays(-12)));
 
@@ -124,7 +131,7 @@ seeds.add(new Lead(
     Email = 'sofia.bertrand@bayareamixeduse.example.com', Phone = '(281) 555-0159',
     Status = 'New', LeadSource = 'Manual Entry', Parse_Confidence__c = 'MEDIUM',
     Broker_Priority__c = 'Standard', Broker_First__c = 'Sofia Bertrand',
-    Property_Address__c = SEED_ADDRESSES[5], Asset_Type__c = 'Mixed-Use', Deal_Type__c = 'Commercial',
+    Property_Address__c = SEED_ADDRESSES[5], Asset_Type__c = 'Mixed-Use', Deal_Type__c = 'Retail',
     Guidance_Price__c = 6300000, Guidance_Cap_Rate__c = 7.45,
     First_Seen_Date__c = now.addDays(-15)));
 
@@ -134,7 +141,7 @@ seeds.add(new Lead(
     Email = 'hector.salinas@bissonnetcre.example.com', Phone = '(713) 555-0134',
     Status = 'Under Review', LeadSource = 'Email-to-Lead', Parse_Confidence__c = 'MEDIUM',
     Broker_Priority__c = 'Standard', Broker_First__c = 'Hector Salinas',
-    Property_Address__c = SEED_ADDRESSES[6], Asset_Type__c = 'Retail', Deal_Type__c = 'Commercial',
+    Property_Address__c = SEED_ADDRESSES[6], Asset_Type__c = 'Retail', Deal_Type__c = 'Retail',
     Guidance_Price__c = 4150000, Guidance_Cap_Rate__c = 8.30,
     First_Seen_Date__c = now.addDays(-18)));
 
@@ -143,7 +150,7 @@ seeds.add(new Lead(
     Email = 'renee.caldwell@westlooptower.example.com', Phone = '(713) 555-0197',
     Status = 'Under Review', LeadSource = 'Broker Portal', Parse_Confidence__c = 'HIGH',
     Broker_Priority__c = 'High', Broker_First__c = 'Renee Caldwell',
-    Property_Address__c = SEED_ADDRESSES[7], Asset_Type__c = 'Office', Deal_Type__c = 'Commercial',
+    Property_Address__c = SEED_ADDRESSES[7], Asset_Type__c = 'Office', Deal_Type__c = 'Retail',
     Guidance_Price__c = 28600000, Guidance_Cap_Rate__c = 6.60,
     First_Seen_Date__c = now.addDays(-21)));
 
@@ -152,7 +159,7 @@ seeds.add(new Lead(
     Email = 'tomas.vega@almedagenoa.example.com', Phone = '(713) 555-0165',
     Status = 'Under Review', LeadSource = 'Manual Entry', Parse_Confidence__c = 'LOW',
     Broker_Priority__c = 'Standard', Broker_First__c = 'Tomas Vega',
-    Property_Address__c = SEED_ADDRESSES[8], Asset_Type__c = 'Industrial', Deal_Type__c = 'Commercial',
+    Property_Address__c = SEED_ADDRESSES[8], Asset_Type__c = 'Industrial', Deal_Type__c = 'Retail',
     Guidance_Price__c = 11050000, Guidance_Cap_Rate__c = 7.25,
     First_Seen_Date__c = now.addDays(-25)));
 
@@ -161,7 +168,7 @@ seeds.add(new Lead(
     Email = 'bianca.ortiz@humblecrossing.example.com', Phone = '(281) 555-0148',
     Status = 'Under Review', LeadSource = 'Email-to-Lead', Parse_Confidence__c = 'HIGH',
     Broker_Priority__c = 'Standard', Broker_First__c = 'Bianca Ortiz',
-    Property_Address__c = SEED_ADDRESSES[9], Asset_Type__c = 'Retail', Deal_Type__c = 'Commercial',
+    Property_Address__c = SEED_ADDRESSES[9], Asset_Type__c = 'Retail', Deal_Type__c = 'Retail',
     Guidance_Price__c = 5900000, Guidance_Cap_Rate__c = 8.75,
     First_Seen_Date__c = now.addDays(-28)));
 
@@ -180,7 +187,7 @@ seeds.add(new Lead(
     Email = 'naomi.frazier@upperkirbyres.example.com', Phone = '(713) 555-0109',
     Status = 'Qualified', LeadSource = 'Manual Entry', Parse_Confidence__c = 'HIGH',
     Broker_Priority__c = 'Standard', Broker_First__c = 'Naomi Frazier',
-    Property_Address__c = SEED_ADDRESSES[11], Asset_Type__c = 'Multifamily', Deal_Type__c = 'Commercial',
+    Property_Address__c = SEED_ADDRESSES[11], Asset_Type__c = 'Multifamily', Deal_Type__c = 'Retail',
     Guidance_Price__c = 39750000, Guidance_Cap_Rate__c = 5.40,
     First_Seen_Date__c = now.addDays(-34)));
 
@@ -189,7 +196,7 @@ seeds.add(new Lead(
     Email = 'elliot.nakamura@hillcroftplaza.example.com', Phone = '(713) 555-0176',
     Status = 'Qualified', LeadSource = 'Email-to-Lead', Parse_Confidence__c = 'LOW',
     Broker_Priority__c = 'Standard', Broker_First__c = 'Elliot Nakamura',
-    Property_Address__c = SEED_ADDRESSES[12], Asset_Type__c = 'Office', Deal_Type__c = 'Commercial',
+    Property_Address__c = SEED_ADDRESSES[12], Asset_Type__c = 'Office', Deal_Type__c = 'Retail',
     Guidance_Price__c = 9200000, Guidance_Cap_Rate__c = 8.90,
     First_Seen_Date__c = now.addDays(-37)));
 
@@ -207,7 +214,7 @@ seeds.add(new Lead(
     Email = 'jorge.medina@beechnutcenter.example.com', Phone = '(832) 555-0127',
     Status = 'Qualified', LeadSource = 'Manual Entry', Parse_Confidence__c = 'HIGH',
     Broker_Priority__c = 'Standard', Broker_First__c = 'Jorge Medina',
-    Property_Address__c = SEED_ADDRESSES[14], Asset_Type__c = 'Retail', Deal_Type__c = 'Commercial',
+    Property_Address__c = SEED_ADDRESSES[14], Asset_Type__c = 'Retail', Deal_Type__c = 'Retail',
     Guidance_Price__c = 18300000, Guidance_Cap_Rate__c = 6.95,
     First_Seen_Date__c = now.addDays(-45)));
 

@@ -33,14 +33,15 @@
  *   - StageDelayAlertBatch (the daily stalled-deal reminder — queryStalledDeals,
  *     `WITH SYSTEM_MODE`, see MODE below)
  *
- * MODE — most queries are `WITH USER_MODE` (API 67). **SIX are `WITH SYSTEM_MODE`:**
+ * MODE — most queries are `WITH USER_MODE` (API 67). **SEVEN are `WITH SYSTEM_MODE`:**
  * `selectCallForOffersTargetsByIds`, `queryCallForOffersAlerts`,
  * `selectMarketSnapshotSourceByIds`, `selectNdaGateById`,
- * `aggregateDealCountsByBroker` and `queryStalledDeals`. Read the METHOD, not the class.
+ * `aggregateDealCountsByBroker`, `queryStalledDeals` and `selectPrimaryLoiByIds`.
+ * Read the METHOD, not the class.
  *
  * ⚠ THIS PARAGRAPH SAID "the ONE `WITH SYSTEM_MODE` method" UNTIL 2026-08-14, "TWO"
- * UNTIL 2026-08-16, "THREE" UNTIL 2026-08-30, "FOUR" UNTIL 2026-08-31 AND "FIVE" FOR A
- * FEW HOURS OF THAT SAME DAY — amended in
+ * UNTIL 2026-08-16, "THREE" UNTIL 2026-08-30, "FOUR" UNTIL 2026-08-31, "FIVE" FOR A
+ * FEW HOURS OF THAT SAME DAY AND "SIX" UNTIL 2026-09-01 — amended in
  * place each time rather than
  * left standing. The second
  * entrant is the alert job's locator, and its justification is argued at its own
@@ -49,8 +50,27 @@
  * profile including the deploying administrator. The third (the market-data freeze) is
  * argued at ITS own declaration for a THIRD reason again — it runs inside an
  * APPROVAL-TRIGGERED flow, so a throw does not merely disable the feature, it rolls back
- * the approval. Do not read a future SEVENTH SYSTEM_MODE method as conformant because
- * six already exist — read its header.
+ * the approval. Do not read a future EIGHTH SYSTEM_MODE method as conformant because
+ * seven already exist — read its header.
+ *
+ * 🔴 THE SEVENTH ENTRANT (`selectPrimaryLoiByIds`, 2026-09-01) IS THE THIRD ENTRANT'S REASON
+ * AGAIN — IT RUNS INSIDE AN APPROVAL-TRIGGERED FLOW — BUT IT IS THE ONLY ONE OF THE SEVEN
+ * THAT WAS CONVERTED **AFTER** BEING MEASURED FAILING IN THAT EXACT WAY, SO ITS EVIDENCE IS
+ * THE STRONGEST AND THE CHEAPEST TO RE-RUN. Test run `707iw000003unI3`, 2026-09-01,
+ * `LoiApprovalStampServiceTest.nonOwningReadOnlyApproverStillUnblocksTheDeal`:
+ *     System.DmlException: ... CANNOT_EXECUTE_FLOW_TRIGGER, ... the "LOI Approval Stamp"
+ *     process failed ... System.QueryException: No such column 'Primary_LOI__c' on entity
+ *     'Opportunity'.
+ * 🔴 AND THE GRANT WAS **PRESENT**, WHICH IS THE PART WORTH CARRYING FORWARD. Measured in the
+ * same session: `FieldPermissions` for `Opportunity.Primary_LOI__c` on `DPEG_Opportunity_View`
+ * exists with `PermissionsRead = true`. What that permission set does NOT carry is any
+ * `LOI__c` **objectPermissions** entry at all (its only `<object>` is `Opportunity`) — and a
+ * lookup field is not accessible when its REFERENCED OBJECT is not, which this file already
+ * states for the fourth entrant ("a cross-object traversal, so it needs read on `NDA__c` the
+ * OBJECT too"). ⇒ **"Grant the FLS" is not an available fix here: the FLS is already granted.**
+ * The failure direction is the same one the third entrant records and worse in one respect:
+ * the throw escaped `ApprovalAuditService`'s degrade-by-design catch (the read sat OUTSIDE it,
+ * fixed in the same change) and rolled back the parent stamp that unblocks the deal.
  *
  * 🔴 THE SIXTH ENTRANT (`queryStalledDeals`, 2026-08-31) IS THE **FIRST-CASE** ONE AGAIN —
  * a daily batch locator, performed by a scheduler on the team's behalf, never at a
@@ -92,8 +112,11 @@
  * were added, because each of those edits amended only the SYSTEM_MODE side. The class's whole
  * discipline is that its counts are authoritative, so a half-amended partition is worse than
  * no count. RE-DERIVED BY ENUMERATION, not by arithmetic on the old figure: 21 public methods
- * = 6 `WITH SYSTEM_MODE` (the six named above) + 15 `WITH USER_MODE`. 🔴 If you add a method,
- * update BOTH sides or neither.
+ * = 6 `WITH SYSTEM_MODE` (the six named above) + 15 `WITH USER_MODE`.
+ * ⚠ AMENDED 2026-09-01, BOTH SIDES, as this paragraph's own last line demands: no method was
+ * added or removed, `selectPrimaryLoiByIds` MOVED from one side to the other, so it is now
+ * 21 public methods = **7** `WITH SYSTEM_MODE` + **14** `WITH USER_MODE`.
+ * 🔴 If you add a method, update BOTH sides or neither.
  *
  * The fifteen USER_MODE methods back reads a human explicitly asked for. Opportunity
  * is the only standard-object selector in A1; per the P4 design §5 the standard
@@ -866,6 +889,40 @@ public with sharing class OpportunitySelector {
      * `Primary_LOI__c != null` filter mirrors the original inline query so deals
      * without a primary LOI are excluded at the query, not in Apex.
      *
+     * ═══ 🔴 TWO KEYWORDS, TWO SEPARATE QUESTIONS — the D25 rule ═══
+     *
+     * ▸ MODE = `WITH SYSTEM_MODE`. ⚠ CHANGED 2026-09-01 (W4 of the LOI approval cutover). It was
+     *   `WITH USER_MODE`, and that was **measured wrong**, not argued wrong — see the class
+     *   header's "SEVENTH ENTRANT" block for the exact test run and error text. In short:
+     *     - THE READ IS NOT THE THING ANY HUMAN ASKED FOR. It happens inside
+     *       `flows/LOI_Approval_Stamp`, an after-save flow fired by an APPROVER'S DECISION, and
+     *       nothing it returns is ever rendered. That is ARCHITECTURE.md §2's automation path.
+     *     - `USER_MODE` THROWS, IT DOES NOT DEGRADE, AND THE THROW LANDED ON THE APPROVAL SAVE.
+     *       `System.QueryException: No such column 'Primary_LOI__c' on entity 'Opportunity'` —
+     *       an FLS denial wearing a schema error — surfaced to the approver as
+     *       `CANNOT_EXECUTE_FLOW_TRIGGER` and rolled back the parent stamp
+     *       (`LoiApprovalStampService`) that unblocks the deal out of `Under Contract (PSA)`.
+     *     - 🔴 AND THE OBVIOUS REMEDY DOES NOT EXIST. `DPEG_Opportunity_View` **already grants**
+     *       `Opportunity.Primary_LOI__c` read (`FieldPermissions.PermissionsRead = true`,
+     *       measured 2026-09-01). It carries no `LOI__c` objectPermissions, and a LOOKUP field is
+     *       inaccessible when its REFERENCED OBJECT is — the same dependency `selectNdaGateById`
+     *       records for `NDA__c`. So this cannot be fixed by adding an FLS line; it would need
+     *       whole-object `LOI__c` read granted to every persona that can ever be an approver,
+     *       which is a widening nobody asked for to serve a read nobody asked for.
+     *
+     * ▸ SHARING = `with sharing` (the class keyword), DELIBERATELY, and this is not an oversight
+     *   carried over from the USER_MODE version. Ask the direction-of-failure question this repo
+     *   settled on 2026-08-30: a sharing-filtered read here DEGRADES (a deal the running user
+     *   cannot see is simply not stamped with the approver's name), it does not INVERT — there is
+     *   no guard downstream that reads "no row" as a refusal. Contrast `selectNdaGateById`, whose
+     *   null parent fabricates "this deal has no signed NDA" and blocks a legitimate submission;
+     *   that one needed `NdaGateReads` and this one does not. Two further facts keep the residual
+     *   small: the approving principals hold `viewAllRecords` on Opportunity via
+     *   `DPEG_Acquisition_View`, and this is a ROOT-object read with no traversal, so there is no
+     *   parent to come back null. 🔴 If a future caller ever turns a missing row here into a
+     *   refusal, re-open this — the remedy would be a narrow `private without sharing` inner class
+     *   holding ONLY this query (the `NdaGateReads` shape), never `without sharing` on this class.
+     *
      * @param opportunityIds Deal Ids to load (bound with IN); null/empty-safe.
      * @return Opportunities (Id, Primary_LOI__c) that have a non-null Primary_LOI__c;
      *         an empty list when the input is null/empty or none qualify (never null).
@@ -878,7 +935,7 @@ public with sharing class OpportunitySelector {
             SELECT Id, Primary_LOI__c
             FROM Opportunity
             WHERE Id IN :opportunityIds AND Primary_LOI__c != null
-            WITH USER_MODE
+            WITH SYSTEM_MODE
         ];
     }
 

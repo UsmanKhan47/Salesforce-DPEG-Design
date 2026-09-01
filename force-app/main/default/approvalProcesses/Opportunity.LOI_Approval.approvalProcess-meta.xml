@@ -1,6 +1,82 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ApprovalProcess xmlns="http://soap.sforce.com/2006/04/metadata">
-    <active>true</active>
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY. A comment placed ABOVE
+        <ApprovalProcess> breaks `sf` deploy at source conversion with a misleading
+        "unable to find matching parent xml file" error.
+
+        🔴 RETIRED 2026-09-01 (W5 of the LOI approval cutover). <active> set to false.
+        DO NOT REACTIVATE.
+        Replaced by approvalProcesses/LOI__c.LOI_Approval (active since W2, same day) -
+        principal sign-off now runs on the deal's LOI__c child record, not on the Opportunity
+        itself. User request, verbatim: "Make sure that we must have approval on LOI record
+        page not on opportunity." Full plan: agent-output/loi-approval-cutover-design.md §4/W5.
+        Direct sibling of Opportunity.Underwriting_Approval, retired the same way earlier the
+        same day - read that file's header alongside this one.
+
+        🔴 "RETIRE" MEANS DEACTIVATE, NOT DELETE. A destructiveChanges delete of an
+        ApprovalProcess requires no ProcessInstance history to exist; this process HAS history
+        (ProcessInstance 04giw0000003KJxAAM, Status 'Approved', TargetObjectId
+        006iw000000fVB7AAM - the "Windmere Crossing Land" deal, 2026-08-31), so a delete would
+        be refused. The file is kept, inactive, forever.
+
+        🟢 NO MANUAL PRE-DEPLOY RECALL WAS NEEDED, UNLIKE THE UNDERWRITING SIBLING. Pending
+        ProcessInstance count on this definition (04aiw0000001sxdAAA) was re-queried immediately
+        before this deploy and read ZERO - in fact the org held ZERO Pending instances against
+        ANY approval definition. Its one instance is already Approved/complete. Had any been
+        Pending, a human would have had to recall it in Setup first: a stranded instance left
+        behind by a deactivation cannot be actioned or recalled normally.
+
+        CONSEQUENTLY, Set_LOI_Approved_Flag AND Set_Stage_Underwriting IN
+        workflows/Opportunity.workflow-meta.xml ARE LEFT IN PLACE, UNCHANGED. This (now-inactive)
+        process still references them BY NAME in finalApprovalActions / finalRejectionActions
+        below, and deleting them would break those references. They are permanently INERT after
+        this deactivation - no live path can ever again produce an Opportunity ProcessInstance
+        for this DeveloperName. See that workflow file's own comment for the same note about the
+        four UW_* field updates.
+
+        🔴 TWO REAL, ACCEPTED LOSSES - NEITHER IS A BUG TO BE FILED LATER:
+
+        1. THE REJECTION REWIND IS GONE. finalRejectionActions below fired
+           Set_Stage_Underwriting, rewinding the deal LOI -> Underwriting. An approval parented
+           by LOI__c structurally CANNOT write an Opportunity field (LOI__c.Opportunity__c is a
+           Lookup, not a Master-Detail), so LOI__c.LOI_Approval has NO finalRejectionActions at
+           all - user decision D-3, quoted: "The LOI stage will remain on Under review after
+           rejection." Two things now describe a path that cannot happen and are ANNOTATED, NOT
+           DELETED:
+             - No_Backward_Stage_Movement CARVE-OUT 1 (the LOI -> Underwriting exemption). Its
+               real pin is LoiGateTest.directLoiToUnderwritingUpdate_isAllowedByCarveOut1_
+               notByApproval, which contains no Approval.process and is unaffected. Protect it.
+             - OpportunityStageEntryService's header, which lists this field update as writer #4
+               of StageName.
+        2. 🔴 DO NOT "SIMPLIFY" Underwriting_Approved_Before_LOI. Its formula names BOTH
+           'Approved' AND 'Completed' precisely because this rejection rewind could strand a
+           re-entering deal. The rationale is now HISTORICAL, but the 'Completed' leg is STILL
+           CORRECT - deals rewound before this change still exist in the data. It simply has no
+           live producer any more. Changing it is a separate decision (D-7), not tidy-up.
+
+        ⚠ THE OPPORTUNITY IS NO LONGER LOCKED while an LOI approval is pending. recordEditability
+        = AdminOnly below froze the DEAL; LOI__c.LOI_Approval freezes the LOI itself instead.
+
+        ⚠ WHAT STILL POINTS HERE, LEFT ALONE ON PURPOSE (enumerated for the user, not changed):
+          - The platform "Submit for Approval" button on the Opportunity's Approval History
+            related list. layouts/Opportunity-Opportunity Layout carries RelatedProcessHistoryList
+            and flexipages/Opportunity_Record_Page renders it via force:relatedListContainer, so
+            the button is still reachable and now leads to a deactivated process
+            (NO_APPLICABLE_PROCESS). There are ZERO active approval processes on Opportunity
+            after this deploy.
+          - quickActions/Opportunity.Submit_for_Approval (LWC submitForApproval) exists as
+            deployed metadata but is on NO layout and NO FlexiPage, so it is unreachable today.
+          - scripts/verify-junior-lifecycle.apex submits an Opportunity here directly
+            (Approval.process, :67-69). It was ALREADY dead before this wave - it writes the
+            retired stage value 'LOI Under Approval' (:66) - so this is its second reason not to
+            run, not a new breakage.
+
+        🔴 ROLLBACK IS MECHANICALLY TRIVIAL AND CONTRADICTS THIS COMMENT. Redeploying
+        <active>true</active> reactivates it. That would be a CONSCIOUS, TEMPORARY exception to
+        "DO NOT REACTIVATE" - record it if ever used.
+    -->
+    <active>false</active>
     <allowRecall>true</allowRecall>
     <allowedSubmitters>
         <type>owner</type>

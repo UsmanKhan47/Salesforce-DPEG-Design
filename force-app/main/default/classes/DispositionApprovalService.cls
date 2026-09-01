@@ -175,16 +175,52 @@ public with sharing class DispositionApprovalService {
      * checks that guard and concludes this message can never fire is reading it correctly — and
      * would still be wrong to remove it, because the guard does not cover every way the state can
      * arise:
-     *   - `BovSubmissionTrigger` declares no `after undelete` context (and the platform has no
-     *     BEFORE undelete context at all), so restoring a previously-Selected submission from the
-     *     Recycle Bin onto a disposition that has since appointed someone else creates a second
-     *     Selected row NO guard sees. That is the path the test fixture uses, because it is real.
+     *   - the platform has no BEFORE undelete context at all, so restoring a previously-Selected
+     *     submission from the Recycle Bin onto a disposition that has since appointed someone else
+     *     creates a second Selected row NO guard sees. That is the path the test fixture uses,
+     *     because it is real. (READ THE RETRACTION BELOW BEFORE QUOTING THIS BULLET.)
      *   - rows that predate the guard (2026-08-20) were never validated by it;
      *   - the guard's sibling read is `with sharing`, so it FAILS OPEN — a Selected row the saving
      *     user cannot see is absent from its count and the save is permitted.
      * The cost of keeping this branch is one comparison per Submit click. The cost of removing it
      * is submitting an arbitrary one of two brokers into `Broker_Finalize_Approval` and appointing
      * a broker nobody chose.
+     *
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * 🔴 THE FIRST BULLET WAS RETRACTED IN PLACE 2026-08-31 (Tranche 1 RE-REVIEW, W-4a — this
+     *    file was missed by BOTH the D-5 sweep and the W-3 sweep of the same day, and it is
+     *    DEPENDANT #1 on the W-3 sweep's OWN corrected list of seven, the only PRODUCTION entry
+     *    on it). HALF OF IT WAS FALSE; THE OTHER HALF IS WHY THIS CONSTANT
+     *    EXISTS, WHICH IS WHY THE SENTENCE WAS SPLIT RATHER THAN DELETED.
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     *     RETRACTED: "`BovSubmissionTrigger` declares no `after undelete` context (and the
+     *     platform has no BEFORE undelete context at all)".
+     *
+     * FALSE HALF: the trigger HAS declared `after undelete` since 2026-08-31 (design decision
+     * D-5). It routes `DispositionCounterRollupService` — `Disposition__c.Responses_Received__c`
+     * — and nothing else.
+     *
+     * TRUE HALF, AND IT IS THE HALF THIS BACKSTOP RESTS ON: there is still no BEFORE undelete
+     * context anywhere on the platform, so `BovSubmissionSelectionGuardService` — which runs at
+     * `before insert` and `before update` — still never sees a restore. The two-Selected state is
+     * still reachable, this branch is still live rather than dead code, and removing it would
+     * still submit an arbitrary one of two brokers for approval.
+     * ⚠ THE NEW CONTEXT DOES NOT CLOSE THE GAP EITHER. The counter never reads
+     * `Submission_Status__c` (`BovSubmissionSelector.countByDispositionIds` counts every row
+     * regardless of status, per D-9), so it is structurally incapable of repairing, hiding or
+     * contradicting a two-Selected state.
+     *
+     * 🔴 THE LIVE HAZARD THE STALE SENTENCE CREATED, AND THE REASON IT WAS WORTH CORRECTING IN A
+     * PRODUCTION CLASS RATHER THAN LEFT AS A HARMLESS INACCURACY. A reader of THIS class believed
+     * the context DOES NOT EXIST. Anyone who then needed undelete behaviour would have set out to
+     * CREATE it — arriving at the trigger from the wrong direction and never reaching the standing
+     * rule that already governs it, at `BovSubmissionTriggerHandler.afterUndelete`: THAT CONTEXT
+     * ROUTES THE COUNTER AND NOTHING ELSE. Routing a second job there — `BovAutoSelectionService`
+     * above all — would SELF-HEAL the restored duplicate and turn this branch, plus six test-side
+     * dependants, green-and-vacuous instead of red. The existence of the context is not
+     * permission to use it. The enumerated list of seven dependants lives at
+     * `BovAutoSelectionService.reselectForDeleted` and is deliberately NOT copied here — a list
+     * duplicated across files is a list that will disagree with itself.
      *
      * ⚠ IT NAMES THE ON-SCREEN LABELS `Selected` AND `Backup`, NOT FIELD API NAMES, per this
      * class's stated convention. Those are the only two values `Submission_Status__c` is

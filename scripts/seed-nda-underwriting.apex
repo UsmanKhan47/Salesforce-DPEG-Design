@@ -6,6 +6,17 @@
 // reports (current-quarter close-date default) won't show them.
 Date today = Date.today();
 
+// ⚠ NDA RECORD TYPE / STATUS (fixed 2026-08-29). The NDAs built below set NO RecordTypeId, so
+// they land on the running user's DEFAULT NDA__c record type. `Status__c` is a RESTRICTED
+// picklist whose allowed subset differs per record type, and that subset IS enforced by Apex DML
+// (see the XML comment in objects/NDA__c/recordTypes/Acquisition_NDA.recordType-meta.xml):
+//     Acquisition_NDA : Pending, Received, Signed        ('Sent' REMOVED 2026-08-27)
+//     Disposition_NDA : Prepare, Approved, Sent, Signed, Declined
+// The third deal's 'Sent' was repointed to 'Received', NOT stamped as Disposition_NDA. Reason:
+// every NDA here is created WITH an Opportunity__c parent, which is the buy-side/acquisition
+// shape by definition, and the second deal's 'Pending' is valid ONLY on Acquisition_NDA — so a
+// Disposition_NDA stamp would just move the INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST to that row.
+//
 // Deal blueprint: { dealName, brokerName, ndaStatus, daysSent, daysSigned,
 //                   capRate, year5Irr, price, targetReturn }
 List<Map<String, Object>> deals = new List<Map<String, Object>>{
@@ -21,7 +32,7 @@ List<Map<String, Object>> deals = new List<Map<String, Object>>{
     },
     new Map<String, Object>{
         'deal' => 'NW Industrial, Houston',  'broker' => 'JLL',
-        'status' => 'Sent',    'sent' => 1, 'signed' => null,
+        'status' => 'Received', 'sent' => 1, 'signed' => null,
         'cap' => 7.1,  'irr' => 21.0, 'price' => 11200000, 'target' => 22
     }
 };

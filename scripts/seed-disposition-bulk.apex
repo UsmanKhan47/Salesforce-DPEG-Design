@@ -151,6 +151,19 @@ Disposition__c dReady2 = new Disposition__c(
     Property_Asset__c = assetIdByName.get('Terrell Hills Medical Plaza'));
 
 // --- BOV Outreach (2) ---
+// 🔴 `Responses_Received__c` IS TRIGGER-OWNED SINCE 2026-08-31 (Tranche 1 item 7).
+// `DispositionCounterRollupService` recomputes it from the live `BOV_Submission__c` row count on
+// every BOV insert / update / delete / undelete, so the 14-row insert further down THIS FILE
+// overwrites every literal below, silently and with no error. The literals are kept because they
+// document the intended demo state — but they must MATCH what this script actually creates, or the
+// file describes a state it does not produce.
+// ⚠ ONE OF THEM DID NOT MATCH AND WAS CORRECTED IN THE SAME CHANGE: `dBov2` carried
+// `Responses_Received__c = 4` while the BOV block below inserts THREE rows for it ("3 for each BOV
+// Outreach disposition"). Before the trigger existed, the demo showed 4 and nobody could tell; now
+// the trigger writes 3 and the seed's own 4 was a claim the same script disproved 80 lines later.
+// It is now 3. 🔴 IF THE BOV BLOCK'S ROW COUNTS CHANGE, CHANGE THESE TOO.
+// ⚠ `Brokers_Contacted__c` is NOT trigger-owned and stays manual — brokers ASKED is not derivable
+// from any child row, so 6 and 7 are deliberately larger than the response counts.
 Disposition__c dBov1 = new Disposition__c(
     Disposition_Stage__c = 'BOV Outreach',
     Property_Asset__c = assetIdByName.get('Windcrest Business Park'),
@@ -160,7 +173,7 @@ Disposition__c dBov2 = new Disposition__c(
     Disposition_Stage__c = 'BOV Outreach',
     Property_Asset__c = assetIdByName.get('Lakeline Corporate Center'),
     Package_Sent__c = today.addDays(-27), Submission_Deadline__c = today.addDays(2),
-    Responses_Received__c = 4, Brokers_Contacted__c = 7,
+    Responses_Received__c = 3, Brokers_Contacted__c = 7,
     Selected_Broker__c = 'CBRE · Mark Chen');
 
 // --- Active Listing (2) — one Broker Alert Due within 7 days ---
@@ -365,6 +378,20 @@ if (fellBack > 0) {
 insert bovs;
 
 // --- Broker Listing (one per Active Listing / Closing disposition = 4) ---
+// ⚠ `Days_On_Market__c` BELOW IS THE **STORED** NUMBER AND IS STILL ASSIGNABLE. Checked
+// 2026-08-31 (Tranche 1 item 6), because the tranche's own instruction to the developer said these
+// four assignments "must move to the stored field or be removed — a formula field cannot be
+// assigned". That instruction was derived from Option B (delete the field and recreate it as a
+// formula), which was NOT the option taken: decision D-4 shipped a NEW field,
+// `Days_On_Market_Live__c`, ALONGSIDE the stored one, which is untouched and still writable. So
+// these four lines compile and run exactly as before and are deliberately left as they are.
+// 🔴 DO NOT "REPOINT" THEM TO `Days_On_Market_Live__c`. Anonymous Apex is not compile-checked by a
+// deploy, so an assignment to a formula field fails only when somebody RUNS this script — the same
+// class of defect the `BOV_Score__c` note above this block records.
+// ⚠ THE FOUR SEEDED NUMBERS ALREADY AGREE WITH THE FORMULA (42/55/95/110 against `List_Date__c`
+// back-dated by exactly those many days), so `Days_On_Market__c` and `Days_On_Market_Live__c` read
+// the same on every seeded row TODAY and will silently diverge by one per day afterwards. That is
+// the stored field being stale, not the formula being wrong.
 List<Broker_Listing__c> listings = new List<Broker_Listing__c>{
     new Broker_Listing__c(
         Disposition__c = dList1.Id, Broker_Firm__c = 'Marcus & Millichap', Contact_Name__c = 'Dana Pierce',

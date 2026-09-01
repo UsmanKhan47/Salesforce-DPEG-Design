@@ -498,8 +498,8 @@
                                 </criteria>
                                 <criteria>
                                     <leftValue>{!Record.RecordType.DeveloperName}</leftValue>
-                                    <operator>NE</operator>
-                                    <rightValue>Disposition_LOI</rightValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>Acquisition_LOI</rightValue>
                                 </criteria>
                             </visibilityRule>
                         </valueListItems>
@@ -743,6 +743,35 @@
                 </componentInstanceProperties>
                 <componentName>force:highlightsPanel</componentName>
                 <identifier>highlightsPanel</identifier>
+            </componentInstance>
+        </itemInstances>
+        <!-- 🔴 2026-09-01 — force:relatedListContainer ADDED TO THE header REGION (identifier
+             relatedLists, alongside highlightsPanel). W1 of the LOI approval cutover
+             (agent-output/loi-approval-cutover-design.md). HALF OF A TWO-FILE APPROVAL-HISTORY
+             FIX; see layouts/LOI__c-LOI Layout.layout-meta.xml's own comment for the other half
+             and why NEITHER WORKS ALONE. Direct copy of the shape added to
+             flexipages/Underwriting_Record_Page.flexipage-meta.xml on 2026-08-28 — same
+             properties, same placement, same reasoning. Needed because
+             approvalProcesses/LOI__c.LOI_Approval (new) locks this record
+             (recordEditability = AdminOnly) while pending — without a visible Recall route a
+             mis-submitted LOI is stuck. Placed in header, next to highlightsPanel, so it is
+             visible without a tab click. -->
+        <itemInstances>
+            <componentInstance>
+                <componentInstanceProperties>
+                    <name>relatedListComponentOverride</name>
+                    <value>NONE</value>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>rowsToDisplay</name>
+                    <value>10</value>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>showActionBar</name>
+                    <value>true</value>
+                </componentInstanceProperties>
+                <componentName>force:relatedListContainer</componentName>
+                <identifier>relatedLists</identifier>
             </componentInstance>
         </itemInstances>
         <name>header</name>

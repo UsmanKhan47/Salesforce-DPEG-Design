@@ -702,9 +702,16 @@ describe('c-sell-meter-initiate-modal', () => {
 
         expect(initiateAndSubmit).toHaveBeenCalledTimes(1);
         // Parameter names ARE the Apex signature — an imperative call binds by name.
+        // ⚠ `overrideReason` (added 2026-08-31, item 5b) is `undefined` here because this
+        // fixture is the GREEN Initiate path, which never has one. `toHaveBeenCalledWith`
+        // matches the WHOLE argument object, so this assertion also pins that the key is
+        // SENT rather than omitted — the misspelling failure mode for that parameter is
+        // completely silent on both sides (a wrong key simply arrives as a null argument
+        // the server cannot distinguish from a GREEN initiate).
         expect(initiateAndSubmit).toHaveBeenCalledWith({
             assetId: ASSET_ID,
-            recordTypeDeveloperName: 'On_Market'
+            recordTypeDeveloperName: 'On_Market',
+            overrideReason: undefined
         });
 
         expect(closeHandler).toHaveBeenCalledTimes(1);
@@ -726,8 +733,60 @@ describe('c-sell-meter-initiate-modal', () => {
 
         expect(initiateAndSubmit).toHaveBeenCalledWith({
             assetId: ASSET_ID,
-            recordTypeDeveloperName: 'Off_Market'
+            recordTypeDeveloperName: 'Off_Market',
+            overrideReason: undefined
         });
+    });
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // `overrideReason` — A PASS-THROUGH (2026-08-31, Tranche 2 item 5b)
+    //
+    // 🔴 THE TWO TESTS BELOW ARE A PAIR AND NEITHER MEANS ANYTHING ALONE. One says the
+    // value REACHES APEX; the other says it is NEVER RENDERED. Together they pin the
+    // design decision: the reason is collected one dialog earlier by
+    // c/sellMeterOverrideModal, and this dialog stays byte-identical in its UI on both
+    // paths — which its own class header requires ("deliberately identical apart from the
+    // toast title, so an override can never diverge from an initiate"). The cheaper
+    // alternative that was rejected — an override-only textarea in THIS dialog — passes
+    // the first test and fails the second.
+    // ═════════════════════════════════════════════════════════════════════════
+
+    it('🔴 OVERRIDE REASON: forwarded verbatim to Apex as the third argument', async () => {
+        initiateAndSubmit.mockResolvedValue({
+            dispositionId: DISPOSITION_ID,
+            submitted: true,
+            message: 'ok'
+        });
+
+        const reason = 'Fund matures in Q3 and the buyer pool is unusually deep.';
+        const element = createComponent({ ...PROPS, overrideReason: reason });
+
+        await chooseRecordType(element, 'On_Market');
+        confirmBtn(element).click();
+        await flushPromises();
+
+        expect(initiateAndSubmit).toHaveBeenCalledWith({
+            assetId: ASSET_ID,
+            recordTypeDeveloperName: 'On_Market',
+            overrideReason: reason
+        });
+    });
+
+    it('🔴 OVERRIDE REASON: never appears anywhere in the rendered dialog', async () => {
+        const reason = 'ZZTOPSECRETREASONZZ';
+        const element = createComponent({ ...PROPS, overrideReason: reason });
+
+        await Promise.resolve();
+
+        // Presence control: the value IS set (the test above proves it reaches Apex from
+        // exactly this property), so an absent string here cannot be passing because the
+        // property was ignored.
+        expect(element.overrideReason).toBe(reason);
+        expect(element.shadowRoot.innerHTML).not.toContain(reason);
+        expect(element.shadowRoot.textContent).not.toContain(reason);
+        // And no new input appeared to hold it — the Override path must not gain a field
+        // the Initiate path lacks.
+        expect(element.shadowRoot.querySelector('lightning-textarea')).toBeNull();
     });
 
     it('NOT-SUBMITTED IS A SUCCESS PATH: closes with the outcome, not with an error', async () => {

@@ -80,6 +80,15 @@ Disposition__c disp = [SELECT Id FROM Disposition__c WHERE Name = 'DISP-0002' LI
 // Update outreach summary fields
 disp.Package_Sent__c         = Date.newInstance(2026, 5, 15);
 disp.Submission_Deadline__c  = Date.newInstance(2026, 5, 30);
+// 🔴 `Responses_Received__c` IS TRIGGER-OWNED SINCE 2026-08-31 (Tranche 1 item 7).
+// `DispositionCounterRollupService` recomputes it from the live `BOV_Submission__c` row count, so
+// this assignment is overwritten — twice — by the two statements below it: first the
+// `delete [SELECT Id FROM BOV_Submission__c ...]` drives it to 0, then the four-row insert drives
+// it back to 4. The end state matches this literal, which is why it is kept rather than removed.
+// ⚠ THE INTERMEDIATE 0 IS REAL AND IS VISIBLE TO ANYTHING WATCHING. Harmless in a seed script;
+// worth knowing before this delete-then-reinsert shape is copied into anything that is not one.
+// ⚠ `Brokers_Contacted__c` is NOT trigger-owned and stays manual — it counts brokers ASKED, which
+// no child row records.
 disp.Responses_Received__c   = 4;
 disp.Brokers_Contacted__c    = 7;
 disp.Selected_Broker__c      = 'Marcus & Millichap · Dana Pierce';
@@ -174,6 +183,13 @@ if (fellBack > 0) {
 insert bovs;
 
 // Broker Listing
+// ⚠ `Days_On_Market__c` BELOW IS THE **STORED** NUMBER AND IS STILL ASSIGNABLE. Checked 2026-08-31
+// (Tranche 1 item 6): decision D-4 added `Days_On_Market_Live__c` as a NEW formula field ALONGSIDE
+// this one; the stored field is untouched, still writable, and NOT deleted (additive retirement).
+// 🔴 DO NOT REPOINT THIS LINE — a formula field cannot be assigned, and anonymous Apex only finds
+// that out at run time.
+// ⚠ THE 7 IS A SNAPSHOT AGAINST A FIXED `List_Date__c` OF 2026-06-01 and has already diverged from
+// what the formula computes. Expected: that divergence is the reason the formula exists.
 delete [SELECT Id FROM Broker_Listing__c WHERE Disposition__c = :disp.Id];
 insert new Broker_Listing__c(
     Disposition__c = disp.Id,

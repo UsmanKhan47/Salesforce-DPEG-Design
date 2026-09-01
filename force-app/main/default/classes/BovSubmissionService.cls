@@ -18,17 +18,56 @@
  * .claude/rules/apex-layering-rule.md. The controller stays thin.
  *
  * ══════════════════════════════════════════════════════════════════════════════
- * WHAT A REPLACEMENT IS, IN FOUR WRITES THAT MUST NOT COME APART
+ * WHAT A REPLACEMENT IS, IN FOUR-OR-FIVE WRITES THAT MUST NOT COME APART
  * ══════════════════════════════════════════════════════════════════════════════
  *   1. the INCUMBENT  -> `Submission_Status__c = 'Backup'` and `Approval_Status__c` CLEARED
  *   2. the CHALLENGER -> `Submission_Status__c = 'Selected'` and `Approval_Status__c` CLEARED
  *   3. the DISPOSITION -> `Selected_Broker__c` = the challenger's `Broker_Firm__c`
+ *   3a. the NEW LISTING -> one `Broker_Listing__c` opening the incoming broker's OWN clock, and
+ *      ONLY when the sale already has a listing (2026-09-01, Tranche 4 item 5 / design D-9, D-10,
+ *      D-16). CONDITIONAL — see `replaceSelectedBroker`; on most replacements it does not happen.
  *   4. the HISTORY ROW -> one `BOV_Broker_Change__c` recording who was replaced by whom, why,
  *      and when (2026-08-20, Tranche 2 Workstream B / design D4.3)
  *
  * ⚠ WRITE 4 WAS ADDED AFTER THE OTHER THREE AND THIS BLOCK USED TO READ "THREE WRITES". It is
  * corrected rather than appended to, because a header that undercounts its own DML is how a budget
  * line stops being a contract.
+ * ⚠ AND IT USED TO READ "FOUR WRITES" UNTIL 2026-09-01, corrected again in the same spirit. Write
+ * 3a is numbered rather than renumbering write 4, because write 4's identity — "the LAST DML,
+ * inside the savepoint" — is asserted by a test and argued three paragraphs down. 🔴 WRITE 3a GOES
+ * BEFORE IT AND MUST STAY THERE.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════
+ * 🔴 WHAT WRITE 3a IS **NOT**: IT DOES NOT RESET THE MARKETING CLOCK, AND MUST NEVER BE MADE TO.
+ * ══════════════════════════════════════════════════════════════════════════════
+ * The story asked for "the Active Listing clock to restart when the broker is replaced". Taken
+ * literally that means rewriting `Disposition__c.Listing_Date__c` — and that is REFUSED, by user
+ * decision at Gate 1 and by two class headers that already refuse it in terms:
+ *   `DispositionTractionService:166-172` — "Using the child's date would silently reset the clock
+ *   the moment a broker was replaced — i.e. exactly when the clock matters most."
+ *   `BrokerListingController:164-168` — "...which, now that this card carries a Replace Broker
+ *   button, is one click away rather than hypothetical."
+ * `Disposition__c.Listing_Date__c` also feeds `Disposition__c.Days_On_Market__c`, the
+ * `Dispositions/Avg_Days_on_Market` report and the `Broker Alert Due` KPI, all of which would
+ * change meaning WITH NO METADATA DIFF AT ALL.
+ *
+ * ✅ Days-on-Market is TWO facts and this write separates them rather than picking one: how long
+ * the PROPERTY has been on the market (a market fact, survives a broker change — the parent's
+ * clock, still the traction band's only input) and how long THIS BROKER has had it (a performance
+ * fact, restarts — `Broker_Listing__c.Days_On_Market_Live__c` on the new row, surfaced by
+ * `BrokerListingController.ListingRow.daysWithThisBroker`). Both are on the card, side by side.
+ *
+ * ✅ AND THE APPEND NEEDED NO SCHEMA CHANGE, because the repo designed for it in advance:
+ * `BrokerListingSelector.selectMostRecentByDispositionId` is already
+ * `ORDER BY CreatedDate DESC LIMIT 1` — "the current listing among several" — so `c/brokerListing`
+ * follows the new row for free. `DispositionStageEntryService.openBrokerListings`' header says so
+ * explicitly and names this action as the thing that would supply `Contact_Name__c`.
+ *
+ * ⚠ THE SUPERSEDED ROW IS LEFT ALONE AND STAYS VISIBLE. `Broker_Listing__c.Listing_Status__c` is
+ * RESTRICTED to `On Track` / `At Risk` / `Hard Stop`, so there is no `Superseded` value to write,
+ * and story 5's "exactly one active listing per on-market sale" is still unenforced by any rule,
+ * trigger or flow. Adding that value is a restricted-picklist change that triggers this repo's
+ * standing grep-repo-and-query-org sweep. OUT OF SCOPE, and reported rather than papered over.
  *
  * 🔴 WRITE 4 IS DELIBERATELY LAST, INSIDE THE SAME SAVEPOINT. A history row recording a
  * replacement that then failed is worse than no history at all: it is a durable, reportable,
@@ -70,12 +109,21 @@
  * the broker underneath a pending approval OF that broker is not an operation this business has.
  *
  * ── SOQL / DML BUDGET ───────────────────────────────────────────────────────
- * 1 SOQL (all submissions for the disposition) + 3 DML. No SOQL or DML in any loop.
+ * 1-2 SOQL + 3-4 DML. No SOQL or DML in any loop.
  * ⚠ THIS LINE SAID "1 SOQL + 2 DML" UNTIL 2026-08-20 and was corrected in the same change that
  * added the third DML (the `BOV_Broker_Change__c` history insert). The three are: the bulk
  * submission update, the parent stamp, the history insert. The SOQL stayed at ONE — the history
  * row's broker Contact (`Broker__c`) and firm snapshot (`Broker_Firm__c`) are both carried by the
  * existing `selectStatusesByDispositionId` read rather than by a second query against Contact.
+ * ⚠ AND IT SAID "1 SOQL + 3 DML" UNTIL 2026-09-01, corrected in the same change that added write
+ * 3a, in the same style and for the same reason. BOTH numbers became RANGES rather than growing,
+ * and the range is the contract:
+ *   SOQL 1 on any REFUSED call (the submission read alone — every refusal happens before the
+ *        second read), 2 on any call that gets as far as writing.
+ *   DML  3 when the sale has no `Broker_Listing__c` yet, 4 when it has one.
+ * The second SOQL is `BrokerListingSelector.selectByDispositionIds` and it is deliberately placed
+ * AFTER the last refusal so a rejected click still costs one query. `Contact_Name__c` rides the
+ * existing submission read (added to that SELECT in the same change) rather than adding a third.
  *
  * ── BULK ────────────────────────────────────────────────────────────────────
  * Per-transaction-singleton @AuraEnabled operation, invoked once per modal click: one disposition,
@@ -83,6 +131,12 @@
  * not apply — same shape and same exemption as `DispositionApprovalService`. Record that reasoning
  * in the test class header so review does not demand 251. ⚠ The submission write is still a single
  * BULK DML over however many submissions the disposition has.
+ * ⚠ RE-EXAMINED 2026-09-01 RATHER THAN INHERITED, BECAUSE WRITE 3a PUTS A FOURTH OBJECT IN THE
+ * TRANSACTION and an exemption that is not re-argued when its subject changes is how one stops
+ * being true. The exemption HOLDS, on the same ground and not on precedent: the shape that would
+ * break it is a LOOP over records, and there is still none — one disposition, one challenger, at
+ * most one listing row, per click. Adding a fourth object multiplies the DML count by a constant,
+ * not by the record count, which is exactly the property the 251 rule exists to test for.
  *
  * @see force-app/main/default/classes/BovController.cls (thin caller)
  * @see force-app/main/default/classes/BovSubmissionTriggerHandler.cls (what the FRESH approval does)
@@ -108,6 +162,25 @@ public with sharing class BovSubmissionService {
     private static final String STATUS_SELECTED = 'Selected';
     @TestVisible
     private static final String STATUS_BACKUP = 'Backup';
+
+    /**
+     * The `Broker_Listing__c.Listing_Status__c` a broker's FIRST DAY opens at (2026-09-01, write
+     * 3a). `Listing_Status__c` is RESTRICTED to `On Track` / `At Risk` / `Hard Stop`.
+     *
+     * ⚠ IT IS A SECOND COPY OF A LITERAL THAT ALSO LIVES IN
+     * `DispositionStageEntryService.LISTING_INITIAL_STATUS`, AND THAT IS ACCEPTED RATHER THAN
+     * UNNOTICED. The original is `@TestVisible private` — promoting it to `public` to share it
+     * would export a stage-entry internal to an unrelated service and invite every other caller to
+     * reach into that class for constants. Naming ONE value is not the same as holding a copy of
+     * the VALUE SET, which is the distinction this class already draws at
+     * `REASON_INITIAL_APPOINTMENT`: nothing here enumerates the options or validates membership,
+     * and an off-list value would still be refused by the platform at DML with its own message.
+     * 🔴 IF A `Superseded` VALUE IS EVER ADDED TO THAT PICKLIST, BOTH COPIES ARE IN THE SWEEP.
+     * That is a restricted-picklist change and triggers this repo's standing
+     * grep-the-repo-and-query-the-org rule; this comment is here so the second copy is found.
+     */
+    @TestVisible
+    private static final String LISTING_INITIAL_STATUS = 'On Track';
 
     private static final String NO_RECORD_MESSAGE = 'No record was provided.';
 
@@ -416,6 +489,44 @@ public with sharing class BovSubmissionService {
             Is_System_Selected__c = false
         ));
 
+        // ══════════════════════════════════════════════════════════════════════════════════════
+        // 🔴 THE ONE CONDITION THAT MAKES WRITE 3a SAFE, AND IT IS NOT OPTIONAL (design D-10).
+        //    "DOES THIS SALE ALREADY HAVE A LISTING?" — nothing else, no stage read.
+        // ══════════════════════════════════════════════════════════════════════════════════════
+        // Replace Broker is reachable from TWO surfaces, both markup-composed in
+        // `c/dispositionMain`: `c/brokerListing` at **Active Listing** (:69) and
+        // `c/bovBrokerPanel` at **BOV Outreach** (:42). At BOV Outreach there is no listing and the
+        // marketing period has not started, so appending one there is not merely premature —
+        // 🔴 IT WOULD PERMANENTLY POISON THE STAGE-ENTRY AUTO-CREATE.
+        // `DispositionStageEntryService.openBrokerListings`' idempotency test is SIMPLE PRESENCE
+        // ("this disposition already has a broker listing", any listing, not keyed on the broker).
+        // A listing created during BOV Outreach therefore makes the Active Listing auto-create a
+        // PERMANENT NO-OP for that sale, leaving it with a listing whose `List_Date__c` predates
+        // the listing and whose `Broker_Firm__c` was never stamped from `Selected_Broker__c`.
+        // Silent, months later, and unrecoverable without hand repair.
+        //
+        // ⚠ "A LISTING EXISTS" IS EXACTLY EQUIVALENT TO "THE SALE REACHED ACTIVE LISTING" and is
+        // preferred to reading the stage, deliberately: the stage can move on past Active Listing
+        // (Closing, Closed) and a stage equality test would then stop appending, while the listing
+        // is still the live one the card shows. The presence test is the same fact the auto-create
+        // itself keys on, so the two can never disagree about what "listed" means.
+        //
+        // ⚠ PLACED AFTER THE LAST REFUSAL SO A REJECTED CLICK STILL COSTS ONE QUERY — see the
+        // class header's budget range. It is a READ and needs no savepoint; nothing above creates
+        // a listing, so its answer cannot be invalidated by writes 1-3.
+        //
+        // ⚠ AN EXISTING SELECTOR METHOD, NOT A NEW ONE. `selectByDispositionIds` selects
+        // `Id, Disposition__c` only — "does one exist?", nothing more — and is `WITH SYSTEM_MODE`,
+        // so it cannot throw an FLS denial into a user's replacement. It IS sharing-scoped
+        // (`with sharing` on that selector, argued in its own header), so a principal who cannot
+        // SEE the listing reads zero and appends nothing. 🔴 THAT IS THE SAFE DIRECTION AND IT IS
+        // WHY THE POLARITY OF THIS GUARD MATTERS: a false NEGATIVE skips an append, which is
+        // visible on the card and repairable by hand; a false POSITIVE creates the BOV-Outreach
+        // listing above and is silent forever.
+        Boolean saleIsListed = !BrokerListingSelector
+            .selectByDispositionIds(new Set<Id>{ dispositionId })
+            .isEmpty();
+
         Savepoint beforeReplacement = Database.setSavepoint();
         try {
             // ── SYSTEM_MODE, and `Approval_Status__c` is what forces it ──────
@@ -436,6 +547,69 @@ public with sharing class BovSubmissionService {
                 Id = dispositionId,
                 Selected_Broker__c = challenger.Broker_Firm__c
             );
+
+            // ── 🔴 WRITE 3a: THE INCOMING BROKER'S OWN LISTING, CONDITIONAL ──
+            // Tranche 4 item 5 (design D-9 / D-10 / D-16). The class header carries the full
+            // argument for why this APPENDS rather than resetting `Disposition__c.Listing_Date__c`,
+            // and `saleIsListed`'s own block above carries the argument for the condition. Neither
+            // is repeated here; read them before changing this.
+            //
+            // ⚠ IT SITS BEFORE THE HISTORY ROW, NOT AFTER. Write 4's identity is "the LAST DML,
+            // inside the savepoint" — a `BOV_Broker_Change__c` that outlives a rolled-back
+            // replacement is a durable, reportable lie — and `lockedDisposition_refuses...` is the
+            // falsifier for it. Appending after it would make the history row no longer last.
+            //
+            // ── SYSTEM_MODE, AND THE DESIGN'S USER_MODE RECOMMENDATION IS DELIBERATELY REFUSED ──
+            // 🔴 THE DESIGN (D-10) ARGUED `USER_MODE` ON THE GROUND THAT "replaceSelectedBroker
+            // already asserts DispositionActionPermissionService, so the caller is by construction
+            // a disposition driver". MEASURED 2026-09-01, THAT PREMISE IS FALSE.
+            // `DispositionActionPermissionService.computeDispositionActionAccess` passes on the
+            // `Disposition_Deal_Actions` custom permission **OR on "Modify All Data"**. Modify All
+            // Data lifts object CRUD and sharing; it does NOT lift FLS. And every
+            // `Broker_Listing__c` field permission in this repo lives in exactly two files —
+            // `DPEG_Disposition_Edit` and `DPEG_Disposition_View` — so an administrator holding
+            // neither passes the gate and holds ZERO editable FLS on `Broker_Firm__c`,
+            // `Contact_Name__c`, `List_Date__c` and `Listing_Status__c`. `DPEG_Disposition_View`
+            // additionally carries `allowCreate = false` on the object.
+            // ⇒ A `USER_MODE` insert would throw `DmlException`, be caught below, and REFUSE AND
+            // ROLL BACK THE ENTIRE REPLACEMENT — an operation those principals could perform
+            // yesterday — with a platform message about an object they were not trying to touch.
+            // A write added to enrich an action must not be able to destroy it.
+            //
+            // ⚠ AND THE HONEST COUNTER-STATEMENT, copied in spirit from `openBrokerListings`, which
+            // makes the same trade for the same object: SYSTEM_MODE here lets a principal create a
+            // `Broker_Listing__c` they could not create by hand. It is bounded three ways — the row
+            // exists only as a consequence of a replacement they were already authorised to
+            // perform, every value on it is derived from records already in this transaction, and
+            // NO USER INPUT REACHES IT (`reason` and `notes` go to the history row, never here).
+            // Do not restate any "the persona has no create" line: for the ANALYST persona it is
+            // measurably untrue, and the reason is the admin/MAD path above.
+            // allOrNone = true, matching every other write in this savepoint.
+            if (saleIsListed) {
+                Database.insert(
+                    new Broker_Listing__c(
+                        Disposition__c = dispositionId,
+                        // 🔴 `Date.today()`, NOT the parent's `Listing_Date__c`. This is the ONE
+                        // place the two clocks are allowed to diverge, and it is the entire point
+                        // of the feature: the marketing clock keeps running from when the PROPERTY
+                        // went to market, and the broker clock starts now.
+                        List_Date__c = Date.today(),
+                        Broker_Firm__c = challenger.Broker_Firm__c,
+                        // D-16. `openBrokerListings` leaves this blank and says "A human fills it,
+                        // or the future broker-change action supplies it." This is that action.
+                        // It also closes, for replacements at Active Listing only, the defect where
+                        // the listing row kept naming the OLD broker after a swap: `Broker_Firm__c`
+                        // was stamped once at stage entry and nothing re-stamped it.
+                        Contact_Name__c = challenger.Contact_Name__c,
+                        // A fresh broker starts On Track. Set explicitly even though it equals the
+                        // field default, for the reason `openBrokerListings` gives at
+                        // LISTING_INITIAL_STATUS: an implicit default is not falsifiable by a test.
+                        Listing_Status__c = LISTING_INITIAL_STATUS
+                    ),
+                    true,
+                    AccessLevel.SYSTEM_MODE
+                );
+            }
 
             // ── 🔴 THE HISTORY ROW, LAST, INSIDE THE SAME SAVEPOINT ──────────
             // Last because a row asserting "CBRE was replaced by JLL" that outlives a rolled-back

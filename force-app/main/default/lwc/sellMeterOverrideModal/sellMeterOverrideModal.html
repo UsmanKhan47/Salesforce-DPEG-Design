@@ -1,0 +1,82 @@
+<template>
+    <!-- The header label is HARDCODED, not taken from the `label` option passed to
+         `LightningModal.open()`. That option sets the modal's accessible name; this
+         is the visible heading, and the two are deliberately the same words. Same
+         shape as c/sellMeterInitiateModal, which does the identical thing and says so. -->
+    <lightning-modal-header
+        label="Override the sell meter?"
+    ></lightning-modal-header>
+
+    <lightning-modal-body>
+        <div class="smo-body">
+            <!-- ═══════════════════════════════════════════════════════════════════
+                 THE WARNING BANNER — `role="alert"` NOT `role="alertdialog"`.
+                 The modal itself already carries dialog semantics from
+                 lightning-modal; adding a second dialog role here would nest one
+                 inside the other. `alert` is what announces the CONTENT of the
+                 warning when the dialog opens.
+
+                 🔴 THE PROPERTY NAME IS INSIDE `{message}` AND MUST STAY THERE.
+                 The `LightningConfirm` this replaces put the name in its message
+                 and the caller's suite pinned it; a confirmation that does not name
+                 its subject asks the user to confirm a word rather than a decision.
+                 Splitting the name into its own element would leave `{message}`
+                 reading "... is not at peak yet" with nothing in front of it.
+
+                 ⚠ NO ICON. `lightning-icon` inside an `alert` region is announced
+                 alongside the text and adds nothing a screen-reader user needs; the
+                 tinted band carries the warning visually. Adding one would need an
+                 `alternative-text` that duplicates the sentence beside it.
+                 ═══════════════════════════════════════════════════════════════════ -->
+            <p class="smo-warning" role="alert">{message}</p>
+
+            <!-- ═══════════════════════════════════════════════════════════════════
+                 THE REASON — MANDATORY, AND `required` IS NOT WHAT MAKES IT SO.
+                 `lightning-textarea` enforces `required` only through
+                 reportValidity(), which nothing calls here: this dialog has no
+                 lightning-record-edit-form and no submit path other than the button
+                 below. The asterisk it draws is the whole of its effect.
+
+                 🔴 `confirmDisabled` IS THE ENFORCEMENT. It is the same mechanism
+                 c/sellMeterInitiateModal uses for its mandatory Sell Type picklist,
+                 and for the reason that component's header spells out. Both halves
+                 are pinned in the suite; removing either leaves a dialog that can
+                 return a blank reason, which puts an empty audit field in front of
+                 the approving principal — the exact state item 5b exists to fix.
+
+                 ⚠ THE FIELD LABEL IS A QUESTION, NOT A NOUN. "Why are you
+                 overriding the sell meter?" is answerable; a label reading "Reason"
+                 invites "override" as an answer. This text is read by a different
+                 person (the approver) than the one typing it.
+                 ═══════════════════════════════════════════════════════════════════ -->
+            <lightning-textarea
+                class="smo-reason slds-m-top_medium"
+                name="overrideReason"
+                label="Why are you overriding the sell meter?"
+                field-level-help="This is recorded on the disposition and shown to the approver."
+                value={reason}
+                onchange={handleReasonChange}
+                max-length="4000"
+                required
+            ></lightning-textarea>
+        </div>
+    </lightning-modal-body>
+
+    <lightning-modal-footer>
+        <lightning-button
+            class="smo-cancel"
+            label="Cancel"
+            onclick={handleCancel}
+        ></lightning-button>
+        <!-- `variant="brand"` rather than `destructive`: an override is a legitimate,
+             authorised action a principal is entitled to take, not a dangerous one.
+             The warning band above is what marks it as exceptional. -->
+        <lightning-button
+            class="smo-confirm slds-m-left_x-small"
+            variant="brand"
+            label="Continue"
+            onclick={handleConfirm}
+            disabled={confirmDisabled}
+        ></lightning-button>
+    </lightning-modal-footer>
+</template>

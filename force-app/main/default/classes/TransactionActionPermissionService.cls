@@ -384,7 +384,11 @@ public with sharing class TransactionActionPermissionService {
     /**
      * Whether the running user may change the COORDINATES of a live wire-fraud prerequisite gate —
      * `Task.Blocked_By__c` or `Task.Transaction_Deal__c` on a still-open item whose prerequisite is
-     * still open. Consumed by `TaskPrerequisiteService.enforceOnUpdate` (branch B only).
+     * still open. TWO consumers, both branch (B) only:
+     *   • `TaskPrerequisiteService.enforceOnUpdate`          (Phase 0, the live Task model)
+     *   • `ChecklistItemPrerequisiteService.enforceOnUpdate`  (Phase 2, the Checklist_Item__c model)
+     * ⚠ Both models are enforcing during the dual-model window, so this token governs BOTH. Granting
+     * or revoking it moves two gates, not one.
      *
      * ⚠ THIS IS ASKED FROM INSIDE A BEFORE-UPDATE TRIGGER, which the two sibling gates are not, so
      * two properties matter here that do not there:

@@ -116,7 +116,9 @@ private class OpportunityFunnelControllerTest {
         System.assertNotEquals(null, top.name, 'name is populated');
         System.assertEquals('New', top.stage, 'stage mirrors StageName');
         System.assertEquals('Retail', top.dealType, 'dealType mirrors Deal_Type__c');
-        System.assertEquals('Retail Strip', top.assetType, 'assetType mirrors Asset_Type__c');
+        // 'Retail', not 'Retail Strip': the Opportunity value set was aligned to Lead's on
+        // 2026-08-31 (Gap 1). TestDataFactory.createOpportunities is the source of this literal.
+        System.assertEquals('Retail', top.assetType, 'assetType mirrors Asset_Type__c');
         System.assertEquals(0, top.days, 'Created moments ago, so days-since-creation is 0');
     }
 

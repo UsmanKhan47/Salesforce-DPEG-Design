@@ -13,11 +13,14 @@
  *                                                  and deliberately so: it has callers, it stamps
  *                                                  `On_Market` unconditionally, and it does not
  *                                                  submit anything.
- * `initiateAndSubmit(assetId, recordTypeName)`   — the NEW Sell-Meter Initiate path (design
- *                                                  decision 1 / DEV-1). The user picks the record
+ * `initiateAndSubmit(assetId, recordTypeName,     — the NEW Sell-Meter Initiate path (design
+ *                    overrideReason)`               decision 1 / DEV-1). The user picks the record
  *                                                  type in a modal, and the create is followed by
  *                                                  an automatic `Sale_Decision_Approval`
- *                                                  submission.
+ *                                                  submission. Gained its third parameter on
+ *                                                  2026-08-31 (item 5b); it is null on every GREEN
+ *                                                  call and carries the principal's override
+ *                                                  reason on a YELLOW one.
  *
  * ⚠ THEY SHARE THE IDEMPOTENT FIND AND THE RED-BAND GATE BY CALLING THE SAME HELPERS, NOT BY ONE
  * DELEGATING TO THE OTHER. `findOrCreate` returns a bare Id and cannot express "created but not
@@ -51,9 +54,43 @@
  * button exists for (Gate 1 Q2 = confirm-then-create). Refusing YELLOW here would make
  * that button a server-side dead end for the second time in this module's life.
  *
+ * ⚠ QUALIFIED 2026-08-31 AND NOT RETRACTED: YELLOW is still PERMITTED, but it is now permitted
+ * ONLY TO A PRINCIPAL. The band itself is not a refusal — the paragraph above stands — and what
+ * changed is WHO may act on it. See the next section, which is the flip of this class's own
+ * recorded refusal to assert a permission on these paths.
+ *
+ * ═════════════════════════════════════════════════════════════════════════════════════
+ * 🔴 THE YELLOW-BAND PRINCIPAL GATE (2026-08-31, Tranche 2 item 5a, stories 12 and 14)
+ * ═════════════════════════════════════════════════════════════════════════════════════
+ * Both create paths now call `SellMeterOverridePermissionService.assertSellMeterOverrideAccess()`
+ * — but ONLY when the computed band is YELLOW, and only on the create branch.
+ *
+ * 🔴 THE ASSERT IS BAND-SCOPED, AND THAT SCOPING IS THE WHOLE DESIGN. A method-wide assert at the
+ * top of either method would close GREEN Initiate to every junior analyst, which no story asks for
+ * and which the section below refuses in terms. The band is already computed one statement
+ * earlier from data the SERVER read, so the gate needs no new parameter and trusts nothing the
+ * client sent.
+ *
+ * ⚠ WHAT THIS REMOVES FROM A LIVE PERSONA, STATED PLAINLY BECAUSE IT IS A CAPABILITY REMOVAL AND
+ * NOT A HOLE CLOSURE: a junior analyst can no longer start a disposition on a YELLOW asset AT
+ * ALL. That is exactly what stories 12/14 ask for and was confirmed at Gate 1 on 2026-08-31.
+ * GREEN Initiate stays open to analysts and RED stays refused to everyone.
+ *
  * ─────────────────────────────────────────────────────────────────────────────────────
- * 🔴 NEITHER CREATE PATH ASSERTS `Disposition_Deal_Actions`, AND THAT ASYMMETRY IS DELIBERATE
+ * 🔴 THIS SECTION'S HEADING USED TO READ "NEITHER CREATE PATH ASSERTS `Disposition_Deal_Actions`,
+ * AND THAT ASYMMETRY IS DELIBERATE". IT IS **SATISFIED, NOT DELETED** — 2026-08-31.
  * ─────────────────────────────────────────────────────────────────────────────────────
+ * ✅ THE REFUSAL BELOW STANDS UNCHANGED FOR `Disposition_Deal_Actions`. Neither create path
+ * asserts that token, for every reason it gives. What changed is that point 2' below wrote its own
+ * flip condition — *"If `DPEG_Disposition_View` ever gains the token, or the Principal is meant to
+ * be refused the create, the assert becomes correct and should be added on BOTH create paths at
+ * once — not on one"* — and Tranche 2 item 5a satisfies the SECOND clause of it, inverted:
+ * `DPEG_Disposition_View` gains a DIFFERENT token (`Disposition_Sell_Meter_Override`), and it is
+ * the ANALYST, not the Principal, who is meant to be refused. So the assert was added, on BOTH
+ * create paths at once, exactly as this paragraph instructed — and it reads the new token, not
+ * this one. Everything below is therefore still live reasoning about `Disposition_Deal_Actions`
+ * and must not be read as describing the new gate.
+ *
  * Every OTHER new write in this feature opens with
  * `DispositionActionPermissionService.assertDispositionActionAccess()` as its first statement
  * (`DispositionApprovalService.submitForApproval` / `.selectOffer`,
@@ -89,6 +126,14 @@
  *      on one view-only persona. If `DPEG_Disposition_View` ever gains the token, or the Principal
  *      is meant to be refused the create, the assert becomes correct and should be added on BOTH
  *      create paths at once — not on one.
+ *      ✅ CONDITION MET 2026-08-31 — see the YELLOW-BAND PRINCIPAL GATE section above. An assert
+ *      now exists on BOTH create paths, added in one change exactly as this bullet instructed. It
+ *      reads `Disposition_Sell_Meter_Override` (granted by `DPEG_Disposition_View` ONLY) rather
+ *      than `Disposition_Deal_Actions`, and it is scoped to the YELLOW branch — so the Principal
+ *      is GRANTED by it rather than newly denied, and point 1' above is satisfied rather than
+ *      contradicted. This bullet is KEPT, not deleted: it is the evidence that the assert was
+ *      added by someone who read the refusal, and points 1'-4 remain live reasoning about
+ *      `Disposition_Deal_Actions`, which neither path asserts and neither path should.
  *   3. The gate is enforced DECLARATIVELY where it belongs and NOT here: the NINE custom deal
  *      actions on `Disposition_Record_Page` (of TWELVE entries — `Edit`, `Clone` and `Delete` carry
  *      no visibility rule at all and are governed by object CRUD, not by this permission) are
@@ -142,6 +187,12 @@
  *
  * GOVERNOR BUDGET: 1 SOQL on the existing-Disposition path; 2 SOQL / 1 DML on the create
  * path. The record-type lookup is a describe, not a query, so it costs nothing.
+ *
+ * ⚠ AMENDED 2026-08-31: the YELLOW branch may add **at most ONE** further SOQL — the Modify All
+ * Data bypass read inside `SellMeterOverridePermissionService`, memoized per transaction. A
+ * principal pays ZERO (`FeatureManagement.checkPermission` is not a query) and only a
+ * non-principal reaches the read, on a path that is about to refuse them anyway. GREEN and RED
+ * budgets are unchanged.
  *
  * BULK: findOrCreate is structurally single-record-per-transaction — no trigger, no loop,
  * one invocation per LWC click. See DispositionServiceTest's header for the
@@ -235,6 +286,30 @@ public with sharing class DispositionService {
     @TestVisible
     private static final String READINESS_STAGE = 'Disposition Readiness';
 
+    /**
+     * The `Sell_Decision_Trigger__c` value stamped on a YELLOW (override) creation — 2026-08-31,
+     * Tranche 2 item 5b.
+     *
+     * 🔴 IT IS A **RESTRICTED** PICKLIST VALUE AND MUST MATCH THE METADATA CHARACTER FOR CHARACTER.
+     * Restricted picklists are DML-enforced in this org (measured repeatedly — the repo's older
+     * "record-type restriction is UI-only" comments are wrong), so a typo here is not a silently
+     * blank field: it is a `FIELD_INTEGRITY_EXCEPTION` that rolls back the whole create on a click
+     * the user cannot diagnose.
+     *
+     * ⚠ IT MUST EXIST ON **BOTH** RECORD TYPES, because either can be chosen in the modal. Verified
+     * against `objects/Disposition__c/fields/Sell_Decision_Trigger__c.field-meta.xml` and both
+     * `objects/Disposition__c/recordTypes/{On_Market,Off_Market}.recordType-meta.xml` on
+     * 2026-08-31: `Principal Decision` is present in all three. It needed no picklist surgery and
+     * no record-type edit, which is the whole reason this value was reused rather than a new one
+     * invented.
+     *
+     * ⚠ A literal here rather than a reference to the field's metadata because Apex has no way to
+     * name a picklist VALUE symbolically. That is why the two cross-references above are spelled
+     * out: they are the only check a reader can perform.
+     */
+    @TestVisible
+    private static final String OVERRIDE_DECISION_TRIGGER = 'Principal Decision';
+
     // The user-facing refusal for a RED asset. Plain ASCII on purpose (the repo's other
     // user-safe controller messages are too) and phrased as the business rule, not as an
     // error: the user has done nothing wrong, the property simply is not ready yet.
@@ -299,10 +374,20 @@ public with sharing class DispositionService {
      * reason to write to it. `initiateAndSubmit` lost the identical stamp in the same change, so
      * the two create paths still differ only in where the record type comes from.
      *
+     * ⚠ A YELLOW CREATION THROUGH THIS PATH RECORDS **NO OVERRIDE REASON**, AND THAT IS A KNOWN
+     * GAP RATHER THAN DATA LOSS. This method takes no reason parameter and is not being given one
+     * (Tranche 2 item 5b): it is the legacy path, it has no UI, and since 2026-08-31 its YELLOW
+     * branch is refused to everyone but a principal anyway. A blank
+     * `Sell_Meter_Override_Reason__c` on a YELLOW disposition therefore means "created through
+     * findOrCreate", not "the principal declined to say why". `initiateAndSubmit` — the path the
+     * Sell Meter button actually uses — always carries one.
+     *
      * @param assetId the Property_Asset__c to read/create the Disposition under
      * @return the existing or newly created Disposition__c Id
      * @throws DispositionService.SellMeterGateException when no Disposition exists yet and
      *         the asset's peak sell date bands RED (more than 90 days out, or absent)
+     * @throws SellMeterOverridePermissionService.AccessDeniedException when no Disposition exists
+     *         yet, the asset bands YELLOW, and the running user is not a principal
      * @throws System.QueryException when the create branch is reached and assetId does not
      *         resolve to a Property_Asset__c
      * @throws System.DmlException on a platform save failure
@@ -316,8 +401,17 @@ public with sharing class DispositionService {
         }
 
         Property_Asset__c asset = PropertyAssetSelector.selectPeakSellDateById(assetId);
-        if (SellMeterService.BAND_RED == SellMeterService.bandForPeak(asset.Peak_Sell_Date__c)) {
+        String band = SellMeterService.bandForPeak(asset.Peak_Sell_Date__c);
+        if (SellMeterService.BAND_RED == band) {
             throw new SellMeterGateException(RED_BAND_REFUSAL);
+        }
+        // 🔴 THE PRINCIPAL GATE, SCOPED TO YELLOW ONLY (2026-08-31, item 5a). GREEN falls straight
+        // through: an analyst initiating an at-peak asset is the ordinary case and closing it is
+        // not what any story asked for. Moving this assert above the band test — or out of the
+        // `if` — silently does exactly that. See the class header's YELLOW-BAND PRINCIPAL GATE
+        // section and the satisfied refusal beneath it.
+        if (SellMeterService.BAND_YELLOW == band) {
+            SellMeterOverridePermissionService.assertSellMeterOverrideAccess();
         }
 
         Disposition__c d = new Disposition__c(Property_Asset__c = assetId);
@@ -379,24 +473,39 @@ public with sharing class DispositionService {
      * 3. THE RED-BAND GATE, UNCHANGED, AND STILL ON THE CREATE BRANCH ONLY. See the class header:
      *    the meter governs STARTING a disposition, never reopening one. `findOrCreate` and this
      *    method must agree about that, and they do because both put the find ahead of the gate.
+     *    3b. THE YELLOW PRINCIPAL GATE (2026-08-31, item 5a). Immediately after, and ONLY when the
+     *    band is YELLOW: `SellMeterOverridePermissionService.assertSellMeterOverrideAccess()`. It
+     *    reads the band the SERVER just computed, so it needs no parameter and trusts nothing the
+     *    client sent — a hand-crafted call cannot claim GREEN to skip it.
      * 4. CREATE at `Disposition Readiness` with the chosen type — AND WITH NO PRICE STAMP.
      *    ⚠ It seeded `Asking_Price__c` ("Expected Value") from the asset
      *    for a few hours on 2026-08-25; the user then retired that field from the disposition flow,
      *    and both consumers (`BOV_Score__c` and the Readiness submission gate) now read
      *    `Property_Asset__r.Target_Sale_Price__c` directly. See `findOrCreate` for why re-adding the
      *    stamp would create a second, diverging source of truth. One DML.
+     *    4b. THE OVERRIDE AUDIT STAMP (2026-08-31, item 5b), on the YELLOW branch only and in the
+     *    SAME DML as the insert: `Sell_Decision_Trigger__c = 'Principal Decision'` and
+     *    `Sell_Meter_Override_Reason__c = overrideReason`.
+     *    🔴 IT MUST BE AT INSERT, NOT AFTERWARDS. `Sale_Decision_Approval` sets
+     *    `recordEditability = AdminOnly`, which locks the record the instant step 5 runs on the
+     *    very next line. A stamp attempted after submission fails, and it fails on the audit fact
+     *    rather than on the record the user can see.
      * 5. SUBMIT. See `submitSaleDecision` for why a failure here returns rather than throws.
      *
-     * ⚠ THERE IS NO `assertDispositionActionAccess()` AT THE TOP OF THIS METHOD AND THAT IS A
-     * DECISION, NOT AN OMISSION — see the class header's "NEITHER CREATE PATH ASSERTS
-     * `Disposition_Deal_Actions`" section for the four pieces of evidence and the named residual.
-     * Adding one here closes the Sell Meter for every junior analyst; the control on this path is
-     * the `Sale_Decision_Approval` submission on the very next line.
+     * ⚠ THERE IS STILL NO `assertDispositionActionAccess()` AT THE TOP OF THIS METHOD AND THAT IS
+     * STILL A DECISION, NOT AN OMISSION — see the class header's satisfied-refusal section for the
+     * four pieces of evidence and the named residual. A method-wide assert closes the Sell Meter
+     * for every junior analyst. What DID arrive on 2026-08-31 is the band-scoped YELLOW gate in
+     * step 3b, which reads a DIFFERENT token and leaves GREEN Initiate open — the two are not the
+     * same change and the second is not a licence to make the first.
      *
      * ── GOVERNOR BUDGET ─────────────────────────────────────────────────────
      * Existing-disposition path: 1 SOQL, 0 DML. Create path: 2 SOQL + 1 DML + 1 SOQL for the
      * pending gate + the approval submission. The record-type lookup is a describe and costs
      * nothing.
+     * ⚠ AMENDED 2026-08-31: the YELLOW branch adds AT MOST ONE more SOQL (the Modify All Data
+     * bypass read in `SellMeterOverridePermissionService`, memoized per transaction). A principal
+     * pays zero for the gate. GREEN and RED are unchanged.
      *
      * ── BULK ────────────────────────────────────────────────────────────────
      * Structurally single-record-per-transaction — no trigger, no loop, one invocation per modal
@@ -404,22 +513,45 @@ public with sharing class DispositionService {
      * as it does not apply to `findOrCreate`. Record that reasoning in the test class header so
      * review does not demand it.
      *
+     * ── 🔴 `overrideReason` — MANDATORY ON THE CLIENT, NOT REFUSED HERE, AND THAT IS DELIBERATE ──
+     * `c/sellMeterOverrideModal` will not let its confirm button enable until the principal has
+     * typed a reason (the `confirmDisabled`-getter idiom, because `required` on a `lightning-*`
+     * input only fires on `reportValidity()` and nothing calls it). This method does NOT
+     * additionally refuse a blank reason, and the omission is considered rather than forgotten:
+     *   - the parameter is null on every GREEN call BY DESIGN — a reason for an override that did
+     *     not happen would be noise — so a blank-reason refusal would have to be YELLOW-scoped
+     *     too, i.e. a second gate on the same branch;
+     *   - the failure it would prevent is a blank audit field, which is visible and correctable,
+     *     whereas the failure it would CAUSE is refusing a principal mid-approval for a client
+     *     defect they cannot see or fix;
+     *   - and there is exactly one production caller, whose gate is tested.
+     * If a future caller can reach YELLOW without the modal, add the refusal HERE (not in the
+     * controller) and say so in this paragraph.
+     *
      * @param assetId the Property_Asset__c to create the Disposition under
      * @param recordTypeDeveloperName `On_Market` or `Off_Market`; case-sensitive
+     * @param overrideReason the principal's free-text reason for overriding the sell meter.
+     *        Recorded only when the band is YELLOW; ignored (and expected null) on GREEN.
      * @return an outcome carrying the Disposition Id, whether it was submitted, and an authored
      *         message. Never null.
      * @throws DispositionService.InvalidRecordTypeException when the name is blank or off the
      *         allow-list (a caller defect — the controller masks it)
      * @throws DispositionService.SellMeterGateException when no Disposition exists yet and the
      *         asset's peak sell date bands RED
+     * @throws SellMeterOverridePermissionService.AccessDeniedException when no Disposition exists
+     *         yet, the asset bands YELLOW, and the running user is not a principal
      * @throws System.QueryException when the create branch is reached and assetId does not resolve
      *         to a Property_Asset__c
      * @throws System.DmlException on a platform save failure
      * @example
      * DispositionService.InitiateOutcome outcome =
-     *     DispositionService.initiateAndSubmit(assetId, 'Off_Market');
+     *     DispositionService.initiateAndSubmit(assetId, 'Off_Market', 'Fund matures in Q3.');
      */
-    public static InitiateOutcome initiateAndSubmit(Id assetId, String recordTypeDeveloperName) {
+    public static InitiateOutcome initiateAndSubmit(
+        Id assetId,
+        String recordTypeDeveloperName,
+        String overrideReason
+    ) {
         // STEP 1 — allow-list before anything costs a query. Return-early per .claude/rules.
         if (String.isBlank(recordTypeDeveloperName)
                 || !ALLOWED_RECORD_TYPES.contains(recordTypeDeveloperName)) {
@@ -434,8 +566,18 @@ public with sharing class DispositionService {
 
         // STEP 3 — the server-side sell-meter gate, create branch only. Verbatim from findOrCreate.
         Property_Asset__c asset = PropertyAssetSelector.selectPeakSellDateById(assetId);
-        if (SellMeterService.BAND_RED == SellMeterService.bandForPeak(asset.Peak_Sell_Date__c)) {
+        String band = SellMeterService.bandForPeak(asset.Peak_Sell_Date__c);
+        if (SellMeterService.BAND_RED == band) {
             throw new SellMeterGateException(RED_BAND_REFUSAL);
+        }
+        Boolean isOverride = (SellMeterService.BAND_YELLOW == band);
+
+        // STEP 3b — 🔴 THE PRINCIPAL GATE, SCOPED TO YELLOW ONLY (2026-08-31, item 5a). Identical
+        // to findOrCreate's, added in the same change, per the class header's own instruction that
+        // an assert here belongs on BOTH create paths at once. Un-scoping it closes GREEN Initiate
+        // to every junior analyst — the outcome the header spent forty lines refusing.
+        if (isOverride) {
+            SellMeterOverridePermissionService.assertSellMeterOverrideAccess();
         }
 
         // STEP 4 — create at Readiness with the CHOSEN type. NO price is stamped: see the method
@@ -445,6 +587,40 @@ public with sharing class DispositionService {
             Property_Asset__c = assetId,
             Disposition_Stage__c = READINESS_STAGE
         );
+
+        // STEP 4b — the override audit stamp, in the SAME sObject and therefore the same DML.
+        //
+        // 🔴 `Sell_Decision_Trigger__c` FIXES A LIVE DEFECT AND IS THE MORE VALUABLE HALF OF THE
+        // TWO. That restricted picklist already existed, already appeared on
+        // `Sale_Decision_Approval`'s approval screen, and defaulted to `Sell Meter Green` with NO
+        // WRITER ANYWHERE IN THE REPO — so before this line, every override arrived in front of the
+        // approving principal labelled "Sell Meter Green", which is false about the one case the
+        // field exists to distinguish.
+        //
+        // ⚠ 'Principal Decision' IS A VALUE ON THE RESTRICTED PICKLIST AND ON **BOTH** RECORD TYPES
+        // (On_Market and Off_Market), which is why no picklist or record-type edit was needed here.
+        // Restricted picklists ARE enforced by DML in this org, and a record type that omits a
+        // value drops it for that type — so a future rename or a value added to only one type turns
+        // this line into a DML failure on a save the user cannot diagnose. Re-check both
+        // `objects/Disposition__c/recordTypes/*.xml` before touching the spelling.
+        //
+        // ⚠ THE GREEN PATH DELIBERATELY WRITES NEITHER. It leaves `Sell_Decision_Trigger__c` on its
+        // field default of `Sell Meter Green`, which is TRUE for a GREEN initiate, and leaves the
+        // reason null. Stamping the trigger unconditionally would be equivalent today and would
+        // silently become wrong the moment the default changes.
+        //
+        // ⚠ OWED TO TRANCHE 3, DELIBERATELY NOT DONE HERE: `Sell_Meter_Override_Reason__c` is NOT
+        // on `Sale_Decision_Approval`'s `approvalPageFields`, so the approving principal sees the
+        // corrected `Sell_Decision_Trigger__c` ("Principal Decision" instead of the false
+        // "Sell Meter Green") but NOT the reason text — they must open the record for that. Adding
+        // it is an approval-process edit, approvals are Tranche 3's boundary, and an ACTIVE
+        // approval process may need deactivate/reactivate to accept the change. Recorded here so
+        // the gap reads as scheduled rather than forgotten (design decision D-14, 2026-08-31).
+        if (isOverride) {
+            d.Sell_Decision_Trigger__c = OVERRIDE_DECISION_TRIGGER;
+            d.Sell_Meter_Override_Reason__c = overrideReason;
+        }
+
         Id recordTypeId = recordTypeIdFor(recordTypeDeveloperName);
         if (recordTypeId != null) {
             d.RecordTypeId = recordTypeId;

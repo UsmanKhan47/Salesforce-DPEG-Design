@@ -57,16 +57,33 @@
  *
  * SUPPRESSION IS NOT OPTIONAL, AND THE BINDING LIMIT IS SOQL, NOT DML ROWS. Inserting 50 x 82 =
  * 4,100 items in ONE statement fires the after-insert trigger in ceil(4100/200) = 21 batches. Left
- * unsuppressed that is 21 SOQL + 21 DML for the item insert alone, plus more for the second pass,
- * against a 100-query limit - to recompute counters for rows the same statement is still creating.
+ * unsuppressed that is **84 SOQL and up to 42 DML** for the item insert alone, plus more for the
+ * second pass, against a 100-query limit - to recompute counters for rows the same statement is
+ * still creating. ⚠ THIS SAID "21 SOQL + 21 DML" UNTIL 2026-08-31 AND UNDERSTATED IT FOURFOLD:
+ * each `ChecklistRollupService.recalc` costs FOUR selector reads, not one, so it is 21 batches x 4 =
+ * 84 - i.e. the limit is blown outright, not merely approached. The DML figure is `<= 42` (up to two
+ * parent writes per batch) rather than exactly 21. Corrected in the safe direction, but the
+ * conclusion it supports is now much stronger, so do not re-derive it from the old numbers.
  * This org has a measured incident of exactly that shape (routing a new parent into a Task trigger
  * cost `ceil(rows/200)` SOQL *and* DML at fan-out scale). So the fan-out suppresses the rollup and
  * WRITES THE COUNTERS ITSELF from what it just created - it knows them exactly.
  *
  *   DML statements per chunk : 4 (checklists, items, prerequisite pass, transactions). Limit 150.
- *   SOQL per chunk           : 1 - `TransactionSelector.selectForChecklistFanout`. The second pass
- *                              needs NO query: the inserted items are still in memory with their
- *                              new Ids, so the prerequisite index is built for free.
+ *   SOQL per chunk           : 2, and BOTH are once-per-chunk rather than per-deal.
+ *                              (1) `TransactionSelector.selectForChecklistFanout`.
+ *                              (2) the PREREQUISITE GATE, fired by the second pass's own
+ *                                  `Database.update(links, ...)`. ⚠ THIS LINE SAID "1" AND CLAIMED
+ *                                  "the second pass needs NO query" UNTIL 2026-08-31. The index it
+ *                                  builds is indeed free - the inserted items are still in memory
+ *                                  with their new Ids - but the UPDATE THAT WRITES THE LINKS FIRES
+ *                                  TRIGGERS, and `AccessLevel.SYSTEM_MODE` does not change that
+ *                                  (it lifts CRUD/FLS, it does not skip automation). So
+ *                                  `ChecklistItemPrerequisiteService.enforceOnUpdate` spends one
+ *                                  read for the chunk. `suppressTriggerRecalc` does NOT cover it -
+ *                                  that flag is the ROLLUP arm only - and suppressing the GATE here
+ *                                  would be wrong anyway: the link write is exactly what the gate
+ *                                  exists to police. Pinned by
+ *                                  `ChecklistFanoutServiceTest.staysWithinBudgetAtTheChunkBoundary`.
  *   Queueable chaining       : exactly ONE `System.enqueueJob` per invocation; the chain advances
  *                              from the Finalizer. KEEP THAT SHAPE - it is what stops one failed
  *                              chunk stranding every chunk behind it.
@@ -118,6 +135,16 @@ public with sharing class ChecklistFanoutService {
     @TestVisible
     private static Integer lastRunUnresolvedPrereqCount = 0;
 
+    /**
+     * Groups whose CREATED item count did not match the DEFINITION count the pre-insert
+     * `Items_Total__c` was derived from. MUST BE ZERO. Non-zero means the item loop has grown a
+     * per-item condition and the group counter is now written before the count is knowable - see
+     * `buildChecklist`. A counter rather than a throw, because a wrong count is a reporting defect,
+     * not a reason to abort a fan-out mid-chain.
+     */
+    @TestVisible
+    private static Integer lastRunCounterMismatchCount = 0;
+
     /** Checklists created by the last run. Test instrumentation only. */
     @TestVisible
     private static Integer lastRunChecklistCount = 0;
@@ -144,6 +171,7 @@ public with sharing class ChecklistFanoutService {
     private static void resetRunCounters() {
         lastRunUnstagedItemCount = 0;
         lastRunUnresolvedPrereqCount = 0;
+        lastRunCounterMismatchCount = 0;
         lastRunChecklistCount = 0;
         lastRunItemCount = 0;
         lastRunQueryCount = 0;
@@ -235,6 +263,7 @@ public with sharing class ChecklistFanoutService {
 
         Set<String> conditionFields = conditionFieldNames();
         List<Transaction_Task_Def__mdt> definitions = itemDefs();
+        Map<String, Integer> defCounts = definitionCountByLetter(definitions);
         Map<Id, Transaction__c> transactions = TransactionSelector.selectForChecklistFanout(
             new Set<Id>(transactionIds), conditionFields);
 
@@ -249,7 +278,7 @@ public with sharing class ChecklistFanoutService {
                 if (!isGroupApplicable(groupDef, deal)) {
                     continue;
                 }
-                Checklist__c checklist = buildChecklist(groupDef, deal.Id);
+                Checklist__c checklist = buildChecklist(groupDef, deal.Id, countFor(defCounts, groupDef.Letter__c));
                 checklists.add(checklist);
                 pending.add(pendingGroup(checklist, groupDef, deal));
             }
@@ -261,7 +290,9 @@ public with sharing class ChecklistFanoutService {
         Boolean alreadySuppressed = ChecklistRollupService.isTriggerRecalcSuppressed();
         try {
             // 🔴 SUPPRESSION SPANS ALL FOUR STATEMENTS. See the class header for the SOQL
-            // arithmetic; without it the item insert alone costs 21 SOQL + 21 DML per chunk.
+            // arithmetic; without it the item insert alone costs 84 SOQL and up to 42 DML per chunk
+            // (21 after-insert batches x 4 selector reads per recalc), which blows the 100-query
+            // limit outright rather than merely approaching it.
             ChecklistRollupService.suppressTriggerRecalc(true);
 
             // ⚠ EXPLICIT SYSTEM MODE, CARRIED OVER IN SUBSTANCE FROM `TaskFanoutService.fanOutNow`
@@ -283,21 +314,21 @@ public with sharing class ChecklistFanoutService {
             Map<String, Checklist_Item__c> itemByCoordinate = new Map<String, Checklist_Item__c>();
             Map<Id, DealTally> tallyByDeal = new Map<Id, DealTally>();
             Date today = Date.today();
-            for (PendingGroup group : pending) {
-                DealTally tally = tallyByDeal.get(group.dealId);
+            for (PendingGroup checklistGroup : pending) {
+                DealTally tally = tallyByDeal.get(checklistGroup.dealId);
                 if (tally == null) {
                     tally = new DealTally();
-                    tallyByDeal.put(group.dealId, tally);
+                    tallyByDeal.put(checklistGroup.dealId, tally);
                 }
                 Integer inGroup = 0;
                 for (Transaction_Task_Def__mdt itemDef : definitions) {
-                    if (itemDef.Group_Letter__c != group.groupDef.Letter__c) {
+                    if (itemDef.Group_Letter__c != checklistGroup.groupDef.Letter__c) {
                         continue;
                     }
-                    Checklist_Item__c item = buildItem(itemDef, group);
+                    Checklist_Item__c item = buildItem(itemDef, checklistGroup);
                     items.add(item);
                     itemByCoordinate.put(
-                        coordinateKey(group.dealId, itemDef.Group_Letter__c, itemDef.Sequence__c),
+                        coordinateKey(checklistGroup.dealId, itemDef.Group_Letter__c, itemDef.Sequence__c),
                         item);
                     inGroup++;
                     tally.total++;
@@ -311,8 +342,14 @@ public with sharing class ChecklistFanoutService {
                         lastRunUnstagedItemCount++;
                     }
                 }
-                group.checklist.Items_Total__c = inGroup;
-                group.checklist.Items_Complete__c = 0;
+                // 🔴 THE GROUP COUNTERS ARE NOT SET HERE. They are set in `buildChecklist`, BEFORE
+                // the checklist insert - assigning them on the in-memory row AFTER `Database.insert`
+                // has already committed writes nothing at all, which is exactly the bug this comment
+                // replaces: every group shipped with a NULL `Items_Total__c` until the next item save
+                // happened to recompute it. `inGroup` is retained only as the invariant check below.
+                if (inGroup != countFor(defCounts, checklistGroup.groupDef.Letter__c)) {
+                    lastRunCounterMismatchCount++;
+                }
             }
             if (!items.isEmpty()) {
                 Database.insert(items, true, AccessLevel.SYSTEM_MODE);
@@ -389,6 +426,7 @@ public with sharing class ChecklistFanoutService {
             return results;
         }
 
+        Map<String, Integer> defCounts = definitionCountByLetter(itemDefs());
         Map<Id, Transaction__c> transactions = TransactionSelector.selectForChecklistFanout(
             transactionIds, conditionFieldNames());
         Set<Id> fannedOut = new Set<Id>();
@@ -437,7 +475,7 @@ public with sharing class ChecklistFanoutService {
                 Boolean shouldExist = isGroupApplicable(groupDef, deal);
                 Checklist__c present = existing.get(groupDef.Letter__c);
                 if (shouldExist && present == null) {
-                    Checklist__c checklist = buildChecklist(groupDef, dealId);
+                    Checklist__c checklist = buildChecklist(groupDef, dealId, countFor(defCounts, groupDef.Letter__c));
                     toAdd.add(checklist);
                     pendingAdds.add(pendingGroup(checklist, groupDef, deal));
                     resultFor(resultByDeal, results, dealId).addedGroupLetters.add(groupDef.Letter__c);
@@ -496,22 +534,25 @@ public with sharing class ChecklistFanoutService {
     ) {
         Database.insert(toAdd, true, AccessLevel.SYSTEM_MODE);
         List<Transaction_Task_Def__mdt> definitions = itemDefs();
+        Map<String, Integer> defCounts = definitionCountByLetter(definitions);
         List<Checklist_Item__c> items = new List<Checklist_Item__c>();
         Map<String, Checklist_Item__c> newByCoordinate = new Map<String, Checklist_Item__c>();
-        for (PendingGroup group : pendingAdds) {
+        for (PendingGroup checklistGroup : pendingAdds) {
             Integer inGroup = 0;
             for (Transaction_Task_Def__mdt itemDef : definitions) {
-                if (itemDef.Group_Letter__c != group.groupDef.Letter__c) {
+                if (itemDef.Group_Letter__c != checklistGroup.groupDef.Letter__c) {
                     continue;
                 }
-                Checklist_Item__c item = buildItem(itemDef, group);
+                Checklist_Item__c item = buildItem(itemDef, checklistGroup);
                 items.add(item);
                 newByCoordinate.put(
-                    coordinateKey(group.dealId, itemDef.Group_Letter__c, itemDef.Sequence__c), item);
+                    coordinateKey(checklistGroup.dealId, itemDef.Group_Letter__c, itemDef.Sequence__c), item);
                 inGroup++;
             }
-            group.checklist.Items_Total__c = inGroup;
-            group.checklist.Items_Complete__c = 0;
+            // Set pre-insert in `buildChecklist` - see the note in `fanOutChunk`.
+            if (inGroup != countFor(defCounts, checklistGroup.groupDef.Letter__c)) {
+                lastRunCounterMismatchCount++;
+            }
         }
         if (!items.isEmpty()) {
             Database.insert(items, true, AccessLevel.SYSTEM_MODE);
@@ -547,20 +588,20 @@ public with sharing class ChecklistFanoutService {
         Map<String, Checklist_Item__c> prerequisiteIndex
     ) {
         List<Checklist_Item__c> links = new List<Checklist_Item__c>();
-        for (PendingGroup group : groups) {
+        for (PendingGroup checklistGroup : groups) {
             for (Transaction_Task_Def__mdt itemDef : definitions) {
-                if (itemDef.Group_Letter__c != group.groupDef.Letter__c
+                if (itemDef.Group_Letter__c != checklistGroup.groupDef.Letter__c
                         || itemDef.Blocked_By_Sequence__c == null) {
                     continue;
                 }
                 Checklist_Item__c dependent = dependentIndex.get(
-                    coordinateKey(group.dealId, itemDef.Group_Letter__c, itemDef.Sequence__c));
+                    coordinateKey(checklistGroup.dealId, itemDef.Group_Letter__c, itemDef.Sequence__c));
                 // Blank means "the same group as this row", which is true of both live pairs.
                 String prerequisiteLetter = String.isNotBlank(itemDef.Blocked_By_Group_Letter__c)
                     ? itemDef.Blocked_By_Group_Letter__c
                     : itemDef.Group_Letter__c;
                 Checklist_Item__c prerequisite = prerequisiteIndex.get(coordinateKey(
-                    group.dealId, prerequisiteLetter, itemDef.Blocked_By_Sequence__c));
+                    checklistGroup.dealId, prerequisiteLetter, itemDef.Blocked_By_Sequence__c));
                 if (dependent == null || prerequisite == null || dependent.Id == prerequisite.Id) {
                     lastRunUnresolvedPrereqCount++;
                     continue;
@@ -610,6 +651,40 @@ public with sharing class ChecklistFanoutService {
         return result;
     }
 
+    /**
+     * Item-definition count per group letter, used to set `Items_Total__c` before the checklist
+     * rows are inserted.
+     *
+     * @param definitions All item definitions.
+     * @return Count keyed by `Group_Letter__c`; never null.
+     */
+    private static Map<String, Integer> definitionCountByLetter(
+        List<Transaction_Task_Def__mdt> definitions
+    ) {
+        Map<String, Integer> counts = new Map<String, Integer>();
+        if (definitions == null) {
+            return counts;
+        }
+        for (Transaction_Task_Def__mdt itemDef : definitions) {
+            if (String.isBlank(itemDef.Group_Letter__c)) {
+                continue;
+            }
+            Integer soFar = counts.get(itemDef.Group_Letter__c);
+            counts.put(itemDef.Group_Letter__c, (soFar == null ? 0 : soFar) + 1);
+        }
+        return counts;
+    }
+
+    /**
+     * @param counts Count map from `definitionCountByLetter`.
+     * @param letter Group letter; may name a group with no definitions at all.
+     * @return The count, or 0 - never null, so `Items_Total__c` is never left blank.
+     */
+    private static Integer countFor(Map<String, Integer> counts, String letter) {
+        Integer count = (counts == null || letter == null) ? null : counts.get(letter);
+        return count == null ? 0 : count;
+    }
+
     /** @return Every distinct `Condition_Field__c` named by the group definitions. */
     private static Set<String> conditionFieldNames() {
         Set<String> conditionFields = new Set<String>();
@@ -653,21 +728,41 @@ public with sharing class ChecklistFanoutService {
         Task_Group_Def__mdt groupDef,
         Transaction__c deal
     ) {
-        PendingGroup group = new PendingGroup();
-        group.checklist = checklist;
-        group.groupDef = groupDef;
-        group.dealId = deal.Id;
-        group.deal = deal;
-        return group;
+        PendingGroup checklistGroup = new PendingGroup();
+        checklistGroup.checklist = checklist;
+        checklistGroup.groupDef = groupDef;
+        checklistGroup.dealId = deal.Id;
+        checklistGroup.deal = deal;
+        return checklistGroup;
     }
 
     /**
-     * @param groupDef The group definition to mirror.
-     * @param dealId   Master-detail parent.
+     * 🔴 `Items_Total__c` IS SET HERE, PRE-INSERT, AND THAT PLACEMENT IS THE WHOLE POINT.
+     * It used to be assigned on the in-memory row AFTER `Database.insert(checklists)` had already
+     * committed, which writes NOTHING - every group was created with a NULL `Items_Total__c`, and
+     * the value only appeared later if some unrelated item save happened to trigger a recompute.
+     * Setting it here costs no extra DML; the alternative (a fifth statement to update the
+     * checklists after the items exist) would add 50 rows per chunk to the budget in the class
+     * header for no benefit.
+     * ⚠ THE PRE-INSERT COUNT IS ONLY CORRECT WHILE THE ITEM LOOP FILTERS ON GROUP LETTER ALONE.
+     * If a future change adds a per-ITEM condition (the way `Task_Group_Def__mdt.Condition_Field__c`
+     * gates a whole group today), the definition count and the created count diverge and the
+     * counter must move back to a post-insert update. `lastRunCounterMismatchCount` exists to make
+     * that divergence assertable rather than silent.
+     *
+     * @param groupDef  The group definition to mirror.
+     * @param dealId    Master-detail parent.
+     * @param itemCount Number of item definitions in this group.
      * @return An unsaved `Checklist__c`.
      */
-    private static Checklist__c buildChecklist(Task_Group_Def__mdt groupDef, Id dealId) {
+    private static Checklist__c buildChecklist(
+        Task_Group_Def__mdt groupDef,
+        Id dealId,
+        Integer itemCount
+    ) {
         return new Checklist__c(
+            Items_Total__c = itemCount,
+            Items_Complete__c = 0,
             Transaction__c = dealId,
             Group_Letter__c = groupDef.Letter__c,
             Group_Name__c = groupDef.Group_Name__c,
@@ -680,21 +775,21 @@ public with sharing class ChecklistFanoutService {
 
     /**
      * @param itemDef The item definition to mirror.
-     * @param group   The pending group carrying the parent checklist and the deal.
+     * @param checklistGroup   The pending group carrying the parent checklist and the deal.
      * @return An unsaved `Checklist_Item__c` with `Blocked_By__c` deliberately BLANK.
      */
     private static Checklist_Item__c buildItem(
         Transaction_Task_Def__mdt itemDef,
-        PendingGroup group
+        PendingGroup checklistGroup
     ) {
         Checklist_Item__c item = new Checklist_Item__c();
-        item.Checklist__c = group.checklist.Id;
+        item.Checklist__c = checklistGroup.checklist.Id;
         item.Subject__c = itemDef.Subject__c;
         item.Sequence__c = itemDef.Sequence__c;
         item.Owner_Label__c = String.isNotBlank(itemDef.Owner_Label__c)
             ? itemDef.Owner_Label__c
-            : group.groupDef.Owner_Label__c;
-        item.Is_Conditional__c = (group.groupDef.Conditional__c == true);
+            : checklistGroup.groupDef.Owner_Label__c;
+        item.Is_Conditional__c = (checklistGroup.groupDef.Conditional__c == true);
         item.Is_Critical__c = (itemDef.Is_Critical__c == true);
         item.Is_Wire_Verification__c = (itemDef.Is_Wire_Verification__c == true);
         // 🔴 SEEDED FROM `Is_Critical__c`, NEVER FROM A SUBJECT REGEX. The Task model derived
@@ -706,12 +801,12 @@ public with sharing class ChecklistFanoutService {
         // count it (see `lastRunUnstagedItemCount`).
         item.Stage__c = String.isNotBlank(itemDef.Stage_Override__c)
             ? itemDef.Stage_Override__c
-            : group.groupDef.Stage__c;
-        if (group.deal.Contract_Executed_Date__c != null) {
+            : checklistGroup.groupDef.Stage__c;
+        if (checklistGroup.deal.Contract_Executed_Date__c != null) {
             Integer offset = itemDef.Due_Day_Offset__c != null
                 ? Integer.valueOf(itemDef.Due_Day_Offset__c)
                 : 0;
-            item.Due_Date__c = group.deal.Contract_Executed_Date__c.addDays(offset);
+            item.Due_Date__c = checklistGroup.deal.Contract_Executed_Date__c.addDays(offset);
         }
         return item;
     }

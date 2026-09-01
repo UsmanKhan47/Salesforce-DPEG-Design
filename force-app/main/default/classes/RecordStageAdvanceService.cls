@@ -61,9 +61,16 @@
  *                     on this record type — see NDA_ACQUISITION_NEXT_STAGE for the measurement,
  *                     the DML-refusal defect it fixed, and why no legacy hop was retained. Do not
  *                     restore either the 2026-08-16 order or D14.1's from the paragraphs above.
- *   Disposition_NDA   Prepare -> Approved -> Sent -> Signed
+ *   Disposition_NDA   Approved -> Sent -> Signed        ('Prepare' has NO hop — see below)
  *                                                                   explicit targets: {Declined}
  *                     gate: DISPOSITION_DRIVER
+ *                     🔴 NARROWED 2026-08-31 (Tranche 3, Gate 1 decision D-7). This line read
+ *                     "Prepare -> Approved -> Sent -> Signed" until that day. The 'Prepare' hop is
+ *                     GONE: it is now owned by the NDA_Issue_Approval approval process, not by this
+ *                     button. See NDA_DISPOSITION_NEXT_STAGE for the full retraction and
+ *                     NO_NEXT_STEP_HINTS['NDA|Disposition_NDA|Prepare'] for the wording the
+ *                     refusal now carries — a RECORD-TYPE-SCOPED key, because a Master-typed NDA
+ *                     resolves to the acquisition sequence and must not read that wording.
  *                     ⚠ EXTENDED 2026-08-25. Read "Not Sent -> Sent -> Signed" until that day,
  *                     when the user removed 'Not Sent' from the record type in Setup and the NDA
  *                     seed moved to 'Prepare'. The 'Not Sent' => 'Sent' hop is KEPT for pre-existing
@@ -941,9 +948,61 @@ public with sharing class RecordStageAdvanceService {
      * 'Review' => 'Approved' "for symmetry". Nothing can write the value, so the entry would be
      * unreachable AND unjustified, and its presence would read as evidence that 'Review' is still
      * part of the sequence.
+     *
+     * =====================================================================
+     * 🔴 RETRACTED 2026-08-31 (Tranche 3, Gate 1 decision D-7) — 'Prepare' => 'Approved' IS GONE,
+     *    AND THE PARAGRAPH THAT ADDED IT IS RETAINED ABOVE RATHER THAN DELETED.
+     * =====================================================================
+     * The 2026-08-25 EXTENDED block above says, verbatim:
+     *
+     *   > "🔴 WHY IT HAD TO GROW, AND WHY THIS IS NOT SCOPE CREEP. The user removed 'Not Sent' from
+     *   >  the Disposition_NDA record type in Setup and cleared that type's default, and
+     *   >  DispositionStageEntryService's seed moved to 'Prepare' in the same change. Every NDA
+     *   >  created from that day forward therefore ENTERS at 'Prepare' — a value this map did not
+     *   >  carry. Without these hops the Advance Stage button would refuse the FIRST click on every
+     *   >  new disposition NDA with 'There is no next step available from the Prepare stage', i.e.
+     *   >  the feature would be dead on arrival rather than subtly wrong."
+     *
+     * ⚠ THAT REASONING WAS SOUND ON THE DAY AND ITS CONCLUSION IS NOW WRONG, FOR A REASON THAT DID
+     * NOT EXIST ON THE DAY. On 2026-08-31 the disposition flow gained its third principal approval,
+     * `NDA__c.NDA_Issue_Approval`, whose FINAL APPROVAL ACTION writes exactly this transition —
+     * `Status__c = 'Approved'`, plus the `Principal_Approved__c` / `Principal_Approved_Date__c`
+     * audit pair. Two writers for one transition is not a redundancy here, it is a BYPASS:
+     *
+     *   - this map and the `NDA__c.Move_to_Approved` quick action are both gated on
+     *     `Disposition_Deal_Actions` (DISPOSITION_DRIVER);
+     *   - `DPEG_Disposition_Edit` — the ANALYST set — GRANTS that custom permission, and
+     *     `DPEG_Disposition_View` — the PRINCIPAL set — is forbidden from holding it;
+     *   - so the one-click route to 'Approved' was held by the persona the approval exists to
+     *     exclude, and the persona the approval exists to consult could not use it.
+     *
+     * 🔴 THIS CLASS ALREADY FORBADE THIS EXACT SHAPE, IN ALMOST THESE WORDS, FOR A DIFFERENT
+     * APPROVAL. The class header's `Broker Selection` block reads: *"Adding `Broker Selection -> NDA`
+     * to the off-market map would hand a user a one-click bypass of `Broker_Selection_Approval`."*
+     * The NDA hop was that same mistake, one object over, and it shipped because the approval that
+     * makes it a bypass did not exist yet. It is retracted here rather than deleted so the next
+     * person to hit "the button refuses at Prepare" reads WHY before restoring it.
+     *
+     * ⚠ WHAT IS DELIBERATELY UNCHANGED, so a reader does not mistake the scope:
+     *   'Approved' => 'Sent'      untouched — the analyst still issues the NDA after approval.
+     *   'Sent' => 'Signed'        untouched.
+     *   'Not Sent' => 'Sent'      untouched — still the legacy hop for any pre-2026-08-25 row.
+     *   NDA_DISPOSITION_EXPLICIT_TARGETS ({Declined})   untouched.
+     *   NDA_ACQUISITION_NEXT_STAGE                      untouched. An acquisition NDA never sees
+     *                                                   'Prepare' at all (it is not on that record
+     *                                                   type's value set), so nothing on the buy
+     *                                                   side moves.
+     *
+     * ⚠ THE REFUSAL IS NOW THE FEATURE, SO IT NEEDED WORDING. Without a hint the first Advance click
+     * on every new disposition NDA would read "There is no next step available from the Prepare
+     * stage" — which is exactly the "dead on arrival" symptom the 2026-08-25 paragraph describes,
+     * and it would read like a regression rather than a rule.
+     * `NO_NEXT_STEP_HINTS['NDA|Disposition_NDA|Prepare']` names the approval as the owner, the same
+     * way the seven Disposition entries do — but on a RECORD-TYPE-SCOPED key, because
+     * `NDA_Issue_Approval`'s entry criterion is `Is_Disposition_NDA__c = True` and an
+     * acquisition-or-Master NDA told to use it would be following an impossible instruction.
      */
     private static final Map<String, String> NDA_DISPOSITION_NEXT_STAGE = new Map<String, String>{
-        'Prepare' => 'Approved',
         'Approved' => 'Sent',
         'Not Sent' => 'Sent',
         'Sent' => 'Signed'
@@ -1554,10 +1613,14 @@ public with sharing class RecordStageAdvanceService {
         };
 
     /**
-     * Stage-specific wording for a refused advance, keyed `<StageConfig.label>|<currentStage>`.
+     * Stage-specific wording for a refused advance, keyed EITHER `<StageConfig.label>|<stage>` or
+     * `<StageConfig.label>|<recordTypeKey>|<stage>` — the three-segment form is tried first and the
+     * two-segment form is the fallback. See `noNextStepMessage` for the lookup and the block at the
+     * end of this comment for which form an entry takes.
      *
      * Keyed on the config's own label rather than on the SObjectType so no key depends on
-     * SObjectType.toString(), which is undocumented.
+     * SObjectType.toString(), which is undocumented. `<recordTypeKey>` is a record type DEVELOPER
+     * NAME, the same key `sequenceKeyFor` resolves — never a label and never an Id.
      *
      * Only populated where the absence of a hop is a RULE rather than the end of the path. Without
      * this, the Underwriting refusal reads exactly like a terminal stage and looks like a defect;
@@ -1601,8 +1664,10 @@ public with sharing class RecordStageAdvanceService {
      *                            so the default "there is no next step available from the Sale
      *                            Closes stage" is correct wording and a hint would be noise.
      *
-     * ⇒ BEFORE ADDING ANY NINTH ENTRY, run that same three-case check. The moment one is UNSAFE,
-     * widen the key to `<label>|<recordTypeKey>|<currentStage>` rather than adding a second map.
+     * ⇒ BEFORE ADDING ANY FURTHER TWO-SEGMENT ENTRY, run that same three-case check. The moment one
+     * is UNSAFE, give it the three-segment key `<label>|<recordTypeKey>|<currentStage>` — which
+     * `noNextStepMessage` has supported since 2026-08-31 — rather than adding a second map. (This
+     * sentence read "BEFORE ADDING ANY NINTH ENTRY" while the widening was still hypothetical.)
      *
      * 🔴 THE SAFETY ARGUMENT FOR LOI__c CHANGED ON 2026-08-14 AND IS NOW WEAKER. This block used to
      * read: "NDA__c: the only shared stage values ('Sent', 'Signed') have a hop or are terminal on
@@ -1637,6 +1702,63 @@ public with sharing class RecordStageAdvanceService {
      * `<label>|<recordTypeKey>|<currentStage>` rather than adding a second map. Contract_Review__c
      * needs no such care: observation 7 left its two sequences sharing only 'Executed', which is
      * terminal on both and therefore takes the default wording correctly on either side.
+     *
+     * ═════════════════════════════════════════════════════════════════════════════════════════
+     * ✅ THE WIDENING EVERY PARAGRAPH ABOVE DEMANDS IS DONE, 2026-08-31. KEYS MAY NOW BE EITHER
+     *    `<label>|<currentStage>` OR `<label>|<recordTypeKey>|<currentStage>`.
+     * ═════════════════════════════════════════════════════════════════════════════════════════
+     * `noNextStepMessage` looks up the THREE-segment key first and falls back to the TWO-segment
+     * one. So the two forms mean different things and the choice is not stylistic:
+     *
+     *   TWO segments    the wording is correct for the object's WHOLE value set, on every record
+     *                   type it has. Underwriting's one entry and all eight Disposition entries.
+     *                   None of them moved, and none of them should.
+     *   THREE segments  the wording is true of ONE RECORD TYPE ONLY. `NDA|Disposition_NDA|Prepare`
+     *                   is the only one today.
+     *
+     * ⇒ THE THREE-CASE CHECK ABOVE IS STILL THE RULE FOR A TWO-SEGMENT KEY, and is still how you
+     * decide WHICH form to use: if a stage needs different wording on two record types, or is
+     * meaningful on only one of them, it takes three segments. The LOI and NDA prohibitions above
+     * are therefore lifted in their operative half — a `LOI|Disposition_LOI|Under Review` or an
+     * `NDA|Acquisition_NDA|Signed` is now expressible and safe. `LOI|Under Review` and
+     * `NDA|Signed` remain forbidden, for exactly the reasons those blocks give.
+     *
+     * ═════════════════════════════════════════════════════════════════════════════════════════
+     * 🔴 THE NDA ENTRY SHIPPED TWO-SEGMENT FOR A FEW HOURS ON 2026-08-31 AND THAT WAS A DEFECT,
+     *    NOT MERELY A RISK. THE ARGUMENT THAT PERMITTED IT IS KEPT VERBATIM BECAUSE IT IS THE
+     *    INSTRUCTIVE PART — IT WAS CORRECT ABOUT COLLISIONS AND STILL REACHED THE WRONG ANSWER.
+     * ═════════════════════════════════════════════════════════════════════════════════════════
+     * It read: *"'Prepare' IS NOT A SHARED VALUE, WHICH IS THE ONLY REASON THIS ENTRY IS
+     * PERMITTED … Acquisition_NDA's Status__c value set is Pending | Received | Signed — 'Prepare'
+     * is not on it, and NDA__c.Status__c is a RESTRICTED picklist whose record-type subset DML
+     * enforces here (measured four times; see this class's header). An acquisition NDA therefore
+     * cannot HOLD 'Prepare' … Same standing as `Disposition|BOV Outreach` above."* Every clause of
+     * that is TRUE. It was also filed with a residual saying the collision would arrive *"the day
+     * 'Prepare' is added to Acquisition_NDA"*.
+     *
+     * ⚠ THAT RESIDUAL WAS IN THE WRONG TENSE. THE COLLISION ALREADY EXISTED, VIA THE THIRD
+     * RECORD-TYPE STATE. `sequenceKeyFor` routes a MASTER-typed NDA to `config.defaultTypeKey`,
+     * which on `NDA__c` is `Acquisition_NDA` — and the Master value set is the object's full,
+     * UNRESTRICTED one, so a Master-typed NDA CAN hold 'Prepare'. Such a row reaching `advance()`
+     * matched the two-segment key and was told to submit `NDA_Issue_Approval`, whose entry
+     * criterion is `Is_Disposition_NDA__c = True` — FALSE on Master. The instruction could not
+     * possibly work, and the "cannot collide" analysis never saw it because it reasoned over the
+     * two NAMED record types and the platform has three states, not two.
+     * ⇒ THE GENERAL LESSON, WHICH OUTLIVES THIS ENTRY: a "these two value sets are disjoint"
+     * argument says nothing about Master. Any hint whose wording names a record-type-scoped owner
+     * (an approval with a record-type entry criterion, a type-specific service) needs the
+     * three-segment key REGARDLESS of collision analysis — the collision is not the only failure.
+     * The three-segment key closes this: a Master row resolves the key `Acquisition_NDA`, misses
+     * `NDA|Disposition_NDA|Prepare`, misses the two-segment fallback, and correctly reads the
+     * generic "There is no next step available from the Prepare stage."
+     *
+     * ⚠ AND IT IS THE FIRST HINT WHOSE ABSENCE WOULD BE A REGRESSION RATHER THAN MERELY UNHELPFUL.
+     * Every disposition NDA ENTERS at 'Prepare' (DispositionStageEntryService's seed), so without
+     * this entry the FIRST Advance click on 100% of new disposition NDAs would read "There is no
+     * next step available from the Prepare stage" — the exact "dead on arrival" symptom
+     * NDA_DISPOSITION_NEXT_STAGE's 2026-08-25 paragraph describes, arriving the day the hop was
+     * retired for a good reason. Pinned by
+     * RecordStageAdvanceServiceTest.dispositionNdaRefusesPrepareAndNamesTheApproval.
      */
     private static final Map<String, String> NO_NEXT_STEP_HINTS = new Map<String, String>{
         'Underwriting|In Progress' =>
@@ -1670,7 +1792,17 @@ public with sharing class RecordStageAdvanceService {
         // this map's own header forbids, which would need the record type folded into the key.
         'Disposition|PSA' =>
             'This disposition advances to Closing when the sell-side PSA is executed. '
-            + 'Advance the Contract Review to Signed.'
+            + 'Advance the Contract Review to Signed.',
+        // ── NDA__c, 2026-08-31 (Gate 1 decision D-7). The 'Prepare' => 'Approved' hop was RETIRED
+        // in this change because NDA_Issue_Approval now owns that transition, so this hint is what
+        // stops the refusal reading like the bug the hop was added to fix.
+        // 🔴 THE FIRST THREE-SEGMENT KEY IN THIS MAP, and the only one today. It shipped for a few
+        // hours as the two-segment `NDA|Prepare`; that was WRONG and is corrected here, not merely
+        // hardened — see the Master-record-type defect in this map's header. Record-type-only
+        // wording takes a record-type-scoped key. Nothing else in this map moved.
+        'NDA|Disposition_NDA|Prepare' =>
+            'A disposition NDA moves to Approved when the NDA Issue approval is approved, '
+            + 'not from this action. Use Submit for Approval.'
     };
 
     /**
@@ -2078,7 +2210,8 @@ public with sharing class RecordStageAdvanceService {
 
         String target = sequence.nextStage.get(currentStage);
         if (target == null) {
-            throw new RecordStageAdvanceException(noNextStepMessage(config, currentStage));
+            throw new RecordStageAdvanceException(
+                noNextStepMessage(config, record, currentStage));
         }
         return setStage(record, config, target);
     }
@@ -2444,10 +2577,41 @@ public with sharing class RecordStageAdvanceService {
         return allowed;
     }
 
-    private static String noNextStepMessage(StageConfig config, String currentStage) {
+    /**
+     * The wording for a refused advance: the record-type-specific hint, else the object-wide hint,
+     * else the generic terminal-stage sentence.
+     *
+     * 🔴 THE THREE-SEGMENT KEY LANDED 2026-08-31 — the widening NO_NEXT_STEP_HINTS' header has
+     * prescribed since 2026-08-19 and which two later blocks deferred. It is done here rather than
+     * deferred a third time because the cost was mis-priced: this method has EXACTLY ONE call site
+     * (advance(), below), `record` is already in scope there, and `sequenceKeyFor` is the same
+     * resolution advance() has ALREADY performed to choose the sequence — a describe, not a query,
+     * and nothing at all on a single-sequence object.
+     *
+     * ⚠ NO EXISTING KEY MOVED, WHICH IS WHY THIS IS A LOCAL CHANGE AND NOT A CROSS-MODULE ONE. An
+     * entry whose wording is correct for the object's WHOLE value set stays two-segment and is
+     * found by the fallback — that is Underwriting's one entry and all eight Disposition ones,
+     * every acquisition-side key included. Only an entry that is true of ONE RECORD TYPE ONLY
+     * takes the three-segment form.
+     *
+     * ⚠ `sequenceKeyFor` CAN throw UNSUPPORTED_RECORD_TYPE_MESSAGE, and that adds no new failure
+     * path here: advance() calls `sequenceFor` — the same resolution — before it can ever reach
+     * this method, so a record type with no configured sequence has already been refused upstream.
+     * Do NOT call this method from anywhere that has not made that call first.
+     */
+    private static String noNextStepMessage(
+        StageConfig config,
+        SObject record,
+        String currentStage
+    ) {
         // ⚠ Do NOT name this local `hint` — that identifier is RESERVED in Apex and fails to
         // compile with "Identifier name is reserved: hint" (same trap as `bulk`).
-        String specificMessage = NO_NEXT_STEP_HINTS.get(config.label + '|' + currentStage);
+        String recordTypeKey = sequenceKeyFor(config, record);
+        String specificMessage =
+            NO_NEXT_STEP_HINTS.get(config.label + '|' + recordTypeKey + '|' + currentStage);
+        if (String.isBlank(specificMessage)) {
+            specificMessage = NO_NEXT_STEP_HINTS.get(config.label + '|' + currentStage);
+        }
         if (String.isNotBlank(specificMessage)) {
             return specificMessage;
         }

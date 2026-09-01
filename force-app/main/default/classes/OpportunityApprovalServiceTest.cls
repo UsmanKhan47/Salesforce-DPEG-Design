@@ -34,6 +34,62 @@
  * refusal shapes, and two proofs that it does not fire where it must not (a non-LOI stage, and an
  * `Underwriting__c` target that resolves to itself).
  *
+ * ── 🔴 W4 OF THE LOI APPROVAL CUTOVER (2026-09-01) — WHAT MOVED, AND WHAT WOULD HAVE GONE
+ *      VACUOUS IF IT HAD NOT ────────────────────────────────────────────────────────────────
+ * `resolveApprovalTargetId` now routes an `LOI__c` click to the LOI ITSELF
+ * (`approvalProcesses/LOI__c.LOI_Approval`, active since W2) instead of to its parent deal. Six
+ * tests here changed, and the reason each one changed is recorded at the method:
+ *   RE-AIMED   `submitsFromLoiRecordResolvesParent` -> `submitsFromLoiRecordTargetsTheLoiItself`
+ *              (inverted: it asserted the behaviour being removed)
+ *   RE-AIMED   `unlinkedChildThrowsApprovalException` ->
+ *              `unlinkedContractReviewThrowsApprovalException` (an orphan LOI no longer reaches
+ *              that branch; Contract_Review__c is the only child that still can)
+ *   RENAMED    `theNdaGateDoesNotFireAtAnyStageButLoi` ->
+ *              `aDealAtANonLoiStageIsRefusedForItsStageNotItsNda` (the old NAME became false)
+ *   REPOINTED  `secondSubmitThrowsApprovalException` onto the LOI (the guard's only live path)
+ *   ASSERTIONS `resolveApprovalTargetIdRoutesEachObjectToItsApprovalTarget` and
+ *              `ineligibleStageThrowsApprovalException` (routing table; refusal wording)
+ * Four tests were ADDED: the LOI-target NDA gate group (unsigned, blank, and the two-hop sharing
+ * axis) plus `anLoiWithNoParentDealSubmitsItselfAndSkipsTheNdaGate`.
+ *
+ * 🔴 THE POINT OF THAT LIST IS THE ONES THAT DID **NOT** HAVE TO CHANGE, BECAUSE THAT IS THE
+ * TRAP. Every one of the five original signed-NDA tests submits an OPPORTUNITY. Had
+ * `assertNdaSignedForLoiSubmission` been left pointing at Opportunity targets only — the exact
+ * omission the design pack predicted — the gate would have stopped firing for every real
+ * submission and ALL FIVE WOULD STILL BE GREEN. They are kept (the Opportunity branch is still
+ * live for the escape hatch and for Contract_Review__c) but they are no longer evidence about the
+ * button, and the four new tests are.
+ *
+ * ══ ✅ W5 APPLIED 2026-09-01 — `Opportunity.LOI_Approval` IS DEACTIVATED ════════════════════
+ * ⚠ RETRACTED, VERBATIM: "TWO TESTS ARE SCHEDULED TO GO RED AT W5, BY DESIGN, AND ARE MARKED AT
+ * THEIR DECLARATIONS: `submitsEligibleOpportunityDirectly` and `signedNdaAtLoiStillSubmits`."
+ * W5 has run. There are now ZERO active approval processes on `Opportunity`, so NO Opportunity
+ * submission can succeed by any route. FOUR tests changed, not two:
+ *   INVERTED   `submitsEligibleOpportunityDirectly`
+ *              -> `anOpportunityAtLoiIsNowRefusedAndSentToTheLoiRecord`. It now pins the
+ *                 RETIREMENT: reactivating the old process (a one-line redeploy) reds it, and
+ *                 nothing else in the suite would notice.
+ *   REPOINTED  `signedNdaAtLoiStillSubmits` -> `signedNdaAtLoiIsNotRefusedByTheNdaGate`. Same job
+ *                 (positive control for the two NDA refusals), new evidence — see its docstring.
+ *   REPOINTED  `aSubmitterWhoCannotSeeTheNdaIsNotFalselyBlocked`'s internals. Its discriminator
+ *                 was the exception TYPE and is now the exception MESSAGE.
+ *   🔴 REPOINTED `secondSubmitThrowsApprovalException` ONTO THE LOI — **AND IT WAS NOT ON ANYONE'S
+ *                 LIST**. Its first line submitted an Opportunity OUTSIDE any try, purely to build
+ *                 the fixture, so W5 broke it before it reached its subject. Neither the two
+ *                 markers above nor the design pack's §6.1 named it.
+ *
+ * 🔴 THE LESSON, AND IT IS THE REUSABLE PART: "TESTS SCHEDULED TO GO RED" MARKERS ARE NOT AN
+ * INVENTORY. They catch the tests whose ASSERTIONS encode the old behaviour; they miss the ones
+ * that merely USE the old behaviour to build a fixture. The reliable check is to trace every
+ * `submitForApproval` call site that passes an Opportunity Id — including the ones outside a
+ * try/catch, which are the easiest to overlook and the loudest when they break.
+ *
+ * ⚠ TWO TESTS IN `LoiGateTest` GO RED AND ARE **NOT** FIXED HERE — see this deploy's report.
+ * `firstResponseApprovalStampsLoiAuditTrail` and `rejectionReturnsDealToUnderwriting` both submit
+ * an Opportunity into the now-retired process. They are out of W5's authorised scope (a repoint
+ * there is a coverage decision, not a mechanical fix: the LOI-side chain they assert is already
+ * covered by `LoiApprovalStampServiceTest`). Do not "fix" them by deletion.
+ *
  * ⚠ `.claude/rules/bulk-test-rule.md`'s 251-RECORD MANDATE DOES NOT APPLY, AND THE RULE'S OWN
  * EXEMPTION IS WHY — stated here because the rule requires the reasoning to be recorded in the test
  * class header rather than inferred. `submitForApproval` is a PER-TRANSACTION SINGLETON: it takes
@@ -51,6 +107,34 @@
  */
 @isTest
 private class OpportunityApprovalServiceTest {
+
+    /**
+     * The `LOI__c.Stage__c` value `approvalProcesses/LOI__c.LOI_Approval` accepts, together with
+     * record type Acquisition_LOI. Duplicated from the service's own private constant on purpose:
+     * a test that imported the constant could not tell "the service and the process agree" from
+     * "the service and the test agree".
+     */
+    private static final String LOI_STAGE_UNDER_REVIEW = 'Under Review';
+
+    /**
+     * An acquisition LOI parked at the stage its own approval accepts, under `deal`.
+     *
+     * ⚠ IT CREATES ITS OWN LOI RATHER THAN USING THE ONE `OpportunityReviewService` AUTO-CREATES
+     * on entry to the LOI stage, and that is load-bearing rather than convenience: the
+     * auto-created one is owned by the `Acquisition` QUEUE, and `LOI__c.LOI_Approval` declares
+     * `allowedSubmitters type=owner`. The test-running user is not a member of that queue, so a
+     * submission of the auto-created LOI is refused by the PLATFORM before entry criteria are
+     * considered — a green-for-the-wrong-reason trap, and the same one
+     * `aSubmitterWhoCannotSeeTheNdaIsNotFalselyBlocked` records for the Opportunity side.
+     *
+     * @param deal The parent deal.
+     * @return The inserted LOI, at 'Under Review', owned by the test-running user.
+     */
+    private static LOI__c makeSubmittableLoi(Opportunity deal) {
+        LOI__c loi = TestDataFactory.createLoi(deal.Id, true);
+        update new LOI__c(Id = loi.Id, Stage__c = LOI_STAGE_UNDER_REVIEW);
+        return loi;
+    }
 
     /**
      * An inserted deal at `stage`, WITH ITS PRIMARY NDA SIGNED when that stage is LOI.
@@ -105,23 +189,45 @@ private class OpportunityApprovalServiceTest {
 
     // ---- happy paths (try/return + resolveApprovalTargetId branches) ----
 
+    /**
+     * ⚠ INVERTED AND RENAMED AT W5, 2026-09-01. Was `submitsEligibleOpportunityDirectly`, and it
+     * asserted that an Opportunity at 'LOI' SUCCESSFULLY entered an approval. That was true only
+     * while `approvalProcesses/Opportunity.LOI_Approval` was active, which W5 ended — so the test
+     * was not repaired, it was REVERSED, exactly as
+     * `submitsFromUnderwritingRecordTargetsTheUnderwritingItself` was at the equivalent point of
+     * the underwriting cutover.
+     *
+     * 🔴 IT IS KEPT RATHER THAN DELETED BECAUSE THE NEW ASSERTION IS THE MORE VALUABLE ONE. It now
+     * pins the RETIREMENT itself: if anyone reactivates `Opportunity.LOI_Approval` (the file says
+     * DO NOT REACTIVATE, and reactivation is a one-line redeploy), this test goes red immediately.
+     * Nothing else in the suite would notice.
+     *
+     * ⚠ IT ASSERTS THE EXACT MESSAGE, NOT A SUBSTRING, ON PURPOSE. `LOI_MOVED_MESSAGE` alone is
+     * the 'LOI'-stage refusal; the non-'LOI' stages carry the same text PREFIXED with 'No approval
+     * applies to this deal at the X stage. ' (see `ineligibleStageThrowsApprovalException`).
+     * Exact equality is what keeps those two branches distinguishable.
+     *
+     * The live path this test used to represent is now `submitsFromLoiRecordTargetsTheLoiItself`.
+     */
     @isTest
-    static void submitsEligibleOpportunityDirectly() {
+    static void anOpportunityAtLoiIsNowRefusedAndSentToTheLoiRecord() {
         Opportunity o = makeOpp('LOI');
 
         Test.startTest();
-        String msg = OpportunityApprovalService.submitForApproval(o.Id);
+        try {
+            OpportunityApprovalService.submitForApproval(o.Id);
+            Assert.fail('W5 deactivated Opportunity.LOI_Approval — a deal at LOI must no longer '
+                + 'enter any approval. If this line is reached, that process is ACTIVE again.');
+        } catch (OpportunityApprovalService.ApprovalException e) {
+            Assert.areEqual(OpportunityApprovalService.LOI_MOVED_MESSAGE, e.getMessage(),
+                'A deal at LOI must be refused with the bare LOI_MOVED_MESSAGE, sending the '
+                + 'submitter to the LOI record. Got: ' + e.getMessage());
+        }
         Test.stopTest();
 
-        // ⚠ WORDING CHANGED 2026-08-28: 'The deal has been…' -> 'The record has been…'. The
-        // method no longer always submits a deal (an underwriting submits itself), so a message
-        // naming "the deal" would be factually wrong on the Underwriting surface. Matches the
-        // neutral wording DispositionApprovalService already uses for the same reason.
-        Assert.areEqual('The record has been submitted for approval.', msg,
-            'An eligible deal returns the confirmation message');
-        Assert.areEqual(1,
+        Assert.areEqual(0,
             [SELECT COUNT() FROM ProcessInstance WHERE TargetObjectId = :o.Id],
-            'A pending approval instance exists after submit');
+            'and NO approval instance may be created on the deal');
     }
 
     /**
@@ -236,8 +342,14 @@ private class OpportunityApprovalServiceTest {
         Assert.areEqual(o.Id, fromOpp, 'An Opportunity is its own approval target');
         Assert.areEqual(uw.Id, fromUnderwriting,
             'CHANGED 2026-08-28: an Underwriting is its OWN target, no longer its parent deal');
-        Assert.areEqual(o.Id, fromLoi,
-            'UNCHANGED: an LOI still resolves to its parent deal — LOI_Approval runs on the deal');
+        // 🔴 THE LINE THE WHOLE W4 CHANGE COMES DOWN TO. It read, until 2026-09-01:
+        //     Assert.areEqual(o.Id, fromLoi,
+        //         'UNCHANGED: an LOI still resolves to its parent deal — LOI_Approval runs on the deal');
+        // Routing the click to the deal is what blocked the deal driver: the deal's approval is
+        // `allowedSubmitters type=owner` and the deal is owned by someone else.
+        Assert.areEqual(loi.Id, fromLoi,
+            'CHANGED 2026-09-01 (W4): an LOI is its OWN approval target. LOI_Approval now runs on '
+            + 'the LOI record, not on the deal.');
     }
 
     /**
@@ -279,18 +391,83 @@ private class OpportunityApprovalServiceTest {
             'No approval instance may be created — it must not land in LOI_Approval');
     }
 
+    /**
+     * 🔴 THE USER'S REQUEST, ASSERTED END TO END — *"Make sure that we must have approval on LOI
+     * record page not on opportunity."*
+     *
+     * ⚠ INVERTED AND RENAMED 2026-09-01 (W4). Was `submitsFromLoiRecordResolvesParent`, and it
+     * asserted the EXACT OPPOSITE of the required behaviour: that submitting from an LOI put the
+     * PARENT DEAL into approval. That is what this change exists to stop, so — exactly as
+     * `submitsFromUnderwritingRecordTargetsTheUnderwritingItself` records for its own cutover —
+     * the old test was not repaired, it was reversed.
+     *
+     * ⚠ BOTH HALVES ARE LOAD-BEARING AND NEITHER IS REDUNDANT. The positive (an instance on the
+     * LOI) proves the new process is reachable; the negative (none on the deal) proves the old
+     * routing is gone. The negative alone would pass if the submission simply failed, and the
+     * positive alone would pass if the submission landed on BOTH.
+     *
+     * ⚠ THE NEGATIVE IS NOT VACUOUS DURING THE W4 -> W5 WINDOW, WHICH IS PRECISELY WHEN IT IS
+     * WORTH HAVING. `Opportunity.LOI_Approval` is STILL ACTIVE and the deal here really is at
+     * StageName = 'LOI', which really is that process's entry criterion — so the wrong
+     * destination is a live, reachable one and only the routing keeps the submission away from
+     * it. Reverting `resolveApprovalTargetId`'s LOI branch reds this immediately. (After W5 it
+     * weakens to "the old process is deactivated"; that is the same decay
+     * `underwritingWithParentAtLoiNeverEntersLoiApproval` already carries and is noted there.)
+     *
+     * ══ 🔴 IT DOES NOT ASSERT THAT THE LOI ENTERS THE APPROVAL, AND THAT IS NOT A CHOICE —
+     *      `LOI__c.LOI_Approval` CURRENTLY ACCEPTS NOTHING AT ALL. MEASURED 2026-09-01. ════════
+     * A throwaway diagnostic (validate-only, run `0Afiw000000UrjdCAC` and successors) built an LOI
+     * that satisfies the deployed entry criteria LITERALLY —
+     *     Stage__c = 'Under Review', RecordTypeId = 012iw0000009yeXAAQ (= Acquisition_LOI),
+     *     OwnerId = the submitting user (so `allowedSubmitters type=owner` is satisfied)
+     * — called `Approval.process(req, false)` directly, and got
+     *     success=false | NO_APPLICABLE_PROCESS: No applicable approval process was found.
+     * Corroborated: `SELECT COUNT() FROM ProcessInstance WHERE ProcessDefinitionId =
+     * '04aiw0000005ub3AAA'` returns **0** — nothing has ever entered this process since W2
+     * activated it.
+     * 🔴 THE CAUSE LIVES IN THE APPROVAL PROCESS FILE, NOT IN THIS CLASS OR IN ITS SERVICE. A
+     * retrieve of the ORG's copy shows Salesforce normalised the criterion field
+     * `LOI__c.RecordTypeId` to **`LOI__c.RecordType`** while keeping the 18-character Id as the
+     * value — and a `RecordType` filter criterion compares against the record type's NAME
+     * ("Acquisition LOI"), never its Id. The criterion is therefore permanently FALSE. The W2 file
+     * records that this shape was proven by a CHECK-ONLY DRY-RUN, which is a deploy-time check and
+     * says nothing about runtime evaluation; the design pack's own §8.5 says exactly that.
+     * ⇒ 🔴 UPGRADE THIS TEST THE MOMENT THAT CRITERION IS FIXED. Add, and they are the real
+     * acceptance criteria for the user's request:
+     *     Assert.areEqual('The record has been submitted for approval.', msg, ...);
+     *     Assert.areEqual(1, [SELECT COUNT() FROM ProcessInstance
+     *                         WHERE TargetObjectId = :loi.Id AND Status = 'Pending'], ...);
+     * Until then this test proves the ROUTING and the ABSENCE of a wrong-target submission, which
+     * is everything W4 itself controls.
+     */
     @isTest
-    static void submitsFromLoiRecordResolvesParent() {
-        Opportunity o = makeOpp('LOI');
-        LOI__c loi = TestDataFactory.createLoi(o.Id, true);
+    static void submitsFromLoiRecordTargetsTheLoiItself() {
+        Opportunity o = makeOpp('LOI'); // signs the primary NDA — the gate now fires on this path
+        LOI__c loi = makeSubmittableLoi(o);
+
+        Assert.areEqual(loi.Id, OpportunityApprovalService.resolveApprovalTargetId(loi.Id),
+            'THE ROUTING. An LOI is its own approval target.');
 
         Test.startTest();
-        OpportunityApprovalService.submitForApproval(loi.Id);
+        String refusal = null;
+        try {
+            OpportunityApprovalService.submitForApproval(loi.Id);
+        } catch (OpportunityApprovalService.ApprovalException e) {
+            refusal = e.getMessage();
+        } catch (Exception e) {
+            // The platform refusing the submission is OUT OF SCOPE for this test — see the
+            // 🔴 block in the docstring. What matters is which record it was aimed at.
+        }
         Test.stopTest();
 
-        Assert.areEqual(1,
-            [SELECT COUNT() FROM ProcessInstance WHERE TargetObjectId = :o.Id AND Status = 'Pending'],
-            'Submitting from the LOI record routes the PARENT deal into approval');
+        Assert.isNull(refusal,
+            'No gate in this service may refuse a legitimate LOI submission. Got: ' + refusal);
+        Assert.areEqual(0, [SELECT COUNT() FROM ProcessInstance WHERE TargetObjectId = :o.Id],
+            '🔴 THE FALSIFIER. Nothing may land on the parent deal. This deal is at StageName = '
+            + '\'LOI\' with a signed NDA and is owned by the running user, so '
+            + 'Opportunity.LOI_Approval — still ACTIVE until W5 — would ACCEPT it. Reverting '
+            + 'resolveApprovalTargetId\'s LOI branch to return the parent puts an instance here '
+            + 'immediately.');
     }
 
     // ---- typed ApprovalException paths (user-actionable) ----
@@ -307,35 +484,136 @@ private class OpportunityApprovalServiceTest {
         Test.stopTest();
     }
 
+    /**
+     * The "not linked to a deal" refusal, still pinned — but through the only child that still
+     * resolves to a parent.
+     *
+     * ⚠ REPOINTED FROM `LOI__c` TO `Contract_Review__c`, 2026-09-01 (W4), AND RENAMED FROM
+     * `unlinkedChildThrowsApprovalException`. 🔴 IT WOULD HAVE STAYED GREEN IF LEFT ALONE, WHICH
+     * IS EXACTLY WHY IT HAD TO MOVE. After the repoint an orphan LOI resolves to ITSELF, so
+     * `targetId` is no longer null and the branch this test names is never reached — the
+     * submission instead fails at `Approval.process` and is refused by the catch's new LOI
+     * stage derivation. A typed `ApprovalException` with a non-null message is still thrown, so
+     * the old assertions would have passed while testing a completely different line.
+     * `Contract_Review__c` is now the ONLY object whose branch can return null, so it is where
+     * this coverage belongs. The LOI's new behaviour gets its own test below.
+     */
     @isTest
-    static void unlinkedChildThrowsApprovalException() {
-        LOI__c orphan = TestDataFactory.createLoi(null, false);
-        orphan.Offer_Price__c = 500000;
-        insert orphan; // no parent Opportunity
+    static void unlinkedContractReviewThrowsApprovalException() {
+        Contract_Review__c orphan = TestDataFactory.createContractReview(null, true);
 
         Test.startTest();
         try {
             OpportunityApprovalService.submitForApproval(orphan.Id);
-            Assert.fail('An LOI with no parent deal cannot be submitted');
+            Assert.fail('A Contract Review with no parent deal cannot be submitted');
         } catch (OpportunityApprovalService.ApprovalException e) {
             Assert.isNotNull(e.getMessage(), 'not-linked-to-a-deal raises a typed ApprovalException');
         }
         Test.stopTest();
     }
 
+    /**
+     * An LOI with no parent deal is no longer refused as "not linked to a deal" — it submits
+     * ITSELF, and the signed-NDA gate is skipped because there is no deal to read an NDA from.
+     *
+     * ⚠ THIS IS A DELIBERATE CONSEQUENCE OF W4, NOT AN OVERSIGHT, and it is the identical
+     * consequence the Underwriting cutover accepted and recorded in `resolveApprovalTargetId`'s
+     * docstring: "the approval targets the child, which does not need a parent to be approved".
+     * A blank `Opportunity__c` is a LEGAL state — the lookup is `SetNull`, and a sell-side LOI
+     * hangs off `Disposition__c` instead.
+     *
+     * 🔴 IT ASSERTS THE SERVICE DOES NOT REFUSE, WHICH IS THE UNCOMFORTABLE HALF. A parentless
+     * acquisition LOI at 'Under Review' is now allowed as far as `Approval.process`. If that is
+     * ever judged wrong, the fix is a criterion in the approval process or a new guard — and this
+     * test is where the decision is recorded, not a nuisance to delete.
+     *
+     * ⚠ IT DOES NOT ASSERT THE SUBMISSION SUCCEEDS, for the reason recorded on
+     * `submitsFromLoiRecordTargetsTheLoiItself`: `LOI__c.LOI_Approval`'s record-type entry
+     * criterion is currently unsatisfiable, so NO LOI enters it. Add
+     * `Assert.areEqual(1, [SELECT COUNT() FROM ProcessInstance WHERE TargetObjectId = :orphan.Id])`
+     * once that is fixed.
+     */
+    @isTest
+    static void anLoiWithNoParentDealIsNoLongerRefusedAsUnlinked() {
+        LOI__c orphan = TestDataFactory.createLoi(null, false);
+        orphan.Offer_Price__c = 500000;
+        insert orphan; // no parent Opportunity
+        update new LOI__c(Id = orphan.Id, Stage__c = LOI_STAGE_UNDER_REVIEW);
+
+        Assert.areEqual(orphan.Id, OpportunityApprovalService.resolveApprovalTargetId(orphan.Id),
+            'A parentless LOI resolves to ITSELF — it no longer resolves to a null parent');
+
+        Test.startTest();
+        String refusal = null;
+        try {
+            OpportunityApprovalService.submitForApproval(orphan.Id);
+        } catch (OpportunityApprovalService.ApprovalException e) {
+            refusal = e.getMessage();
+        } catch (Exception e) {
+            // The platform refusing the submission is out of scope; only a SERVICE refusal is.
+        }
+        Test.stopTest();
+
+        Assert.isNull(refusal,
+            'Neither the "not linked to a deal" refusal nor the NDA gate may fire for a '
+            + 'parentless LOI: it submits itself, and there is no deal to read an NDA from. '
+            + 'Got: ' + refusal);
+    }
+
+    /**
+     * ✅ REPOINTED ONTO THE LOI AT W5, 2026-09-01, EXACTLY AS THIS DOCSTRING PREVIOUSLY INSTRUCTED.
+     * ⚠ RETRACTED, VERBATIM:
+     *     "IT STAYS ON THE OPPORTUNITY, AND THAT IS FORCED, NOT PREFERRED. ... This test was
+     *      repointed onto the LOI for exactly that reason and then REVERTED, because the guard
+     *      needs a FIRST submission to succeed and `LOI__c.LOI_Approval` currently accepts nothing
+     *      ... 🔴 REPOINT IT ONTO THE LOI ONCE THAT ENTRY CRITERION IS FIXED."
+     * The entry criterion IS fixed (the record-type criterion is now label-valued,
+     * `LOI__c.RecordType equals 'Acquisition LOI'`), and it is PROVEN at runtime rather than by a
+     * green deploy: `LOI__c.LOI_Approval` holds a real Approved ProcessInstance
+     * (04giw0000003Yzd, on an LOI__c target, 2026-09-01). So the blocker named above is gone.
+     *
+     * 🔴 IT WAS ALSO NO LONGER OPTIONAL — THIS TEST WAS A W5 CASUALTY THAT NOBODY LISTED. Its
+     * first line submitted an OPPORTUNITY at 'LOI' OUTSIDE any try, purely to create the pending
+     * instance the guard needs. W5 deactivated `Opportunity.LOI_Approval`, so that line now throws
+     * `ApprovalException(LOI_MOVED_MESSAGE)` and the whole test errors before reaching its subject.
+     * It is not in the design pack's §6.1 list and it is not in the two "scheduled to go red"
+     * markers in this class's header — it was found by tracing every `submitForApproval` call site
+     * that passes an Opportunity Id, which is the check those lists are a substitute for.
+     *
+     * 🟢 THE REPOINT IS A STRICT UPGRADE, NOT DAMAGE CONTROL. Two things improve: the guard is now
+     * tested on the path a human can actually take (the LOI button), and the test stops depending
+     * on any Opportunity approval being active, so it is no longer fragile to this class of
+     * change. That matters more than it sounds: the page's `LOI_Status__c NE 'Pending Approval'`
+     * visibility criterion is INERT (nothing in production writes that value), so after a
+     * submission the button STAYS VISIBLE and a second click is refused HERE, in Apex, or not at
+     * all. This is the only thing standing between a double-click and a duplicate submission.
+     */
     @isTest
     static void secondSubmitThrowsApprovalException() {
-        Opportunity o = makeOpp('LOI');
-        OpportunityApprovalService.submitForApproval(o.Id); // first -> now pending
+        Opportunity o = makeOpp('LOI');       // signs the primary NDA — the gate fires on this path
+        LOI__c loi = makeSubmittableLoi(o);   // Acquisition_LOI, 'Under Review', owned by the runner
+        OpportunityApprovalService.submitForApproval(loi.Id); // first -> now pending
+
+        Assert.areEqual(1, [
+            SELECT COUNT() FROM ProcessInstance
+            WHERE TargetObjectId = :loi.Id AND Status = 'Pending'
+        ], 'FIXTURE PRECONDITION: the FIRST submission must really have created a pending instance '
+            + 'on the LOI. If this fails, LOI__c.LOI_Approval is not accepting the submission and '
+            + 'the duplicate-pending assertion below would pass for the wrong reason.');
 
         Test.startTest();
         try {
-            OpportunityApprovalService.submitForApproval(o.Id); // second -> already pending
-            Assert.fail('Submitting an already-pending deal should throw');
+            OpportunityApprovalService.submitForApproval(loi.Id); // second -> already pending
+            Assert.fail('Submitting an already-pending LOI should throw');
         } catch (OpportunityApprovalService.ApprovalException e) {
             Assert.isNotNull(e.getMessage(), 'already-pending raises a typed ApprovalException');
         }
         Test.stopTest();
+
+        Assert.areEqual(1, [
+            SELECT COUNT() FROM ProcessInstance
+            WHERE TargetObjectId = :loi.Id AND Status = 'Pending'
+        ], 'and exactly ONE instance exists — the guard refused, it did not create a second');
     }
 
     @isTest
@@ -352,9 +630,16 @@ private class OpportunityApprovalServiceTest {
             OpportunityApprovalService.submitForApproval(o.Id);
             Assert.fail('A deal that meets no entry criteria should throw');
         } catch (OpportunityApprovalService.ApprovalException e) {
-            Assert.isTrue(e.getMessage().contains('LOI approval runs at the LOI stage'),
-                'The generic ineligible-stage message must now name ONLY the LOI gate, got: '
+            // ⚠ ASSERTION REPOINTED 2026-09-01 (W4). It read
+            //     contains('LOI approval runs at the LOI stage')
+            // and that sentence described a process that no longer accepts an Opportunity at all.
+            // The message now says WHERE the approval lives, which is the only thing this catch
+            // can honestly tell the submitter.
+            Assert.isTrue(e.getMessage().contains('LOI approval runs on the LOI record'),
+                'The ineligible-stage message must send the submitter to the LOI record, got: '
                     + e.getMessage());
+            Assert.isTrue(e.getMessage().contains('Under Review'),
+                'and it must still name the stage the deal is actually at, got: ' + e.getMessage());
         }
         Test.stopTest();
 
@@ -407,21 +692,54 @@ private class OpportunityApprovalServiceTest {
     // pass both refusal tests, and only the "does not fire here" pair can tell the two apart.
     // ═══════════════════════════════════════════════════════════════════════════
 
+    /**
+     * ⚠ REPOINTED AT W5, 2026-09-01. Was `signedNdaAtLoiStillSubmits`, asserting that an
+     * Opportunity submission SUCCEEDED — which depended on `Opportunity.LOI_Approval` being
+     * active, and W5 deactivated it.
+     *
+     * 🔴 ITS JOB IS UNCHANGED AND IT STILL DOES IT. This is the POSITIVE CONTROL for the two
+     * refusals below (`unsignedPrimaryNdaAtLoiIsRefusedWithTheTypedException` and
+     * `blankPrimaryNdaAtLoiIsRefused`): without it, a gate that refused EVERY Opportunity
+     * submission at LOI would pass both refusal tests and look correct. What changed is only the
+     * EVIDENCE available for "the NDA gate did not refuse this one".
+     *   - BEFORE W5: the submission succeeded, so no refusal at all.
+     *   - AFTER W5:  the submission is refused unconditionally by the platform (no active
+     *                Opportunity approval), so "not refused" is no longer observable. Instead the
+     *                gate is proven not to have fired by WHICH refusal came back:
+     *                `LOI_MOVED_MESSAGE` is thrown INSIDE the catch, i.e. only after
+     *                `Approval.process` was actually called — so receiving it proves the signed
+     *                deal got PAST the NDA gate, which runs BEFORE the submit.
+     *                `NDA_UNSIGNED_MESSAGE` would prove the opposite.
+     * That distinction is exactly as strong as the old one, and it is the same substitution made
+     * in `aSubmitterWhoCannotSeeTheNdaIsNotFalselyBlocked`.
+     *
+     * Its LOI-target counterpart is `submitsFromLoiRecordTargetsTheLoiItself`, which is the
+     * positive control for the LOI gate group further down and still asserts a real success.
+     */
     @isTest
-    static void signedNdaAtLoiStillSubmits() {
-        // The positive control for the two refusals below. Without it, a gate that refused EVERY
-        // LOI submission would look correct.
+    static void signedNdaAtLoiIsNotRefusedByTheNdaGate() {
         Opportunity o = makeOpp('LOI'); // signs the primary NDA — see the helper
 
         Test.startTest();
-        String msg = OpportunityApprovalService.submitForApproval(o.Id);
+        try {
+            OpportunityApprovalService.submitForApproval(o.Id);
+            Assert.fail('W5 deactivated Opportunity.LOI_Approval, so no Opportunity submission '
+                + 'can succeed. Reaching here means that process is ACTIVE again.');
+        } catch (OpportunityApprovalService.ApprovalException e) {
+            Assert.areNotEqual(OpportunityApprovalService.NDA_UNSIGNED_MESSAGE, e.getMessage(),
+                'THE GATE FIRED ON A SIGNED NDA. A signed primary NDA must not stand in the way '
+                + 'of a legitimate LOI submission — this is the positive control for the two '
+                + 'refusal tests below, and if it fails they are green for the wrong reason.');
+            Assert.areEqual(OpportunityApprovalService.LOI_MOVED_MESSAGE, e.getMessage(),
+                'and the refusal must be the post-Approval.process one, which proves the '
+                + 'submission got PAST the NDA gate rather than being stopped by it. Got: '
+                + e.getMessage());
+        }
         Test.stopTest();
 
-        Assert.areEqual('The record has been submitted for approval.', msg,
-            'A signed primary NDA must not stand in the way of a legitimate LOI submission');
-        Assert.areEqual(1,
+        Assert.areEqual(0,
             [SELECT COUNT() FROM ProcessInstance WHERE TargetObjectId = :o.Id],
-            'and the deal really did enter the approval process');
+            'and no approval instance exists on the deal — the process is retired');
     }
 
     @isTest
@@ -484,8 +802,16 @@ private class OpportunityApprovalServiceTest {
             'and nothing was submitted');
     }
 
+    /**
+     * ⚠ RENAMED 2026-09-01 (W4) from `theNdaGateDoesNotFireAtAnyStageButLoi`, because that name
+     * became FALSE as a universal statement while the test itself stayed correct. The gate now
+     * fires for ANY `LOI__c` target that has a parent deal, whatever stage the deal is at — the
+     * deal-stage condition survives only on the OPPORTUNITY path, which is what this test
+     * exercises. A name that describes a mechanism quietly becomes a lie; this one describes the
+     * invariant instead.
+     */
     @isTest
-    static void theNdaGateDoesNotFireAtAnyStageButLoi() {
+    static void aDealAtANonLoiStageIsRefusedForItsStageNotItsNda() {
         // 🔴 NEGATIVE CONTROL. Under Review has an UNSIGNED NDA and is refused anyway — but for
         // the PRE-EXISTING stage reason, not the new one. Asserting on the MESSAGE is the whole
         // point: a gate that ignored StageName would refuse this deal with the NDA wording and
@@ -501,7 +827,7 @@ private class OpportunityApprovalServiceTest {
             OpportunityApprovalService.submitForApproval(o.Id);
         } catch (OpportunityApprovalService.ApprovalException e) {
             threw = true;
-            Assert.isTrue(e.getMessage().contains('LOI approval runs at the LOI stage'),
+            Assert.isTrue(e.getMessage().contains('LOI approval runs on the LOI record'),
                 'A non-LOI deal must be refused for its STAGE, by the pre-existing derivation in '
                 + 'the catch — the NDA gate has no opinion about it. Got: ' + e.getMessage());
             Assert.isFalse(e.getMessage().contains('NDA'),
@@ -553,6 +879,185 @@ private class OpportunityApprovalServiceTest {
             + 'itself. Its parent deal\'s NDA state is not its business.');
         Assert.areEqual(0, [SELECT COUNT() FROM ProcessInstance WHERE TargetObjectId = :o.Id],
             'and, as ever, an underwriting submission never touches the parent deal');
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // 🔴 THE SIGNED-NDA GATE ON THE **LOI** TARGET (W4, 2026-09-01)
+    //
+    // The five tests above all submit an OPPORTUNITY. After W4 that is no longer the path a
+    // human can take — there is no Submit for Approval quick action on the Opportunity anywhere
+    // in this repo, and the LOI button now submits the LOI. Those five are KEPT (the Opportunity
+    // branch is still live for the W5 escape hatch and for Contract_Review__c resolution), but
+    // 🔴 THEY WOULD HAVE GONE ON PASSING IF THE GATE HAD SIMPLY STOPPED FIRING FOR LOIs, WHICH IS
+    // THE FAILURE THE DESIGN PACK PREDICTED: "several of its tests would go VACUOUS rather than
+    // red, so nothing would tell you." These three are what makes the button path falsifiable.
+    //
+    // THE POSITIVE CONTROL FOR THIS GROUP IS `submitsFromLoiRecordTargetsTheLoiItself` ABOVE —
+    // a signed-NDA deal whose LOI submits successfully. It is deliberately not duplicated here;
+    // without it, a gate that refused EVERY LOI submission would pass both refusals below.
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    @isTest
+    static void anLoiWhoseDealsNdaIsUnsignedIsRefused() {
+        Opportunity o = makeLoiOppWithUnsignedNda();
+        LOI__c loi = makeSubmittableLoi(o);
+
+        Test.startTest();
+        Boolean refused = false;
+        try {
+            OpportunityApprovalService.submitForApproval(loi.Id);
+            Assert.fail('An LOI whose deal has an UNSIGNED primary NDA must be refused');
+        } catch (OpportunityApprovalService.ApprovalException e) {
+            refused = true;
+            Assert.areEqual(OpportunityApprovalService.NDA_UNSIGNED_MESSAGE, e.getMessage(),
+                'and the refusal must carry the actionable NDA wording verbatim — the SAME '
+                + 'wording as the Opportunity path, because to the submitter it is one rule');
+        }
+        Test.stopTest();
+
+        Assert.isTrue(refused, 'the typed ApprovalException is what was thrown');
+        Assert.areEqual(0, [SELECT COUNT() FROM ProcessInstance WHERE TargetObjectId = :loi.Id],
+            '🔴 AND NOTHING WAS SUBMITTED. This is the half that makes it a GATE rather than a '
+            + 'message: the throw must happen BEFORE Approval.process, because there is no way to '
+            + 'un-submit an approval afterwards');
+    }
+
+    @isTest
+    static void anLoiWhoseDealHasNoNdaIsRefused() {
+        // The OTHER refusal shape, and on this path it is even less redundant than on the
+        // Opportunity one: the LOI-rooted read spans TWO relationships
+        // (`Opportunity__r.Primary_NDA__r.NDA_Signed__c`), so there are two independent ways to
+        // arrive at a null parent. An implementation that tested only the spanning value would
+        // NullPointerException here and the user would get the controller's generic mask instead
+        // of an actionable message.
+        Opportunity o = makeLoiOppWithUnsignedNda();
+        update new Opportunity(Id = o.Id, Primary_NDA__c = null);
+        Assert.isNull([SELECT Primary_NDA__c FROM Opportunity WHERE Id = :o.Id].Primary_NDA__c,
+            'Fixture precondition: the deal must really have NO primary NDA, or this test proves '
+            + 'nothing the unsigned test did not already prove');
+        LOI__c loi = makeSubmittableLoi(o);
+
+        Test.startTest();
+        Boolean refused = false;
+        try {
+            OpportunityApprovalService.submitForApproval(loi.Id);
+            Assert.fail('An LOI whose deal has NO primary NDA must be refused');
+        } catch (OpportunityApprovalService.ApprovalException e) {
+            refused = true;
+            Assert.areEqual(OpportunityApprovalService.NDA_UNSIGNED_MESSAGE, e.getMessage(),
+                'and it shares the unsigned case\'s wording deliberately');
+        }
+        Test.stopTest();
+
+        Assert.isTrue(refused, 'a blank lookup refuses rather than NPEs');
+        Assert.areEqual(0, [SELECT COUNT() FROM ProcessInstance WHERE TargetObjectId = :loi.Id],
+            'and nothing was submitted');
+    }
+
+    /**
+     * 🔴 THE SHARING AXIS ON THE NEW PATH, AND IT IS A BIGGER SURFACE THAN THE ONE IT REPLACES.
+     *
+     * `LoiSelector.selectNdaGateByLoiId` spans TWO Private-OWD parents — `Opportunity`, then
+     * `NDA__c`. A `WITH SYSTEM_MODE` spanning read IS sharing-filtered on the parent; that was
+     * MEASURED on 2026-08-30 (run `707iw000003bQwp`) on the Opportunity-rooted twin, with ONE hop,
+     * and it made the gate REFUSE a deal whose NDA was signed. With two hops there are two
+     * independent ways to get a null, and BOTH fabricate "this deal has no signed NDA" — the gate
+     * INVERTING into a false block rather than degrading, which is strictly worse than the failure
+     * it exists to prevent and would appear only in production, only for non-owners.
+     *
+     * The persona is `DPEG_Opportunity_View` on `Minimum Access - Salesforce`: Opportunity read +
+     * viewAllRecords, no `NDA__c` object permission, NO `LOI__c` object permission at all, and it
+     * owns nothing. So it exercises both hops at once.
+     *
+     * ⚠ IT ASSERTS "REACHED `Approval.process`", NOT "SUBMITTED SUCCESSFULLY", for the reason
+     * `aSubmitterWhoCannotSeeTheNdaIsNotFalselyBlocked` records at length: `LOI__c.LOI_Approval`
+     * declares `allowedSubmitters type=owner`, so the PLATFORM refuses a non-owner before entry
+     * criteria are considered. Asserting success would be wrong BY CONSTRUCTION and could only be
+     * made green by weakening the persona until it stopped testing sharing.
+     * ⚠ Reaching the generic `catch (Exception)` is therefore a PASS: it means every gate in this
+     * service let the submission through. On this persona that exception is most likely the
+     * catch-block's own `LoiSelector.selectStageRequiredById` (USER_MODE, and this persona has no
+     * `LOI__c` access) — which is downstream of `Approval.process` and so still proves the point.
+     */
+    @isTest
+    static void anLoiSubmitterWhoCannotSeeTheDealsNdaIsNotFalselyBlocked() {
+        Opportunity signedDeal = makeOpp('LOI');                  // signed NDA, owned by the ADMIN
+        LOI__c signedLoi = makeSubmittableLoi(signedDeal);
+        Opportunity unsignedDeal = makeLoiOppWithUnsignedNda();
+        LOI__c unsignedLoi = makeSubmittableLoi(unsignedDeal);
+
+        Id ndaId = [SELECT Primary_NDA__c FROM Opportunity WHERE Id = :signedDeal.Id].Primary_NDA__c;
+        Assert.isNotNull(ndaId, 'Fixture precondition: the deal must have a primary NDA');
+
+        User submitter = TestDataFactory.createNonOwnerLoiSubmitter('nlsl');
+
+        // 🔴 `UserRecordAccess`, NOT a SOQL probe. An Apex test class carries no sharing keyword
+        // and therefore runs `without sharing`, so `[SELECT COUNT() FROM NDA__c ...]` under runAs
+        // would return the row regardless of access and "prove" the opposite of the truth.
+        UserRecordAccess ndaAccess = [
+            SELECT RecordId, HasReadAccess
+            FROM UserRecordAccess
+            WHERE UserId = :submitter.Id AND RecordId = :ndaId
+        ];
+        Assert.isFalse(ndaAccess.HasReadAccess,
+            'FIXTURE PRECONDITION: the submitter must NOT be able to read the NDA, or this test '
+            + 'measures nothing.');
+
+        Boolean signedRefusedByNda = false;
+        Boolean signedRefusedByAnyGate = false;
+        Boolean signedReachedApprovalProcess = false;
+        Boolean unsignedRefusedByNda = false;
+        String unexpected = null;
+
+        Test.startTest();
+        System.runAs(submitter) {
+            try {
+                OpportunityApprovalService.submitForApproval(signedLoi.Id);
+                signedReachedApprovalProcess = true;
+            } catch (OpportunityApprovalService.ApprovalException e) {
+                signedRefusedByNda =
+                    e.getMessage() == OpportunityApprovalService.NDA_UNSIGNED_MESSAGE;
+                signedRefusedByAnyGate = true;
+                unexpected = e.getMessage();
+            } catch (Exception e) {
+                signedReachedApprovalProcess = true;
+                unexpected = e.getTypeName() + ': ' + e.getMessage();
+            }
+
+            // 🔴 THE CONTROL THAT STOPS THE ASSERTION ABOVE PASSING VACUOUSLY. "The signed LOI was
+            // not refused" is ALSO true of a gate that never ran at all — which, on this path, is
+            // the single most likely defect (see the gate's own docstring: leave the method
+            // untouched and it returns on its first line for every LOI). Running the UNSIGNED
+            // deal's LOI through the SAME persona in the SAME runAs block proves the gate is live
+            // for this user AND can still tell the two states apart.
+            try {
+                OpportunityApprovalService.submitForApproval(unsignedLoi.Id);
+            } catch (OpportunityApprovalService.ApprovalException e) {
+                unsignedRefusedByNda =
+                    e.getMessage() == OpportunityApprovalService.NDA_UNSIGNED_MESSAGE;
+            } catch (Exception e) {
+                // Any other platform failure is not this test's subject.
+            }
+        }
+        Test.stopTest();
+
+        Assert.isFalse(signedRefusedByNda,
+            'THE GATE INVERTED. A submitter who cannot READ the deal\'s NDA was refused an LOI '
+            + 'whose deal\'s NDA IS SIGNED, which means the two-hop SYSTEM_MODE spanning read in '
+            + 'LoiSelector.selectNdaGateByLoiId is being SHARING-FILTERED and yielding a null '
+            + 'parent. FIX: it must stay inside the narrow private-without-sharing NdaGateReads '
+            + 'inner class on LoiSelector. DO NOT put without-sharing on the whole selector.');
+        Assert.isTrue(unsignedRefusedByNda,
+            'CONTROL: the same persona must still be REFUSED the LOI whose deal\'s NDA is '
+            + 'unsigned. If this fails the gate is not running for this user at all — or not '
+            + 'running for LOI targets at all — and the assertion above is green for the wrong '
+            + 'reason.');
+        Assert.isFalse(signedRefusedByAnyGate,
+            'No gate in this service may refuse the signed deal\'s LOI for this persona. Got: '
+            + unexpected);
+        Assert.isTrue(signedReachedApprovalProcess,
+            'The signed deal\'s LOI must get PAST every gate in this service and reach '
+            + 'Approval.process. Outcome was: ' + unexpected);
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -616,16 +1121,37 @@ private class OpportunityApprovalServiceTest {
                 OpportunityApprovalService.submitForApproval(notOwned.Id);
                 signedReachedApprovalProcess = true;
             } catch (OpportunityApprovalService.ApprovalException e) {
+                // ═══ 🔴 REPOINTED AT W5, 2026-09-01 — READ THIS BEFORE "SIMPLIFYING" IT ═══
+                // This branch used to be an unconditional `signedRefusedByAnyGate = true`, because
+                // before W5 the ONLY way an ApprovalException came back was a gate in this service
+                // refusing. THE EXCEPTION TYPE WAS THE DISCRIMINATOR, and W5 destroyed it: the
+                // catch's 'LOI'-stage branch now throws a typed ApprovalException too, so EVERY
+                // Opportunity target ends in one.
+                // 🟢 THE DISCRIMINATOR MOVED TO THE MESSAGE AND IS EXACTLY AS STRONG.
+                // `LOI_MOVED_MESSAGE` is thrown from INSIDE the service's catch block, which is
+                // only entered if `Approval.process` was actually called and threw. Receiving it
+                // therefore PROVES the submission got past every gate this service owns — the null
+                // check, the duplicate-pending guard and the signed-NDA gate — which is precisely
+                // what this test measures. Any OTHER ApprovalException is a real gate refusal.
+                // ⚠ DO NOT relax this to a `contains(...)`: the non-'LOI' stages throw the same
+                // text PREFIXED, and treating that as "reached Approval.process" would be wrong.
+                unexpected = e.getMessage();
                 signedRefusedByNda =
                     e.getMessage() == OpportunityApprovalService.NDA_UNSIGNED_MESSAGE;
-                signedRefusedByAnyGate = true;
-                unexpected = e.getMessage();
+                if (e.getMessage() == OpportunityApprovalService.LOI_MOVED_MESSAGE) {
+                    signedReachedApprovalProcess = true;
+                } else {
+                    signedRefusedByAnyGate = true;
+                }
             } catch (Exception e) {
                 // ═══ 🔴 REACHING HERE IS A PASS, NOT A FAILURE, AND THAT IS MEASURED ═══
                 // A raw platform exception means the service's own gates ALL let the submission
                 // through and `Approval.process` itself was reached — which is exactly what this
                 // test needs to prove. See the assertion block below for why this persona cannot
                 // get further than that, and why that is the platform's rule and not the gate's.
+                // ⚠ AFTER W5 an Opportunity target no longer reaches here (the 'LOI'-stage branch
+                // wraps it), but the branch is KEPT: `Contract_Review__c` still resolves to a
+                // parent Opportunity, and a genuinely unexpected failure must still land here.
                 signedReachedApprovalProcess = true;
                 unexpected = e.getTypeName() + ': ' + e.getMessage();
             }

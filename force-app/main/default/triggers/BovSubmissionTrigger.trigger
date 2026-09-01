@@ -72,11 +72,56 @@
 // ══════════════════════════════════════════════════════════════════════════════════════════
 // ⚠ `after delete` ADDED 2026-08-24 (preferred-broker-wins). Deleting the appointed submission —
 // the normal way a user withdraws a preferred broker — must re-rank the sale, and there was no
-// delete context at all, so the broker simply vanished with nothing to notice it. 🔴 STILL NO
-// `after undelete`: see BovAutoSelectionService.reselectForDeleted for the three things that
-// depend on the undelete duplicate remaining REACHABLE rather than silently self-healed.
+// delete context at all, so the broker simply vanished with nothing to notice it.
+//
+// ══════════════════════════════════════════════════════════════════════════════════════════
+// 🔴 RETRACTED IN PLACE 2026-08-31 (Disposition BA gap closure, Tranche 1 item 7, design
+//    decision D-5). This is the THIRD retraction in this file and the pattern is now
+//    unmistakeable: every one of them was a claim about the whole TRIGGER derived from one
+//    JOB's requirements. Quoted rather than deleted because the sentence is still true of the
+//    service it names, and a reader who found only the new context list would conclude
+//    otherwise:
+//
+//        RETRACTED: "🔴 STILL NO `after undelete`: see
+//        BovAutoSelectionService.reselectForDeleted for the three things that depend on the
+//        undelete duplicate remaining REACHABLE rather than silently self-healed."
+//
+// WHAT WAS RIGHT AND STAYS RIGHT — the whole of the reasoning, about AUTO-SELECTION. The
+// context now exists and `BovAutoSelectionService` is STILL NOT CALLED FROM IT. Every dependant
+// is untouched and the two-Selected state a Recycle-Bin restore can create is still reachable,
+// still unrefused, still red where it should be red. Nothing self-heals.
+//
+// ⚠ COUNT CORRECTED 2026-08-31 (Tranche 1 code review, W-3). This paragraph originally read:
+//
+//     RETRACTED: "The three dependants (DispositionApprovalService.MULTIPLE_SELECTED_BOV_MESSAGE,
+//     BovSubmissionSelectorTest.twoSelectedViaUndelete,
+//     selectSelectedByDispositionId_twoSelected_returnsBOTH) are untouched..."
+//
+// There are SEVEN, not three — the quoted three are real and still in the list, but four more
+// were never enumerated, and four of the seven build the undelete gap INLINE rather than through
+// `twoSelectedViaUndelete`, so a grep for that helper finds none of them. 🔴 THE AUTHORITATIVE
+// LIST IS AT `BovAutoSelectionService.reselectForDeleted` AND IS NOT RE-COPIED HERE — this file's
+// own header already concluded, twice, that it should stop writing counts down.
+//
+// WHAT WAS WRONG: "STILL NO `after undelete`" is a statement about the TRIGGER, justified by
+// one SERVICE's needs — the identical over-generalisation the two retractions above this line
+// already record ("nothing needs it"; "this trigger needs no before context"). A restored
+// submission IS a response the sale received, so `Disposition__c.Responses_Received__c` would
+// sit permanently one too low after any restore, with nothing anywhere to notice it.
+//
+// 🔴 THE STANDING RULE, WHICH REPLACES THE RETRACTED SENTENCE: `after undelete` ROUTES THE
+// COUNTER RECOMPUTE AND NOTHING ELSE. Adding a second job there re-opens the argument the
+// retracted text won; read BovAutoSelectionService.reselectForDeleted's header first.
+// The counter is admissible precisely because it asserts nothing about WHICH broker is
+// appointed and never reads `Submission_Status__c` at all.
+//
+//   after insert / after update / after delete / after undelete
+//       -> Disposition__c.Responses_Received__c, via DispositionCounterRollupService.
+//          RECOMPUTES from one aggregate per chunk; never increments. Free on an update that
+//          did not move `Disposition__c`; one query + one Database.update per chunk otherwise.
+// ══════════════════════════════════════════════════════════════════════════════════════════
 trigger BovSubmissionTrigger on BOV_Submission__c (
-    before insert, before update, after insert, after update, after delete
+    before insert, before update, after insert, after update, after delete, after undelete
 ) {
     new BovSubmissionTriggerHandler().run();
 }

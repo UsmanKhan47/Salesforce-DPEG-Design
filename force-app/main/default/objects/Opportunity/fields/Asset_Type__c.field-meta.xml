@@ -11,14 +11,14 @@
         <valueSetDefinition>
             <sorted>false</sorted>
             <value>
-                <fullName>Retail Strip</fullName>
+                <fullName>Retail</fullName>
                 <default>false</default>
-                <label>Retail Strip</label>
+                <label>Retail</label>
             </value>
             <value>
-                <fullName>Office</fullName>
+                <fullName>Land</fullName>
                 <default>false</default>
-                <label>Office</label>
+                <label>Land</label>
             </value>
             <value>
                 <fullName>Industrial</fullName>
@@ -26,9 +26,9 @@
                 <label>Industrial</label>
             </value>
             <value>
-                <fullName>Land</fullName>
+                <fullName>Office</fullName>
                 <default>false</default>
-                <label>Land</label>
+                <label>Office</label>
             </value>
             <value>
                 <fullName>Multifamily</fullName>
@@ -39,6 +39,16 @@
                 <fullName>Mixed-Use</fullName>
                 <default>false</default>
                 <label>Mixed-Use</label>
+            </value>
+            <value>
+                <fullName>Hospitality</fullName>
+                <default>false</default>
+                <label>Hospitality</label>
+            </value>
+            <value>
+                <fullName>Medical Office</fullName>
+                <default>false</default>
+                <label>Medical Office</label>
             </value>
         </valueSetDefinition>
     </valueSet>

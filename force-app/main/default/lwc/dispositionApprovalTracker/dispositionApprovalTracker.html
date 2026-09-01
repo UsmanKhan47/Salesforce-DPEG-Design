@@ -1,0 +1,137 @@
+<template>
+    <!-- 🔴 THE CARD CHROME IS UNCONDITIONAL. A checklist that vanishes when it has nothing to say
+         is a checklist that cannot report "nothing has been approved yet", which is precisely the
+         state a principal most needs to see. -->
+    <lightning-card icon-name="standard:task">
+        <span slot="title">{cardTitle}</span>
+
+        <!-- ═══════════════════════════════════════════════════════════════════════════════
+             THE CHECKLIST. FIVE FIXED ROWS, SERVER ORDER, NEVER RE-SORTED.
+             ═══════════════════════════════════════════════════════════════════════════════
+             An <ol> rather than a <ul> because the order IS the content — these are the BA's
+             numbered approval gates 1-5, and a reader uses "which one are we on" as the answer.
+
+             role="list" is NOT redundant: `list-style: none` makes WebKit drop the implicit list
+             role, and aria-label is only exposed on an element whose role supports naming. axe has
+             no rule for it, so a passing toBeAccessible() is not evidence against it.
+
+             The token vocabulary, the pills and the ~340px-sidebar spacing are lifted from
+             `c/dispositionApprovalHistory` on purpose — the two cards sit in one column and three
+             visual vocabularies in one column read as three unrelated widgets. Only the class
+             PREFIX differs (`dat-`), because LWC stylesheets are component-scoped and a shared
+             prefix would suggest a sharing that cannot exist. -->
+        <template lwc:if={hasRows}>
+            <ol class="dat-list" role="list" aria-label="Approval tracker">
+                <template for:each={rows} for:item="row">
+                    <li key={row.rowKey} class="dat-row" data-key={row.rowKey}>
+                        <!-- The step number. aria-hidden because the <ol> already conveys position
+                             to assistive technology, and hearing "1. one. Sale Decision" is noise. -->
+                        <span class="dat-seq" aria-hidden="true">{row.sequence}</span>
+
+                        <div class="dat-body">
+                            <!-- LINE 1 — the gate's name and its outcome.
+                                 🔴 THE PILL CARRIES ITS STATE AS VISIBLE TEXT, NEVER AS COLOUR
+                                 ALONE. "Not started" and "N/A" are words here, not a grey dot. -->
+                            <div class="dat-head">
+                                <h3 class="dat-label slds-hyphenate">{row.label}</h3>
+                                <span class={row.stateClass}>{row.stateLabel}</span>
+                            </div>
+
+                            <!-- LINE 2 — WHICH RECORD the approval was raised against. Present only
+                                 once something has been submitted. On rows 2 and 4 this names a
+                                 record that is NOT the one the user is looking at (a BOV submission
+                                 or an offer), and the link is the only way to reach it from here —
+                                 which also matters because Recall for those two lives there, not
+                                 on this page.
+                                 ⚠ THE SEPARATORS LIVE INSIDE THEIR OWN `lwc:if` BLOCKS. A pipe
+                                 hard-coded outside one renders a dangling "OFFER-0012 |". -->
+                            <template lwc:if={row.hasTarget}>
+                                <p class="dat-meta">
+                                    <span class="dat-sr-only">Approval raised on</span>
+                                    <a
+                                        href={row.targetUrl}
+                                        class="dat-target"
+                                        data-id={row.rowKey}
+                                        >{row.targetLabel}</a
+                                    >
+                                    <template lwc:if={row.hasDecided}>
+                                        <span class="dat-sep" aria-hidden="true">|</span>
+                                        <span class="dat-sr-only">Decided</span>
+                                        <span class="dat-when dat-mono">
+                                            <lightning-formatted-date-time
+                                                value={row.decidedDateTime}
+                                                year="numeric"
+                                                month="short"
+                                                day="2-digit"
+                                            ></lightning-formatted-date-time>
+                                        </span>
+                                    </template>
+                                    <template lwc:if={row.hasSubmitted}>
+                                        <span class="dat-sep" aria-hidden="true">|</span>
+                                        <span class="dat-sr-only">Submitted</span>
+                                        <span class="dat-when dat-mono">
+                                            <lightning-formatted-date-time
+                                                value={row.submittedDateTime}
+                                                year="numeric"
+                                                month="short"
+                                                day="2-digit"
+                                            ></lightning-formatted-date-time>
+                                        </span>
+                                    </template>
+                                </p>
+                            </template>
+
+                            <!-- 🔴 THE NDA ROW'S AGGREGATE. It is the ONE row whose cardinality is
+                                 not 1 — a sale invites several counterparties into its data room
+                                 and each gets its own NDA — so the single pill above cannot tell
+                                 the whole truth. "1 of 3 approved" beside a Pending pill is the
+                                 truth; the pill alone would let a reader assume one NDA. -->
+                            <template lwc:if={row.hasCounts}>
+                                <p class="dat-meta">
+                                    <span class="dat-count dat-mono">{row.countText}</span>
+                                </p>
+                            </template>
+
+                            <!-- 🔴 ROW 2 ONLY — THE VARIANT THAT CANNOT RUN ON THIS RECORD TYPE.
+                                 Broker selection is two processes: the on-market one is raised
+                                 against a BOV submission, the off-market one against the sale
+                                 itself. Showing the inapplicable one as "N/A" is what stops the
+                                 reader mistaking "cannot happen here" for "has not happened yet".
+                                 Without this line, either every on-market sale or every off-market
+                                 sale would look like it skipped an approval. -->
+                            <template lwc:if={row.hasNaVariant}>
+                                <p class="dat-meta dat-na">
+                                    <span class="dat-na-label">{row.naVariantLabel}</span>
+                                    <span class={row.naStateClass}>{row.naStateLabel}</span>
+                                </p>
+                            </template>
+                        </div>
+                    </li>
+                </template>
+            </ol>
+        </template>
+
+        <!-- ═══════════════════════════════════════════════════════════════════════════════
+             🔴 A FAILED READ RENDERS **NO ROWS AT ALL**, AND THAT IS THE POINT.
+             ═══════════════════════════════════════════════════════════════════════════════
+             The controller fails hard: a missing grant throws rather than degrading. If that were
+             swallowed into the normal render, this card would show five rows every one reading
+             "Not started" — a confident, itemised claim that a sale which has passed four
+             principal approvals has passed none, on which a principal could act by re-submitting
+             an approval that is already pending. So the two branches share no markup and no
+             wording: `hasRows` requires a SUCCESSFUL load, and this branch shows a sentence about
+             the READER, never about the sale.
+             ⚠ THERE IS NO SEPARATE "EMPTY" BRANCH, AND THERE MUST NOT BE ONE. A resolvable sale
+             ALWAYS returns five rows; five "Not started" rows IS the empty state, spelled out. -->
+        <template lwc:if={isUnavailable}>
+            <div class="dat-state" role="status">
+                <lightning-icon
+                    icon-name="utility:info"
+                    size="small"
+                    class="dat-state-icon"
+                ></lightning-icon>
+                <p class="dat-unavailable">{unavailableText}</p>
+            </div>
+        </template>
+    </lightning-card>
+</template>

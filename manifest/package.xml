@@ -37,6 +37,8 @@
         <members>DispositionActionPermissionServiceTest</members>
         <members>DispositionController</members>
         <members>DispositionControllerTest</members>
+        <members>DispositionCounterRollupService</members>
+        <members>DispositionCounterRollupServiceTest</members>
         <members>DispositionNdaStampQueueable</members>
         <members>DispositionService</members>
         <members>DispositionServiceTest</members>
@@ -263,6 +265,8 @@
         <members>BOV_Submission__c.Days_To_Market__c</members>
         <members>BOV_Submission__c.Disposition__c</members>
         <members>BOV_Submission__c.Hist_Success_Rate__c</members>
+        <members>BOV_Submission__c.Is_Buyer_Ready__c</members>
+        <members>BOV_Submission__c.Is_Known_Performer__c</members>
         <members>BOV_Submission__c.Property_Name__c</members>
         <members>BOV_Submission__c.Selected_Broker__c</members>
         <members>BOV_Submission__c.Submission_Status__c</members>
@@ -287,9 +291,11 @@
         <members>Broker_Assignment__c.Status__c</members>
         <members>Broker_Assignment__c.Vacant_Area__c</members>
         <members>Broker_Listing__c.Broker_Firm__c</members>
+        <members>Broker_Listing__c.Broker__c</members>
         <members>Broker_Listing__c.Call_For_Offers_Date__c</members>
         <members>Broker_Listing__c.Commission_Percent__c</members>
         <members>Broker_Listing__c.Contact_Name__c</members>
+        <members>Broker_Listing__c.Days_On_Market_Live__c</members>
         <members>Broker_Listing__c.Days_On_Market__c</members>
         <members>Broker_Listing__c.Disposition__c</members>
         <members>Broker_Listing__c.List_Date__c</members>
@@ -426,6 +432,7 @@
         <members>Disposition__c.NDA_Count__c</members>
         <members>Disposition__c.Net_Sale_Proceeds__c</members>
         <members>Disposition__c.Next_Broker_Checkin__c</members>
+        <members>Disposition__c.Offers_Received__c</members>
         <members>Disposition__c.PSA_Executed__c</members>
         <members>Disposition__c.Package_Sent__c</members>
         <members>Disposition__c.Primary_NDA__c</members>
@@ -548,12 +555,14 @@
         <members>Lease__c.Stage__c</members>
         <members>Lease__c.Target_Execution_Date__c</members>
         <members>Lease__c.Tenant_Name__c</members>
+        <members>NDA__c.Buyer_Response_Date__c</members>
         <members>NDA__c.Counter_Signed_Date__c</members>
         <members>NDA__c.Counterparty_Name__c</members>
         <members>NDA__c.Date_Sent__c</members>
         <members>NDA__c.Date_Signed__c</members>
         <members>NDA__c.Days_Out__c</members>
         <members>NDA__c.Disposition__c</members>
+        <members>NDA__c.Is_Approved_For_Release__c</members>
         <members>NDA__c.Is_Decline_Allowed__c</members>
         <members>NDA__c.Method__c</members>
         <members>NDA__c.NDA_Expiry_Date__c</members>
@@ -563,6 +572,8 @@
         <members>NDA__c.OneDrive_URL__c</members>
         <members>NDA__c.Opportunity__c</members>
         <members>NDA__c.Party_Role__c</members>
+        <members>NDA__c.Principal_Approved_Date__c</members>
+        <members>NDA__c.Principal_Approved__c</members>
         <members>NDA__c.Status__c</members>
         <members>Offering__c.IR_Owner__c</members>
         <members>Offering__c.Opportunity__c</members>
@@ -1281,6 +1292,10 @@
         <name>CustomObjectTranslation</name>
     </types>
     <types>
+        <members>Disposition_Record_Type_Override</members>
+        <name>CustomPermission</name>
+    </types>
+    <types>
         <members>DPEG_Broker_Portal</members>
         <name>CustomSite</name>
     </types>
@@ -1912,6 +1927,12 @@
         <members>DelegatedAccount.All_External_Managed_Accounts</members>
         <members>DelegatedAccount.My_External_Managed_Accounts</members>
         <members>DigitalWallet.DigitalWallet</members>
+        <members>Disposition__c.Active_Sales</members>
+        <members>Disposition__c.All_Dispositions</members>
+        <members>Disposition__c.Awaiting_Approval</members>
+        <members>Disposition__c.My_Dispositions</members>
+        <members>Disposition__c.Off_Market_Sales</members>
+        <members>Disposition__c.On_Market_Sales</members>
         <members>DynamicDataCapture.All_DynamicDataCaptures</members>
         <members>DynamicDataCapture.My_DynamicDataCaptures</members>
         <members>EngagementChannelType.All_EngagementChannelTypes</members>
@@ -3022,10 +3043,17 @@
         <name>UserCriteria</name>
     </types>
     <types>
+        <!-- Disposition__c.Wire_Complete_Before_Completed removed 2026-08-31: retired and
+             replaced (NOT renamed) by Disposition__c.Wire_Complete_Before_Sale_Closes. See that
+             file's header comment. Do not re-add this member from an old retrieve. -->
         <members>Deal_Message__c.Exactly_One_Parent</members>
         <members>Disposition__c.All_NDAs_Signed_Before_Progression</members>
-        <members>Disposition__c.Wire_Complete_Before_Completed</members>
+        <members>Disposition__c.Broker_Lookup_Is_Off_Market_Only</members>
+        <members>Disposition__c.Property_Asset_Required_On_Save</members>
+        <members>Disposition__c.Record_Type_Is_Immutable</members>
+        <members>Disposition__c.Wire_Complete_Before_Sale_Closes</members>
         <members>Opportunity.NDA_Signed_Before_Underwriting</members>
+        <members>Wire__c.Verified_DateTime_Not_Backdatable</members>
         <name>ValidationRule</name>
     </types>
     <types>

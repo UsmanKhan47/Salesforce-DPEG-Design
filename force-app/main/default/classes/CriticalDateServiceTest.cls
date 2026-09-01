@@ -126,27 +126,48 @@ private class CriticalDateServiceTest {
     }
 
     @isTest
-    static void firesFromTheTriggerOnAStageChangeButNotOnACounterWrite() {
+    static void isNotWiredToTheTransactionTriggerAtAll() {
+        // 🔴 THIS TEST ASSERTED REMOVED BEHAVIOUR AND IS NOW INVERTED, DELIBERATELY.
+        // It used to be `firesFromTheTriggerOnAStageChangeButNotOnACounterWrite` and expected two
+        // Critical Dates after a stage change. The `afterUpdate` arm that produced them was REMOVED
+        // from `TransactionTriggerHandler` by user decision on 2026-09-01, so the old expectation
+        // was asserting a call site that no longer exists - the test was wrong, the code was right.
+        // Inverting it rather than deleting it is the point: an unwired service is a DECISION with
+        // two named preconditions (GATE-B2, the missing `Contract Executed` restricted-picklist
+        // value; and GATE-B4, the unsettled source of truth), and this test is what makes re-wiring
+        // it a conscious act. Anyone who adds the arm back will see this fail and has to come here
+        // and read why it was withheld.
+        // ⚠ IT ALSO GUARDS THE `deleteConstraint=Restrict` HAZARD: the moment a Critical Date exists
+        // its Transaction can never be deleted, so an accidentally-wired projection would make
+        // DELETE_FAILED the default for every deal that ever changes stage.
         Transaction__c deal = TestDataFactory.createTransactions(1, true)[0];
-        Assert.areEqual(0, [SELECT COUNT() FROM Critical_Date__c WHERE Transaction__c = :deal.Id],
-            'NOT wired to after-insert: a freshly created deal must stay deletable while GATE-B3 is '
-                + 'open (Critical_Date__c.Transaction__c is Restrict)');
 
         Test.startTest();
         update new Transaction__c(Id = deal.Id, Tasks_Complete__c = 3);
-        Assert.areEqual(0, [SELECT COUNT() FROM Critical_Date__c WHERE Transaction__c = :deal.Id],
-            'A counter write must not enter the service at all - that is what keeps the fan-out '
-                + 'budget valid');
         update new Transaction__c(Id = deal.Id, Stage__c = 'Due Diligence');
+        update new Transaction__c(Id = deal.Id, Target_Close_Date__c = Date.today().addDays(90));
         Test.stopTest();
 
-        Assert.areEqual(2, [SELECT COUNT() FROM Critical_Date__c WHERE Transaction__c = :deal.Id],
-            'A stage change projects the deal dates');
+        Assert.areEqual(0, [SELECT COUNT() FROM Critical_Date__c WHERE Transaction__c = :deal.Id],
+            'CriticalDateService must NOT be reachable from TransactionTrigger - not on a counter '
+            + 'write, not on a stage change, and not on a pinned-date change. Its only production '
+            + 'caller is scripts/seed-critical-dates.apex. If this fails, the arm was re-added: read '
+            + 'the withheld-arm note in TransactionTriggerHandler before deciding that is correct.');
     }
 
     @isTest
     static void isBulkSafeAtAFlatQueryCost() {
-        List<Transaction__c> deals = TestDataFactory.createTransactions(50, true);
+        // 🔴 251, THE MANDATE — NOT 50. `.claude/rules/bulk-test-rule.md` applies unreduced here:
+        // `ensureFor` takes a collection, performs DML, and no carve-out in that rule covers it.
+        // The two deviations elsewhere in this feature ARE justified and are not precedent for this
+        // one: the fan-out asserts at the 50/51 CHUNK BOUNDARY because 251 deals is 23,594 DML rows
+        // and unreachable, and the content-selector reads are capped at 20 by
+        // `.claude/rules/content-publication-rule.md`. Neither applies to two projected rows per
+        // deal — 251 deals is ~502 rows, comfortably inside every limit — so the number was simply
+        // low, and 50 would not have forced the second trigger chunk that makes a per-record
+        // regression visible.
+        Integer bulkDeals = 251;
+        List<Transaction__c> deals = TestDataFactory.createTransactions(bulkDeals, true);
         Set<Id> dealIds = new Map<Id, Transaction__c>(deals).keySet();
 
         Test.startTest();
@@ -157,7 +178,7 @@ private class CriticalDateServiceTest {
         Integer dml = Limits.getDmlStatements() - dmlBefore;
         Test.stopTest();
 
-        Assert.areEqual(100, created, 'Two projected rows for each of the 50 deals');
+        Assert.areEqual(bulkDeals * 2, created, 'Two projected rows for each of the 251 deals');
         Assert.areEqual(2, queries,
             'Two selector calls regardless of deal count - no SOQL in a loop. Actual: ' + queries);
         Assert.areEqual(1, dml, 'One insert for the whole collection. Actual: ' + dml);

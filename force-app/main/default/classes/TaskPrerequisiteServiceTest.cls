@@ -1006,6 +1006,106 @@ private class TaskPrerequisiteServiceTest {
     }
 
     /**
+     * 🔴 EXPLOIT C — REOPEN-AND-ERASE. Two saves, ORDINARY EDIT ACCESS, NO OVERRIDE.
+     *
+     *     update new Task(Id = b3, Status = 'Not Started', Blocked_By__c = null);  // save 1
+     *     update new Task(Id = b3, Status = 'Completed');                          // save 2
+     *
+     * Save 1 slipped every branch of the deployed gate: (A) declined because the row was LEAVING
+     * completion rather than entering it, and (B) declined on `!wasClosed`, which is false for a row
+     * that WAS closed. Save 2 then had a blank key on both sides, so it was not a candidate at all,
+     * and the validation rule's `NOT(ISBLANK(BLANKVALUE(new, PRIORVALUE)))` was false for the same
+     * reason. Both halves of the control gone, permanently, with no trace.
+     *
+     * ⚠ THE PRECONDITION IS ORDINARY, WHICH IS WHY THIS RATES CRITICAL: complete B2, complete B3,
+     * then reopen B2 — and reopening B2 is unrestricted, because B2 carries no key of its own.
+     *
+     * Asserts BOTH saves are refused and the coordinate survives. The second assertion is the one
+     * that matters: if only save 1 were refused but the key were somehow lost, save 2 would still
+     * work.
+     */
+    @isTest
+    static void refusesReopenAndEraseAcrossTwoSaves() {
+        withoutOverride();
+        List<Task> pair = wirePair(deal().Id, 'Not Started', KEY_B2);
+        // The ordinary precondition: B2 completed, B3 completed legitimately, then B2 reopened.
+        update new Task(Id = pair[0].Id, Status = 'Completed');
+        update new Task(Id = pair[1].Id, Status = 'Completed');
+        update new Task(Id = pair[0].Id, Status = 'Not Started');
+        Assert.areEqual('Completed', reloaded(pair[1].Id).Status, 'Precondition: B3 is done');
+
+        Test.startTest();
+        Database.SaveResult reopenAndErase = Database.update(
+            new Task(Id = pair[1].Id, Status = 'Not Started', Blocked_By__c = null), false
+        );
+        // Save 2 only reaches a bypass if save 1 succeeded; run it regardless so a regression that
+        // lets save 1 through is reported as the COMPLETION it enables, not just as a key edit.
+        Database.SaveResult recomplete = Database.update(
+            new Task(Id = pair[1].Id, Status = 'Completed'), false
+        );
+        Test.stopTest();
+
+        Assert.isFalse(
+            reopenAndErase.isSuccess(),
+            'Erasing the coordinate WHILE REOPENING must be refused — a row walking back through the '
+                + 'gate is not past it, so `pastTheGate` must be false here even though `wasClosed` '
+                + 'is true'
+        );
+        Assert.isTrue(
+            allErrors(reopenAndErase).contains('cannot be changed or removed'),
+            'with the disarm message. Got: ' + allErrors(reopenAndErase)
+        );
+        Task b3 = reloaded(pair[1].Id);
+        Assert.areEqual(
+            KEY_B2, b3.Blocked_By__c,
+            'THE LOAD-BEARING ASSERTION: the coordinate SURVIVED. A refusal that still lost the key '
+                + 'would leave save 2 unguarded, which is the whole exploit'
+        );
+        Assert.areEqual('Completed', b3.Status, 'and the row never left the completed state');
+        Assert.isTrue(
+            recomplete.isSuccess(),
+            'Save 2 SUCCEEDS, and that is correct rather than alarming: with save 1 refused, it is a '
+                + 'no-op re-completion of a row that was already complete and still carries its '
+                + 'coordinate. It completes nothing that was not already complete.'
+        );
+    }
+
+    /**
+     * The counterweight to the fix above: REOPENING WITHOUT TOUCHING THE COORDINATE is still allowed.
+     *
+     * `pastTheGate` deliberately makes a reopen "not past the gate", which pulls it into branch B's
+     * scope — so this pins that branch B still declines on `gateCoordinatesChanged`. Without that, a
+     * tempting simplification (refuse any save that reopens a gated item) would look correct and
+     * would quietly make completed checklist items unreopenable.
+     *
+     * ⚠ Partly overlaps `allowsEditAndReopenOfACompletedDependent`, which would also redden if the
+     * reopen were refused. Kept anyway, and deliberately adjacent to the exploit test: it adds the
+     * two assertions that one does not make — the coordinate SURVIVES the reopen, and the flag
+     * re-derives against the now-open prerequisite, so the row comes back RE-ARMED rather than
+     * reopened-and-defanged.
+     */
+    @isTest
+    static void allowsReopeningWithoutTouchingTheCoordinate() {
+        withoutOverride();
+        List<Task> pair = wirePair(deal().Id, 'Not Started', KEY_B2);
+        update new Task(Id = pair[0].Id, Status = 'Completed');
+        update new Task(Id = pair[1].Id, Status = 'Completed');
+        update new Task(Id = pair[0].Id, Status = 'Not Started');
+
+        Test.startTest();
+        update new Task(Id = pair[1].Id, Status = 'Not Started');
+        Test.stopTest();
+
+        Task b3 = reloaded(pair[1].Id);
+        Assert.areEqual('Not Started', b3.Status, 'A completed item can still be reopened');
+        Assert.areEqual(KEY_B2, b3.Blocked_By__c, 'with its coordinate intact');
+        Assert.isFalse(
+            b3.Is_Prerequisite_Met__c,
+            'and the flag re-derives against the now-open B2, so the row is correctly re-armed'
+        );
+    }
+
+    /**
      * ⚠ THE NARROWINGS THAT KEEP THE FEATURE OPERABLE. An UNRESOLVABLE key must stay repairable, or
      * a typo — or a deal whose prerequisite was never fanned out — would brick that checklist item
      * permanently, with no route back for anyone including an administrator.

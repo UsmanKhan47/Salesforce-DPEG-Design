@@ -25,6 +25,9 @@
  *     (2026-08-24)                                    -> selectPreferredByDispositionIds
  *   - BovBrokerChangeController.getHistory, the CURRENT SELECTION half of the
  *     "Broker Selection" card (2026-08-25)            -> selectSelectedSlotsByDispositionId
+ *   - DispositionCounterRollupService.recalculateResponsesFor, the writer behind
+ *     Disposition__c.Responses_Received__c (2026-08-31, Tranche 1 item 7)
+ *                                                     -> countByDispositionIds
  *
  * ⚠ MIXED MODES SINCE 2026-08-19 — READ THE METHOD, NEVER THIS HEADER. ⚠ CORRECTED 2026-08-20: this
  * paragraph used to say "Two methods are `WITH USER_MODE`; `selectStatusesByDispositionId` is
@@ -46,7 +49,17 @@
  * own SYSTEM_MODE inventory once, and this line has now decayed FIVE times, twice silently. This
  * is the fifth correction of the same sentence: the count is written down here only so a reader
  * knows to re-derive it, and the authoritative inventory is the METHOD DECLARATIONS. Re-count; do
- * not assert. ⚠ AND NOTE THE NEAR-IDENTICAL NAMES: `…ByDispositionId` (singular, USER_MODE, modal) and
+ * not assert.
+ * ⚠ SIXTH CORRECTION, 2026-08-31 (Tranche 1 item 7, the disposition counters). A tenth method —
+ * `countByDispositionIds` — landed, `SYSTEM_MODE`, so the arithmetic above moves again. THE NUMBER
+ * IS DELIBERATELY NOT RESTATED HERE. It has now decayed six times and restating it is the thing
+ * that keeps failing; what the reader needs from this paragraph is the INSTRUCTION to re-derive,
+ * which is above and is unchanged. 🔴 WHAT *IS* NEW AND IS NOT A COUNT: `countByDispositionIds` is
+ * the FIRST method in this class to hold a `private without sharing` inner class
+ * (`CounterReads`). That is a genuinely different KIND of escape from every SYSTEM_MODE entry
+ * above it — SYSTEM_MODE lifts CRUD/FLS, `without sharing` lifts record-level access, and the two
+ * are separate decisions with separate reasons. Read that method before assuming any other method
+ * here escapes sharing: none of them does. ⚠ AND NOTE THE NEAR-IDENTICAL NAMES: `…ByDispositionId` (singular, USER_MODE, modal) and
  * `…ByDispositionIds` (plural, SYSTEM_MODE, trigger) differ by ONE CHARACTER and by their entire
  * justification. Read the parameter type before quoting either one's reasoning.
  * ⚠ AN EARLIER SENTENCE HERE WAS REASONING FROM THE WRONG TEST and is retracted verbatim so nobody
@@ -560,10 +573,23 @@ public with sharing class BovSubmissionSelector {
      * tie-break restores it — highest score first, then the OLDEST submission — and the service's
      * comment has been corrected to name the second key rather than only the first.
      *
+     * ⚠ `Contact_Name__c` WAS ADDED TO THIS SELECT ON 2026-09-01 (Tranche 4 item 5) AND IS NOT USED
+     * BY THE SWAP EITHER — same shape as the two additions above, third time. Its caller now also
+     * APPENDS a `Broker_Listing__c` when the sale has already reached Active Listing, and stamps
+     * the challenger's named contact onto it (`DispositionStageEntryService.openBrokerListings`
+     * leaves that column blank precisely so "the future broker-change action supplies it"). Riding
+     * this read keeps the caller off a second query. It is FLS-free by construction for the same
+     * reason as `Broker__c`: the read is already SYSTEM_MODE for `Approval_Status__c`.
+     * 🔴 THE DESIGN THAT COMMISSIONED THIS SAID THE FIELD WAS **ALREADY HERE**, AND IT WAS NOT.
+     * `agent-output/disposition-gap-closure-t4-design.md` decision D-16 states "the challenger's
+     * `Contact_Name__c` and `Broker_Firm__c` are already on the row `selectStatusesByDispositionId`
+     * returns, so it costs no query". `Broker_Firm__c` was; `Contact_Name__c` was not. Recorded so
+     * the next reader does not trust a "costs nothing" claim about this SELECT without reading it.
+     *
      * @param dispositionId Disposition__c Id whose submissions to read; null-safe.
-     * @return All submissions with Id, Broker__c, Broker_Firm__c, Submission_Status__c,
-     *         Approval_Status__c and Is_Preferred_Broker__c populated; an empty list when the
-     *         Disposition has none or the input is null.
+     * @return All submissions with Id, Broker__c, Broker_Firm__c, Contact_Name__c,
+     *         Submission_Status__c, Approval_Status__c and Is_Preferred_Broker__c populated; an
+     *         empty list when the Disposition has none or the input is null.
      * @example
      * List&lt;BOV_Submission__c&gt; subs =
      *     BovSubmissionSelector.selectStatusesByDispositionId(dispId);
@@ -573,7 +599,8 @@ public with sharing class BovSubmissionSelector {
             return new List<BOV_Submission__c>();
         }
         return [
-            SELECT Id, Disposition__c, Broker__c, Broker_Firm__c, Submission_Status__c,
+            SELECT Id, Disposition__c, Broker__c, Broker_Firm__c, Contact_Name__c,
+                   Submission_Status__c,
                    Approval_Status__c, Is_Preferred_Broker__c
             FROM BOV_Submission__c
             WHERE Disposition__c = :dispositionId
@@ -1002,5 +1029,94 @@ public with sharing class BovSubmissionSelector {
             WHERE Disposition__c = :dispositionId
             WITH USER_MODE
         ];
+    }
+
+    /**
+     * How many BOV submissions each Disposition holds — the source of truth behind
+     * `Disposition__c.Responses_Received__c` (Tranche 1 item 7, 2026-08-31).
+     *
+     * ── WHAT IT COUNTS: EVERY ROW, NO STATUS FILTER (design decision D-9) ─────────────────────
+     * `Responses_Received__c` answers "how many brokers came back", so a `Backup` row counts
+     * exactly as much as the `Selected` one and a preferred row counts as much as a scored one.
+     * 🔴 DO NOT ADD A `Submission_Status__c` PREDICATE HERE. `Submission_Status__c` is RESTRICTED
+     * to {Backup, Selected} and every row carries one of them, so a filter would look harmless and
+     * would silently redefine the counter into "responses of one kind". If a *filtered* count is
+     * ever needed it is a SECOND method with its own name, never a predicate bolted onto this one.
+     *
+     * BULK BY CONSTRUCTION: ONE aggregate for the whole chunk, never one per record. 🔴 A
+     * disposition with zero submissions is **ABSENT** from the map rather than present with 0 —
+     * `GROUP BY` emits no row for an empty group. THAT IS THE CASE THE COUNTER MOST DEPENDS ON:
+     * deleting the last submission must drive the parent to 0, so `DispositionCounterRollupService`
+     * defaults a miss to 0 rather than skipping it. A caller that iterates this map's keySet
+     * instead of its own input Set<Id> would leave the last deletion permanently un-decremented.
+     * The contract is copied verbatim from `DispositionOfferSelector`'s aggregate for that reason.
+     *
+     * ── 🔴 `WITH SYSTEM_MODE` — AUTOMATION PATH, JUSTIFIED HERE AND NOT INHERITED ─────────────
+     * ARCHITECTURE.md §2's automation-path exception, and the strong form of it. This read happens
+     * inside `BovSubmissionTriggerHandler`'s after contexts, on behalf of whoever saved a
+     * submission; nobody asked for it and nothing it returns is displayed to the saver.
+     * `USER_MODE` *throws, it does not degrade*: `Disposition__c` on this object is a lookup any
+     * principal outside the two disposition permission sets may not hold, and a
+     * `System.QueryException: No such column` raised in an after-insert trigger escapes as
+     * `CANNOT_INSERT_UPDATE_ACTIVATE_ENTITY` and ROLLS BACK THE USER'S OWN SUBMISSION SAVE. A
+     * counter must never be able to destroy the transaction it counts.
+     *
+     * ── 🔴 AND `without sharing` — A SECOND, SEPARATE DECISION WITH A DIFFERENT REASON ────────
+     * `SYSTEM_MODE` lifts CRUD/FLS and NEVER sharing (ARCHITECTURE.md §2). `BOV_Submission__c` is
+     * `sharingModel = Private` (measured in the object file), so a sharing-filtered aggregate
+     * returns a SHORT count for a saver who cannot see every sibling row.
+     * 🔴 THE CONSUMER IS A **RESET WRITER** — it writes the computed number back over the stored
+     * one, including back down to 0 — so a short read does not under-REPORT, it **ERASES**: the
+     * next save by a narrowly-scoped principal would overwrite a correct 7 with a 1, silently, and
+     * `BovController.getOutreachSummary`'s `>= 3` matrix threshold would flip with it. That is the
+     * same inversion `DispositionOfferSelector.TractionReads` escapes sharing to avoid, and the
+     * shape §2 prescribes: a narrow `private without sharing` inner class holding ONLY this query,
+     * never `without sharing` on the whole selector.
+     *
+     * ⚠ THE EXPOSURE, STATED RATHER THAN BURIED: a principal who cannot see a submission row can
+     * learn that it EXISTS, as part of a count, on a Disposition they are already saving a
+     * submission against. A count and never a row — no broker, no amount, no score crosses this
+     * boundary. And for the two personas this feature is for it is not a widening at all: both
+     * `DPEG_Disposition_View` and `DPEG_Disposition_Edit` carry `viewAllRecords = true` on
+     * `BOV_Submission__c` (measured in the permission-set files), so they could already see every
+     * row.
+     *
+     * @param dispositionIds Disposition__c Ids to count submissions for; null/empty safe.
+     * @return Disposition__c Id -> submission count, OMITTING dispositions with zero submissions.
+     * @example
+     * Map&lt;Id, Integer&gt; byId = BovSubmissionSelector.countByDispositionIds(ids);
+     */
+    public static Map<Id, Integer> countByDispositionIds(Set<Id> dispositionIds) {
+        Map<Id, Integer> countById = new Map<Id, Integer>();
+        if (dispositionIds == null || dispositionIds.isEmpty()) {
+            return countById;
+        }
+        for (AggregateResult ar : new CounterReads().countRows(dispositionIds)) {
+            countById.put((Id) ar.get('dispositionId'), (Integer) ar.get('submissionCount'));
+        }
+        return countById;
+    }
+
+    /**
+     * The one query in this class that must not be sharing-filtered. Narrow on purpose: it holds a
+     * single aggregate and nothing else, so `without sharing` can never leak into a read that
+     * legitimately belongs to a human. Mirrors `DispositionOfferSelector.TractionReads`,
+     * `LeadSelector.GuestReads` and `InboundEmailStagingSelector.RoutingReads`.
+     *
+     * 🔴 DO NOT ADD A SECOND METHOD HERE. Every other read in this class is deliberately
+     * sharing-scoped — including the four `USER_MODE` ones that back cards — and widening this
+     * class would silently re-authorise them. A future read that needs the same escape gets its
+     * OWN inner class, exactly as `DispositionOfferSelector`'s header instructs.
+     */
+    private without sharing class CounterReads {
+        private List<AggregateResult> countRows(Set<Id> dispositionIds) {
+            return [
+                SELECT Disposition__c dispositionId, COUNT(Id) submissionCount
+                FROM BOV_Submission__c
+                WHERE Disposition__c IN :dispositionIds
+                WITH SYSTEM_MODE
+                GROUP BY Disposition__c
+            ];
+        }
     }
 }

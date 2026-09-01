@@ -12,6 +12,12 @@
  *     executed deals already own a Transaction — selectByOpportunityIds).
  *   - RecordStageAdvanceService.load (the Advance Stage quick action —
  *     selectStageRequiredById, added 2026-08-12).
+ *   - ChecklistFanoutService.fanOutNow (the Phase 2 checklist fan-out —
+ *     selectForChecklistFanout, added 2026-08-31).
+ *   - ChecklistRollupService.recalc (the dual-model guard read: it refuses to
+ *     write the four Transaction__c counters unless Checklist_Fanned_Out__c is
+ *     true — selectForChecklistFanout, added 2026-08-31).
+ *   - CriticalDateService (selectForCriticalDates, added 2026-08-31).
  *
  * WHY A DYNAMIC QUERY LIVES HERE (design §6): the fan-out reads a fixed base
  * field set PLUS an arbitrary set of conditional-gating fields whose API names
@@ -27,11 +33,31 @@
  *   2. BOUND Id SET — the record filter is a bound `:ids` map entry via
  *      Database.queryWithBinds, never string-concatenated.
  *
- * MODE — `AccessLevel.USER_MODE` (the dynamic-query equivalent of the illegal
- * `WITH USER_MODE` clause, per design §6). Transaction__c is custom; P3 proved
- * the custom-field FLS gap is 0, so USER_MODE enforces the running user's
- * sharing + FLS without stripping the selected fields. No guest path, no
- * SYSTEM_MODE.
+ * ┌───────────────────────────────────────────────────────────────────────────┐
+ * │ MODE INVENTORY — THIS CLASS DELIBERATELY MIXES USER_MODE AND SYSTEM_MODE.  │
+ * └───────────────────────────────────────────────────────────────────────────┘
+ * DEFAULT IS `AccessLevel.USER_MODE` / `WITH USER_MODE` — every method NOT named
+ * below uses it. Transaction__c is custom; P3 proved the custom-field FLS gap is
+ * 0, so USER_MODE enforces the running user's sharing + FLS without stripping the
+ * selected fields. (The dynamic reads use the `AccessLevel` enum because the
+ * `WITH USER_MODE` clause is illegal in a dynamic query — design §6.)
+ *
+ * TWO methods are `AccessLevel.SYSTEM_MODE`, each justified at its own
+ * declaration, both on an AUTOMATION PATH where USER_MODE THROWS rather than
+ * degrades and one missing FLS grant becomes a rolled-back user save:
+ *   • selectForChecklistFanout  <- ChecklistFanoutService, ChecklistRollupService
+ *   • selectForCriticalDates    <- CriticalDateService, from TransactionTrigger
+ *
+ * ⚠ AMENDED 2026-08-31 — this block previously ended "No guest path, no
+ * SYSTEM_MODE." That was true when written and is NO LONGER TRUE. ARCHITECTURE §2
+ * makes these headers the authoritative inventory of which reads escape and why,
+ * so a stale one is worse than none: it tells the next governor or security review
+ * that no exemption exists here. Read the METHOD, not this summary, for the
+ * reasoning — the mode is a property of the method, never of the class.
+ *
+ * ⚠ SCOPE OF THE BYPASS: SYSTEM_MODE lifts CRUD/FLS and NEVER sharing. This class
+ * stays `with sharing`, so both exempt methods still return only rows the running
+ * user can already see.
  *
  * @see force-app/main/default/classes/WireSelector.cls (P4 pilot template)
  * @see agent-output/p4-selector-design.md (§3 #15, §4, §5, §6)
@@ -183,12 +209,22 @@ public with sharing class TransactionSelector {
     /**
      * Loads Transactions for `CriticalDateService.ensureFor`.
      *
-     * 🔴 `AccessLevel.SYSTEM_MODE` - AUTOMATION PATH. Fired from `TransactionTrigger`'s after-update
-     * context on the saving user's behalf; `USER_MODE` throws rather than degrades, and a throw in
-     * an after-update trigger rolls back the deal save that provoked it. Same class of failure as
-     * `selectForChecklistFanout` above, stated here rather than cross-referenced because
-     * ARCHITECTURE.md §2 requires the justification at the METHOD's own declaration.
-     * ⚠ Sharing is NOT lifted: the principal saving the deal can by definition see it.
+     * 🔴 `AccessLevel.SYSTEM_MODE` - AUTOMATION PATH, BUT NOT A TRIGGER PATH ANY MORE. This said
+     * "Fired from `TransactionTrigger`'s after-update context" until 2026-09-01, when that arm was
+     * REMOVED by user decision (see `TransactionTriggerHandler.afterUpdate` for the gates that must
+     * close before it is re-wired). `CriticalDateService.ensureFor` has ONE production caller today:
+     * `scripts/seed-critical-dates.apex`.
+     * The exemption still stands, and on stronger ground rather than weaker: the read is performed
+     * ON A PRINCIPAL'S BEHALF (a bulk projection over deals the operator did not individually ask
+     * for), and `USER_MODE` THROWS rather than degrades - one ungranted custom field would abort the
+     * whole script mid-run rather than skipping a column. It is also the mode the arm will need
+     * again the day it is re-wired, and flipping it twice would be churn.
+     * ⚠ RE-READ THIS IF THE TRIGGER ARM RETURNS: the "a throw rolls back the user's own deal save"
+     * consequence is currently DORMANT, not gone. It comes straight back with the arm.
+     * ⚠ Sharing is NOT lifted. That matters MORE on the script path than it did on the trigger path,
+     * where the saving user could by definition see their own deal: an operator running the seed
+     * script only projects dates for deals they can SEE, silently. The script's own header carries
+     * the "run as an administrator" warning for exactly this reason.
      *
      * @param transactionIds Transaction Ids to load.
      * @return Map of Transaction Id -> Transaction__c with the coherence-gate fields populated.

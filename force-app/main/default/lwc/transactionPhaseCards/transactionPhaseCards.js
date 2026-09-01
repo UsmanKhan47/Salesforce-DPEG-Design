@@ -1,63 +1,187 @@
 import { LightningElement, api, wire } from 'lwc';
+import { getRecord, getFieldValue } from 'lightning/uiRecordApi';
+import CHECKLIST_FANNED_OUT_FIELD from '@salesforce/schema/Transaction__c.Checklist_Fanned_Out__c';
+import getChecklist from '@salesforce/apex/ChecklistController.getChecklist';
 import getTaskGroups from '@salesforce/apex/TransactionTaskController.getTaskGroups';
+import {
+    MODEL_CHECKLIST,
+    MODEL_LEGACY,
+    PHASES,
+    modelFor,
+    normalizeChecklistGroups,
+    normalizeLegacyGroups
+} from 'c/utilsTransactionChecklist';
 
-// The four deal phases and the task-group letters that roll up into each (mirrors transactionTaskGroups).
-const PHASES = [
-    { key: 'open',  name: 'Open Contract', letters: ['A', 'B'], icon: 'utility:contract' },
-    { key: 'dd',    name: 'Due Diligence', letters: ['C', 'D', 'E', 'F', 'G', 'H', 'H2'], icon: 'utility:search' },
-    { key: 'close', name: 'Closing',       letters: ['I'], icon: 'utility:money' },
-    { key: 'post',  name: 'Post Closing',  letters: ['J'], icon: 'utility:success' }
-];
-const PHASE_BY_LETTER = {};
-PHASES.forEach((p) => p.letters.forEach((l) => { PHASE_BY_LETTER[l] = p.key; }));
-
+/**
+ * Sidebar 2x2 grid: checklist progress for each of the four deal phases.
+ *
+ * 🔴 SERVES BOTH CHECKLIST MODELS, discriminated on `Transaction__c.Checklist_Fanned_Out__c` read
+ * via LDS `getRecord`. Only the selected model's Apex wire is provisioned — the other's
+ * `transactionId` resolves to `undefined` and the adapter is never called. If the discriminator
+ * cannot be read, NEITHER model renders and an error is shown: a migrated deal still carries its
+ * old `Task` rows, so guessing legacy would show plausible, silently stale numbers. Full argument
+ * in `c/utilsTransactionChecklist`.
+ *
+ * ⚠ THE PHASE LABELS COME FROM `c/utilsTransactionChecklist.PHASES` AND ARE NO LONGER DECLARED
+ * HERE. This component used to carry its own copy of the array, which is how it drifted to
+ * `Closing` / `Post Closing` while the data said `Closing Prep` / `Post-Closing` (design §2.12).
+ * The labels now match `Transaction__c.Stage__c` byte for byte, including the hyphen, and there is
+ * one place to change them.
+ */
 export default class TransactionPhaseCards extends LightningElement {
     @api recordId;
-    _data = [];
-    error;
 
-    @wire(getTaskGroups, { transactionId: '$recordId' })
-    wired({ data, error }) {
+    _modelResolved = false;
+    _modelError;
+    _fannedOut;
+    _checklistData = [];
+    _checklistError;
+    _legacyData = [];
+    _legacyError;
+
+    @wire(getRecord, { recordId: '$recordId', fields: [CHECKLIST_FANNED_OUT_FIELD] })
+    wiredTransaction({ data, error }) {
         if (data) {
-            this._data = data;
-            this.error = undefined;
+            this._fannedOut = getFieldValue(data, CHECKLIST_FANNED_OUT_FIELD);
+            this._modelResolved = true;
+            this._modelError = undefined;
         } else if (error) {
-            this.error = error;
+            this._modelError = error;
+            this._modelResolved = false;
+            this._fannedOut = undefined;
         }
+    }
+
+    get model() {
+        return this._modelResolved ? modelFor(this._fannedOut) : undefined;
+    }
+    get isChecklistModel() {
+        return this.model === MODEL_CHECKLIST;
+    }
+    get isLegacyModel() {
+        return this.model === MODEL_LEGACY;
+    }
+    get checklistTransactionId() {
+        return this.isChecklistModel ? this.recordId : undefined;
+    }
+    get legacyTransactionId() {
+        return this.isLegacyModel ? this.recordId : undefined;
+    }
+
+    @wire(getChecklist, { transactionId: '$checklistTransactionId' })
+    wiredChecklist({ data, error }) {
+        if (data) {
+            this._checklistData = data;
+            this._checklistError = undefined;
+        } else if (error) {
+            this._checklistError = error;
+            this._checklistData = [];
+        }
+    }
+
+    @wire(getTaskGroups, { transactionId: '$legacyTransactionId' })
+    wiredLegacy({ data, error }) {
+        if (data) {
+            this._legacyData = data;
+            this._legacyError = undefined;
+        } else if (error) {
+            this._legacyError = error;
+            this._legacyData = [];
+        }
+    }
+
+    get groups() {
+        if (this.isChecklistModel) {
+            return normalizeChecklistGroups(this._checklistData);
+        }
+        if (this.isLegacyModel) {
+            return normalizeLegacyGroups(this._legacyData);
+        }
+        return [];
+    }
+
+    get error() {
+        if (this._modelError) {
+            return this._modelError;
+        }
+        if (this.isChecklistModel) {
+            return this._checklistError;
+        }
+        if (this.isLegacyModel) {
+            return this._legacyError;
+        }
+        return undefined;
     }
 
     get hasError() {
         return !!this.error;
     }
+
     get errorMessage() {
         const e = this.error;
         return (e && e.body && e.body.message) || 'Unable to load phase progress.';
     }
 
-    // One card per phase: complete/total progress, green once every task in the phase is done.
+    /** The discriminator has not resolved and has not failed — still loading. */
+    get isResolving() {
+        return !this._modelResolved && !this._modelError;
+    }
+
+    /**
+     * True when the model resolved, nothing errored, and there is no checklist at all.
+     * Rendered as an explicit message: four `0 / 0` cards look like a load that worked and found
+     * nothing done, which is a different and much less alarming statement than "no checklist
+     * exists on this deal".
+     */
+    get isEmpty() {
+        return !this.hasError && !this.isResolving && this.groups.length === 0;
+    }
+
+    /**
+     * 🔴 NOTHING RENDERS WHILE THE MODEL IS STILL RESOLVING, AND THAT IS A DELIBERATE CHANGE.
+     * Before Phase 3 this component painted four `0 / 0` cards immediately — which was harmless
+     * when there was one data source and one wire, and is not harmless now: it states "the
+     * checklist loaded and nothing is done" at a moment when the component does not yet know
+     * which of TWO models the deal is even on. A `transactionPhaseCards` regression test caught
+     * exactly this during the rewrite.
+     */
+    get showCards() {
+        return !this.hasError && !this.isEmpty && !this.isResolving;
+    }
+
+    get emptyMessage() {
+        return this.isChecklistModel
+            ? 'No checklist has been generated for this deal yet.'
+            : 'No tasks have been generated for this deal yet.';
+    }
+
+    /** One card per phase: complete/total progress, green once every item in the phase is done. */
     get cards() {
-        const acc = {
-            open: { c: 0, t: 0 },
-            dd: { c: 0, t: 0 },
-            close: { c: 0, t: 0 },
-            post: { c: 0, t: 0 }
-        };
-        this._data.forEach((g) => {
-            const pk = PHASE_BY_LETTER[g.letter];
-            if (pk && acc[pk]) {
-                acc[pk].c += g.complete || 0;
-                acc[pk].t += g.total || 0;
+        const totals = {};
+        PHASES.forEach((p) => {
+            totals[p.key] = { complete: 0, total: 0 };
+        });
+        this.groups.forEach((g) => {
+            const bucket = totals[g.phaseKey];
+            if (bucket) {
+                bucket.complete += g.complete || 0;
+                bucket.total += g.total || 0;
             }
         });
         return PHASES.map((p) => {
-            const { c, t } = acc[p.key];
-            const done = t > 0 && c >= t;
+            const { complete, total } = totals[p.key];
+            const done = total > 0 && complete >= total;
             return {
                 key: p.key,
                 label: p.name,
-                value: `${c} / ${t}`,
+                value: `${complete} / ${total}`,
                 iconName: p.icon,
-                iconColor: done ? '#2e7d32' : '#1565c0',
+                // Token-backed, not a bare hex. `c/onboardingCardChild` interpolates this into a
+                // CSS custom property, so a `var(...)` string resolves normally and the card
+                // follows an SLDS 2 palette override instead of pinning a literal colour.
+                iconColor: done
+                    ? 'var(--slds-g-color-palette-green-50, #2e7d32)'
+                    : 'var(--slds-g-color-palette-blue-40, #1565c0)',
                 done
             };
         });

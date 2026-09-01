@@ -70,6 +70,38 @@ public with sharing class BovController {
         @AuraEnabled public Integer responsesReceived;
         @AuraEnabled public Integer brokersContacted;
         @AuraEnabled public String selectedBroker;
+        /**
+         * True once the disposition has THREE OR MORE COMPARABLE responses — the
+         * `Matrix Generated ✓` badge `c/bovOutreach` renders.
+         *
+         * ══════════════════════════════════════════════════════════════════════════════════════
+         * 🔴 IT DELIBERATELY DIVERGES FROM `responsesReceived`, AND THAT DIVERGENCE **IS** THE
+         *    TRANCHE-4 ITEM 2 FIX (2026-09-01, design decision D-4). DO NOT "RESTORE CONSISTENCY".
+         * ══════════════════════════════════════════════════════════════════════════════════════
+         * It used to read `s.responsesReceived >= 3`, sourced from
+         * `Disposition__c.Responses_Received__c` — which `BovSubmissionSelector.countByDispositionIds`
+         * computes over EVERY child row regardless of status, INCLUDING THE PREFERRED BROKER
+         * (Tranche 1 decision D-9, pinned by `countByDispositionIds_countsEveryStatus_notJustSelected`).
+         *
+         * `c/bovComparisonMatrix._visible` EXCLUDES the preferred row — its own header calls the
+         * exclusion "a fact about the MATRIX rather than a mode of it", because a preferred broker
+         * usually has no numbers to compare and is exempt from `BOV_Amount_Required_On_Submission`.
+         *
+         * ⇒ On a sale with two scored responses plus one preferred broker the badge said
+         * "Matrix Generated ✓" beside a TWO-ROW matrix, and nothing on the screen explained why.
+         * The badge asserts a fact about the comparison matrix, so it now counts the population the
+         * matrix actually renders.
+         *
+         * 🔴 `Responses_Received__c` WAS NOT TOUCHED AND MUST NOT BE. It answers "how many brokers
+         * came back", which is a different and correct question, it is T1 decision D-9, and the
+         * "n of m" tile beside this badge still uses it. Changing the counter to agree with the
+         * badge would break the tile instead — two surfaces, two questions, one deliberate
+         * disagreement.
+         *
+         * ⚠ THE THRESHOLD ITSELF (`>= 3`) IS UNCHANGED and was already live. Item 2 was NOT a
+         * build: the threshold and the badge string both shipped before this change. Only the
+         * POPULATION moved.
+         */
         @AuraEnabled public Boolean matrixGenerated;
         /**
          * Status__c of the disposition's most recent NDA__c, or NULL when there is no NDA
@@ -97,6 +129,18 @@ public with sharing class BovController {
     // instead — this message is only for the residue.
     private static final String REPLACE_FAILURE_MESSAGE =
         'The broker could not be replaced. Refresh the page or contact your administrator.';
+
+    /**
+     * How many COMPARABLE broker responses a sale needs before the comparison matrix is worth
+     * calling generated.
+     *
+     * ⚠ THE NUMBER IS UNCHANGED FROM THE INLINE `>= 3` IT REPLACED (2026-09-01). Naming it is not
+     * a behaviour change; it exists so the threshold and the POPULATION it is applied to can be
+     * read in one place, because Tranche 4 item 2 changed the second of those and not the first.
+     * 🔴 THERE MUST NOT BE A SECOND COPY OF THIS NUMBER. `c/bovOutreach` renders the badge off the
+     * Boolean and does no arithmetic of its own; keep it that way.
+     */
+    private static final Integer MATRIX_THRESHOLD = 3;
 
     private static AuraHandledException ahe(String msg) {
         AuraHandledException ex = new AuraHandledException(msg);
@@ -151,7 +195,12 @@ public with sharing class BovController {
             s.responsesReceived = d.Responses_Received__c != null ? d.Responses_Received__c.intValue() : 0;
             s.brokersContacted = d.Brokers_Contacted__c != null ? d.Brokers_Contacted__c.intValue() : 0;
             s.selectedBroker = d.Selected_Broker__c;
-            s.matrixGenerated = s.responsesReceived >= 3;
+            // ── 🔴 COUNTS THE MATRIX'S POPULATION, NOT THE PARENT COUNTER (T4 item 2, D-4) ──
+            // See OutreachSummary.matrixGenerated for the full argument. A null here means the
+            // read degraded, and a badge we cannot substantiate must not appear — so it collapses
+            // to false rather than to a bare `>= 3` on a number that means something else.
+            Integer comparable = countComparableResponsesFailSoft(dispositionId);
+            s.matrixGenerated = (comparable != null && comparable >= MATRIX_THRESHOLD);
             s.ndaStatus = readNdaStatusFailSoft(dispositionId);
             return s;
         } catch (Exception e) {
@@ -250,6 +299,69 @@ public with sharing class BovController {
             return (nda == null) ? null : nda.Status__c;
         } catch (Exception e) {
             System.debug(LoggingLevel.ERROR, 'BovController NDA status read degraded on '
+                + dispositionId + ': ' + e.getMessage() + ' | ' + e.getStackTraceString());
+            return null;
+        }
+    }
+
+    /**
+     * How many of the disposition's BOV responses the COMPARISON MATRIX would show — i.e. every
+     * submission except the preferred broker — or null when the read degraded.
+     *
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * 🔴 IT REUSES `selectByDispositionId`, THE MATRIX'S **OWN** READ, AND THAT IS THE POINT.
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * Item 2 exists because the badge and the matrix counted DIFFERENT POPULATIONS. Answering it
+     * with a second, purpose-built aggregate would fix today's disagreement by creating a second
+     * place for tomorrow's: the matrix's exclusion rule lives in
+     * `c/bovComparisonMatrix._visible` (`isPreferred !== true`), and a `COUNT() ... WHERE
+     * Is_Preferred_Broker__c != true` would be a copy of it in another language, in another layer,
+     * with nothing keeping the two in step. Counting the rows the matrix is fed cannot drift from
+     * the rows the matrix renders.
+     *
+     * ⚠ THE COST IS ONE EXTRA SOQL PER CARD LOAD, AND IT IS ACCEPTED RATHER THAN OPTIMISED AWAY.
+     * `getSubmissions` and `getOutreachSummary` are two separate `cacheable=true` wires in two
+     * separate transactions, so the read cannot be shared however it is written. Three queries on
+     * a cacheable single-record read is not a budget this class has ever been near.
+     *
+     * 🔴 THE NARROW TRY/CATCH IS MANDATORY AND MUST NOT BE FOLDED INTO `getOutreachSummary`'s
+     * OUTER CATCH — the identical argument `readNdaStatusFailSoft` above makes, and it bites
+     * HARDER here. `selectByDispositionId` is `WITH USER_MODE` over a wide field list
+     * (`Is_Preferred_Broker__c`, `Hist_Success_Rate__c`, ...), and a `WITH USER_MODE` read throws
+     * rather than degrades when one field's FLS is missing — which is one unrelated permission-set
+     * redeploy away, because a PermissionSet deploy REPLACES its whole grant list. Inside the outer
+     * catch that `QueryException` becomes READ_FAILURE_MESSAGE and THE ENTIRE BOV OUTREACH TILE
+     * DISAPPEARS. The doctrine on this class is stated at `readNdaStatusFailSoft`: degrading one
+     * pill is strictly better than blanking the whole card.
+     *
+     * ⚠ NULL, NOT ZERO, ON FAILURE — AND THE DIFFERENCE MATTERS TO EXACTLY ONE READER. Both
+     * collapse to a hidden badge today, so the distinction buys nothing on screen. It is here so
+     * the caller's expression cannot be "simplified" into `count >= 3` on a value that is really
+     * "unknown": a future caller that wants to say "we could not check" has the value to say it
+     * with, and cannot accidentally report a degraded read as a sale with no responses.
+     *
+     * catch (Exception), not catch (QueryException): the failure being defended against is an
+     * FLS/CRUD denial, which the platform reports as a QueryException today, but nothing about
+     * this method's contract depends on the type and a narrower catch would re-open the
+     * tile-blanking path for a neighbouring failure.
+     *
+     * @param dispositionId the disposition whose comparable responses to count
+     * @return the number of non-preferred submissions; null when the read failed
+     */
+    private static Integer countComparableResponsesFailSoft(Id dispositionId) {
+        try {
+            Integer comparable = 0;
+            for (BOV_Submission__c s : BovSubmissionSelector.selectByDispositionId(dispositionId)) {
+                // `!= true` rather than `== false`: mirrors the client's `isPreferred !== true`
+                // filter exactly, so a null (impossible on a saved Checkbox, reachable on an
+                // unsaved fixture) lands on the same side of the line in both places.
+                if (s.Is_Preferred_Broker__c != true) {
+                    comparable++;
+                }
+            }
+            return comparable;
+        } catch (Exception e) {
+            System.debug(LoggingLevel.ERROR, 'BovController comparable-response count degraded on '
                 + dispositionId + ': ' + e.getMessage() + ' | ' + e.getStackTraceString());
             return null;
         }

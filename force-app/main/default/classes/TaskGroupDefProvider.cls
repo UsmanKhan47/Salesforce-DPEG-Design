@@ -4,14 +4,19 @@
  *
  * NOT A SELECTOR (design §3 CMDT note, §5, §10 flag 5): Custom Metadata is not
  * subject to FLS or sharing, so `WITH USER_MODE` is inert on `__mdt`, and the
- * sf-apex rule is explicit that CMDT must be read via `getAll()/getInstance()`,
- * never SOQL. This provider therefore returns `getAll().values()` with an
+ * sf-apex rule directs CMDT reads through `getAll()`/`getInstance()` rather than
+ * SOQL — subject to the LongTextArea/Html carve-out named below, which this type
+ * does not hit. This provider therefore returns `getAll().values()` with an
  * in-memory sort, replacing the inline `[SELECT ... FROM Task_Group_Def__mdt]`
  * statements in TransactionTaskController and TaskFanoutService.
  *
  * `getAll()` populates every non-long-text field on each record, so callers get
  * all of Letter__c / Group_Name__c / Owner_Label__c / Conditional__c /
  * Sequence__c / Condition_Field__c regardless of which subset they use.
+ * 🔴 "NON-LONG-TEXT" IS THE LOAD-BEARING WORD, AND IT COST A LIVE P0 ON 2026-08-31 WHEN NOBODY
+ * CONNECTED IT: `getAll()`/`getInstance()` SILENTLY CLIP LongTextArea and Html to 255 chars.
+ * Adding a long-text field to this type would need a selector for that field —
+ * see `.claude/skills/sf-apex/SKILL.md` (CMDT rule) and `ARCHITECTURE.md` §2.
  *
  * @see agent-output/p4-selector-design.md (§3 CMDT providers, §5, §10 flag 5)
  */

@@ -961,8 +961,37 @@ private class DispositionDealSummaryServiceTest {
     @isTest
     static void summarise_propertyAssetAbsent_isEmptyNotDegraded() {
         Disposition__c d = newDisposition();
-        d.Property_Asset__c = null;
-        update d;
+
+        // 🔴 THE NULL STATE IS NOW REACHED BY DELETING THE ASSET, NOT BY NULLING THE LOOKUP.
+        // This used to be `d.Property_Asset__c = null; update d;`. As of 2026-08-31 that exact
+        // write is refused by `Disposition__c/Property_Asset_Required_On_Save`
+        // (`AND(OR(ISNEW(), ISCHANGED(Property_Asset__c)), ISBLANK(Property_Asset__c))`) — an
+        // explicit null-out IS a change to a blank, which is the one thing that rule exists to stop.
+        //
+        // ⚠ THE ASSERTIONS BELOW ARE UNCHANGED, AND THAT IS THE POINT. The rule forbids a HUMAN (or
+        // an API caller) from clearing the lookup; it does NOT make the null state unreachable, and
+        // this test's own header above already names the route that still reaches it:
+        // `Property_Asset__c` carries `deleteConstraint = SetNull`, so deleting a Property Asset
+        // silently blanks the lookup on every Disposition that referenced it. A cascade null from a
+        // parent delete is not a save of the child, so no child validation rule evaluates on it.
+        // Switching to the delete route therefore makes this fixture MORE faithful than the one it
+        // replaces — it now builds the state the way production builds it.
+        //
+        // 🔴 THE TWO TEMPTING "FIXES" THAT WOULD HAVE GUTTED THIS TEST, REJECTED:
+        //   (a) delete the test — it is the only falsifier for a "helpful" default of '—' or
+        //       'Unknown asset' in the empty branch, which the client contract forbids;
+        //   (b) supply an asset and assert the populated shape instead — that is just a duplicate of
+        //       `summarise_propertyAssetPresent_*` and pins nothing about the empty branch.
+        // The rule is correct and was NOT touched.
+        //
+        // The @TestSetup builds exactly ONE Property_Asset__c and each test method runs in its own
+        // transaction, so deleting it here cannot affect any other method in this class.
+        delete [SELECT Id FROM Property_Asset__c];
+
+        Assert.isNull(
+            [SELECT Property_Asset__c FROM Disposition__c WHERE Id = :d.Id].Property_Asset__c,
+            'PRECONDITION: deleting the asset must SetNull the lookup. If this fails the fixture '
+            + 'never reached the state under test and every assertion below would be vacuous.');
 
         Test.startTest();
         DispositionDealSummaryService.DealSummary summary = DispositionDealSummaryService.summarise(d.Id);

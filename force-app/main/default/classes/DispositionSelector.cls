@@ -26,11 +26,21 @@
  *                                             -> selectIdsByPropertyAssetIds (asset-side BOV
  *                                              re-rank, 2026-08-25 — replaced the Disposition-side
  *                                              Asking_Price__c hook when that field was retired)
+ *   - DispositionApprovalHistoryService.summarise -> selectNameById (Tranche 3, 2026-08-31)
+ *   - DispositionApprovalTrackerService.getTracker
+ *                                             -> selectApprovalTrackerContextById (Tranche 3,
+ *                                              2026-08-31)
  *
- * ⚠ MIXED MODES SINCE 2026-08-09 (Tranche 3C) — READ THE METHOD, NEVER THIS HEADER. SIX
+ * ⚠ MIXED MODES SINCE 2026-08-09 (Tranche 3C) — READ THE METHOD, NEVER THIS HEADER. EIGHT
  * controller-backed reads are `WITH USER_MODE` (selectMostRecentByPropertyAssetId,
- * selectClosingSummaryById, selectOutreachById, selectApprovalContextById, selectDealSummaryParentById
- * and, since 2026-08-21, selectBrokerContextById);
+ * selectClosingSummaryById, selectOutreachById, selectApprovalContextById, selectDealSummaryParentById,
+ * since 2026-08-21 selectBrokerContextById, and since 2026-08-31 selectNameById and
+ * selectApprovalTrackerContextById);
+ * ⚠ THIS SAID **SIX** AND NAMED SIX UNTIL 2026-08-31, BY WHICH POINT IT WAS TWO SHORT — one stale
+ * before Tranche 3 and one added by it. It is corrected by ENUMERATION, not by arithmetic on the
+ * old figure: classify every `public static` method by the mode of its ACTUAL SOQL, ignoring what
+ * any Javadoc paragraph discusses. THIRTEEN methods, EIGHT + FIVE. The prohibition at the foot of
+ * this paragraph block exists because this is the third time a count here has decayed.
  * FIVE are
  * `WITH SYSTEM_MODE` under the ARCHITECTURE.md §2 automation-path exception (selectStagesByIds,
  * selectListingClockByIds, selectStageRequiredById, selectStageAndTypeByIds and, since 2026-08-25,
@@ -55,16 +65,25 @@
  *
  * ⚠ THE NEXT SENTENCE USED TO OPEN "MODE (the three USER_MODE reads)" AND HAS BEEN CORRECTED
  * RATHER THAN DELETED — it said THREE while the paragraph above it listed FOUR, then FIVE as of
- * 2026-08-20, and SIX as of 2026-08-21. Re-count against the method list, never against a sentence;
- * a stale count in this exact position is the defect NdaSelector's header records propagating into
- * ARCHITECTURE.md twice.
- * MODE (the six USER_MODE reads) — Disposition__c is a custom object; P3 proved the custom-field
+ * 2026-08-20, SIX as of 2026-08-21, and EIGHT as of 2026-08-31. Re-count against the method list,
+ * never against a sentence; a stale count in this exact position is the defect NdaSelector's header
+ * records propagating into ARCHITECTURE.md twice.
+ * MODE (the eight USER_MODE reads) — Disposition__c is a custom object; P3 proved the custom-field
  * FLS gap is 0, so USER_MODE is safe and enforces the running user's sharing + FLS. USER_MODE also
  * covers the Wires__r relationship subquery (Wire__c is likewise custom, FLS gap 0).
- * ⚠ THREE OF THE SIX TRAVERSE TO A SECOND OBJECT (it said TWO until 2026-08-25 — re-count
- * against the SELECT clauses, never against this sentence), WHICH ADDS AN OBJECT-LEVEL GATE NO
- * DISPOSITION PERMISSION SET GRANTS — a gate of a different KIND from the custom-FIELD one P3 measured, so
- * "the FLS gap is 0" does not cover either of them. Each is argued at its own method:
+ *
+ * ⚠ FIVE OF THE EIGHT TRAVERSE TO A SECOND OBJECT, WHICH ADDS AN OBJECT-LEVEL GATE NO DISPOSITION
+ * PERMISSION SET GRANTS — a gate of a different KIND from the custom-FIELD one P3 measured, so
+ * "the FLS gap is 0" does not cover any of them.
+ * 🔴 THIS SAID "THREE OF THE SIX" AND LISTED THREE UNTIL 2026-08-31, AND THE ERROR WAS NOT THE
+ * COUNT — IT WAS THE LIST. The three named below were the three most RECENTLY ADDED; the two
+ * OLDEST spanning reads in the class were never on it, because whoever adds a traversal is
+ * thinking about the traversal they are adding. Re-derive by reading every USER_MODE SELECT clause
+ * for a `__r.` segment, which is mechanical, rather than by trusting this enumeration:
+ *   - `selectClosingSummaryById` traverses `Property_Asset__r.Name` to `Property_Asset__c` —
+ *     ⚠ MISSING FROM THIS LIST UNTIL 2026-08-31, present since the method was written;
+ *   - `selectOutreachById` traverses `Property_Asset__r.Name` to the same object —
+ *     ⚠ likewise MISSING UNTIL 2026-08-31;
  *   - `selectBrokerContextById` traverses `Broker__r.Name` to `Contact` (granted by
  *     `DPEG_Contact_View` / `DPEG_Contact_Edit` in the same permission-set GROUPS);
  *   - `selectDealSummaryParentById` traverses `Property_Asset__r.Name` to `Property_Asset__c`
@@ -73,6 +92,10 @@
  *   - `selectApprovalContextById` traverses `Property_Asset__r.Target_Sale_Price__c` to the SAME
  *     object, on the SAME grant, and for the SAME reason — added 2026-08-25 when `Asking_Price__c`
  *     was retired from the disposition flow and the Readiness price gate moved to the asset.
+ * ⇒ The `Property_Asset__c` grant is therefore load-bearing for FOUR reads, not two. The two
+ * newest USER_MODE methods (`selectNameById`, `selectApprovalTrackerContextById`) traverse
+ * NOTHING — `Name` and `RecordTypeId` are local — which is stated at each of them and is why
+ * neither appears above.
  *
  * NOT-FOUND CONTRACT is per-caller and encoded in the method shape:
  *   - read-for-display  (selectMostRecentByPropertyAssetId) -> a missing
@@ -840,6 +863,78 @@ public with sharing class DispositionSelector {
         }
         return [
             SELECT Id, Name
+            FROM Disposition__c
+            WHERE Id = :dispositionId
+            WITH USER_MODE
+            LIMIT 1
+        ];
+    }
+
+    /**
+     * THE TWO FACTS THE FIVE-APPROVAL TRACKER NEEDS ABOUT THE SALE ITSELF: its AutoNumber (the label
+     * on any row whose approval targets the Disposition) and its RECORD TYPE. Backs
+     * `DispositionApprovalTrackerService.getTracker` -> `DispositionApprovalTrackerController` ->
+     * `c/dispositionApprovalTracker` (2026-08-31, Tranche 3 item 3).
+     *
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * 🔴 THE RECORD TYPE IS NOT DECORATION HERE — IT DECIDES WHICH OF **TWO** APPROVAL PROCESSES
+     *    THE TRACKER'S BROKER-SELECTION ROW IS EVEN ALLOWED TO LOOK FOR.
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * The BA's five approval types map to SIX processes: broker selection exists as
+     * `Disposition__c.Broker_Selection_Approval` (OFF-market, entry criterion `Is_On_Market__c` =
+     * False) and as `BOV_Submission__c.Broker_Finalize_Approval` (ON-market). A tracker that keyed
+     * that row on the wrong one of the two would report "Not started" forever on every sale of the
+     * other type — i.e. it would claim every on-market sale skipped an approval it in fact passed.
+     * The variant that does not apply must read N/A, and only the record type can say which.
+     *
+     * ── 🔴 WHY `RecordTypeId` AND NOT `Is_On_Market__c` ────────────────────────────────────────
+     * Same answer, and for the same two reasons, as `selectBrokerContextById` above: the caller
+     * resolves it through `DispositionDomain.recordTypeNameOf`, the ONE shared helper whose
+     * Master/unset fallback answers `On_Market` — so this card, the Advance button, the submit
+     * dispatch and the approval-advance map all give a Master-typed row the SAME answer, which is
+     * the disagreement `DispositionDomain`'s header exists to record and prevent. And
+     * `DispositionStageEntryService`'s `ON_MARKET_RECORD_TYPE` block rejects `Is_On_Market__c` as a
+     * discriminator in Apex outright: it is a FORMULA whose value is not a guarantee this code
+     * should lean on, and it reads BLANK — i.e. FALSE, i.e. off-market — on a Master row, which is
+     * the OPPOSITE fallback to the shared helper's.
+     * ⚠ THE DESIGN DOCUMENT PROPOSED `Is_On_Market__c` VIA AN LDS `getRecord` IN THE COMPONENT. That
+     * is a reasonable answer for a FLEXIPAGE visibility rule, which is what the field was built for
+     * (see its own XML comment), and the wrong answer HERE: it would put the branch in JavaScript
+     * where no Apex test can exercise it, add a second asynchronous source that can arrive after the
+     * rows do, and adopt a Master fallback that contradicts every other consumer in the module.
+     *
+     * ── FLS: `WITH USER_MODE`, AND IT ADDS **ZERO** NEW GATES ─────────────────────────────────
+     * A human opened the record page, so this is a read they asked for and ARCHITECTURE.md §2's
+     * automation-path exception does not apply. Neither selected field is a gate that can fail:
+     * `Name` is a standard AutoNumber and `RecordTypeId` is a standard system field, and
+     * field-level security cannot be configured on either. The only gate is OBJECT read on
+     * `Disposition__c`, which the reader necessarily already has — they are looking at the record.
+     * ⇒ This method is the one part of the tracker's read that CANNOT be the cause of a missing-
+     * grant banner. Do not add a custom field to it without re-arguing that sentence.
+     *
+     * ── ⚠ IT IS A THIRD NARROW READ RATHER THAN A REUSE, PER THIS CLASS'S OWN CONVENTION ───────
+     * `selectNameById` gives the Name and no record type. `selectApprovalContextById` gives the
+     * record type and four fields this caller never reads, three of them custom — under USER_MODE
+     * every one is another way for the tracker to fail for a value it ignores, which is verbatim the
+     * argument `selectBrokerContextById` makes for existing. `selectStageRequiredById` is
+     * `WITH SYSTEM_MODE` and is wrong for a user-requested read on a card.
+     *
+     * READ-FOR-DISPLAY, empty on miss. An Id the reader cannot see returns an empty list and the
+     * service returns an empty tracker rather than throwing — a sharing outcome is not an error.
+     *
+     * @param dispositionId The sale whose approval tracker is being built; null-safe.
+     * @return A single-element list carrying Id + Name + RecordTypeId, or an empty list when the
+     *         input is null or the record is not visible. Never null.
+     * @example
+     * List&lt;Disposition__c&gt; rows =
+     *     DispositionSelector.selectApprovalTrackerContextById(dispositionId);
+     */
+    public static List<Disposition__c> selectApprovalTrackerContextById(Id dispositionId) {
+        if (dispositionId == null) {
+            return new List<Disposition__c>();
+        }
+        return [
+            SELECT Id, Name, RecordTypeId
             FROM Disposition__c
             WHERE Id = :dispositionId
             WITH USER_MODE

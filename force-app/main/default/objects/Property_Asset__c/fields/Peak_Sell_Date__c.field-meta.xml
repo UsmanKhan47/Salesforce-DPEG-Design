@@ -1,7 +1,23 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        DISPOSITION GAP CLOSURE TRANCHE 2, ITEM 1d (agent-output/disposition-gap-closure-t2-design.md
+        §3 Item 1d, 2026-08-31). Documentation amendment, quote-and-retract: the prior
+        <description> below was true but INCOMPLETE as of this tranche, not false, so nothing is
+        marked retracted - the original sentence is kept verbatim and a second sentence is added.
+
+        [PRIOR, KEPT] "Used by the Sell Meter list." - still true; SellMeterController and
+        DispositionService both still read this field directly.
+
+        [NEW, 2026-08-31] This field is now ALSO the sole driver of
+        Property_Asset__c.Sell_Readiness_Band__c (repointed off Argus_Signal__c onto
+        days-until-peak via this field, mirroring SellMeterService.bandForPeak exactly), and
+        therefore transitively drives Readiness_Score__c (which now derives from the band). Two
+        dashboard donuts and one metric report group on Sell_Readiness_Band__c, so a change to
+        THIS field now moves those groupings, not just the Home-page Sell Meter list.
+    -->
     <fullName>Peak_Sell_Date__c</fullName>
-    <description>Projected date at which this asset&apos;s value is expected to peak. Used by the Sell Meter list.</description>
+    <description>Projected date at which this asset&apos;s value is expected to peak. Used by the Sell Meter list. Since Tranche 2 (2026-08-31) it is also the sole driver of Sell_Readiness_Band__c and, transitively, Readiness_Score__c - see this file&apos;s XML comment.</description>
     <label>Peak Sell Date</label>
     <required>false</required>
     <trackHistory>false</trackHistory>

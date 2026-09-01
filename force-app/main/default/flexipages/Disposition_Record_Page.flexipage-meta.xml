@@ -628,6 +628,53 @@
          page now carries no force:relatedListSingleContainer; one visibility rule gained an
          `OR ... NE Broker Selection` term.
     -->
+    <!--
+         2026-08-31 (Tranche 3, item 3) - TWO PLACEMENT EVENTS THIS SAME DAY ON THIS FILE. THIS IS
+         THE FINAL RECORD; READ IT FIRST BEFORE EITHER of the two similarly-named sidebar cards
+         below is touched again.
+
+         🔴 THE TWO COMPONENTS, NAMED SIDE BY SIDE BECAUSE THEY ARE EASY TO CONFUSE AT A GLANCE:
+           dispositionApprovalTracker  IS PLACED (sidebar, after bovBrokerChangeHistory). Five-row
+                                       PENDING-VS-COMPLETE STATUS checklist - "what is outstanding
+                                       on this sale, right now." This is what story 52 asked for.
+           dispositionApprovalHistory  REMAINS DELIBERATELY UNPLACED. Chronological LOG of every
+                                       approval decided so far - a different question ("what already
+                                       happened"). Do NOT place it here or anywhere on this page.
+                                       See the retained history below for why.
+
+         EVENT 1 - MISTAKEN PLACEMENT AND REVERSAL. dispositionApprovalHistory was briefly placed in
+         this same sidebar slot, then removed the same day. It contradicted an explicit Gate 1
+         decision this agent did not have visibility into at write time: the coordinating design
+         brief for this wave stated in terms - "⚠ c/dispositionApprovalHistory is deliberately left
+         unplaced - it is on neither the org page nor the repo page today (verified both: 26
+         components each, neither contains it). Do not place it, and do not remove it." The user was
+         asked directly and chose "Tracker only, leave history unplaced" over both "place both" and
+         "extend the history card" - a decision, not an oversight: dispositionApprovalHistory is a
+         CHRONOLOGICAL LOG; story 52 asks for the different five-row STATUS TRACKER built below.
+         The reversal returned this file to 26 componentName entries, matching both this file's own
+         pre-Tranche-3 HEAD and the live usman-dpeg org copy retrieved for Gate G-6 that same wave -
+         restoring parity rather than creating a new diff against either baseline. Re-confirmed via
+         a second retrieve immediately before EVENT 2 below: still 26/26, comment-stripped identical.
+
+         🔴 c/dispositionApprovalHistory's OWN HEADER (lwc/dispositionApprovalHistory/
+         dispositionApprovalHistory.js) FALSELY CLAIMS, IN ITS OPENING LINE, TO BE "the CONSOLIDATED,
+         READ-ONLY 'Approval History' card in the Disposition record page sidebar." That claim was
+         false before EVENT 1, remained false after EVENT 1 reverted the mistaken placement, and is
+         STILL FALSE after EVENT 2 below - dispositionApprovalHistory has never rendered on this or
+         any page in this repo. lwc/** is outside this agent's ownership in this tranche's file
+         split (salesforce-admin owns approvalProcesses/workflows/quickActions/flexipages/layouts/
+         objects only) - the retraction of that header claim is NOT made here and was reported to
+         the coordinating agent for whichever agent owns lwc/** to action.
+
+         EVENT 2 - dispositionApprovalTracker PLACED, SAME SIDEBAR SLOT. The developer agent's
+         five-row tracker bundle landed and was named: lwc/dispositionApprovalTracker/, masterLabel
+         "Approval Tracker", target lightning__RecordPage scoped to Disposition__c. Placed
+         UNCONDITIONALLY (no visibilityRule) directly after bovBrokerChangeHistory - the exact slot
+         dispositionApprovalHistory briefly occupied in EVENT 1. See the inline comment at its own
+         itemInstances block, further down this sidebar region, for the fails-hard-not-soft
+         behaviour, the record-type-dependent Broker Selection row, and the n-of-m NDA row - not
+         repeated here. This file is now at 27 componentName entries.
+    -->
     <flexiPageRegions>
         <itemInstances>
             <componentInstance>
@@ -1510,6 +1557,43 @@
                         <rightValue>Closing</rightValue>
                     </criteria>
                 </visibilityRule>
+            </componentInstance>
+        </itemInstances>
+        <itemInstances>
+            <!-- NEW 2026-08-31 (Tranche 3, item 3 - CORRECTED PLACEMENT, story 52). This is
+                 dispositionApprovalTracker, the FIVE-ROW PENDING-VS-COMPLETE STATUS TRACKER story
+                 52 actually asked for - NOT dispositionApprovalHistory, the chronological log,
+                 which remains DELIBERATELY UNPLACED (see the dated correction comment near the top
+                 of this file, "CORRECTED SAME DAY" / user decision "Tracker only, leave history
+                 unplaced", 2026-08-31). The two bundle names are similar enough to confuse at a
+                 glance - do not place dispositionApprovalHistory here or anywhere on this page.
+
+                 PLACEMENT: unconditional, no visibilityRule - the tracker answers "what is
+                 outstanding on this sale" at every stage, INCLUDING Disposition Readiness where
+                 nothing has been submitted yet. A stage-gated tracker would render blank exactly
+                 when a driver most wants to consult it. Positioned directly after
+                 bovBrokerChangeHistory, the slot dispositionApprovalHistory briefly and mistakenly
+                 occupied earlier this same day.
+
+                 🔴 FAILS HARD, NOT SOFT, BY DELIBERATE DEVELOPER DECISION: on a read error this
+                 component renders ZERO rows, not five "Not started" boxes. Five confident
+                 "Not started" rows on a sale that has actually passed four approvals would be an
+                 itemised false claim a principal could act on - e.g. re-submitting an approval
+                 that is already pending. A blank card signals "ask, don't trust" instead.
+
+                 ⚠ Row 2 (Broker Selection) is RECORD-TYPE-DEPENDENT and resolves server-side: the
+                 variant that does not apply to this Disposition's record type renders an explicit
+                 "N/A" line, never "Not started" - the same on/off-market split
+                 Broker_Selection_Approval / Broker_Finalize_Approval carry as two processes for
+                 one BA approval type (design P-14). NDA Issue is reported n of m across every
+                 disposition NDA on the sale, not a single latest-instance status.
+
+                 No componentInstanceProperties needed: @api recordId is auto-injected by the
+                 platform for a lightning__RecordPage target scoped to Disposition__c, matching
+                 every other sidebar card on this page (none declare it explicitly either). -->
+            <componentInstance>
+                <componentName>dispositionApprovalTracker</componentName>
+                <identifier>dispositionApprovalTracker</identifier>
             </componentInstance>
         </itemInstances>
         <itemInstances>

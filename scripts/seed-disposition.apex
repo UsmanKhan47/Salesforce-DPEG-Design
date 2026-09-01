@@ -109,6 +109,18 @@ Disposition__c disp = new Disposition__c(
     Disposition_Stage__c = 'BOV Outreach',
     Package_Sent__c = Date.newInstance(2026, 5, 1),
     Submission_Deadline__c = Date.newInstance(2026, 5, 16),
+    // 🔴 `Responses_Received__c` IS NO LONGER A SEED VALUE — IT IS TRIGGER-OWNED SINCE 2026-08-31
+    // (Tranche 1 item 7). `DispositionCounterRollupService` RECOMPUTES it from the actual
+    // `BOV_Submission__c` row count on every BOV insert / update / delete / undelete, so the four
+    // submissions this script inserts below WILL overwrite whatever is written here, silently and
+    // with no error. This literal is retained rather than deleted for two reasons: it is correct
+    // (this script inserts exactly FOUR BOV rows for this disposition, so the trigger converges on
+    // 4), and it is what the record reads between its own insert and the BOV insert.
+    // ⚠ IF YOU ADD OR REMOVE A BOV ROW BELOW, THIS NUMBER BECOMES A LIE THAT LASTS ONE STATEMENT
+    // AND THEN CORRECTS ITSELF. Change it to match anyway — a seed whose literals disagree with
+    // its own output is the thing that makes the next reader distrust the whole file.
+    // ⚠ `Brokers_Contacted__c` IS NOT TRIGGER-OWNED AND STAYS MANUAL. It records how many brokers
+    // were ASKED, which is not derivable from any child row (design item 7, as directed).
     Responses_Received__c = 4,
     Brokers_Contacted__c = 6,
     Selected_Broker__c = 'CBRE · Mark Chen'
@@ -210,6 +222,16 @@ if (fellBack > 0) {
 insert bovs;
 
 // Broker Listing (Active Listing stage data)
+// ⚠ `Days_On_Market__c` BELOW IS THE **STORED** NUMBER AND IS STILL ASSIGNABLE. Checked
+// 2026-08-31 (Tranche 1 item 6): decision D-4 added a NEW formula field,
+// `Days_On_Market_Live__c`, ALONGSIDE this one rather than converting it (Salesforce cannot
+// convert an existing field into a Formula — that is a delete + create), so this line compiles and
+// runs unchanged and is deliberately left alone.
+// 🔴 DO NOT REPOINT IT TO `Days_On_Market_Live__c` — assigning a formula field is a runtime failure
+// in anonymous Apex, which nothing catches until somebody runs this script.
+// ⚠ THIS LITERAL IS A FIXED 40 AGAINST A FIXED `List_Date__c` OF 2026-04-24, so unlike the
+// relative-dated bulk seed it has ALREADY diverged from what the formula computes. That is the
+// stored field being a hand-keyed snapshot, which is precisely why the formula was added.
 insert new Broker_Listing__c(
     Disposition__c = disp.Id, Broker_Firm__c = 'CBRE', Contact_Name__c = 'Mark Chen',
     List_Date__c = Date.newInstance(2026, 4, 24),

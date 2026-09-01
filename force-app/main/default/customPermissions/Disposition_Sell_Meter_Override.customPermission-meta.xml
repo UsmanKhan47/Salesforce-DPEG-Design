@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomPermission xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT, NOT IN <description>, DELIBERATELY. CustomPermission's
+        <description> is capped at 255 characters (measured on this project 2026-08-12 via
+        Disposition_Deal_Actions.customPermission-meta.xml's own first-draft dry-run failure). A
+        comment is repo-only and never sent to the Metadata API, so it can be as long as it needs.
+
+        DISPOSITION GAP CLOSURE TRANCHE 2, ITEM 5a (agent-output/disposition-gap-closure-t2-design.md
+        §3 item 5a; Gate 1 decisions D-9 and D-10, 2026-08-31). NEW custom permission gating
+        visibility of, and server-side access to, the Sell Meter "Override" action on a YELLOW-band
+        Property_Asset__c (stories 12/14). Granted by DPEG_Disposition_View ONLY — the Principal
+        persona, reaching every holder of DPEG_Principal_PSG.
+
+        🔴 THIS TOKEN IS THE MIRROR IMAGE OF Disposition_Deal_Actions AND THE TWO MUST NEVER BE
+        MERGED. Quoting Disposition_Deal_Actions.customPermission-meta.xml's own banner verbatim,
+        because the request that produced this file originally cited Disposition_Deal_Actions as
+        its precedent and that token is PRECISELY THE WRONG ONE to reuse or to mirror onto the same
+        set (design finding P-5, "the single most consequential correction in this document"):
+
+            "🔴 DPEG_Disposition_View DOES NOT AND MUST NOT CARRY THIS PERMISSION. Principals hold
+            the View set and APPROVE dispositions; granting it there would put the submit and
+            advance buttons in front of the approvers of those submissions. The two disposition
+            sets are deliberately asymmetric on this grant."
+
+        That banner is about Disposition_Deal_Actions, which lives on DPEG_Disposition_Edit (the
+        ANALYST set) and is FORBIDDEN on DPEG_Disposition_View (the PRINCIPAL set). THIS token,
+        Disposition_Sell_Meter_Override, is the exact inverse: it lives on DPEG_Disposition_View
+        (Principal) and must NOT be added to DPEG_Disposition_Edit. Reusing Disposition_Deal_Actions
+        for this gate, or granting THIS token symmetrically onto DPEG_Disposition_Edit "to match",
+        would show the Override action to analysts and hide it from principals — the acceptance
+        criteria for stories 12/14, exactly inverted. The two tokens are deliberate mirror images;
+        merging or symmetrising them collapses whichever gate is touched.
+
+        SCOPE: fires only on the YELLOW band (days-until-peak 31-90 via SellMeterService.
+        bandForPeak). GREEN Initiate stays open to every junior analyst — no story asks to close it
+        — and RED stays refused to everyone via the existing SellMeterGateException path. The
+        server-side assert lives on BOTH DispositionService create paths (findOrCreate AND
+        initiateAndSubmit), per DispositionService.cls's own pre-written condition for flipping its
+        recorded refusal to assert here at all. That Apex change is OWNED BY salesforce-developer,
+        not this file — this file only defines the token.
+
+        FLS / assignment: DPEG_Disposition_View's <customPermissions> entry naming this token, and
+        the fieldPermissions grant on the new Disposition__c.Sell_Meter_Override_Reason__c field,
+        are a SEPARATE, consolidated pass owned by salesforce-solution-architect (design §4) — NOT
+        this file, and NOT DPEG_Disposition_Edit. "The four principals" who end up holding this
+        token is a PermissionSetAssignment question and assignments are not deployable metadata;
+        the deliverable here is "whoever holds DPEG_Principal_PSG", verified in the org, not in
+        this repo.
+
+        🔴 DEPLOY ORDER: this file must land in the SAME deploy as, or an EARLIER deploy than,
+        DPEG_Disposition_View.permissionset-meta.xml. A customPermissions entry naming a permission
+        the target org does not yet hold fails the deploy of the entire permission set (precedent:
+        DPEG_Admin_Access's Tranche 1 header).
+
+        isLicensed=false — no managed-package license gating; this is an in-org, purely
+        criteria-based (does the running user hold this token?) authorization gate, not a
+        record-based one. FeatureManagement.checkPermission is the intended server-side check.
+    -->
+    <label>Disposition Sell Meter Override</label>
+    <description>Layer-5 authorization token gating the Sell Meter Override action on a YELLOW-band Disposition asset. Granted by DPEG_Disposition_View (Principal) ONLY - never DPEG_Disposition_Edit. See this file's XML comment.</description>
+    <isLicensed>false</isLicensed>
+</CustomPermission>

@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+    Tranche 3 disposition NDA approval retirement, 2026-08-31. POST-destructive deletion.
+
+    STATUS: PREPARED, NOT AUTHORISED. Do not deploy without the user's explicit
+    go-ahead. This file only DESCRIBES a deletion; it performs nothing on its own.
+
+    DELETES EXACTLY ONE COMPONENT.
+
+    1. QuickAction NDA__c.Move_to_Approved
+       Retired by Tranche 3 item 2d / design decision D-7. It was the one-click
+       Prepare -> Approved bypass of the new NDA__c.NDA_Issue_Approval approval
+       process, superseded by NDA__c.Submit_NDA_Approval (a headless LWC action
+       that submits the record for approval instead of writing the stage
+       directly). See approvalProcesses/NDA__c.NDA_Issue_Approval
+       .approvalProcess-meta.xml's own 2026-08-31 comment for the retirement
+       argument in full.
+
+       The source file for this quick action was already deleted from disk in
+       this same wave (correctly - deleting a component from
+       force-app/main/default does not delete it from an org that does not use
+       source tracking, which this repo does not). This POST-destructive
+       manifest is the missing second half of that retirement: the ORG record
+       still exists in usman-dpeg until this deploys. Fourteen prior waves in
+       this repo shipped a destructive manifest for exactly this reason; this
+       one had not yet been prepared when the Tranche 3 review caught it (W-7).
+
+       🔴 SEVERITY IS CONTAINED - RECORD WHY, SO THIS IS NOT TREATED AS AN
+       EMERGENCY. The live bypass this deletion closes is ALREADY closed by
+       other means, independently of whether this manifest has run:
+         (a) the button's only FlexiPage placement, on NDA_Record_Page's
+             actionNames list, was already removed and replaced by
+             Submit_NDA_Approval in the same wave - so the button is not
+             reachable from the Lightning record page even while the org-side
+             QuickAction record still exists;
+         (b) even if the orphaned action were re-surfaced some other way (e.g.
+             from Setup, or a stale list view action menu), it calls
+             c/advanceRecordStage -> RecordStageAdvanceService.advance(), and
+             that service's NDA_DISPOSITION_NEXT_STAGE map NO LONGER maps
+             'Prepare' to anything - the map entry was retired in the same
+             developer-owned change that deleted this file. A click would fail
+             with a handled "no next stage" refusal, not silently advance the
+             record.
+       This is therefore ORG/REPO DRIFT AND HYGIENE, not a live bypass. It
+       should be run to keep the org's QuickAction inventory honest and to
+       free the API name for reuse, but nobody should treat an unrun copy of
+       this manifest as an open security gap, and it should not be skipped as
+       purely cosmetic either - both framings are wrong.
+
+    EXPLICITLY NOT IN SCOPE:
+      - NDA__c.Move_to_Sent / NDA__c.Move_to_Signed / NDA__c.Mark_Declined:
+        MODIFIED in place (cross-reference comments only), no API-name change,
+        nothing to delete.
+      - NDA__c.Submit_NDA_Approval: NEW in this wave, ships in the main
+        constructive payload, not here.
+
+    HOW TO RUN IT (only once authorised, and only AFTER the main constructive
+    payload for this wave - including the FlexiPage edit removing the button
+    placement - has already landed):
+      run `sf project deploy start` with
+        the manifest flag           pointing at this folder's package.xml
+        the post destructive flag   pointing at this file
+        the target org flag         set to the disposition org alias
+        the test level flag         set to RunLocalTests, and a 30 minute wait.
+      The flag prefixes are spelled out in words on purpose: an XML comment
+      body cannot contain two consecutive hyphens, so writing the real flags
+      here would make this file unparseable.
+
+    Rollback: the deleted component's prior content is recoverable from git
+    history (this repo's own tracked copy, up to the commit that removed
+    quickActions/NDA__c.Move_to_Approved.quickAction-meta.xml) and can be
+    redeployed if this retirement is ever reversed.
+    -->
+    <types>
+        <members>NDA__c.Move_to_Approved</members>
+        <name>QuickAction</name>
+    </types>
+    <version>67.0</version>
+</Package>

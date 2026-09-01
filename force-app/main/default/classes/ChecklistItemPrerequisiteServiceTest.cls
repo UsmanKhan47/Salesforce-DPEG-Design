@@ -37,9 +37,9 @@ private class ChecklistItemPrerequisiteServiceTest {
     @TestSetup
     static void setupTestData() {
         Transaction__c deal = TestDataFactory.createTransactions(1, true)[0];
-        Checklist__c group = TestDataFactory.createChecklist(deal.Id, true);
+        Checklist__c checklistGroup = TestDataFactory.createChecklist(deal.Id, true);
         // Two items: [0] is the prerequisite (B2), [1] is the dependent (B3).
-        List<Checklist_Item__c> items = TestDataFactory.createChecklistItems(2, group.Id, true);
+        List<Checklist_Item__c> items = TestDataFactory.createChecklistItems(2, checklistGroup.Id, true);
         TestDataFactory.linkPrerequisite(items[1], items[0], true);
     }
 
@@ -230,6 +230,79 @@ private class ChecklistItemPrerequisiteServiceTest {
                 + 'bypass and must be refused on its own');
     }
 
+    /**
+     * 🔴 EXPLOIT C — REOPEN-AND-ERASE. Two saves, ordinary Edit access, NO override.
+     *
+     *     update {Flag__c = 'None',      Blocked_By__c = null};  // save 1
+     *     update {Flag__c = 'Completed'};                        // save 2
+     *
+     * Save 1 slipped every branch while the guard was `!wasDone`: (A) declined because the row was
+     * LEAVING done rather than entering it, and (B) declined because the row HAD been done. Save 2
+     * then had no link on either side, so it was not a candidate at all. Found in the live Phase 0
+     * gate and carried here, because this class inherited the same precedence rule.
+     *
+     * ⚠ The precondition is ordinary: complete the prerequisite, complete the dependent, reopen the
+     * prerequisite — which is unrestricted, since a prerequisite carries no link of its own.
+     *
+     * The second assertion is the load-bearing one: a refusal that still lost the link would leave
+     * save 2 unguarded, which IS the exploit.
+     */
+    @isTest
+    static void refusesReopenAndEraseAcrossTwoSaves() {
+        forceOverrideAccess(false);
+        List<Checklist_Item__c> items = fixtureItems();
+        update new Checklist_Item__c(Id = items[0].Id, Flag__c = FLAG_COMPLETED);
+        update new Checklist_Item__c(Id = items[1].Id, Flag__c = FLAG_COMPLETED);
+        update new Checklist_Item__c(Id = items[0].Id, Flag__c = FLAG_NONE);
+
+        Test.startTest();
+        Database.SaveResult reopenAndErase = Database.update(
+            new Checklist_Item__c(Id = items[1].Id, Flag__c = FLAG_NONE, Blocked_By__c = null), false);
+        Database.SaveResult recomplete = Database.update(
+            new Checklist_Item__c(Id = items[1].Id, Flag__c = FLAG_COMPLETED), false);
+        Test.stopTest();
+
+        Assert.isFalse(reopenAndErase.isSuccess(),
+            'Erasing the link WHILE REOPENING must be refused — a row walking back through the gate '
+                + 'is not past it, so pastTheGate must be false even though wasDone is true');
+        Checklist_Item__c dependent = [
+            SELECT Flag__c, Blocked_By__c FROM Checklist_Item__c WHERE Id = :items[1].Id];
+        Assert.areEqual(items[0].Id, dependent.Blocked_By__c,
+            'THE LOAD-BEARING ASSERTION: the link SURVIVED. A refusal that still lost it would leave '
+                + 'save 2 unguarded, which is the whole exploit');
+        Assert.isTrue(recomplete.isSuccess(),
+            'Save 2 succeeds, and that is correct rather than alarming: with save 1 refused it is a '
+                + 'no-op re-completion of a row that was already done and still carries its link');
+        Assert.areEqual(FLAG_COMPLETED, dependent.Flag__c, 'and the row never left the done state');
+    }
+
+    /**
+     * The counterweight: REOPENING WITHOUT TOUCHING THE LINK stays allowed. `pastTheGate` pulls a
+     * reopen into branch (B)'s scope, so this pins that (B) still declines on `linkChanged` —
+     * otherwise the tempting simplification "refuse any save that reopens a gated item" would look
+     * correct and would quietly make done items unreopenable.
+     */
+    @isTest
+    static void allowsReopeningWithoutTouchingTheLink() {
+        forceOverrideAccess(false);
+        List<Checklist_Item__c> items = fixtureItems();
+        update new Checklist_Item__c(Id = items[0].Id, Flag__c = FLAG_COMPLETED);
+        update new Checklist_Item__c(Id = items[1].Id, Flag__c = FLAG_COMPLETED);
+        update new Checklist_Item__c(Id = items[0].Id, Flag__c = FLAG_NONE);
+
+        Test.startTest();
+        Database.SaveResult result = Database.update(
+            new Checklist_Item__c(Id = items[1].Id, Flag__c = FLAG_NONE), false);
+        Test.stopTest();
+
+        Assert.isTrue(result.isSuccess(), 'A done item can still be reopened');
+        Checklist_Item__c dependent = [
+            SELECT Blocked_By__c, Is_Prerequisite_Met__c FROM Checklist_Item__c WHERE Id = :items[1].Id];
+        Assert.areEqual(items[0].Id, dependent.Blocked_By__c, 'with its link intact');
+        Assert.isFalse(dependent.Is_Prerequisite_Met__c,
+            'and the flag re-derives against the now-open prerequisite, so the row comes back RE-ARMED');
+    }
+
     @isTest
     static void allowsAnOverrideHolderToRepairTheLink() {
         // The administrative escape hatch. Pinned TRUE so the branch is provably reachable - the
@@ -248,7 +321,8 @@ private class ChecklistItemPrerequisiteServiceTest {
 
     @isTest
     static void allowsEditingAnAlreadyCompletedItem() {
-        // The `!wasDone` narrowing: an item past the gate stays maintainable, which is what keeps
+        // The `!pastTheGate` narrowing: an item done BEFORE and still done AFTER is past the gate
+        // and stays maintainable, which is what keeps
         // the Phase 4 migration and ordinary corrections working.
         forceOverrideAccess(false);
         List<Checklist_Item__c> items = fixtureItems();
@@ -338,9 +412,9 @@ private class ChecklistItemPrerequisiteServiceTest {
         // point of the number - a 200-row test cannot distinguish "one query per chunk" from "one
         // query per transaction".
         Transaction__c deal = TestDataFactory.createTransactions(1, true)[0];
-        Checklist__c group = TestDataFactory.createChecklist(deal.Id, true);
-        Checklist_Item__c prerequisite = TestDataFactory.createChecklistItem(group.Id, true);
-        List<Checklist_Item__c> dependents = TestDataFactory.createChecklistItems(251, group.Id, false);
+        Checklist__c checklistGroup = TestDataFactory.createChecklist(deal.Id, true);
+        Checklist_Item__c prerequisite = TestDataFactory.createChecklistItem(checklistGroup.Id, true);
+        List<Checklist_Item__c> dependents = TestDataFactory.createChecklistItems(251, checklistGroup.Id, false);
         for (Integer i = 0; i < dependents.size(); i++) {
             dependents[i].Sequence__c = i + 100;
         }
@@ -394,9 +468,94 @@ private class ChecklistItemPrerequisiteServiceTest {
 
     @isTest
     static void asRefusalRecognisesItsOwnMessagesOnly() {
+        // 🔴 THE MATCHING LOOP HAD ZERO COVERAGE — only the null path was tested. That matters more
+        // than an ordinary coverage gap: `asRefusal` recognises a refusal by matching the very
+        // constants that produced the text, and `addError` HTML-ESCAPES, so a single non-ASCII
+        // character added to any constant later breaks the match SILENTLY. The symptom is not an
+        // exception, it is the LWC falling back to the generic "refresh and try again" on the one
+        // path a human uses. Phase 0 carried an explicit pin for this; it was not carried across.
+        forceOverrideAccess(false);
+        List<Checklist_Item__c> items = fixtureItems();
+
         Test.startTest();
         Assert.isNull(ChecklistItemPrerequisiteService.asRefusal(null),
             'A null DmlException must translate to null, not to a refusal');
+
+        // (A) a real, platform-round-tripped completion refusal.
+        DmlException blocked = null;
+        try {
+            update new Checklist_Item__c(Id = items[1].Id, Flag__c = FLAG_COMPLETED);
+        } catch (DmlException e) {
+            blocked = e;
+        }
+        // (B) a real disarm refusal.
+        DmlException disarm = null;
+        try {
+            update new Checklist_Item__c(Id = items[1].Id, Blocked_By__c = null);
+        } catch (DmlException e) {
+            disarm = e;
+        }
+        // An UNRELATED platform failure, which must NOT be re-typed — otherwise this becomes a
+        // route for raw DML text to reach the UI.
+        DmlException unrelated = null;
+        Checklist_Item__c doomed = TestDataFactory.createChecklistItem(items[0].Checklist__c, true);
+        Id doomedId = doomed.Id;
+        delete doomed;
+        try {
+            update new Checklist_Item__c(Id = doomedId, Sequence__c = 42);
+        } catch (DmlException e) {
+            unrelated = e;
+        }
+        Test.stopTest();
+
+        Assert.isNotNull(blocked, 'Precondition: the completion was refused');
+        Assert.isNotNull(disarm, 'Precondition: the disarm was refused');
+        Assert.isNotNull(unrelated, 'Precondition: updating a deleted row failed');
+
+        Assert.isNotNull(ChecklistItemPrerequisiteService.asRefusal(blocked),
+            'MSG_BLOCKED must survive the round trip through addError and be recognised — if this '
+                + 'is null, a non-ASCII character has been added to the constant');
+        Assert.isNotNull(ChecklistItemPrerequisiteService.asRefusal(disarm),
+            'MSG_DISARM must be recognised too');
+        Assert.isNull(ChecklistItemPrerequisiteService.asRefusal(unrelated),
+            'An unrelated DmlException must NOT be re-typed — the translation is narrow by design '
+                + 'and must not leak platform error text to the LWC boundary');
+    }
+
+    /**
+     * The ASCII pin, carried over from Phase 0 and covering ALL FOUR constants rather than only the
+     * two the round-trip test above can reach.
+     *
+     * `SObject.addError` HTML-escapes, so an em-dash becomes `&mdash;` and a quotation mark becomes
+     * `&quot;` in the message the platform actually stores. `asRefusal` matches on these constants,
+     * so ONE such character silently breaks the match. This is a cheap direct assertion on the
+     * property itself, which is what makes it catch the two constants no current fixture refuses.
+     */
+    @isTest
+    static void refusalConstantsStayAsciiSoTheMatcherCannotDrift() {
+        Map<String, String> constants = new Map<String, String>{
+            'MSG_BLOCKED' => ChecklistItemPrerequisiteService.MSG_BLOCKED,
+            'MSG_UNRESOLVED' => ChecklistItemPrerequisiteService.MSG_UNRESOLVED,
+            'MSG_DISARM' => ChecklistItemPrerequisiteService.MSG_DISARM,
+            'MSG_CROSS_DEAL' => ChecklistItemPrerequisiteService.MSG_CROSS_DEAL
+        };
+
+        Test.startTest();
+        for (String name : constants.keySet()) {
+            String value = constants.get(name);
+            Assert.isNotNull(value, name + ' must exist');
+            for (Integer i = 0; i < value.length(); i++) {
+                Integer code = value.charAt(i);
+                Assert.isTrue(code >= 32 && code <= 126,
+                    name + ' must be pure printable ASCII, or addError HTML-escaping will break '
+                        + 'asRefusal silently. Offending character code ' + code + ' at index ' + i);
+                Assert.isTrue(
+                    code != 38 && code != 60 && code != 62 && code != 34 && code != 39,
+                    name + ' must contain no ampersand, angle bracket, double quote or apostrophe. '
+                        + 'Every one of them is HTML-escaped by addError. Offending character code '
+                        + code + ' at index ' + i);
+            }
+        }
         Test.stopTest();
     }
 }

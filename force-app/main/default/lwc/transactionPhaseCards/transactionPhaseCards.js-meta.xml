@@ -3,7 +3,7 @@
     <apiVersion>67.0</apiVersion>
     <isExposed>true</isExposed>
     <masterLabel>Transaction Phase Cards</masterLabel>
-    <description>Sidebar 2×2 grid showing task progress for each deal phase (Open Contract, Due Diligence, Closing, Post Closing); a phase card turns green when all its tasks are complete.</description>
+    <description>Sidebar 2x2 grid of checklist progress per deal phase (Open Contract, Due Diligence, Closing Prep, Post-Closing). A card turns green when the phase is complete. Reads Checklist__c when Checklist Fanned Out is true, else legacy Tasks.</description>
     <targets>
         <target>lightning__RecordPage</target>
     </targets>

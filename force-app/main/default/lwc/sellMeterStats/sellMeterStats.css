@@ -17,11 +17,45 @@
     font-weight: var(--slds-g-font-weight-6, 600);
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   TILE GRID — FIVE TRACKS SINCE 2026-08-31 (was four).
+   ---------------------------------------------------------------------------
+   The fifth tile is "Sell-Ready Upside" (story 9, Gate 1 decision: ADD the
+   green-only figure rather than narrow the portfolio-wide one). See
+   `sellMeterStats.js`'s `metrics` getter for why the count diverges from the
+   story's four-card AC.
+
+   ⚠ THIS COMPONENT SITS IN `Sell_Meter.flexipage` region1 — the FULL-WIDTH
+   header band of `appHomeTemplateHeaderTwoColumns`, not one of the two
+   columns. Five tracks across the whole page width is the reason five fit at
+   all; the same grid inside region2 would not.
+
+   🔴 THE BREAKPOINT LADDER IS ADDITIVE AND MONOTONIC: 5 -> 3 -> 2. The 1024px
+   rule is UNCHANGED from before this card gained a tile; 1280px was inserted
+   above it so a fifth tile does not crush the set on a laptop before the
+   existing rule takes over. Keep the ladder descending — an intermediate rule
+   that widens the count would make a narrower viewport show MORE columns.
+
+   ⚠ THE PIXEL VALUES ARE BARE BY NECESSITY, NOT BY OVERSIGHT. An at-rule
+   prelude cannot resolve `var()`, so a design token here would not fall back —
+   it would disable the query outright. Same constraint, same reasoning, as
+   `sellMeterInitiateModal.css`, which records it in full.
+
+   ⚠ HOW MANY TILES ACTUALLY FIT ON A GIVEN SCREEN IS A RENDERING OUTCOME AND
+   NOT A DEPLOY OUTCOME. jsdom applies no layout, so Jest cannot see it and
+   neither can code review. It is a browser check (design gate G-5).
+   ═══════════════════════════════════════════════════════════════════════════ */
 .cards-row {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(5, 1fr);
     gap: 0.75rem;
     width: 100%;
+}
+
+@media (max-width: 1280px) {
+    .cards-row {
+        grid-template-columns: repeat(3, 1fr);
+    }
 }
 
 @media (max-width: 1024px) {

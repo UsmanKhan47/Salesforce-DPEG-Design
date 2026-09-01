@@ -521,3 +521,76 @@
         grid-template-columns: repeat(2, 1fr);
     }
 }
+/* ═══════════════════════════════════════════════════════════════════════════════════════════
+   Phase 3 — ACCENT COLOURS MOVED OUT OF INLINE `style` ATTRIBUTES AND INTO TOKENS.
+
+   Until Phase 3 the component emitted `style="width:42%;background:#2e7d32"` from JavaScript.
+   Two problems with that, and both are why these rules exist:
+     1. The SLDS linter reads `.css` files. A colour literal built in a JS template string is
+        invisible to it, so the bundle could report clean while shipping hardcoded hex.
+     2. An inline style beats every token override, so the component could not follow a themed
+        SLDS 2 palette even if the org set one.
+   The JS now emits WIDTH ONLY (and `--pct` for the conic-gradient ring); every colour decision
+   is a modifier class resolved here.
+   ═══════════════════════════════════════════════════════════════════════════════════════════ */
+
+.tg-phase-fill {
+    background: var(--slds-g-color-palette-blue-50, #0176d3);
+}
+.tg-phase-fill--done {
+    background: var(--slds-g-color-palette-green-50, #2e7d32);
+}
+
+.tg-bar {
+    background: var(--slds-g-color-palette-teal-40, #2bafac);
+}
+.tg-bar--done {
+    background: var(--slds-g-color-palette-green-50, #2e7d32);
+}
+
+/* The ring is a conic-gradient driven by --ring (colour) and --pct (progress). --pct still
+   comes from JS because it is a value, not a decision; --ring is a decision and lives here. */
+.tg-ring {
+    --ring: var(--slds-g-color-palette-blue-40, #1565c0);
+}
+.tg-ring--done {
+    --ring: var(--slds-g-color-palette-green-50, #2e7d32);
+}
+.tg-ring--conditional {
+    --ring: var(--slds-g-color-palette-orange-40, #bf5d0a);
+}
+
+.tg-badge {
+    background: var(--slds-g-color-palette-blue-40, #1565c0);
+}
+.tg-badge--conditional {
+    background: var(--slds-g-color-palette-orange-40, #bf5d0a);
+}
+
+/* ---- Blocked rows (wire-fraud prerequisite gate, advisory) ----
+   Deliberately NOT the same treatment as .tg-task--critical. Critical means "this step is
+   high-risk"; blocked means "this step cannot start yet". Colouring them alike would let a
+   reader mistake a merely-sequenced item for a deal-sinking one. */
+.tg-task--blocked {
+    background: var(--slds-g-color-surface-container-2, #f3f3f3);
+}
+.tg-task--blocked .tg-subject {
+    color: var(--slds-g-color-neutral-base-60, #706e6b);
+}
+.tg-blocked {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    background: var(--slds-g-color-surface-container-3, #ecebea);
+    color: var(--slds-g-color-neutral-base-30, #514f4d);
+    font-size: var(--slds-g-font-scale-neg-2, 10px);
+    font-weight: var(--slds-g-font-weight-7, 700);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 2px 7px;
+    border-radius: 10px;
+}
+.tg-blocked-icon {
+    --slds-c-icon-color-foreground-default: var(--slds-g-color-neutral-base-30, #514f4d);
+}

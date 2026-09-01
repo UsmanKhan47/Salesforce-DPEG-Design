@@ -180,6 +180,36 @@
  *    ⚠ RESIDUAL WITHIN THE FIX: while B2 is open, a principal without `Transaction_Prereq_Override`
  *    cannot change or remove B3's coordinate. See `refusalFor` for the five narrowings that keep
  *    repair, maintenance, the backfill and administrative work possible.
+ * 4a. ✅ THE TWO-SAVE REOPEN-AND-ERASE IS NOW CLOSED (EXPLOIT C, found in the Phase 2 review while
+ *    this gate was already LIVE). `update {Status='Not Started', Blocked_By__c=null}` then
+ *    `update {Status='Completed'}` slipped every branch, with ordinary Edit access and no override:
+ *    branch (A) declined because the save was LEAVING completion, branch (B) declined on
+ *    `!wasClosed`. Closed by `pastTheGate` (was done AND still done) replacing `wasClosed` in BOTH
+ *    the precedence rule and branch (B) — see the candidate loop in `enforceOnUpdate`.
+ *    ✅ THE THREE-SAVE VARIANT IS A USER-ACCEPTED DECISION (2026-09-01), NOT AN OPEN DEFECT. THIS IS
+ *    THE STANDING ANSWER IF IT IS RAISED AGAIN — do not "fix" it, and do not gate done-row
+ *    maintenance on the override.
+ *    The variant: clear the coordinate on a row that STAYS done (permitted — residual 6 below),
+ *    reopen it (now no coordinate on either side, so not a candidate), complete it. Same end state
+ *    as EXPLOIT C, one more save.
+ *    WHY IT IS ACCEPTED RATHER THAN CLOSED, which is the part that makes this a decision and not a
+ *    shrug — the two outcomes are NOT the same kind of thing:
+ *      • EXPLOIT C let a row whose prerequisite was open reach a COMPLETED state it had not earned.
+ *        That is the Story 28 threat model, and it is closed.
+ *      • This variant operates on a row that was ALREADY LEGITIMATELY COMPLETE — it passed the gate
+ *        when it was completed. Erasing its coordinate destroys the AUDIT SIGNAL (a completed B3
+ *        carrying `Is_Prerequisite_Met__c = false` is the finding
+ *        `scripts/backfill-task-blocked-by.apex` reports), but it completes nothing that was not
+ *        already complete. Evidence loss on a settled row, not an unearned completion.
+ *    THE COST OF CLOSING IT WAS THE DECIDING FACTOR: refusing coordinate changes on done rows too
+ *    would break the backfill's own corrections, the Phase 4 re-link and
+ *    `allowsClearingTheKeyOnAnAlreadyCompleteRow` for every principal without
+ *    `Transaction_Prereq_Override` — i.e. it would make routine maintenance of a completed checklist
+ *    an admin-only operation. (The one-clause form, recorded so nobody has to re-derive it: drop
+ *    `!pastTheGate` from branch (B) and rely on the override for all maintenance.)
+ *    MITIGATION OF RECORD: the FLS lockdown on the identity fields, which removes the UI, list-view,
+ *    Data Loader and REST routes to step 1 and leaves only custom system-mode Apex — a deploy, not a
+ *    data edit. Treat any change to those fields' FLS as a change to this control's threat model.
  * 4b. 🔴 STILL OPEN — RENUMBER THE PREREQUISITE ITSELF (three saves). NOT CLOSED IN CODE, and this
  *    entry is the record of why, not an oversight:
  *      (i)   set B2's OWN `Task_Sequence__c` to 99. B2 carries no `Blocked_By__c` on either side, so
@@ -442,17 +472,21 @@ public with sharing class TaskPrerequisiteService {
         // leave no trace — `Task` field history is not tracked. That is the Story 28 threat model
         // verbatim, so neither is an acceptable residual.
         //
-        // THE RULE THAT CLOSES ALL THREE: **while the gate is still live on a row, the STORED
-        // COORDINATE WINS — BOTH HALVES.** `wasClosed` — the prior record's `IsClosed`, which is
-        // authoritative because it came from the database — decides:
-        //   - row still OPEN  -> resolve `prior ?? new`, for the key AND the deal. The save cannot
-        //     choose its own examiner. (`?? new` matters: an item GAINING its first key or its first
-        //     deal, i.e. the backfill, has no prior half to pin.)
-        //   - row already CLOSED -> resolve `new ?? prior`. It is past the gate; ordinary
-        //     maintenance and the backfill's own corrections must not be refused.
+        // THE RULE THAT CLOSES ALL FOUR: **unless this save leaves the row PAST THE GATE, the
+        // STORED COORDINATE WINS — BOTH HALVES.** `pastTheGate` = the row was done BEFORE the save
+        // (`Trigger.old.IsClosed`, authoritative because it came from the database) AND is still
+        // done AFTER it (`Status` in `COMPLETED_STATUSES`, because the incoming `IsClosed` is not
+        // trustworthy). It decides:
+        //   - NOT past the gate -> resolve `prior ?? new`, for the key AND the deal. The save cannot
+        //     choose its own examiner. Covers an open row, a row being completed, and — the EXPLOIT C
+        //     fix — a row being REOPENED. (`?? new` matters: an item GAINING its first key or its
+        //     first deal, i.e. the backfill, has no prior half to pin.)
+        //   - PAST the gate -> resolve `new ?? prior`. Done before and done after: ordinary
+        //     maintenance, the backfill's own corrections and the Phase 4 re-link must not be
+        //     refused.
         // This is deliberately WIDER than "while the transition is happening": resolving the stored
-        // coordinate on every open row is what also lets `refusalFor` recognise a DISARMING save
-        // (branch B there) at ZERO extra cost — the resolution it needs is already in hand.
+        // coordinate on every not-past-the-gate row is what also lets `refusalFor` recognise a
+        // DISARMING save (branch B there) at ZERO extra cost — the resolution is already in hand.
         List<GateCandidate> candidates = new List<GateCandidate>();
         for (Task t : newList) {
             String priorKey = null;
@@ -474,21 +508,41 @@ public with sharing class TaskPrerequisiteService {
             candidate.record = t;
             candidate.priorKey = priorKey;
             candidate.priorDealId = priorDealId;
-            candidate.wasClosed = wasClosed;
             candidate.entering = isEnteringCompletion(t, oldMap);
+            // 🔴 `pastTheGate` REPLACED A BARE `wasClosed` ON 2026-08-31 (EXPLOIT C, THE FIFTH
+            // SHAPE). "Already past the gate" is NOT a property of the stored record alone — it is a
+            // property of the SAVE. A row that WAS done and is being REOPENED is not past anything;
+            // it is walking back through the gate, and treating it as exempt is what let this work
+            // with ordinary Edit access and no override:
+            //     update new Task(Id = b3, Status = 'Not Started', Blocked_By__c = null); // save 1
+            //     update new Task(Id = b3, Status = 'Completed');                         // save 2
+            // Save 1 slipped EVERY branch: (A) declined because the row was LEAVING completion, not
+            // entering it; (B) declined on `!wasClosed`, false for a row that was closed. Save 2 then
+            // had a blank key on both sides, so the row was not even a candidate — and the validation
+            // rule's `NOT(ISBLANK(BLANKVALUE(new, PRIORVALUE)))` was false for the same reason. Both
+            // halves of the control gone, permanently, with no trace. The precondition is ordinary:
+            // complete B2, complete B3, reopen B2 (unrestricted, because B2 carries no key of its
+            // own).
+            Boolean nowDone = COMPLETED_STATUSES.contains(t.Status);
+            Boolean pastTheGate = wasClosed && nowDone;
             // Non-blank by construction: at least one of the two was non-blank to get here.
-            candidate.survivingKey = wasClosed
+            candidate.survivingKey = pastTheGate
                 ? (String.isNotBlank(t.Blocked_By__c) ? t.Blocked_By__c : priorKey)
                 : (String.isNotBlank(priorKey) ? priorKey : t.Blocked_By__c);
             // 🔴 THE OTHER HALF OF THE COORDINATE, PINNED THE SAME WAY AND FOR THE SAME REASON.
             // `Blocked_By__c` only says `letter|sequence`; the prerequisite is identified by the
             // TRIPLE (deal, letter, sequence), and the deal came off `Trigger.new` until 2026-08-31
             // — so hardening the key half alone left EXPLOIT A wide open (see the bypass list
-            // above). Same precedence rule, same justification: while the gate is live the stored
-            // scope wins, and only a row already past the gate may re-scope itself.
-            candidate.survivingDealId = wasClosed
+            // above). Same precedence rule, same justification.
+            // ⚠ THE PRECEDENCE MUST MOVE WITH THE BRANCH-B GUARD, NOT JUST THE GUARD. Gating branch
+            // B on `pastTheGate` while leaving the precedence on `wasClosed` would still let a
+            // reopen-and-REPOINT (`Status='Not Started', Blocked_By__c='A|1'`) resolve the
+            // attacker's key, stamp `Is_Prerequisite_Met__c = true` on the reopened row, and hand
+            // save 2 a pre-armed flag.
+            candidate.survivingDealId = pastTheGate
                 ? (t.Transaction_Deal__c != null ? t.Transaction_Deal__c : priorDealId)
                 : (priorDealId != null ? priorDealId : t.Transaction_Deal__c);
+            candidate.pastTheGate = pastTheGate;
             candidates.add(candidate);
         }
         if (candidates.isEmpty()) {
@@ -546,8 +600,10 @@ public with sharing class TaskPrerequisiteService {
      *     resolution is the one branch (A) already needed.
      *
      * ⚠ (B) IS DELIBERATELY NARROW, AND EACH NARROWING KEEPS SOMETHING WORKING:
-     *   - `!wasClosed` — an already-complete item is past the gate, so its coordinate stays editable.
-     *     This is what keeps `scripts/backfill-task-blocked-by.apex` and ordinary maintenance working.
+     *   - `!pastTheGate` — an item that was done AND stays done is past the gate, so its coordinate
+     *     stays editable. This is what keeps `scripts/backfill-task-blocked-by.apex`, the Phase 4
+     *     re-link and ordinary maintenance working. ⚠ It is `pastTheGate`, NOT `wasClosed`: a row
+     *     being REOPENED was closed but is not past anything, and exempting it was EXPLOIT C.
      *   - `prerequisite != null` — an UNRESOLVABLE coordinate (`B|99`, a renamed group letter, a deal
      *     whose prerequisite was never fanned out) stays REPAIRABLE. Without this the feature could
      *     brick the very data it depends on, with no route back.
@@ -559,9 +615,24 @@ public with sharing class TaskPrerequisiteService {
      *   - `!hasPrereqOverrideAccess()` — the administrative escape hatch, below.
      *
      * ⚠ THE CONSEQUENCE, STATED SO IT IS NOT MET AS A BUG: while B2 is open, a principal WITHOUT
-     * `Transaction_Prereq_Override` cannot change or remove B3's coordinate. That is the point of an
-     * armed control. Note that branch (A) has NO such exemption and never will — the override
-     * permits maintaining the gate's coordinates, never completing past an open prerequisite.
+     * `Transaction_Prereq_Override` cannot change or remove B3's coordinate on a row that is not
+     * past the gate. That is the point of an armed control.
+     *
+     * 🔴 CORRECTION, 2026-08-31 (EXPLOIT C review). This paragraph used to end: "branch (A) has NO
+     * such exemption and never will — the override permits maintaining the gate's coordinates, never
+     * completing past an open prerequisite." THAT OVERCLAIMED, IN TWO DIRECTIONS, AND IS RETRACTED
+     * RATHER THAN DELETED because it is the kind of sentence a reader trusts:
+     *   - Branch (A) is unexemptible only AS A SINGLE SAVE. It refuses a completion whose coordinate
+     *     resolves to an open prerequisite — but a row whose coordinate has already been REMOVED is
+     *     not a candidate at all, so branch (A) never sees it. "Cannot complete past an open
+     *     prerequisite" is true; "cannot ever reach a completed state while its prerequisite is
+     *     open" is NOT, and the two were being conflated.
+     *   - An OVERRIDE HOLDER can therefore blank the coordinate in one save and complete in the
+     *     next. That is not a leak, it is what "may move a live gate" means and it is what makes the
+     *     M5 mass clear possible — but it is a real consequence of granting the token and must not be
+     *     described as impossible.
+     * What IS unconditional: no single save may complete a row whose surviving coordinate resolves
+     * to an open prerequisite, for any principal, on any path, including `SYSTEM_MODE`.
      *
      * 🔴 CORRECTION, 2026-08-31. This paragraph previously ended: "if the key itself is wrong, note
      * that a wrong key is by definition unresolvable and therefore already exempt." THAT IS FALSE,
@@ -600,7 +671,7 @@ public with sharing class TaskPrerequisiteService {
                         : prerequisite.Subject)
                     + '.';
         }
-        if (!candidate.wasClosed && !met && prerequisite != null
+        if (!candidate.pastTheGate && !met && prerequisite != null
                 && gateCoordinatesChanged(candidate)
                 && !TransactionActionPermissionService.hasPrereqOverrideAccess()) {
             return MSG_DISARM;
@@ -662,14 +733,22 @@ public with sharing class TaskPrerequisiteService {
         String priorKey;
         /** `Transaction_Deal__c` as STORED, from `Trigger.old`. Null when the item had no deal. */
         Id priorDealId;
-        /** The stored record's `IsClosed` — authoritative, unlike the incoming record's. */
-        Boolean wasClosed;
+        /**
+         * The row was done BEFORE this save AND is still done AFTER it. THE ONLY STATE IN WHICH THIS
+         * SAVE MAY RE-AIM THE GATE AT SOMETHING ELSE.
+         *
+         * 🔴 NOT the same as `wasClosed`, and the difference is EXPLOIT C. A row being REOPENED was
+         * closed but is not past anything — it is walking back through the gate, and exempting it let
+         * a two-save reopen-and-erase remove the coordinate with ordinary Edit access. Anywhere this
+         * class asks "is this row past the gate?", it must ask THIS, never `wasClosed`.
+         */
+        Boolean pastTheGate;
         /** Open -> completed transition, per `isEnteringCompletion`. */
         Boolean entering;
-        /** The key half of the coordinate: stored-wins while the row is open. Never blank. */
+        /** The key half of the coordinate: stored-wins unless the row is past the gate. Never blank. */
         String survivingKey;
         /**
-         * The scope half of the coordinate: stored-wins while the row is open. May be null (an
+         * The scope half of the coordinate: stored-wins unless past the gate. May be null (an
          * item with no deal on either side, which resolves to nothing and fails closed).
          * 🔴 `survivingKey` AND `survivingDealId` ARE ONE COORDINATE AND MUST MOVE TOGETHER.
          * Hardening either alone leaves the other as the bypass — that is literally how EXPLOIT A

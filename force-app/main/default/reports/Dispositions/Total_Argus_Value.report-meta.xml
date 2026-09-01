@@ -1,5 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Report xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        DISPOSITION GAP CLOSURE TRANCHE 2 (agent-output/disposition-gap-closure-t2-design.md, S2).
+        NAME/CONTENT MISMATCH, NOTED AND DEFERRED. This report is titled "Total Argus Value" but
+        groups on Property_Asset__c.Sell_Readiness_Band__c, which as of Item 1a
+        (force-app/main/default/objects/Property_Asset__c/fields/Sell_Readiness_Band__c.field-meta.xml)
+        no longer touches Argus at all - it now derives from Peak_Sell_Date__c (days-to-peak).
+        NOT renamed here: a rename risks the Disposition_Dashboard_Junior reference to this
+        report, and the Gate 1 decision deliberately kept Tranche 2 to its five listed items. Seen,
+        not missed - a future rename/retitle pass should account for this.
+    -->
     <columns>
         <aggregateTypes>Sum</aggregateTypes>
         <field>Property_Asset__c.Argus_Value__c</field>

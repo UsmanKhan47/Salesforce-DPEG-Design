@@ -74,6 +74,26 @@
  *   (no acquisition-side source at all — Argus/Yardi), plus the three named above.
  *   Sell_Readiness_Band__c, Readiness_Score__c and Property_Name__c are FORMULAS.
  *
+ *   ✅ THE TWO SENTENCES ABOVE SURVIVED THE 2026-08-31 BAND REPOINT UNCHANGED AND ARE **NOT**
+ *   RETRACTED — checked, not assumed. Tranche 2 item 1 moved `Sell_Readiness_Band__c` off
+ *   `Argus_Signal__c` onto days-to-peak, and `Readiness_Score__c` onto the band field
+ *   (`IF(Sell_Readiness_Band__c = "Sell now", 1, 0)`), so the two can no longer drift apart. This
+ *   list never claimed an Argus derivation for either — it says only that they are formulas, which
+ *   is still true — so there is nothing here to correct. (A design document characterised this
+ *   site as claiming the Argus derivation; it does not. Recorded so the next sweep does not come
+ *   looking for a correction that was never owed.) `Argus_Signal__c` stays exactly where it is in
+ *   the DELIBERATELY BLANK list: it is kept as a Property-Management-maintained input with no
+ *   derived consumer, still filtered and columned by four Disposition reports.
+ *
+ *   ⚠ ONE REAL CONSEQUENCE FOR **THIS** METHOD, AND IT IS NEW RATHER THAN WRONG. The list above
+ *   leaves `Peak_Sell_Date__c` blank, and `Sell_Readiness_Band__c` now READS `Peak_Sell_Date__c`.
+ *   So an asset minted by this trigger bands `Hold - Not yet` from the moment it exists, and stays
+ *   there until Property Management supplies a peak date. That is correct — a just-acquired asset
+ *   is not a sell candidate — and it is also why `PropertyAssetSelector`'s sell-candidate filter
+ *   (`Peak_Sell_Date__c != null`) keeps these assets off the Sell Meter entirely rather than
+ *   showing a portfolio of freshly-bought Holds. Do not "fix" it by seeding a peak date here:
+ *   there is no acquisition-side source for one, which is why it is on the blank list.
+ *
  * ── IDEMPOTENCY (D27.3, mandatory) ──
  * Keyed on `Property__c` ALONE, with no `Status__c` filter, so a property never acquires a
  * second asset — see `PropertyAssetSelector.selectByPropertyIds` for why a re-acquisition is

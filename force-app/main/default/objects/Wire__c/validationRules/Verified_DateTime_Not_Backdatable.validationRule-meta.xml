@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT, NOT IN <description>. ValidationRule.Description is capped
+        at 255 characters and the comment must sit INSIDE the root element - a comment placed
+        ABOVE <ValidationRule> breaks `sf` deploy at conversion with a misleading "unable to find
+        matching parent xml file" error.
+
+        DISPOSITION GAP CLOSURE TRANCHE 1, ITEM 12b (agent-output/disposition-gap-closure-t1-design.md
+        §3 Item 12, decision D-12, settled at Gate 1 2026-08-31). THE FIRST VALIDATION RULE ON
+        Wire__c - this object has carried zero until now.
+
+        Pairs with a permission-set change (item 12a, owned by salesforce-solution-architect in a
+        separate consolidated pass): DPEG_Disposition_Edit's Wire__c.Verified_DateTime__c grant
+        flips editable true -> false. FLS alone was rejected as insufficient (D-12 = BOTH): FLS
+        does not stop a data loader, an admin, or a future AccessLevel.USER_MODE refactor, and a
+        validation rule STILL evaluates under SYSTEM_MODE - the same reasoning this repo already
+        relies on for item 2's formula-over-flow choice.
+
+        =====================================================================================
+        WHY EACH CLAUSE - TRACED AGAINST WireService LINE BY LINE, NOT GUESSED.
+        =====================================================================================
+        OR(ISNEW(), ISCHANGED(Verified_DateTime__c))
+            ISCHANGED is FALSE on insert, and WireService creates a new Wire__c and stamps
+            Verified_DateTime__c in the SAME save - an insert-only backdate would slip straight
+            through an ISCHANGED-only rule. Disposition__c.Wire_Complete_Before_Sale_Closes is the
+            in-repo precedent for this exact OR(ISNEW(), ISCHANGED(...)) pair. It also means this
+            rule CANNOT trap an existing wire: a wire verified last week can still be edited for
+            any other reason without retriggering this clause.
+
+        NOT(ISBLANK(Verified_DateTime__c))
+            WireService:59-60 CLEARS this field to null when the verbal-verification flag is
+            turned back off. Without this clause, the service's own legitimate clear-to-null
+            would be refused by the rule meant to stop tampering with a populated value, not
+            block removing one.
+
+        Verified_DateTime__c < NOW() - tolerance / > NOW() + tolerance
+            The backdate (and, symmetrically, the forward-date) this item exists to stop.
+
+        THE TOLERANCE ITSELF - LOAD-BEARING, NOT COSMETIC.
+            WireService writes Datetime.now() and this rule evaluates AFTER that write completes,
+            so a strict < NOW() / > NOW() comparison with zero tolerance would refuse the
+            service's OWN stamp on every single save - the rule would block the exact behavior it
+            exists to protect. 0.0007 day ~= 1 minute (0.0007 * 24 * 60 = 1.008 minutes),
+            confirmed per D-12's recommendation. If clock skew or callout latency between the
+            Apex NOW() and the validation engine's evaluation NOW() ever exceeds this window in
+            practice, widen the constant here - do not remove the guard.
+
+        =====================================================================================
+        SHAPES CONSIDERED AND REJECTED - NOT TO BE RE-PROPOSED.
+        =====================================================================================
+        "Refuse any re-stamp: ISCHANGED + NOT(ISBLANK(PRIORVALUE(...)))" - REJECTED. This would
+        also refuse WireService's own legitimate clear-to-null-then-reset cycle, which is
+        documented, intentional behavior.
+        "Just remove the FLS editable grant, no VR" - REJECTED. FLS does not stop a data loader,
+        an admin with Modify All Data, or code running at AccessLevel.USER_MODE that still passes
+        the FLS check for a profile that DOES hold edit (a future refactor risk, not just a
+        current-state one). A validation rule still evaluates under SYSTEM_MODE, which is exactly
+        why item 2 on this same tranche chose a formula over a flow.
+
+        =====================================================================================
+        VERIFIED THIS RULE DOES NOT BREAK WireService OR THE UI PATH (the two things it touches).
+        =====================================================================================
+        WireService.saveWire:62 performs a bare `upsert w;` - ordinary Apex DML runs in system
+        context for FLS but NOT for validation rules, so this rule DOES still evaluate on that
+        write; the tolerance window above is precisely what keeps the service's own stamp legal.
+        WireSelector.selectRequiredById is WITH USER_MODE and selects this field deliberately
+        ("narrowing that selector field set would reintroduce a System.SObjectException") - the
+        item 12a permission-set change keeps readable=true, so that read is unaffected by either
+        change.
+        lwc/wireVerification calls saveWire IMPERATIVELY, not via lightning-record-edit-form. Had
+        it used the form, an editable=false field in the payload would be FLS-checked and DROPPED
+        SILENTLY WITH A SUCCESS TOAST (a live failure mode elsewhere in this repo) - noted here
+        because it is why this was checked, even though it does not apply to this component.
+        Wire_Verification_Rollup reads this field and writes the PARENT disposition - unaffected
+        by a rule scoped to Wire__c itself.
+
+        ✅ No existing row is frozen by this rule - the ISCHANGED guard means a wire whose
+        Verified_DateTime__c is already in the past saves normally for any other reason.
+
+        errorDisplayField -> Verified_DateTime__c, the field the rule actually gates.
+
+        FLS: item 12a (editable=false in DPEG_Disposition_Edit) is applied in the consolidated
+        permission-set pass, not this file.
+
+        Risk: MEDIUM per the design doc - the naive shapes considered above each break
+        WireService in a different way; the tolerance window is load-bearing; this is Wire__c's
+        first validation rule so there is no in-object precedent to fall back on if the tolerance
+        needs adjusting later.
+    -->
+    <fullName>Verified_DateTime_Not_Backdatable</fullName>
+    <active>true</active>
+    <description>Blocks setting Wire.Verified_DateTime__c to a value more than ~1 minute in the past or future, to stop backdating/forward-dating a wire verification. Does not block clearing the field to null or WireService&apos;s own contemporaneous stamp.</description>
+    <errorConditionFormula>AND(
+    OR(ISNEW(), ISCHANGED(Verified_DateTime__c)),
+    NOT(ISBLANK(Verified_DateTime__c)),
+    OR(
+        Verified_DateTime__c &lt; NOW() - 0.0007,
+        Verified_DateTime__c &gt; NOW() + 0.0007
+    )
+)</errorConditionFormula>
+    <errorDisplayField>Verified_DateTime__c</errorDisplayField>
+    <errorMessage>The wire verification timestamp cannot be backdated or forward-dated. It must reflect approximately when the verification actually happened.</errorMessage>
+</ValidationRule>

@@ -88,7 +88,29 @@ function tabXml(motif) {
 }
 
 // ---- data model -------------------------------------------------------------
-const ASSET = ['Retail', 'C-Store', 'Land', 'Industrial', 'Office', 'Multifamily', 'Storage', 'Mixed-Use'];
+// ---- Asset_Type__c, ONE source of truth for all three objects (Gap 1, 2026-08-31) -----------
+//
+// 🔴 THIS SPLIT IS THE FIX FOR A REAL DEFECT. Until 2026-08-31 there was a single `ASSET`
+// constant used for Property__c and Lead, and the Opportunity list was HARDCODED INLINE further
+// down this file with a sixth, different set that spelled Retail as 'Retail Strip'. That inline
+// list is where the divergence came from: every org rebuild regenerated an Opportunity picklist
+// that no Lead value could satisfy, so LeadConvertService's describe guard silently dropped the
+// asset type on every converted deal and the acquisition funnel reported null for all of them.
+// If you collapse these back into one constant, or re-inline a list at a call site, you rebuild
+// the defect.
+//
+// The relationship is a SUBSET one and must stay that way: Lead == Opportunity, and Property__c
+// is those plus two asset-management-only types. LeadConvertService copies Lead -> Opportunity
+// AND Lead -> Property__c, so `ASSET_CORE ⊆ ASSET_PROPERTY` is what keeps both writes total.
+// The old constant was ALSO stale in its own right — it carried C-Store and Storage but had
+// never gained Hospitality or Medical Office, which both Lead and Property__c have in the org.
+const ASSET_CORE = [
+  'Retail', 'Land', 'Industrial', 'Office', 'Multifamily', 'Mixed-Use', 'Hospitality', 'Medical Office',
+];
+// C-Store and Storage exist only on Property__c: they are asset-management categories, and no
+// inbound broker email / Lead can ever produce them. Adding them to ASSET_CORE would create two
+// Opportunity values no automation could ever write.
+const ASSET_PROPERTY = [...ASSET_CORE, 'C-Store', 'Storage'];
 const objects = {
   Property__c: {
     label: 'Property', plural: 'Properties', nameType: 'Text', nameLabel: 'Property Name', motif: 'Custom20: Asset',
@@ -98,7 +120,7 @@ const objects = {
       { name: 'State__c', label: 'State', type: 'Text', length: 50 },
       { name: 'Zip__c', label: 'Zip', type: 'Text', length: 20 },
       { name: 'Parcel_ID__c', label: 'Parcel ID', type: 'Text', length: 50 },
-      { name: 'Asset_Type__c', label: 'Asset Type', type: 'Picklist', values: ASSET },
+      { name: 'Asset_Type__c', label: 'Asset Type', type: 'Picklist', values: ASSET_PROPERTY },
       { name: 'Market_Cap_Rate__c', label: 'Market Cap Rate', type: 'Percent', description: 'CoStar via ASB (stub)' },
       { name: 'Market_Rent_PSF__c', label: 'Market Rent PSF', type: 'Currency' },
       { name: 'Occupancy_Rate_Market__c', label: 'Occupancy Rate Market', type: 'Percent' },
@@ -203,7 +225,7 @@ const standardFields = {
     { name: 'Guidance_Cap_Rate__c', label: 'Guidance Cap Rate', type: 'Percent' },
     { name: 'My_Price__c', label: 'My Price', type: 'Currency' },
     { name: 'My_Cap_Rate__c', label: 'My Cap Rate', type: 'Percent' },
-    { name: 'Asset_Type__c', label: 'Asset Type', type: 'Picklist', values: ASSET },
+    { name: 'Asset_Type__c', label: 'Asset Type', type: 'Picklist', values: ASSET_CORE },
     { name: 'Property_Address__c', label: 'Property Address', type: 'Text' },
     { name: 'Broker_First__c', label: 'Broker First', type: 'Text' },
     { name: 'DPEG_First__c', label: 'DPEG First', type: 'Lookup', ref: 'User', relName: 'DPEG_First_Leads' },
@@ -218,7 +240,13 @@ const standardFields = {
   Opportunity: [
     { name: 'Deal_Status__c', label: 'Deal Status', type: 'Picklist', values: ['Evaluating', 'Working', 'Countered', 'Killed', 'On Hold', 'LOI Signed', 'Contract Signed', 'Asset Under Management'] },
     { name: 'Deal_Category__c', label: 'Deal Category', type: 'Picklist', values: [{ label: 'Live', default: true }, 'Dead', 'Closed'] },
-    { name: 'Asset_Type__c', label: 'Asset Type', type: 'Picklist', values: ['Retail Strip', 'Office', 'Industrial', 'Land', 'Multifamily', 'Mixed-Use'] },
+    // 🔴 ASSET_CORE, NOT AN INLINE LIST, AND NOT ASSET_PROPERTY. This line held
+    // ['Retail Strip', 'Office', 'Industrial', 'Land', 'Multifamily', 'Mixed-Use'] until
+    // 2026-08-31 and WAS the root cause of Gap 1 — see the constant's header near the top of this
+    // file. It must stay pointed at the SAME constant as the Lead field below/above it: a Lead
+    // value the Opportunity picklist lacks is dropped silently at conversion, and a value the
+    // Opportunity RECORD TYPES lack rolls the whole conversion chunk back.
+    { name: 'Asset_Type__c', label: 'Asset Type', type: 'Picklist', values: ASSET_CORE },
     { name: 'Asking_Price__c', label: 'Asking Price', type: 'Currency' },
     { name: 'My_Price__c', label: 'My Price', type: 'Currency' },
     { name: 'My_Cap_Rate__c', label: 'My Cap Rate', type: 'Percent' },

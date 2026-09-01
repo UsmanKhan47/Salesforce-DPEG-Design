@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Workflow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY. A comment placed ABOVE <Workflow>
+        breaks `sf` deploy at source conversion with a misleading "unable to find matching parent
+        xml file" error.
+
+        NEW FILE, 2026-08-31 (Tranche 3, item 2a). NDA__c had no workflow metadata before this
+        change.
+
+        THREE FIELD UPDATES, NO WORKFLOW RULE. All three are fired ONLY by
+        approvalProcesses/NDA__c.NDA_Issue_Approval as its finalApprovalActions, in one block, in
+        the SAME transaction. Do not add a <rules> element - an active rule writing Status__c to
+        'Approved' would advance any disposition NDA on an ordinary edit, with no approval at all.
+        This is the same load-bearing prohibition BOV_Submission__c.workflow-meta.xml and
+        Disposition_Offer__c.workflow-meta.xml both carry for their own approval-fired updates.
+
+        🔴 DEPLOY ORDER - LOAD-BEARING, TWO DIRECTIONS.
+          1. THIS FILE MUST LAND BEFORE approvalProcesses/NDA__c.NDA_Issue_Approval, which fails
+             to deploy if a field update it names in finalApprovalActions does not yet exist - the
+             same note every other approval file in this repo carries for its own workflow file.
+          2. objects/NDA__c/recordTypes/Disposition_NDA.recordType-meta.xml MUST ALREADY BE LIVE
+             IN THE ORG before Set_NDA_Status_Approved ever FIRES (not before this file deploys -
+             the field update's literal value is not validated against a record type's restricted
+             subset at deploy time, only at DML time). Status__c is `<restricted>true</restricted>`
+             and this repo has MEASURED FOUR TIMES that a restricted picklist's record-type subset
+             IS enforced by Apex DML (Acquisition_NDA's 2026-08-20 correction; the 'Review' and
+             'Not Sent' incidents on 2026-08-25 and 2026-08-27; LOI__c.Stage__c and
+             Contract_Review__c.Negotiation_Status__c elsewhere). 'Approved' is on Disposition_NDA
+             (see that record type's file, last confirmed there 2026-08-25) and is NOT on
+             Acquisition_NDA. The entryCriteria in NDA_Issue_Approval (Is_Disposition_NDA__c
+             equals True) is what keeps this write reachable only where the value exists - see
+             that file's own comment for why the criterion is required despite that boundary.
+             🔴 THIS AGENT DID NOT RE-VERIFY THE LIVE RECORD-TYPE SUBSET AGAINST usman-dpeg
+             (design gate G-8, UI API picklist-values endpoint for record type
+             012iw0000009yeaAAA - a RecordType retrieve STRIPS picklistValues and cannot be used
+             for this check). The repo file was read and, as of this change, lists Prepare and
+             Approved both present. Re-run G-8 immediately before this file's FIRST live approval
+             fires, not merely before it deploys - Setup-side removal of a value on this record
+             type has already happened twice in eleven days with no repo signal until someone
+             looked.
+
+        WHY A WORKFLOW FIELD UPDATE AND NOT APEX. NdaTrigger is `before insert, before update`
+        ONLY (see that trigger's own header, "WHY before insert, before update AND NOTHING ELSE") -
+        there is no after-update context on NDA__c to hang an approval-triggered write from, and
+        this design deliberately does not add one. A workflow field update fired from
+        finalApprovalActions needs no trigger context at all.
+
+        WHAT EACH ACTION WRITES, AND WHY ALL THREE FIRE TOGETHER, NOT JUST ONE. NDA__c already
+        holds two representations of "a principal approved this NDA", deliberately (see
+        objects/NDA__c/fields/Principal_Approved__c.field-meta.xml's own comment): Status__c =
+        'Approved' is the LIFECYCLE POSITION that drives the Path (a picklist value, no timestamp,
+        no audit trail); Principal_Approved__c + Principal_Approved_Date__c is the MACHINE-WRITTEN
+        AUDIT FACT (a workflow field update cannot capture WHO approved - that is deliberately left
+        to ApprovalAuditService's callers elsewhere in this repo, not attempted here). Both T1
+        fields already carry read FLS in DPEG_Disposition_View and DPEG_Disposition_Edit
+        (editable=false in both - approval-written facts are not analyst-editable), so no
+        permission-set change is needed for these three field updates to be visible once fired.
+
+        Principal_Approved_Date__c is stamped with a FORMULA field update, TODAY(), per Gate 1
+        decision D-6 (the field stays Date, not DateTime - the precise timestamp already exists on
+        ProcessInstance.CompletedDate and is surfaced by c/dispositionApprovalHistory, so a second,
+        more precise field would duplicate information the tracker already shows).
+        🔴 `<operation>Formula</operation>` ON A WorkflowFieldUpdate IS NOT EXERCISED ANYWHERE ELSE
+        IN THIS REPO - every existing NDA__c/BOV_Submission__c/Disposition_Offer__c/Disposition__c
+        field update uses `<operation>Literal</operation>`. This is a standard, well-documented
+        Metadata API shape (unlike the ApprovalProcess initialSubmissionActions/recallActions
+        elements that needed a first-principles proof in this repo on 2026-08-21), so it is used
+        here without a separate gate - but it has not been check-only validated against usman-dpeg
+        by this agent, because no deploy was run while building this file. Confirm on first deploy.
+
+        Set_NDA_Principal_Approved uses <literalValue>1</literalValue> for TRUE, matching this
+        repo's own convention for a Checkbox WorkflowFieldUpdate (see
+        Clear_Broker_Approval_Pending / Set_Broker_Approval_Pending in
+        workflows/BOV_Submission__c.workflow-meta.xml, which use 0/1, not true/false).
+
+        NO initialSubmissionActions, NO finalRejectionActions, NO recallActions (Gate 1 decisions
+        D-10/D-11) - this workflow file therefore has exactly three field updates and nothing
+        else. A rejected NDA stays at Status__c = 'Prepare' with nothing written by this file; the
+        AdminOnly lock releases on its own via the platform's normal rejection behaviour, and the
+        record can be corrected and resubmitted.
+    -->
+    <fieldUpdates>
+        <fullName>Set_NDA_Status_Approved</fullName>
+        <description>Final approval action of NDA_Issue_Approval. Sets Status to Approved, the lifecycle position driving the Disposition_NDA Path. Fires with the two Principal_Approved field updates. See this file's XML comment for deploy order.</description>
+        <field>Status__c</field>
+        <literalValue>Approved</literalValue>
+        <name>Set NDA Status Approved</name>
+        <notifyAssignee>false</notifyAssignee>
+        <operation>Literal</operation>
+        <protected>false</protected>
+        <reevaluateOnChange>false</reevaluateOnChange>
+    </fieldUpdates>
+    <fieldUpdates>
+        <fullName>Set_NDA_Principal_Approved</fullName>
+        <description>Final approval action of NDA_Issue_Approval. Sets audit fact Principal_Approved__c to TRUE. Distinct from Status__c = 'Approved', the lifecycle position - see Principal_Approved__c's field comment for why NDA__c carries both.</description>
+        <field>Principal_Approved__c</field>
+        <literalValue>1</literalValue>
+        <name>Set NDA Principal Approved</name>
+        <notifyAssignee>false</notifyAssignee>
+        <operation>Literal</operation>
+        <protected>false</protected>
+        <reevaluateOnChange>false</reevaluateOnChange>
+    </fieldUpdates>
+    <fieldUpdates>
+        <fullName>Set_NDA_Principal_Approved_Date</fullName>
+        <description>Final approval action of NDA_Issue_Approval. Stamps Principal_Approved_Date__c with TODAY() - Date, not DateTime, per decision D-6. Paired with Principal_Approved__c; precise timestamp already on ProcessInstance.CompletedDate.</description>
+        <field>Principal_Approved_Date__c</field>
+        <formula>TODAY()</formula>
+        <name>Set NDA Principal Approved Date</name>
+        <notifyAssignee>false</notifyAssignee>
+        <operation>Formula</operation>
+        <protected>false</protected>
+        <reevaluateOnChange>false</reevaluateOnChange>
+    </fieldUpdates>
+</Workflow>

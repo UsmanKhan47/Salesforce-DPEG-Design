@@ -295,9 +295,33 @@ private class BovPreferredBrokerServiceTest {
         BOV_Submission__c current = preferredBov(d.Id);
         insert current;
         undelete olderPreferred;
+        // ══════════════════════════════════════════════════════════════════════════════════════
+        // ⚠ ASSERTION MESSAGE RETRACTED IN PLACE 2026-08-31 (Tranche 1 code review, W-3 — this
+        //   file was missed by the D-5 sweep of the same day).
+        // ══════════════════════════════════════════════════════════════════════════════════════
+        //     RETRACTED: "If BovSubmissionTrigger ever gains an after-undelete context this line
+        //     fails FIRST and says why."
+        //
+        // IT ALREADY HAS ONE, since 2026-08-31 (D-5), and this line did NOT start failing —
+        // so the message as written would have sent the next reader looking for a regression that
+        // is not there. The context routes `DispositionCounterRollupService` and nothing else, and
+        // that service is structurally incapable of collapsing this fixture: it never reads
+        // `Submission_Status__c` or `Is_Preferred_Broker__c`, it only counts rows.
+        // WHAT THE FIXTURE ACTUALLY DEPENDS ON, AND WHAT IS STILL TRUE — two different reasons,
+        // deliberately not merged:
+        //   - `BovSubmissionSelectionGuardService` is BEFORE-context and the platform has no
+        //     `before undelete` at all, so it cannot run on a restore however the trigger is wired.
+        //   - `BovPreferredBrokerService.retireReplacedPreferred` (this service) and
+        //     `BovAutoSelectionService.reselect` are AFTER-context — routed from `afterInsert` and
+        //     `afterUpdate`, NOT from `afterUndelete`. Their absence here is a DECISION (standing
+        //     rule at `BovSubmissionTriggerHandler.afterUndelete`), not a platform guarantee, and
+        //     one added line would revoke it. That is why this comment names the method rather
+        //     than saying "before-context service", which would be wrong about this class.
         Assert.areEqual(2, stateOf(d.Id).size(),
-            'PREMISE: two preferred rows exist. If BovSubmissionTrigger ever gains an '
-            + 'after-undelete context this line fails FIRST and says why.');
+            'PREMISE: two preferred rows exist. A 1 here means something that RE-DECIDES the '
+            + 'preferred slot was routed into BovSubmissionTrigger.afterUndelete — the response '
+            + 'counter that lives there today cannot do that. Read the standing rule at '
+            + 'BovSubmissionTriggerHandler.afterUndelete before treating this as a service defect.');
 
         Test.startTest();
         // An ordinary edit that touches NEITHER the preferred flag NOR any auto-selection change
@@ -546,14 +570,69 @@ private class BovPreferredBrokerServiceTest {
         Integer dmlUsed = Limits.getDmlStatements() - dmlBefore;
         Test.stopTest();
 
-        Assert.isTrue(dmlUsed <= 9,
+        // ══════════════════════════════════════════════════════════════════════════════════════
+        // 🔴 RE-DERIVED 2026-08-31 (Tranche 1 item 7). WAS `<= 9` DML / `<= 12` SOQL.
+        // ══════════════════════════════════════════════════════════════════════════════════════
+        // `DispositionCounterRollupService` (Disposition__c.Responses_Received__c) now runs TWICE
+        // PER CHUNK on this path: once in `afterInsert` for the arriving rows, once in
+        // `afterDelete` because the retirement deletes the outgoing preferred row. The
+        // `afterUpdate` on the selection write is free — the `Disposition__c` lookup did not move,
+        // so the service returns before any SOQL.
+        //   ⇒ +2 SOQL and +2 DML per chunk; TWO chunks ⇒ +4 each.
+        //
+        // ══════════════════════════════════════════════════════════════════════════════════════
+        // 🔴 ARITHMETIC CORRECTED 2026-08-31 (Tranche 1 code review, W-8). SAME DEFECT, SAME DAY,
+        //    IN `BovAutoSelectionServiceTest.bulk251PreferredOnOneDisposition_retiresAllButThe
+        //    Newest` — the two comments were written together and were wrong together.
+        // ══════════════════════════════════════════════════════════════════════════════════════
+        //     RETRACTED: "DERIVED: DML 13, SOQL 16. The bounds below carry one statement of
+        //     headroom over each."
+        //
+        // WHAT WAS WRONG: 13 was reached as 9 + 4, and 9 was the previous BOUND rather than a
+        // previous derived VALUE. Adding a term to a bound and labelling the sum "DERIVED"
+        // launders the old slack into the new number and then spends it again. ⚠ THE DIRECTION IS
+        // SAFE — `isTrue(x <= N)` cannot go red for an N that is too large — WHICH IS PRECISELY
+        // WHY NO TEST RUN WOULD EVER HAVE CAUGHT IT.
+        //
+        // THE DML BASE, AND WHY IT IS A RANGE RATHER THAN A NUMBER. This file has no per-chunk
+        // term list of its own; the only one it ever had is the old assertion message below —
+        // "at most FOUR per chunk (retirement history insert, retirement delete, the
+        // delete-cascade re-rank, the selection write)" — giving 1 + 4×2 = 9, i.e. the old bound
+        // with ZERO headroom. Its sibling's method header
+        // (`BovAutoSelectionServiceTest.bulk251PreferredOnOneDisposition_...`) calls the third of
+        // those four "normally free, because the survivor is already correct by then", giving
+        // 1 + 3×2 = 7 and making the old 9 a bound with TWO of slack. The two readings have never
+        // been reconciled against a run.
+        //     new, counting the re-rank      13   ⇒ the 14 below carries ONE
+        //     new, re-rank free (sibling)    11   ⇒ the 14 below carries THREE
+        // 14 stands as the safe upper bound of both readings, and the slack is DECLARED here
+        // rather than hidden inside a number that calls itself derived. Do not tighten it to 12 on
+        // the strength of a comment; tighten it on the strength of a run.
+        //
+        // 🔴 THE SOQL SIDE IS NOT DERIVED AND CANNOT BE. The old bound of 12 has no per-chunk
+        // breakdown anywhere in this file or its sibling — it was a bare number carried forward.
+        // 12 + 4 = 16 and the 17 below therefore rest on an unverified base: a bound, not a
+        // derivation. ⚠ WHOEVER FIRST RUNS THIS TEST SHOULD RECORD THE ACTUAL `queriesUsed` AND
+        // REPLACE THIS BOUND WITH A TERM LIST.
+        //
+        // ⚠ STANDING CONSTRAINT FOR EVERY FIGURE IN THIS BLOCK: DERIVED FROM SOURCE, NEVER
+        // MEASURED. Nothing in this tranche has been compiled, deployed or run.
+        // ⚠ 🔴 THE "COVERS BOTH DISPOSITIONS AT ONCE" CLAIM IS THE ONE THIS TEST EXISTS FOR AND IT
+        // IS UNCHANGED — AND THE COUNTER IS THE SAME SHAPE. Its aggregate is keyed on the whole
+        // `Set<Id>` of parents and its write is ONE `Database.update` for all of them, so two
+        // dispositions cost exactly what one does. If these numbers ever scale with the number of
+        // DISPOSITIONS rather than chunks, that is the defect, not the bound.
+        Assert.isTrue(dmlUsed <= 14,
             '🔴 CONSTANT PER CHUNK, NOT PER RECORD, AND IT COVERS BOTH DISPOSITIONS AT ONCE. ONE '
-            + 'for the insert plus at most FOUR per chunk (retirement history insert, retirement '
-            + 'delete, the delete-cascade re-rank, the selection write). A per-disposition or '
-            + 'per-record write would read in the hundreds and exhaust the 150-statement limit. '
-            + 'DML used: ' + dmlUsed);
-        Assert.isTrue(queriesUsed <= 12,
-            'and the query budget is per chunk too. Queries used: ' + queriesUsed);
+            + 'for the insert plus at most SIX per chunk (retirement history insert, retirement '
+            + 'delete, the delete-cascade re-rank, the selection write, and the '
+            + 'Responses_Received__c recompute in BOTH afterInsert and afterDelete). A '
+            + 'per-disposition or per-record write would read in the hundreds and exhaust the '
+            + '150-statement limit. DML used: ' + dmlUsed);
+        Assert.isTrue(queriesUsed <= 17,
+            'and the query budget is per chunk too — including the two Responses_Received__c '
+            + 'aggregates added 2026-08-31, each keyed on the whole Set<Id> of parents. '
+            + 'Queries used: ' + queriesUsed);
 
         for (Disposition__c d : new List<Disposition__c>{ a, b }) {
             List<BOV_Submission__c> survivors = new List<BOV_Submission__c>(

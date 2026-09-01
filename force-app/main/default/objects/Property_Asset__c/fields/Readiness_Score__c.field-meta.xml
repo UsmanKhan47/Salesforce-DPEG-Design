@@ -1,8 +1,28 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        DISPOSITION GAP CLOSURE TRANCHE 2, ITEM 1b (agent-output/disposition-gap-closure-t2-design.md
+        §3 Item 1b; Gate 1 decision D-2, 2026-08-31). Repointed from
+        IF(ISPICKVAL(Argus_Signal__c, "Sell Now"), 1, 0) to derive from
+        Sell_Readiness_Band__c (this folder's Sell_Readiness_Band__c.field-meta.xml, item 1a)
+        INSTEAD OF re-deriving the day-count rule independently. One definition, structurally
+        incapable of drifting from the band - the same property SellMeterService.bandForPeak was
+        created to guarantee on the Apex side. MUST DEPLOY AFTER Sell_Readiness_Band__c - this
+        formula references it.
+
+        Meaning changes from "count of Argus-Sell-Now" to "count of GREEN (days-to-peak <= 30)".
+        That IS the intended effect of A3, and it is a visible number change on the dashboard:
+        Dispositions/Sell_Readiness_By_Type sums this field into the "Sell Readiness by Property
+        Type" table (design P-14). Retiring/blanking this field instead was REFUSED - it would
+        silently empty that live dashboard column, and reports do not block deletion, they break
+        silently.
+
+        <type>Number</type>, precision 18, scale 0 and BlankAsZero are UNCHANGED - only <formula>
+        moved.
+    -->
     <fullName>Readiness_Score__c</fullName>
     <externalId>false</externalId>
-    <formula>IF(ISPICKVAL(Argus_Signal__c, &quot;Sell Now&quot;), 1, 0)</formula>
+    <formula>IF( Sell_Readiness_Band__c = &quot;Sell now&quot;, 1, 0 )</formula>
     <formulaTreatBlanksAs>BlankAsZero</formulaTreatBlanksAs>
     <label>Readiness Score</label>
     <precision>18</precision>

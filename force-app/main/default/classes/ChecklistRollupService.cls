@@ -52,12 +52,41 @@
  * Transaction level ONLY where `Checklist_Fanned_Out__c = true`, which is false for every deal in
  * the org until the Phase 4 migration deliberately sets it. The checklist level (`Items_*`) is
  * always written, because no other mechanism touches it.
+ * 🔴 THE GUARD IS ONE-SIDED, AND THAT IS A KNOWN, UNCLOSED DESIGN COLLISION - NOT A CLAIM THAT THE
+ * TWO MODELS ARE SAFELY SEPARATED. It stops the CHECKLIST side writing to a deal the Task model
+ * still owns. NOTHING STOPS THE TASK SIDE. `TaskRollupService` recomputes all four fields from
+ * `Task` rows on any checklist-Task save, for ANY deal, including one whose
+ * `Checklist_Fanned_Out__c` is already true. Today that is harmless because no production deal has
+ * the flag set; at Phase 4 step M1 it stops being harmless, because both models are live on the
+ * same deal and the LAST WRITER WINS non-deterministically. The M2 reconciliation is supposed to
+ * prove the two agree before cutover, but "supposed to" is not a mechanism.
+ * THE SMALLEST CORRECT TIEBREAK, WHEN IT IS TIME: teach `TaskRollupService` to skip deals whose
+ * `Checklist_Fanned_Out__c` is true - strictly narrowing, no new fields, no report repoint, and it
+ * inverts cleanly (the Task model owns a deal until the Checklist model claims it). It is
+ * deliberately NOT done in Phase 2, because Phase 2 must be behaviour-neutral and that change edits
+ * a live class. It is a scope decision for the migration phase, not an improvisation for this one.
+ *
  * ⚠ CONSEQUENCE, STATED SO IT IS NOT MET AS A BUG: a `Checklist__c` created by hand on a deal whose
  * guard is false gets correct group counters and does NOT move the deal's counters. That is the
  * intended coexistence behaviour, not a missing branch.
  *
- * BULK SHAPE: 2 selector calls and 2 DML statements per invocation regardless of how many
- * Transactions are passed. Never call it per record.
+ * BULK SHAPE: flat in the number of Transactions passed — never a function of record count. Never
+ * call it per record.
+ *
+ * ⚠ THE COUNT ITSELF WAS WRONG UNTIL 2026-08-31 AND IS CORRECTED HERE RATHER THAN QUIETLY EDITED,
+ * because the fan-out's own governor arithmetic was derived FROM IT and understated its worst case
+ * fourfold (see `ChecklistFanoutService`'s header):
+ *   `recalc(Set<Id>)`                : **3** selector calls — `ChecklistSelector
+ *                                      .selectByTransactionIds`, `ChecklistItemSelector
+ *                                      .selectByTransactionIds`, and `TransactionSelector
+ *                                      .selectForChecklistFanout` for the guard check. Plus up to
+ *                                      2 DML (the `Checklist__c` writes and the `Transaction__c`
+ *                                      writes), each skipped when its list is empty.
+ *   `recalcForChecklistIds(Set<Id>)` : **4** — its own `ChecklistSelector.selectByIds` to map
+ *                                      checklists to deals, then everything `recalc` spends. THIS
+ *                                      IS THE TRIGGER PATH, so it is the figure that matters for
+ *                                      any cascade estimate.
+ * The previous "2 and 2" counted neither the guard read nor the trigger path's own mapping read.
  *
  * @see force-app/main/default/classes/ChecklistItemTriggerHandler.cls
  * @see force-app/main/default/classes/ChecklistItemDomain.cls (the single definition of done)
@@ -136,7 +165,7 @@ public with sharing class ChecklistRollupService {
 
         Date today = Date.today();
         for (Checklist_Item__c item : items) {
-            Counters group = byChecklist.get(item.Checklist__c);
+            Counters groupCounters = byChecklist.get(item.Checklist__c);
             Counters deal = byDeal.get(item.Checklist__r.Transaction__c);
             Boolean done = ChecklistItemDomain.isDone(item.Flag__c);
             // (b) above: the wire predicate keys on the boolean, and mirrors the legacy shape so
@@ -144,10 +173,10 @@ public with sharing class ChecklistRollupService {
             Boolean openWireRisk = item.Is_Wire_Verification__c == true
                 && item.Verbal_Verification_Completed__c != true;
             Boolean overdue = !done && item.Due_Date__c != null && item.Due_Date__c < today;
-            if (group != null) {
-                group.total++;
+            if (groupCounters != null) {
+                groupCounters.total++;
                 if (done) {
-                    group.complete++;
+                    groupCounters.complete++;
                 }
             }
             if (deal != null) {

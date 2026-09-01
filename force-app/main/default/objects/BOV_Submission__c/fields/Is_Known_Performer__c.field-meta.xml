@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY. A comment placed ABOVE
+        <CustomField> breaks `sf` deploy at source conversion with a misleading "unable to find
+        matching parent xml file" error.
+
+        DISPOSITION GAP CLOSURE TRANCHE 1, ITEM 4 (agent-output/disposition-gap-closure-t1-design.md
+        §3 Item 4, decision D-8, settled 2026-08-31). Analyst judgement, hand-entered. See the
+        sibling field Is_Buyer_Ready__c for the full naming rationale (D-8) and the Tranche-4
+        BOV_Score__c fold-in warning (3,900-char compiled cap, load-bearing null guard,
+        BlankAsBlank vs BlankAsZero) - both apply identically to this field and are not repeated
+        here to avoid drift between the two copies.
+
+        =====================================================================================
+        ✅ TRANCHE-4 HAS NOW HAPPENED (2026-09-01). THIS FIELD IS NO LONGER INERT.
+        =====================================================================================
+        BOV_Score__c was REBALANCED to Value 40 / Commission 20 / Speed 20 / Buyer Ready 10 /
+        Known Performer 10 = 100 (user decision at Gate 1: a rebalance, NOT bonus-on-top with a
+        clamp). This field is worth 10 of those 100 points.
+
+        🔴 THE POINTER ABOVE IS STILL THE RULE: the four Tranche-1 warnings and their 2026-09-01
+        ANSWERS live in Is_Buyer_Ready__c's comment, and they are still not copied here. One of the
+        four is only PARTLY closed and is the one worth knowing about without opening that file:
+        a re-weighting re-ranks READS instantly and re-ranks NOTHING that is stored, because a
+        formula deploy is not one of BovAutoSelectionService.reselect's change keys. The repair is
+        scripts/backfill-bov-reranking.apex, shipped deliberately UNRUN.
+
+        FLS: readable in DPEG_Disposition_View; EDITABLE in DPEG_Disposition_Edit. Applied in the
+        consolidated permission-set pass, not this file.
+        ✅ UNCHANGED BY TRANCHE 4 - a formula computes in SYSTEM context, so the fold-in needed no
+        FLS work at all.
+
+        Risk: LOW in T1 (an inert Boolean). All risk is deferred into Tranche 4.
+        ⚠ AND THAT RISK HAS NOW BEEN TAKEN, on 2026-09-01.
+    -->
+    <fullName>Is_Known_Performer__c</fullName>
+    <defaultValue>false</defaultValue>
+    <description>Analyst judgement: TRUE when this BOV respondent is a known-performing broker/buyer. Hand-entered. Since 2026-09-01 (Tranche 4 item 1) it is worth 10 of BOV_Score__c&apos;s 100 points - it is NO LONGER inert and ticking it can change which broker the system auto-appoints on the next qualifying save. An unticked box scores 0, which the score cannot distinguish from &quot;assessed and rejected&quot;. See Is_Buyer_Ready__c&apos;s XML comment.</description>
+    <inlineHelpText>Check if this respondent is a known performer, based on analyst judgement of past track record.</inlineHelpText>
+    <label>Known Performer</label>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Checkbox</type>
+</CustomField>

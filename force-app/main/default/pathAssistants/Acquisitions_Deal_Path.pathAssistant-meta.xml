@@ -34,7 +34,7 @@
     <pathAssistantSteps>
         <fieldNames>Contract_Signed__c</fieldNames>
         <fieldNames>Contract_Executed_Date__c</fieldNames>
-        <info>Seller issues the first PSA draft; a Contract Review opens automatically. Log every version and counter in the negotiation log. On full execution (Negotiation Status = Executed) the Transaction is created, the 75-task fan-out fires, and Transactions + IR + Due Diligence are notified.</info>
+        <info>Seller issues the first PSA draft; a Contract Review opens automatically. Log every version and counter in the negotiation log. On full execution (Negotiation Status = Executed) the deal is stamped Contract Signed with the Day-0 date, and Transactions + IR + Due Diligence + Acquisitions are notified. NEXT: click "Move to About to Close" to open the Transaction and fire the 82-task Day-0 checklist. This does not happen automatically.</info>
         <picklistValueName>Under Contract (PSA)</picklistValueName>
     </pathAssistantSteps>
     <pathAssistantSteps>

@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY. A comment placed ABOVE
+        <CustomField> breaks `sf` deploy at source conversion with a misleading "unable to find
+        matching parent xml file" error.
+
+        DISPOSITION GAP CLOSURE TRANCHE 1, ITEM 3 (agent-output/disposition-gap-closure-t1-design.md
+        §3 Item 3, premise P-6, decision D-2, both settled). Hand-entered, not required, no
+        default. Date, not DateTime - per-day granularity is all this field is asked for.
+
+        =====================================================================================
+        🔴 RELATIONSHIP TO Release_Materials_Response__c - THE REQUEST'S FRAMING WAS WRONG. THIS
+        FIELD IS NOT A DUPLICATE OF THAT OBJECT. RECORD WHY, SO NOBODY TRIES TO MERGE THEM.
+        =====================================================================================
+        Release_Materials_Response__c carries Disposition__c, Broker__c, Entry_DateTime__c,
+        Method__c, Notes__c. It has NO Buyer__c and NO NDA__c lookup. It is
+        DISPOSITION-SCOPED and BROKER-SCOPED, so it structurally CANNOT record a per-buyer
+        response at any price without a schema change, which is out of scope here.
+
+            NDA__c.Buyer_Response_Date__c (this field)   Release_Materials_Response__c (existing)
+            Scope: per NDA = per PARTY                   Scope: per disposition, per BROKER
+            Names a buyer? YES - NDA carries Buyer__c     Names a buyer? NO - no Buyer__c/NDA__c
+            and Party_Role__c = 'Buyer'                   lookup exists on the object at all
+            Granularity: Date                             Granularity: DateTime + Method + Notes
+
+        They are COMPLEMENTARY, not duplicates. This is the classic per-party join trap: a
+        parent-scoped log cannot answer a child-scoped question, however similar the field names
+        look.
+
+        =====================================================================================
+        🔴 dispositionBuyerTimeline DOES NOT READ THIS FIELD IN T1 - DEFERRED, PER D-2.
+        =====================================================================================
+        T1 ships the FIELD + FLS only. Adding it to NdaSelector.selectBuyerTimelineByDispositionId
+        would be a WITH USER_MODE selector widening = an FLS change, and
+        DispositionBuyerTimelineController deliberately does NOT fail soft on that selector
+        ("a QueryException is NOT swallowed into an empty list") - a missing grant would
+        red-banner the whole timeline card for every user until reconciled. That read belongs
+        with a future tranche that reworks the timeline, not this schema-and-access tranche.
+        ⚠ If it IS read later: (a) any NDA-field read from a disposition persona must be
+        grant-checked field by field, never assumed - the two disposition sets grant only FOUR
+        NDA__c fields today and Date_Signed__c / Disposition__c / Counterparty_Name__c /
+        NDA_Signed__c / Date_Sent__c are granted ONLY to the acquisition sets; (b) it must sit
+        behind buildRow's early return for Declined rows, exactly as Date_Signed__c does, or a
+        declined party's retained response date leaks onto a row the service is documented to
+        keep date-free.
+
+        FLS: applied in the consolidated permission-set pass, not this file. Risk: LOW as
+        scoped (field + FLS only); escalates to MEDIUM only if a future tranche pulls the
+        timeline read forward without repeating the checks above.
+    -->
+    <fullName>Buyer_Response_Date__c</fullName>
+    <description>Date this NDA&apos;s buyer party responded (per-party signal, distinct from Release_Materials_Response__c which is disposition-and-broker-scoped, not per-buyer - see the XML comment in this file). Hand-entered. Not read by any tranche-1 selector or LWC.</description>
+    <inlineHelpText>The date this buyer responded to the NDA. Distinct from the broker-level materials response log.</inlineHelpText>
+    <label>Buyer Response Date</label>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Date</type>
+</CustomField>

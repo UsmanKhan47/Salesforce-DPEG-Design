@@ -24,6 +24,12 @@ Disposition__c disp = new Disposition__c(
     Submission_Deadline__c = Date.today().addDays(30),
     Closing_Date__c = Date.today().addDays(90),
     Brokers_Contacted__c = 0,
+    // ⚠ `Responses_Received__c` IS TRIGGER-OWNED SINCE 2026-08-31 (Tranche 1 item 7) —
+    // `DispositionCounterRollupService` recomputes it from the live `BOV_Submission__c` count. This
+    // script creates NO BOV rows, so nothing ever fires the recompute and this 0 stands. It is kept
+    // because a null and a 0 are different on a counter field, and this script's whole point is to
+    // produce a row shaped exactly like `TestDataFactory.createDispositions` does.
+    // 🔴 THE MOMENT THIS SCRIPT GAINS A BOV INSERT, THIS LITERAL STOPS BEING THE ANSWER.
     Responses_Received__c = 0,
     Gross_Sale_Proceeds__c = 1250000,
     Selling_Costs__c = 62500,

@@ -52,9 +52,40 @@ private class DispositionMaterialsStampTest {
     private static final String STAGE_RELEASE_MATERIALS = 'Release Materials';
     private static final String ROLE_BROKER = 'Introducing Broker';
 
+    /**
+     * 🔴 THE SHARED PARENT ASSET. Added 2026-08-31 (Tranche 1 item 8) to replace SEVEN
+     * `TestDataFactory.createDisposition(null, …)` / `createDispositions(…, null, …)` call sites in
+     * this class — more than any other file in the repo, which is why the helper lives here rather
+     * than being inlined.
+     *
+     * WHY THE REPAIR WAS NEEDED: `Disposition__c.Property_Asset__c` is gaining a rule requiring it.
+     * ⚠ The mechanism chosen is a VALIDATION RULE, not `required = true` (design decision D-6 —
+     * a required lookup is forced onto `deleteConstraint Restrict`, which this repo has refused in
+     * writing on `BOV_Submission__c.Broker__c`). THAT DOES NOT SPARE THESE FIXTURES: a validation
+     * rule fires on DML just as a required field does, and five of this class's seven sites insert.
+     *
+     * 🔴 ONE ASSET FOR THE WHOLE RUN, NEVER ONE PER FIXTURE. `defaultPropertyAsset()` lazily builds
+     * and CACHES a single `Property_Asset__c` (under a single `Property__c`) per transaction. The
+     * obvious repair — `TestDataFactory.createPropertyAsset(...)` at each site — would add 2 DML per
+     * fixture and, at `bulk251EntrantsStampAtConstantCost`'s 251 rows, would blow the 150-statement
+     * limit before the test under test ever ran.
+     *
+     * ⚠ CALL IT ABOVE `Test.startTest()`, NEVER INSIDE A GOVERNOR WINDOW. The first call in a
+     * transaction performs TWO inserts; evaluated inside a `Limits.getQueries()` /
+     * `getDmlStatements()` bracket it would be measured as the code under test. Every call site in
+     * this class is above the window — that was checked, not assumed. This repo has a measured
+     * incident of exactly that trap (`BovAutoSelectionServiceTest`, twice).
+     *
+     * ⚠ IT DOES NOT CHANGE WHAT ANY TEST HERE ASSERTS. Nothing in this class reads
+     * `Property_Asset__c`; the null was incidental, never the subject.
+     */
+    private static Id sharedAssetId() {
+        return TestDataFactory.defaultPropertyAsset().Id;
+    }
+
     /** A disposition with one SIGNED buyer NDA — the minimum state that can enter the stage. */
     private static Disposition__c readyDisposition() {
-        Disposition__c d = TestDataFactory.createDisposition(null, true);
+        Disposition__c d = TestDataFactory.createDisposition(sharedAssetId(), true);
         TestDataFactory.signBuyerNdaOn(d.Id);
         return d;
     }
@@ -106,7 +137,7 @@ private class DispositionMaterialsStampTest {
      */
     @isTest
     static void analystEnteredDate_isNeverOverwritten() {
-        Disposition__c d = TestDataFactory.createDisposition(null, true);
+        Disposition__c d = TestDataFactory.createDisposition(sharedAssetId(), true);
         NDA__c nda = TestDataFactory.signBuyerNdaOn(d.Id);
         Date handEntered = Date.today().addDays(-9);
         update new NDA__c(Id = nda.Id, Materials_Released_Date__c = handEntered);
@@ -169,7 +200,7 @@ private class DispositionMaterialsStampTest {
      */
     @isTest
     static void introducingBrokerNda_isNotStamped() {
-        Disposition__c d = TestDataFactory.createDisposition(null, true);
+        Disposition__c d = TestDataFactory.createDisposition(sharedAssetId(), true);
         TestDataFactory.signBuyerNdaOn(d.Id);
         // The broker's NDA, also Signed so the release gate still passes.
         NDA__c broker = TestDataFactory.createDispositionNda(d.Id, false);
@@ -202,7 +233,7 @@ private class DispositionMaterialsStampTest {
      */
     @isTest
     static void insertDirectlyAtReleaseMaterials_stampsNothingBecauseNoNdaExistsYet() {
-        Disposition__c d = TestDataFactory.createDisposition(null, false);
+        Disposition__c d = TestDataFactory.createDisposition(sharedAssetId(), false);
         d.Disposition_Stage__c = STAGE_RELEASE_MATERIALS;
 
         Test.startTest();
@@ -217,7 +248,7 @@ private class DispositionMaterialsStampTest {
     /** A stage entry with no NDAs at all is a silent no-op, not an exception. */
     @isTest
     static void ndaAddedAfterTheStageEntry_getsNoDefault() {
-        Disposition__c d = TestDataFactory.createDisposition(null, false);
+        Disposition__c d = TestDataFactory.createDisposition(sharedAssetId(), false);
         d.Disposition_Stage__c = STAGE_RELEASE_MATERIALS;
         insert d;
 
@@ -254,7 +285,7 @@ private class DispositionMaterialsStampTest {
     @isTest
     static void bulk251EntrantsStampAtConstantCost() {
         List<Disposition__c> dispositions =
-            TestDataFactory.createDispositions(BULK_N, null, true);
+            TestDataFactory.createDispositions(BULK_N, sharedAssetId(), true);
         // ONE insert for all 251 NDAs — never one per disposition.
         TestDataFactory.signBuyerNdasOn(dispositions);
 
@@ -295,7 +326,7 @@ private class DispositionMaterialsStampTest {
     @isTest
     static void bulk251SavesThatEnterNoTargetStage_stampNothing() {
         List<Disposition__c> dispositions =
-            TestDataFactory.createDispositions(BULK_N, null, true);
+            TestDataFactory.createDispositions(BULK_N, sharedAssetId(), true);
         TestDataFactory.signBuyerNdasOn(dispositions);
 
         List<Disposition__c> updates = new List<Disposition__c>();

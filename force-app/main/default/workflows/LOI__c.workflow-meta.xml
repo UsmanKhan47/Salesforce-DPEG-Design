@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Workflow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY. A comment placed ABOVE
+        <Workflow> breaks `sf` deploy at source conversion with a misleading "unable to find
+        matching parent xml file" error.
+
+        NEW FILE, 2026-09-01. LOI__c had no workflow metadata before this change. W1 of the LOI
+        approval cutover (agent-output/loi-approval-cutover-design.md), which moves the principal
+        LOI approval OFF Opportunity.LOI_Approval and ONTO the LOI__c record itself. Direct sibling
+        of workflows/Underwriting__c.workflow-meta.xml (2026-08-28) — same shape, same reasoning,
+        different object.
+
+        🔴 ONE FIELD UPDATE, NO WORKFLOW RULE, NO REJECTION FIELD UPDATE. The single update below
+        is fired ONLY by the new approvalProcesses/LOI__c.LOI_Approval as its finalApprovalActions.
+        Do not add a <rules> element: an active rule writing LOI_Status__c on an ordinary edit
+        would fake an approval.
+
+        🔴 NO REJECTION FIELD UPDATE, BY DESIGN — USER DECISION D-3, QUOTED: "The LOI stage will
+        remain on Under review after rejection." There is no finalRejectionActions on the approval
+        process and nothing here mirrors one. This is the ACCEPTED, DOCUMENTED loss of the retired
+        Opportunity.LOI_Approval's Set_Stage_Underwriting rejection action, which rewound the deal
+        a full stage (LOI -> Underwriting). That rewind is structurally unreachable from an
+        approval parented by LOI__c (LOI__c.Opportunity__c is a Lookup, not Master-Detail — an
+        approval process can field-update only its own record or a Master-Detail parent), and an
+        Apex substitute was considered and deliberately NOT built — see
+        LoiApprovalStampService.cls's own header for why (it would newly have to satisfy
+        NDA_Signed_Before_Deal_Progression and No_Backward_Stage_Movement, which the old
+        approval's field update bypassed). On rejection the LOI simply stays at
+        Stage__c = 'Under Review' and only the approval history records the decision.
+
+        WHY THIS RECORD'S OWN FIELD, NOT THE PARENT'S. This is the child-object half of moving the
+        approval onto LOI__c. The field update writes only this record's own field — required,
+        because LOI__c.Opportunity__c is a Lookup, so an approval process on this object cannot
+        field-update the parent Opportunity at all. The parent mirror (Opportunity.LOI_Approved__c)
+        is written separately by flows/LOI_Approval_Sync.flow-meta.xml, entry-scoped on
+        LOI_Status__c transitioning to 'Approved' (recordTriggerType = Update,
+        doesRequireRecordChangedToMeetCriteria = true — both load-bearing, see that flow's own
+        header and LoiApprovalStampService.cls's "THE TRIGGERING MARKER (D-4)" section for the
+        251-record bulk callers this exact pair of settings keeps immune), calling
+        LoiApprovalStampService.
+
+        DEPLOY ORDER — LOAD-BEARING. This file must land in the SAME deploy as (or before)
+        approvalProcesses/LOI__c.LOI_Approval.approvalProcess-meta.xml, which references the field
+        update below BY NAME and cannot deploy otherwise — the same requirement
+        Underwriting__c.Underwriting_Approval's header records at its own deploy-order note.
+    -->
+    <fieldUpdates>
+        <fullName>LOI_Status_Approved</fullName>
+        <description>Final approval action of LOI__c.LOI_Approval. Sets LOI Status to Approved on this LOI record. Consumed by flows/LOI_Approval_Sync, which mirrors the transition onto the parent deal.</description>
+        <field>LOI_Status__c</field>
+        <literalValue>Approved</literalValue>
+        <name>LOI Status Approved</name>
+        <notifyAssignee>false</notifyAssignee>
+        <operation>Literal</operation>
+        <protected>false</protected>
+        <reevaluateOnChange>false</reevaluateOnChange>
+    </fieldUpdates>
+</Workflow>

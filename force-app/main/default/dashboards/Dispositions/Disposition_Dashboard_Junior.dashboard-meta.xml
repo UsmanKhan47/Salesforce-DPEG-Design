@@ -14,7 +14,7 @@
                 <indicatorHighColor>#1B7A4B</indicatorHighColor>
                 <indicatorLowColor>#1B7A4B</indicatorLowColor>
                 <indicatorMiddleColor>#1B7A4B</indicatorMiddleColor>
-                <metricLabel>Listed with Broker</metricLabel>
+                <metricLabel>Active Listing</metricLabel>
                 <report>Dispositions/Listed_With_Broker</report>
                 <showRange>false</showRange>
             </dashboardComponent>
@@ -31,7 +31,7 @@
                 <indicatorHighColor>#1B7A4B</indicatorHighColor>
                 <indicatorLowColor>#1B7A4B</indicatorLowColor>
                 <indicatorMiddleColor>#1B7A4B</indicatorMiddleColor>
-                <metricLabel>Sell Ready</metricLabel>
+                <metricLabel>Disposition Readiness</metricLabel>
                 <report>Dispositions/Sell_Ready_Argus</report>
                 <showRange>false</showRange>
             </dashboardComponent>
@@ -48,7 +48,7 @@
                 <indicatorHighColor>#1B7A4B</indicatorHighColor>
                 <indicatorLowColor>#1B7A4B</indicatorLowColor>
                 <indicatorMiddleColor>#1B7A4B</indicatorMiddleColor>
-                <metricLabel>BOVs Ordered</metricLabel>
+                <metricLabel>BOV Outreach</metricLabel>
                 <report>Dispositions/BOVs_Ordered</report>
                 <showRange>false</showRange>
             </dashboardComponent>
@@ -147,6 +147,7 @@
                 <showTotal>true</showTotal>
                 <showValues>true</showValues>
                 <sortBy>RowValueDescending</sortBy>
+                <sortLegendValues>false</sortLegendValues>
                 <useReportChart>false</useReportChart>
             </dashboardComponent>
             <rowIndex>8</rowIndex>
@@ -184,6 +185,7 @@
                 <showTotal>true</showTotal>
                 <showValues>true</showValues>
                 <sortBy>RowLabelAscending</sortBy>
+                <sortLegendValues>false</sortLegendValues>
                 <useReportChart>false</useReportChart>
             </dashboardComponent>
             <rowIndex>8</rowIndex>
@@ -221,8 +223,8 @@
     </dashboardGridLayout>
     <dashboardType>SpecifiedUser</dashboardType>
     <isGridLayout>true</isGridLayout>
-    <owner>test-aysz9meqvl23@example.com</owner>
-    <runningUser>test-aysz9meqvl23@example.com</runningUser>
+    <owner>usman.khan.dpeg@avanzasolutions.com</owner>
+    <runningUser>usman.khan.dpeg@avanzasolutions.com</runningUser>
     <textColor>#000000</textColor>
     <title>Disposition Dashboard</title>
     <titleColor>#000000</titleColor>

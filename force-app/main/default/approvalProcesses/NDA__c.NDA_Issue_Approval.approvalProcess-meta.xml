@@ -1,0 +1,231 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ApprovalProcess xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY. A comment placed ABOVE
+        <ApprovalProcess> breaks `sf` deploy at source conversion with a misleading "unable to
+        find matching parent xml file" error. The rationale below lives in this comment rather
+        than in <description> because a comment is repo-only and is never sent to the Metadata
+        API. This file's <description> is kept under 255 characters (measured, not eyeballed),
+        matching this tranche's own convention even though the five pre-existing disposition
+        approval files carry 442-617-character descriptions with no apparent cap enforcement.
+
+        NEW FILE, 2026-08-31 (Tranche 3, item 2 - Approval #3, "NDA issue", stories 23/24, and
+        Tranche 1 decision D-1). NDA__c had no approval process before this change.
+
+        WHAT IT DOES. A disposition NDA sitting at Status__c = 'Prepare' is submitted (see the
+        new Submit_NDA_Approval quick action) and, once approved, is stamped Status__c =
+        'Approved' plus the Principal_Approved__c / Principal_Approved_Date__c audit pair, all
+        three by workflows/NDA__c.workflow-meta.xml's finalApprovalActions block, which MUST
+        deploy before this file (see that file's own comment for the full deploy-order argument,
+        including the restricted-picklist dependency on Disposition_NDA's live record-type
+        subset - re-verify that subset against the org, not this repo, before this process's
+        FIRST live approval).
+
+        🔴 THIS APPROVAL PROCESS ALONE DOES NOT MAKE ITSELF THE ONLY ROUTE TO 'Approved'. A
+        ONE-CLICK BYPASS EXISTED BEFORE THIS CHANGE: an analyst holding Disposition_Deal_Actions
+        (granted by DPEG_Disposition_Edit, FORBIDDEN on DPEG_Disposition_View - the Principal set)
+        could move Status__c from 'Prepare' straight to 'Approved' via the
+        NDA__c.Move_to_Approved quick action, backed by RecordStageAdvanceService's
+        NDA_DISPOSITION_NEXT_STAGE map entry 'Prepare' => 'Approved'. THAT ENTRY AND THAT ACTION
+        ARE RETIRED IN THE SAME WAVE AS THIS FILE (design decision D-7) - the quick action file is
+        deleted and its NDA_Record_Page placement is replaced by the new Submit_NDA_Approval
+        entry (see that FlexiPage's own comment). The Apex half of the retirement is owned by
+        salesforce-developer and MUST land in the same wave as, or before, the FlexiPage edit that
+        removes the button - reversing that order leaves a live one-click bypass of a live
+        approval, which is exactly the shape RecordStageAdvanceService's own header already
+        forbids for a different hop ("Broker Selection -> NDA").
+
+        ENTRY CRITERIA, AND WHY BOTH TERMS ARE REQUIRED. Status__c equals 'Prepare' AND
+        Is_Disposition_NDA__c equals True, booleanFilter "1 AND 2" - byte-identical in shape to
+        Disposition__c.Broker_Selection_Approval's two-criterion form. Is_Disposition_NDA__c is a
+        PRE-EXISTING formula field (RecordType.DeveloperName = "Disposition_NDA"), already granted
+        read FLS in both DPEG_Disposition_View and DPEG_Disposition_Edit - no new field, no new
+        FLS needed for this criterion. It FAILS CLOSED on a Master-typed row (reads FALSE), which
+        is the correct polarity for a disposition-only gate - the opposite of
+        Broker_Selection_Approval's own accepted fail-open residual on the same discriminator.
+        🔴 THE CRITERION IS REQUIRED EVEN THOUGH Acquisition_NDA's Status__c value set DOES NOT
+        CONTAIN 'Prepare' TODAY. (CORRECTED 2026-08-31, TRANCHE 3 METADATA-FIX PASS: this sentence
+        originally read "(Pending, Received, Signed, Sent)" - FOUR values. That is FALSE as of
+        this file's own 2026-08-31 authorship date. 'Sent' was REMOVED from Acquisition_NDA on
+        2026-08-27 - see `objects/NDA__c/recordTypes/Acquisition_NDA.recordType-meta.xml`'s own
+        2026-08-27 amendment, written after an `INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST` incident
+        on this exact restricted picklist. The record type's live value set is THREE values -
+        Pending, Received, Signed, in that order - confirmed by reading that file in this pass.
+        `RecordStageAdvanceService.cls` (~line 1708) already reflects the three-value set
+        correctly in the same wave; only this comment was stale. This correction does not change
+        this criterion's conclusion: neither 'Prepare' nor 'Approved' is in the three-value set
+        any more than it was in the four-value set, so the entryCriteria term below is unaffected
+        either way.) This repo has measured, via Broker_Selection_Approval's own 2026-08-20
+        retraction, that a record type's value set is Setup-editable in one click and has in fact
+        changed multiple times in the weeks since on this exact object - self-limitation by
+        value-set content alone is not trusted anywhere else in this repo's approval design, and
+        is not trusted here either.
+
+        WHY THE ROSTER IS THE SAME THREE APPROVERS AS THE FIVE DISPOSITION PROCESSES. Per this
+        wave's explicit instruction: same three principals (Nikhil Dhanani, Aftab Ali, Junior
+        Dhanani), same FirstResponse semantics - "any ONE of the three satisfies the gate", which
+        is the point of the roster expansion happening in the same wave (see
+        Disposition__c.Sale_Decision_Approval's 2026-08-31 comment for the full "Nick does not
+        exist" / provisioning-request record - not repeated here since it applies identically).
+
+        🔴 allowedSubmitters = owner, STATED AS A RESIDUAL, NOT HIDDEN. Disposition NDAs are
+        auto-created by DispositionStageEntryService at Status__c = 'Prepare' (constant
+        DISPOSITION_NDA_INITIAL_STATUS), so the OWNER is whoever advanced the Disposition into the
+        NDA stage - not necessarily whoever is now working the deal. A different analyst picking
+        it up cannot submit it. Identical to all five disposition-side siblings; accepted for
+        consistency, not re-litigated here.
+
+        recordEditability = AdminOnly, allowRecall = true - matching all five siblings.
+        🔴 THIS MAKES THE TWO-FILE APPROVAL-HISTORY ADDITION ON NDA_Record_Page AND NDA__c-NDA
+        Layout MANDATORY, NOT A NICETY (see both files' own comments). Without BOTH halves, the
+        first submitted NDA is a locked record with NO Recall route anywhere in the UI - the exact
+        gap Disposition_Record_Page closed on 2026-08-19 for the Disposition object itself.
+
+        NO finalRejectionActions, NO initialSubmissionActions, NO recallActions (Gate 1 decisions
+        D-10/D-11). 🔴 ALL EIGHT PRE-EXISTING APPROVAL FILES IN THIS REPO CARRY
+        finalRejectionActions - omitting it entirely has ZERO PRECEDENT HERE, even though it is a
+        standard, optional element of the Metadata API's ApprovalProcess type. A rejected NDA
+        stays at Status__c = 'Prepare' (nothing is written on rejection), the AdminOnly lock
+        releases via the platform's ordinary post-rejection behaviour, and the record can be
+        corrected and resubmitted - the same "parked for a re-pick" shape
+        Disposition_Offer__c.Offer_Selection_Approval documents for its own rejection path. NOT
+        building the Approval_Pending__c flag / four-action clear pattern here costs one thing,
+        named rather than hidden: while a submission is pending, AdminOnly already locks the
+        record, so NDA__c.Mark_Declined RENDERS (its criteria do not test a pending flag that
+        does not exist on this object) and THROWS ENTITY_IS_LOCKED if clicked. That is a noisy
+        refusal, not a silent one.
+
+        approvalPageFields: Name, Owner, Disposition__c, Counterparty_Name__c, Party_Role__c,
+        Status__c, OneDrive_URL__c.
+
+        =====================================================================================
+        🔴 RETRACTED 2026-08-31 (TRANCHE 3 METADATA-FIX PASS) - THE PARAGRAPH BELOW IS FALSE.
+        THE GRANT IS IN THIS WAVE.
+        =====================================================================================
+        The superseded paragraph is quoted and retracted rather than deleted, because it is the
+        claim a future reader is most likely to reason from:
+
+            RETRACTED (FALSE, as of 2026-08-31): "OneDrive_URL__c HAS NO READ FLS IN
+            DPEG_Disposition_View OR DPEG_Disposition_Edit TODAY - measured against both files
+            before writing this one. NDA__c.OneDrive_URL__c IS granted read in
+            DPEG_Acquisition_View and DPEG_Acquisition_Edit only. Every other field in this list
+            (Disposition__c, Counterparty_Name__c, Party_Role__c, Status__c) already has read FLS
+            in DPEG_Disposition_View; Name and Owner are standard fields, ungated on this page
+            exactly as on all five sibling approvals. OneDrive_URL__c is INCLUDED here because the
+            design calls for it (the approver should be able to open the counterparty's signed
+            document from the approval page), but IT WILL RENDER BLANK, NOT ERROR, for the
+            approving Principal until a NEW read grant on NDA__c.OneDrive_URL__c is added to both
+            disposition permission sets. THAT GRANT IS NOT IN THIS DEPLOY - permission sets are
+            owned by salesforce-solution-architect in this tranche's file-ownership split, and no
+            new FLS grant was in this tranche's base plan. Flagged here as a SAME-WAVE DEPENDENCY
+            the solution-architect pass must pick up, not a silent gap."
+
+        WHAT IS TRUE NOW: the solution-architect pass named above RAN, in the same wave, and
+        PICKED IT UP. `permissionsets/DPEG_Disposition_View.permissionset-meta.xml` (fieldPermissions
+        block ending ~line 1894) and `permissionsets/DPEG_Disposition_Edit.permissionset-meta.xml`
+        (fieldPermissions block ending ~line 2776) both now carry
+            <field>NDA__c.OneDrive_URL__c</field>, <readable>true</readable>, <editable>false</editable>
+        on BOTH sets - confirmed by reading both files in this pass, 2026-08-31. The grant IS in
+        this wave. OneDrive_URL__c on the approval page will RENDER, READ-ONLY, for the approving
+        Principal on first deploy. There is no outstanding same-wave dependency here.
+
+        ⚠ A FACT THE SOLUTION-ARCHITECT PASS SURFACES THAT THE RETRACTED PARAGRAPH DID NOT
+        ANTICIPATE: this approval page is not the only place a disposition persona now sees
+        OneDrive_URL__c. It is ALSO present on `flexipages/NDA_Record_Page.flexipage-meta.xml`
+        (fieldInstance at ~line 667, `uiBehavior` `none` there means editable per that file's own
+        comment) and on `layouts/NDA__c-NDA Layout.layout-meta.xml` (layoutItem at ~line 101,
+        `<behavior>Edit</behavior>`) - both of those surfaces are nominally editable at the
+        component level, but FLS outranks a layout/FlexiPage behavior setting: with
+        `editable=false` on both disposition permission sets, the field renders READ-ONLY on all
+        THREE surfaces for a disposition persona, never erroring and never blank. Only an
+        acquisition persona (DPEG_Acquisition_View / DPEG_Acquisition_Edit, both editable=true
+        per the pre-existing grant) can actually edit it.
+
+        step <label> "Principal approves NDA release" IS DELIBERATELY DISTINCT from all five
+        sibling step labels ("Principal decides to sell", "Principal confirms broker" (x2),
+        "Principal approves closing", "Principal approves offer") - the 2026-08-26 rename across
+        this whole module exists precisely because five identical "Principal Review" labels meant
+        approvers could not tell which decision they were being asked for. Do not reintroduce that
+        defect on a sixth process.
+
+        🔴 THIS FILE WAS NOT CHECK-ONLY VALIDATED AGAINST usman-dpeg BY THIS AGENT. Per this
+        wave's explicit "do not deploy" instruction, no dry-run was run while building it. Confirm
+        on first deploy that (a) the omitted finalRejectionActions block is accepted, (b) the
+        Formula-operation date stamp in the paired workflow file is accepted, and (c) a real
+        submission on a seeded Disposition_NDA record shows THREE assignees and all SEVEN page
+        fields rendering, OneDrive_URL__c included - READ-ONLY, per the retraction above, not
+        blank. (CORRECTED 2026-08-31: this bullet previously told the first deployer to expect
+        OneDrive_URL__c "rendering blank until the FLS gap above is closed" - that gap does not
+        exist; see the retraction block above. A deployer who still saw the field blank should
+        treat that as a NEW defect, not the expected state this file once predicted.)
+    -->
+    <active>true</active>
+    <allowRecall>true</allowRecall>
+    <allowedSubmitters>
+        <type>owner</type>
+    </allowedSubmitters>
+    <approvalPageFields>
+        <field>Name</field>
+        <field>Owner</field>
+        <field>Disposition__c</field>
+        <field>Counterparty_Name__c</field>
+        <field>Party_Role__c</field>
+        <field>Status__c</field>
+        <field>OneDrive_URL__c</field>
+    </approvalPageFields>
+    <approvalStep>
+        <allowDelegate>false</allowDelegate>
+        <assignedApprover>
+            <approver>
+                <name>nikhil.dhanani@usmandpeg.uat</name>
+                <type>user</type>
+            </approver>
+            <approver>
+                <name>aftab.ali.dpeg.usman@avanzasolutions.com</name>
+                <type>user</type>
+            </approver>
+            <approver>
+                <name>junior.dhanani@usmandpeg.uat</name>
+                <type>user</type>
+            </approver>
+            <whenMultipleApprovers>FirstResponse</whenMultipleApprovers>
+        </assignedApprover>
+        <label>Principal approves NDA release</label>
+        <name>Principal_Review_Step</name>
+    </approvalStep>
+    <description>Principal decision to approve a disposition NDA for release. Entry: Status is Prepare AND record type is Disposition NDA. Approval writes Status to Approved plus the Principal_Approved audit pair. No rejection action - record stays at Prepare.</description>
+    <enableMobileDeviceAccess>false</enableMobileDeviceAccess>
+    <entryCriteria>
+        <booleanFilter>1 AND 2</booleanFilter>
+        <criteriaItems>
+            <field>NDA__c.Status__c</field>
+            <operation>equals</operation>
+            <value>Prepare</value>
+        </criteriaItems>
+        <criteriaItems>
+            <field>NDA__c.Is_Disposition_NDA__c</field>
+            <operation>equals</operation>
+            <value>True</value>
+        </criteriaItems>
+    </entryCriteria>
+    <finalApprovalActions>
+        <action>
+            <name>Set_NDA_Status_Approved</name>
+            <type>FieldUpdate</type>
+        </action>
+        <action>
+            <name>Set_NDA_Principal_Approved</name>
+            <type>FieldUpdate</type>
+        </action>
+        <action>
+            <name>Set_NDA_Principal_Approved_Date</name>
+            <type>FieldUpdate</type>
+        </action>
+    </finalApprovalActions>
+    <finalApprovalRecordLock>false</finalApprovalRecordLock>
+    <finalRejectionRecordLock>false</finalRejectionRecordLock>
+    <label>NDA Issue Approval</label>
+    <processOrder>1</processOrder>
+    <recordEditability>AdminOnly</recordEditability>
+    <showApprovalHistory>true</showApprovalHistory>
+</ApprovalProcess>

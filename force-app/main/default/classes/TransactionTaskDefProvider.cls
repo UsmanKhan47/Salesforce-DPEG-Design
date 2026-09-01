@@ -11,6 +11,10 @@
  * `getAll()` populates every non-long-text field, so callers get all of
  * Group_Letter__c / Sequence__c / Subject__c / Owner_Label__c / Due_Day_Offset__c
  * / Default_Status__c.
+ * 🔴 "NON-LONG-TEXT" IS THE LOAD-BEARING WORD, AND IT COST A LIVE P0 ON 2026-08-31 WHEN NOBODY
+ * CONNECTED IT: `getAll()`/`getInstance()` SILENTLY CLIP LongTextArea and Html to 255 chars.
+ * Adding a long-text field to this type would need a selector for that field —
+ * see `.claude/skills/sf-apex/SKILL.md` (CMDT rule) and `ARCHITECTURE.md` §2.
  *
  * @see agent-output/p4-selector-design.md (§3 CMDT providers, §5, §10 flag 5)
  */

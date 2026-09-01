@@ -149,9 +149,19 @@ private class DispositionBuyerTimelineTest {
      * `All_NDAs_Signed_Before_Progression` blocks a stage change into `Release Materials` and beyond
      * unless every non-Declined NDA is Signed, and none of these tests needs a stage at all — the
      * timeline reads NDAs, not the parent's stage.
+     *
+     * 🔴 THE ASSET ARGUMENT WAS `null` UNTIL 2026-08-31 (Tranche 1 item 8). It is now the SHARED,
+     * lazily-built `TestDataFactory.defaultPropertyAsset()` — ONE asset for the whole run, never one
+     * per fixture — because `Disposition__c.Property_Asset__c` is gaining a rule requiring it.
+     * ⚠ The mechanism is a VALIDATION RULE rather than `required = true` (design decision D-6: a
+     * required lookup is forced onto `deleteConstraint Restrict`, which this repo has refused in
+     * writing elsewhere). A VR fires on DML exactly as a required field does, so this INSERTING
+     * fixture breaks under either mechanism and the repair is the same.
+     * ⚠ It changes nothing this class asserts — the timeline reads `NDA__c` rows, never the parent's
+     * asset. The null was incidental, not the subject.
      */
     private static Disposition__c freshDisposition() {
-        return TestDataFactory.createDisposition(null, true);
+        return TestDataFactory.createDisposition(TestDataFactory.defaultPropertyAsset().Id, true);
     }
 
     /**

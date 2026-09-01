@@ -1,7 +1,61 @@
 /**
  * Rolls the count of completed (closed) Tasks for a Transaction up to
- * Transaction__c.Tasks_Complete__c, which drives the "N / 75" highlights tile.
+ * Transaction__c.Tasks_Complete__c, which drives the "N / 82" highlights tile.
  * Invoked from TaskRollupTrigger.
+ *
+ * ⚠ 82 IS THE CEILING, NOT ALWAYS THE DENOMINATOR, and this header said "N / 75" until
+ * 2026-08-31 — a number that was never right for either reading. There are 82
+ * Transaction_Task_Def__mdt rows across 11 Task_Group_Def__mdt groups (verified against
+ * usman-dpeg on 2026-08-31), and the tile renders Tasks_Display__c = TEXT(Tasks_Complete__c)
+ * & " / " & TEXT(Tasks_Total__c). TaskFanoutService writes Tasks_Total__c = the count it
+ * actually created for THAT Transaction, gated by that Transaction's own condition fields via
+ * Task_Group_Def__mdt.Condition_Field__c — so a deal with no loan legitimately shows a
+ * denominator below 82. Do not turn 82 into a constant anywhere; see the
+ * `activeTransactionsList` header for the incident where a hardcoded denominator did exactly
+ * that and reported on work that did not exist.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════════════════════
+ * 🔴 THE `anti-fraud` SUBJECT PARSE AT `recalc` STAYS. IT IS NOT AN OVERSIGHT, AND REPOINTING
+ *    IT TO `Is_Wire_Verification__c` WOULD NOT COMPILE — LET ALONE WORK.
+ * ═══════════════════════════════════════════════════════════════════════════════════════════
+ * RISK 1 of the checklist rewrite (design §1) is that `Subject.toLowerCase().contains('anti-fraud')`
+ * silently reads ZERO if the subject text is ever cleaned up, taking the Wire Sentinel dashboard
+ * metric to "0 open wire risks" on every deal with no error anywhere. The fix is a real boolean
+ * field — and the field is `Checklist_Item__c.Is_Wire_Verification__c`, on the NEW model.
+ *
+ * ⚠ THIS CLASS COUNTS `Task` ROWS, AND **`Task` HAS NO SUCH FIELD.** Verified 2026-09-01 against
+ * `objects/Activity/fields/`: the Transaction-side custom fields there are `Task_Group__c`,
+ * `Task_Sequence__c`, `Task_Owner_Label__c`, `Transaction_Deal__c`, `Conditional__c`,
+ * `Blocked_By__c`, `Is_Prerequisite_Met__c`, `Verbal_Verification_Completed__c`,
+ * `Verified_By__c`, `Verified_At__c`, `Verification_Phone__c`. There is no `Is_Wire_Verification__c`
+ * and no `Is_Critical__c`. Adding them would mean adding two fields to the SHARED `Activity`
+ * object (also owned by Property Management and Broker Protection), backfilling ~82 rows per live
+ * deal, and granting FLS — all on a model that Phase 4/M5 retires. That work would be thrown away
+ * by design.
+ *
+ * ✅ WHAT MAKES THAT SAFE — AND IT IS STRUCTURAL, NOT A PROMISE:
+ *   1. THE NEW MODEL NEVER REACHES THIS CLASS. `recalc` is called only from `TaskRollupTrigger`,
+ *      which fires on `Task`. `ChecklistFanoutService` creates zero `Task` rows, so a deal on the
+ *      new model has nothing that could fire it. Its counters come from `ChecklistRollupService`,
+ *      which already keys on `Is_Wire_Verification__c` and never looks at a subject.
+ *   2. BOTH SERVICES WRITE THE SAME FOUR `Transaction__c` COUNTERS, so every downstream consumer
+ *      (the Wire Sentinel tile, the eleven `reports/Transactions/**`, `transactionTaskCards`) is
+ *      model-agnostic and needs no repoint.
+ *   3. THE UI DISCRIMINATES ON `Transaction__c.Checklist_Fanned_Out__c`, the same flag that
+ *      decides which model a deal is on, so the subject parse and the boolean read can never be
+ *      applied to the wrong model's data.
+ *
+ * 🔴 THE ONE THING THAT WOULD BREAK THIS, STATED SO IT IS NOT REDISCOVERED THE HARD WAY:
+ * cleaning the `(anti-fraud)` marker out of `Transaction_Task_Def__mdt.Subject__c` and re-running
+ * `scripts/load-transaction-task-defs.apex` WHILE ANY DEAL IS STILL ON THE TASK MODEL. Existing
+ * `Task` rows keep their frozen subjects and are unaffected, but any deal fanned out AFTER the
+ * cleanup would get unmarked subjects and this line would count zero for it — silently, in the
+ * safe-looking direction. DO NOT CLEAN THOSE SUBJECTS UNTIL M5 RETIRES THE TASK MODEL. On the new
+ * model the markers are already cosmetic: `Is_Critical__c` / `Is_Wire_Verification__c` are seeded
+ * from an explicit `{B2, F12, I7, J4}` / `{B2, I7}` key set in the loader, never from a parse.
+ *
+ * @see force-app/main/default/classes/ChecklistRollupService.cls (the new model's twin)
+ * @see agent-output/design-transaction-fsd-gaps.md §1 RISK 1, §6.1, §7
  */
 public with sharing class TaskRollupService {
 

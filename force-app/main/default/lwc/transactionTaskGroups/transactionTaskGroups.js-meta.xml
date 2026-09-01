@@ -3,7 +3,7 @@
     <apiVersion>67.0</apiVersion>
     <isExposed>true</isExposed>
     <masterLabel>Transaction Task Groups</masterLabel>
-    <description>This deal's tasks grouped by Task Group (stage) with per-stage progress and complete toggles.</description>
+    <description>This deal's checklist grouped by task group, with per-phase progress, completion, and the anti-fraud wire verification. Reads Checklist__c when Checklist Fanned Out is true, otherwise the legacy Tasks.</description>
     <targets>
         <target>lightning__RecordPage</target>
     </targets>

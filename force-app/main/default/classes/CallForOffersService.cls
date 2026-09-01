@@ -187,11 +187,20 @@
  * `forOpportunity()` are **1 SOQL each, CONSTANT in the number of deals returned**, pinned at 251.
  *
  * ⚠ `CFO_Alert_Rung__mdt.getAll()` IS NOT SOQL AND NEEDS NO SELECTOR. It is the platform's custom
- * metadata accessor and costs ZERO governor queries — measured on this project for the sibling type
- * (`BrokerProtectionConfig`'s header, `Limits.getQueries() == 0`). Adding
+ * metadata accessor and costs ZERO governor queries. Adding
  * `[SELECT ... FROM CFO_Alert_Rung__mdt]` to a selector would ADD a query this class does not
  * currently pay and would break the pinned budget above. `.claude/rules/apex-layering-rule.md`'s
  * "all SOQL lives in a selector" is satisfied vacuously: there is no SOQL here to own.
+ *
+ * ⚠ CITATION CORRECTED 2026-08-31 — THE CONCLUSION IS UNCHANGED, THE SOURCE IS NOT. This block
+ * used to attribute the zero-query claim to "`BrokerProtectionConfig`'s header,
+ * `Limits.getQueries() == 0`". That header no longer says it: `BrokerProtectionConfig` now issues
+ * exactly one SOQL (for a LongTextArea field `getAll()`/`getInstance()` silently clip to 255
+ * characters — a live P0) and it RETRACTS its old measurement in the same block a reader would
+ * land on. `getAll()` still costs zero queries; the current authority for that, and for the
+ * long-text carve-out, is `.claude/skills/sf-apex/SKILL.md` and `ARCHITECTURE.md` §2.
+ * 🔴 THE CARVE-OUT DOES NOT APPLY HERE — `CFO_Alert_Rung__mdt` has no LongTextArea or Html field.
+ * Adding one would silently truncate it at 255 and would need a selector for THAT field alone.
  *
  * @see force-app/main/default/classes/CallForOffersAlertBatch.cls  (the alert consumer + SCOPE)
  * @see force-app/main/default/classes/CallForOffersController.cls  (the two LWC boundaries)

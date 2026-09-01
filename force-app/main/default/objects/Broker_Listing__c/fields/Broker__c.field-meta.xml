@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY. A comment placed ABOVE
+        <CustomField> breaks `sf` deploy at source conversion with a misleading "unable to find
+        matching parent xml file" error.
+
+        DISPOSITION GAP CLOSURE TRANCHE 1, ITEM 5 (agent-output/disposition-gap-closure-t1-design.md
+        §3 Item 5). THE SIXTH MEMBER OF THE BROKER-LOOKUP FAMILY. lookupFilter, deleteConstraint
+        and errorMessage are copied BYTE-FOR-BYTE from objects/Disposition__c/fields/Broker__c
+        (itself copied from Broker_Assignment__c.Broker__c) - same referenceTo, same ACTIVE
+        non-optional lookupFilter on Contact.RecordType.DeveloperName = 'Broker', same errorMessage
+        text, same deleteConstraint. Do not vary the shape.
+
+        =====================================================================================
+        🔴 WHY Contact.RecordType.DeveloperName AND NEVER Is_Broker__c.
+        =====================================================================================
+        MEASURED LIVE ON usman-dpeg, 2026-08-20 (see Disposition__c.Broker__c's own header for
+        the full incident writeup):
+            SELECT COUNT(Id) FROM Contact WHERE Is_Broker__c = true                 -> 0
+            SELECT COUNT(Id) FROM Contact WHERE RecordType.DeveloperName='Broker'   -> 19
+        Is_Broker__c enforced the checkbox predicate for months on the other five siblings and
+        silently refused every real broker in the org. It is retained on Contact but defines
+        nothing. NEVER use it here.
+
+        =====================================================================================
+        🔴 deleteConstraint IS SetNull, NEVER Restrict. DO NOT "FIX" THIS.
+        =====================================================================================
+        SetNull matches all five existing siblings (Broker_Assignment__c.Broker__c,
+        Lease_Inquiry__c.Broker__c, Disposition__c.Broker__c, and both lookups on
+        BOV_Broker_Change__c). Restrict would block legitimate Contact deletion for the whole org
+        the moment any broker Contact had ever been picked on a listing. Disposition__c.Broker__c's
+        own header states this DO NOT in terms and it applies identically here.
+
+        =====================================================================================
+        🔴 THE SEED GUARD IS NOW INCOMPLETE - A DEV TASK, NOT RESOLVED BY THIS FILE.
+        =====================================================================================
+        scripts/seed-broker-contacts.apex mass-deletes broker Contacts with a STEP 2/3 guard that
+        currently names only FOUR dependent lookups. With SetNull on all six lookups now that this
+        field exists, re-running that script WILL NULL THIS FIELD with no error and no warning on
+        every Broker_Listing__c that references a deleted broker. The guard's scan must be widened
+        to cover Broker_Listing__c.Broker__c (and its header re-worded to name six lookups, not
+        four) before this field goes live in any org the seed might touch again. Flagged in the
+        implementing report for the developer agent - NOT actioned here (scripts/** is out of
+        this agent's file ownership for this tranche).
+
+        =====================================================================================
+        🔴 WHAT THIS FIELD DOES NOT DO IN T1 - STATED SO NOBODY ASSUMES OTHERWISE.
+        =====================================================================================
+        Broker_Listing__c already carries Broker_Firm__c and Contact_Name__c as Text, and
+        DispositionStageEntryService copies Disposition__c.Selected_Broker__c straight into
+        Broker_Firm__c on auto-create. T1 adds NO stamp service for this new lookup, so:
+          - the lookup is BLANK on every auto-created listing, and
+          - the same lookup/text duality (and the same Contact-rename staleness documented on
+            Disposition__c.Broker__c) now exists on a second object.
+        That is acceptable for a schema-foundation tranche ONLY because it is written here. The
+        stamp is a separate, un-scoped follow-up item.
+
+        =====================================================================================
+        ⚠ DO NOT WIDEN BrokerListingSelector.selectMostRecentByDispositionId IN T1.
+        =====================================================================================
+        That selector's field list is marked "THE FIELD LIST IS A CONTRACT", is WITH USER_MODE,
+        and backs the Active Listing card. Adding this field to it is a separate FLS-risk change
+        with a red-banner failure mode and is not part of this schema-only tranche.
+
+        =====================================================================================
+        RELATIONSHIP NAME: Broker_Listings.
+        =====================================================================================
+        Collision-checked against every field on Contact in this repo before choosing it:
+        Broker_Assignments, Lease_Inquiries, Brokered_Opportunities, Brokered_Dispositions,
+        Incoming_Broker_Changes, Outgoing_Broker_Changes are the occupants - none named
+        Broker_Listings. The SAME string is already used as the relationshipName on
+        Broker_Listing__c.Disposition__c (the Disposition side), but relationshipName is scoped
+        per PARENT object, so that is not a collision - Contact.Broker_Listings and
+        Disposition__c.Broker_Listings are two independent namespaces. Chosen as the bare plural
+        because this field, like Broker_Assignment__c and Lease_Inquiry__c, is a role-named
+        lookup on an object whose child rows exist largely to describe a broker relationship, per
+        ARCHITECTURE.md §1's role-lookup naming exception. Settled BEFORE the first deploy, since
+        a relationshipName is disruptive to change after.
+
+        =====================================================================================
+        ⚠ TEST FIXTURES.
+        =====================================================================================
+        Any Broker_Listing__c fixture that sets this field must use
+        TestDataFactory.createBrokerContact(s) - the lookup filter is ACTIVE and non-optional, so
+        a plain createContacts() Contact is refused at DML.
+
+        FLS: applied in the consolidated permission-set pass, not this file.
+
+        Risk: MEDIUM per the design doc - entirely because of the seed-guard gap above (dev task)
+        and because a relationshipName is disruptive to change once deployed.
+    -->
+    <fullName>Broker__c</fullName>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <description>The broker Contact for this listing. Selected_Broker text fields on this object are NOT stamped from this lookup in T1 - it is blank on every auto-created listing until a stamp service is built. See the XML comment in this file.</description>
+    <inlineHelpText>Pick the broker for this listing. Only Contacts on the Broker record type appear.</inlineHelpText>
+    <label>Broker</label>
+    <lookupFilter>
+        <active>true</active>
+        <booleanFilter>1</booleanFilter>
+        <errorMessage>Only Broker Contacts can be selected here.</errorMessage>
+        <filterItems>
+            <field>Contact.RecordType.DeveloperName</field>
+            <operation>equals</operation>
+            <value>Broker</value>
+        </filterItems>
+        <isOptional>false</isOptional>
+    </lookupFilter>
+    <referenceTo>Contact</referenceTo>
+    <relationshipLabel>Broker Listings</relationshipLabel>
+    <relationshipName>Broker_Listings</relationshipName>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Lookup</type>
+</CustomField>

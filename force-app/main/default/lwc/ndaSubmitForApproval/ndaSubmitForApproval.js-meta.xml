@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<LightningComponentBundle xmlns="http://soap.sforce.com/2006/04/metadata">
+    <apiVersion>67.0</apiVersion>
+    <isExposed>true</isExposed>
+    <masterLabel>Submit NDA for Approval</masterLabel>
+    <description>Headless quick action behind NDA__c.Submit_NDA_Approval. Submits a disposition NDA into the NDA Issue approval. Replaces the retired Move to Approved one-click write. The record locks on submit; Recall is on the Approval History related list.</description>
+    <targets>
+        <target>lightning__RecordAction</target>
+    </targets>
+    <targetConfigs>
+        <targetConfig targets="lightning__RecordAction">
+            <actionType>Action</actionType>
+        </targetConfig>
+    </targetConfigs>
+</LightningComponentBundle>

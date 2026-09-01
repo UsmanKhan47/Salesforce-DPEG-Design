@@ -159,6 +159,73 @@
         <visible>true</visible>
     </applicationVisibilities>
     <!--
+        Disposition_Record_Type_Override ADDED 2026-08-31, Disposition Gap Closure Tranche 1
+        code review finding C-2. The custom permission had been created
+        (customPermissions/Disposition_Record_Type_Override) and was cited by BOTH the validation
+        rule and its own header as owed to THIS set "in the consolidated permission-set pass" -
+        but that pass landed nine field grants and missed this one. Measured repo wide before this
+        edit: no permission set anywhere referenced the permission. It existed and was granted to
+        nobody.
+
+        WHAT THIS GRANT IS. It is the ONLY escape hatch for
+        objects/Disposition__c/validationRules/Record_Type_Is_Immutable, which locks
+        Disposition__c.RecordTypeId once a disposition has committed past its opening stage.
+
+        THE LOCK BOUNDARY - USER DECISION AT GATE 1, 2026-08-31. The disposition record type is
+        changeable ONLY while Disposition_Stage__c is 'Disposition Readiness'; it is LOCKED from
+        'BOV Outreach' onward through 'Sale Closes'. Rationale in the user's own terms: a principal
+        approves a specific disposition path at Sale_Decision_Approval, whose entry criterion is
+        Disposition_Stage__c = 'Disposition Readiness', so nothing downstream of THAT approval may
+        silently change it. "Past Readiness" and "past the sale decision" are the same boundary.
+
+        🔴 MODIFY ALL DATA DOES NOT CONFER THIS. A validation rule is not bypassed by Modify All
+        Data, and a custom permission is not conferred by the System Administrator profile or by
+        Modify All Data either - the identical point Lead_Convert_Account_RecordType_Stamp's block
+        immediately below records for its own gate. Holding a permission set that enables the
+        permission is the ONLY route to the override; there is no other bypass. Without this entry
+        Record_Type_Is_Immutable deploys green as an ABSOLUTE lock with no escape for anyone,
+        $Permission.Disposition_Record_Type_Override evaluates false for every user, and story 2's
+        "admin overridable" acceptance criterion silently does not exist. 🔴 NO DRY RUN DETECTS
+        THIS: nothing about the rule, the permission or this set is malformed - the defect is
+        purely an absent grant.
+
+        ⚠ $Permission gates by WHO the running user is, not by WHICH CODE PATH is running. Any
+        holder of this set could in principle change an existing disposition's RecordTypeId by hand
+        (UI edit, Data Loader) while the permission is enabled. That is the accepted tradeoff
+        recorded in the custom permission's own header, which also states the grant is to
+        DPEG_Admin_Access ONLY. Do not enable it on any other set without first re reading that
+        note.
+
+        🔴 DEPLOY ORDER: customPermissions/Disposition_Record_Type_Override must land in the SAME
+        deploy as this file or an EARLIER one. A customPermissions entry naming a permission the
+        target org does not yet hold fails the deploy of this entire set - unlike the validation
+        rule, which tolerates the reverse order by simply evaluating the merge field as false.
+
+        RECONCILED AGAINST usman-dpeg 2026-08-31, IMMEDIATELY BEFORE THIS EDIT. Retrieved with
+        sf project retrieve start into a scratch directory OUTSIDE the project, then diffed by a
+        parser over normalized, comment stripped grant lists: org 96 grants, repo 96 grants, ZERO
+        org only and ZERO repo only across applicationVisibilities (4), customPermissions (1),
+        fieldPermissions (42), recordTypeVisibilities (16) and tabSettings (33). Nothing org side
+        is at risk of being wiped by this addition; it is a purely additive edit. The retrieve was
+        confirmed non empty and both sides parsed to 96, so the comparison is not vacuous. Note the
+        org copy's lastModifiedDate was 2026-08-31T06:55:38Z - it HAD been touched the same day,
+        which is exactly why the diff was measured rather than assumed. As the 2026-08-10 block at
+        the top of this file warns, neither that paragraph nor this one is a standing guarantee;
+        re run the diff before EVERY deploy of this file.
+
+        ⚠ ASSIGNMENT REALITY - MEASURED 2026-08-31, REPORTED NOT FIXED. This set has exactly ONE
+        assignee: usman.khan.dpeg@avanzasolutions.com (active, assigned DIRECTLY, PermissionSetGroupId
+        null). PermissionSetGroupComponent returns ZERO rows for it, and no permissionsetgroups/**
+        file in this repo names it, so no permission set group includes it. The override therefore
+        reaches that single administrator and nobody else. If any other administrator must be able
+        to lift the lock, this set has to be assigned to them - a PermissionSetAssignment is not
+        deployable metadata and is deliberately out of scope for this fix.
+    -->
+    <customPermissions>
+        <enabled>true</enabled>
+        <name>Disposition_Record_Type_Override</name>
+    </customPermissions>
+    <!--
         Lead_Convert_Account_RecordType_Stamp added 2026-08-17 (bug fix, LeadConvertServiceTest).
         Measured live against usman-dpeg: the principal Apex tests (and ad hoc admin lead
         conversions) run as holds THIS set but not Lead_Stage_Actions_Access, and Modify All

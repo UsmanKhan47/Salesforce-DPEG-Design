@@ -443,4 +443,214 @@ private class DispositionSelectorTest {
         // down a dialog whose central control is the buyer picker.
         Assert.isNull(result, 'A missing row is a null answer here, never an exception');
     }
+
+    // ═════════════════════════════════════════════════════════════════════════════════════════
+    // THE FIVE METHODS THAT HAD NO TEST AT ALL
+    //
+    // ⚠ ADDED 2026-09-01. Eight of this selector's thirteen methods were covered and five were
+    // not (selectDealSummaryParentById, selectListingClockByIds, selectIdsByPropertyAssetIds,
+    // selectNameById, selectApprovalTrackerContextById), which put the class at 68.966% against
+    // the 75% PER-CLASS production gate — a validate-only run against a non-sandbox org fails on
+    // that even though every one of these methods works. A selector method with no test is
+    // invisible until the class is in a production payload, so the honest fix is coverage that
+    // asserts the CONTRACT, not invocations that buy a percentage.
+    //
+    // 🔴 EACH TEST BELOW PINS THE ONE THING ITS METHOD'S SHAPE ENCODES — the not-found contract
+    // (null vs empty list vs throw, which DIVERGES BY CALLER across this class), the exact field
+    // set, or the mode. None of them is a bare "it returned something" call.
+    // ═════════════════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * ⚠ THIS METHOD SPANS TO A SECOND OBJECT, AND THAT IS THE PART WORTH PINNING.
+     * `Property_Asset__r.Name` crosses out of `Disposition__c` under `WITH USER_MODE`, which adds
+     * an object-level gate no disposition permission set grants — the class header records it as
+     * one of five such reads. A build that dropped the traversal would still compile and still
+     * return a row; only the spanned value going null tells you.
+     */
+    @isTest
+    static void selectDealSummaryParentById_carriesTheSpannedAssetName() {
+        Disposition__c sale = setupDisposition();
+        String expectedAssetName = [SELECT Name FROM Property_Asset__c LIMIT 1].Name;
+
+        Test.startTest();
+        Disposition__c result = DispositionSelector.selectDealSummaryParentById(sale.Id);
+        Test.stopTest();
+
+        Assert.isNotNull(result, 'An existing Disposition must be found');
+        Assert.areEqual(sale.Id, result.Id, 'and it must be the one asked for');
+        Assert.isNotNull(result.Property_Asset__c, 'the parent lookup is selected');
+        Assert.areEqual(expectedAssetName, result.Property_Asset__r.Name,
+            'THE SPANNED NAME IS THE POINT. A null here means the Property_Asset__r traversal was '
+            + 'dropped from the SELECT — the summary card then renders a blank asset with no '
+            + 'error anywhere, because a spanning field that was never selected reads null exactly '
+            + 'like a genuinely empty one');
+    }
+
+    /**
+     * ⚠ THE NOT-FOUND CONTRACT HERE IS **NULL**, AND IT DIVERGES FROM ITS SIBLINGS ON PURPOSE.
+     * `selectApprovalContextById` THROWS on a missing row and `selectNameById` returns an EMPTY
+     * LIST; this one returns null. Three shapes in one class is deliberate — each matches what its
+     * caller does with the answer — so the divergence has to be pinned per method or a future
+     * "harmonisation" silently changes a caller's behaviour.
+     */
+    @isTest
+    static void selectDealSummaryParentById_missingRowIsNullAndNullInputIsNull() {
+        Disposition__c sale = setupDisposition();
+        Id deletedId = sale.Id;
+        delete sale;
+
+        Test.startTest();
+        Disposition__c missing = DispositionSelector.selectDealSummaryParentById(deletedId);
+        Disposition__c nullInput = DispositionSelector.selectDealSummaryParentById(null);
+        Test.stopTest();
+
+        Assert.isNull(missing, 'A deleted Id answers null, never an exception');
+        Assert.isNull(nullInput, 'and a null Id answers null without querying');
+    }
+
+    /**
+     * ⚠ THE FIELD SET IS THE CONTRACT. This read exists to give the traction batch the listing
+     * clock and nothing else, and `Listing_Date__c` must be SELECTED — an unselected field on a
+     * queried row throws `System.SObjectException` when read, so the batch would die rather than
+     * degrade. Reading the field is what proves it was selected; asserting it is non-null would
+     * be wrong, because a sale that has not been listed legitimately has none.
+     */
+    @isTest
+    static void selectListingClockByIds_selectsTheListingClock() {
+        Disposition__c sale = setupDisposition();
+        Date listed = Date.today().addDays(-10);
+        update new Disposition__c(Id = sale.Id, Listing_Date__c = listed);
+
+        Test.startTest();
+        List<Disposition__c> rows =
+            DispositionSelector.selectListingClockByIds(new Set<Id>{ sale.Id });
+        Test.stopTest();
+
+        Assert.areEqual(1, rows.size(), 'The requested Disposition must come back');
+        Assert.areEqual(listed, rows[0].Listing_Date__c,
+            'Listing_Date__c must be SELECTED and carried. If it is dropped from the SELECT, '
+            + 'reading it throws System.SObjectException inside the traction batch — the job dies '
+            + 'rather than degrading, and it is an async job so nobody sees it fail');
+    }
+
+    /**
+     * The asset-side BOV re-rank hook: given the assets that were repriced, which sales hang off
+     * them. Pins that the filter is on `Property_Asset__c` and that an unrelated sale is excluded —
+     * a selector whose WHERE clause was widened would return everything and re-rank the whole org.
+     */
+    @isTest
+    static void selectIdsByPropertyAssetIds_filtersToTheGivenAssets() {
+        Disposition__c onTheAsset = setupDisposition();
+        // ⚠ RESOLVED BEFORE the second asset exists. assetId() is a LIMIT 1 with no WHERE, so
+        // calling it after the insert below could return EITHER asset and the filter assertion
+        // would pass or fail at random.
+        Id theAsset = assetId();
+
+        Property__c otherProp = TestDataFactory.createProperty(true);
+        Property_Asset__c otherAsset = TestDataFactory.createPropertyAsset(otherProp.Id, true);
+        Disposition__c onAnotherAsset = TestDataFactory.createDisposition(otherAsset.Id, true);
+
+        Test.startTest();
+        List<Disposition__c> rows =
+            DispositionSelector.selectIdsByPropertyAssetIds(new Set<Id>{ theAsset });
+        Test.stopTest();
+
+        Assert.areEqual(1, rows.size(),
+            'ONLY the sale on the requested asset may come back. Two rows here means the asset '
+            + 'filter was dropped and every repriced asset would re-rank every BOV in the org');
+        Assert.areEqual(onTheAsset.Id, rows[0].Id, 'and it must be the right one');
+        Assert.areNotEqual(onAnotherAsset.Id, rows[0].Id,
+            'PRESENCE CONTROL: a second sale on a DIFFERENT asset exists, so the assertion above '
+            + 'is a real filter test rather than a statement about an org with one row');
+    }
+
+    /**
+     * ⚠ EMPTY-INPUT CONTRACT FOR BOTH `Set<Id>` READS, PINNED ON THE QUERY COUNT. "Returns an empty
+     * list" is satisfied by a query that finds nothing; "issues no query" is not. Both of these run
+     * on hot paths (a batch and a trigger-adjacent hook) where a wasted SOQL per empty chunk is a
+     * real cost against the 100-query limit.
+     */
+    @isTest
+    static void setIdReads_nullAndEmptyInputsIssueNoQuery() {
+        Set<Id> empty = new Set<Id>();
+
+        Test.startTest();
+        Integer before = Limits.getQueries();
+        List<Disposition__c> clockNull = DispositionSelector.selectListingClockByIds(null);
+        List<Disposition__c> clockEmpty = DispositionSelector.selectListingClockByIds(empty);
+        List<Disposition__c> assetNull = DispositionSelector.selectIdsByPropertyAssetIds(null);
+        List<Disposition__c> assetEmpty = DispositionSelector.selectIdsByPropertyAssetIds(empty);
+        Integer used = Limits.getQueries() - before;
+        Test.stopTest();
+
+        Assert.isTrue(clockNull.isEmpty(), 'null input to selectListingClockByIds is empty');
+        Assert.isTrue(clockEmpty.isEmpty(), 'empty input to selectListingClockByIds is empty');
+        Assert.isTrue(assetNull.isEmpty(), 'null input to selectIdsByPropertyAssetIds is empty');
+        Assert.isTrue(assetEmpty.isEmpty(), 'empty input to selectIdsByPropertyAssetIds is empty');
+        Assert.areEqual(0, used,
+            'FOUR guarded calls must issue ZERO queries. Above zero means a guard was removed and '
+            + 'the empty case now costs a SOQL every time. Used: ' + used);
+    }
+
+    /**
+     * ⚠ A LIST-RETURNING SINGLE-ROW READ, AND THE LIST IS THE CONTRACT. This method and
+     * `selectApprovalTrackerContextById` both return `List<Disposition__c>` for a single Id
+     * specifically so a missing row is an EMPTY LIST the caller iterates over — not a null to
+     * dereference and not the `System.QueryException` a single-row assignment would throw. The
+     * consumer does `for (Disposition__c d : selectNameById(id))`, which is a no-op on a miss.
+     */
+    @isTest
+    static void selectNameById_returnsTheNameAndDegradesToAnEmptyList() {
+        Disposition__c sale = setupDisposition();
+        String expectedName = [SELECT Name FROM Disposition__c WHERE Id = :sale.Id].Name;
+
+        Test.startTest();
+        List<Disposition__c> found = DispositionSelector.selectNameById(sale.Id);
+        List<Disposition__c> nullInput = DispositionSelector.selectNameById(null);
+        Test.stopTest();
+
+        Assert.areEqual(1, found.size(), 'An existing Disposition comes back as a ONE-row list');
+        Assert.areEqual(expectedName, found[0].Name,
+            'and it must carry Name — the only field this read exists to fetch');
+        Assert.isTrue(nullInput.isEmpty(),
+            'A null Id is an EMPTY LIST, never null and never a QueryException. The caller '
+            + 'iterates the result, so empty degrades to a no-op; null would be a '
+            + 'NullPointerException in the header of a for-loop');
+    }
+
+    /**
+     * 🔴 THE TRACKER CONTEXT READ MUST CARRY `RecordTypeId`, AND THAT IS THE WHOLE ASSERTION.
+     * `DispositionApprovalTrackerService` resolves the record type through
+     * `DispositionDomain.recordTypeNameOf`, which reads `RecordTypeId` off the row the CALLER
+     * loaded and does NOT query. An unselected `RecordTypeId` throws `System.SObjectException` on
+     * that read — so dropping it from this SELECT breaks the whole card, and the exception is
+     * raised in the domain class, two files away from the cause.
+     */
+    @isTest
+    static void selectApprovalTrackerContextById_carriesNameAndRecordTypeId() {
+        Disposition__c sale = TestDataFactory.createDisposition(
+            assetId(), TestDataFactory.DISPOSITION_RT_OFF_MARKET, true
+        );
+
+        Test.startTest();
+        List<Disposition__c> rows =
+            DispositionSelector.selectApprovalTrackerContextById(sale.Id);
+        List<Disposition__c> nullInput =
+            DispositionSelector.selectApprovalTrackerContextById(null);
+        Test.stopTest();
+
+        Assert.areEqual(1, rows.size(), 'An existing Disposition comes back as a one-row list');
+        Assert.isNotNull(rows[0].Name, 'Name is selected — the tracker labels its own target row');
+        Assert.areEqual(
+            Schema.SObjectType.Disposition__c.getRecordTypeInfosByDeveloperName()
+                .get('Off_Market').getRecordTypeId(),
+            rows[0].RecordTypeId,
+            'RecordTypeId MUST be selected and correct. DispositionDomain.recordTypeNameOf reads '
+            + 'it off this very row without querying, so an unselected field throws '
+            + 'System.SObjectException there — and a WRONG one silently sends row 2 of the card '
+            + 'to the other broker approval');
+        Assert.isTrue(nullInput.isEmpty(),
+            'and a null Id is an empty list, which is how the controller returns "no rows yet" '
+            + 'during the transient tick before recordId is provisioned');
+    }
 }

@@ -188,7 +188,28 @@
          appended at the tail of the same facet, after OneDrive_URL__c, following this repo's
          tail-append convention for later additions to an existing field run. uiBehavior is `none`
          (editable) on all three, matching every other business field in this facet - none of them
-         is a derived/stamped field on this page. -->
+         is a derived/stamped field on this page.
+
+         =====================================================================
+         🔴 2026-08-31 - TRANCHE 3, ITEM 2. TWO CHANGES: THE ONE-CLICK BYPASS IS RETIRED, AND
+         APPROVAL HISTORY IS ADDED. SEE THE INLINE COMMENTS AT EACH BLOCK FOR THE FULL ARGUMENT -
+         THIS IS A ONE-PARAGRAPH SUMMARY ONLY.
+         =====================================================================
+         (1) NDA__c.Move_to_Approved is REMOVED from the actionNames valueList and its quickAction
+         file is DELETED, replaced in the same slot by NDA__c.Submit_NDA_Approval under identical
+         criteria - retiring an analyst-held one-click bypass of the new
+         approvalProcesses/NDA__c.NDA_Issue_Approval process (design decision D-7). The matching
+         RecordStageAdvanceService map entry is a developer-owned change that must land in the same
+         wave or earlier.
+         (2) A force:relatedListContainer component (identifier relatedLists) is added to the
+         header region, paired with a new RelatedProcessHistoryList block on
+         layouts/NDA__c-NDA Layout.layout-meta.xml - both mandatory together, because
+         recordEditability=AdminOnly on the new approval locks the record and this is the only
+         Recall route in the UI.
+         Retrieved and diffed against usman-dpeg immediately before this edit (Gate G-6): the org
+         copy was byte-identical to this file's pre-change HEAD, comment-stripped - no App Builder
+         drift to reconcile.
+         ===================================================================== -->
     <flexiPageRegions>
         <itemInstances>
             <componentInstance>
@@ -289,9 +310,32 @@
                              UNCHANGED and still correct - disposition still carries 'Sent' as a
                              mid-sequence value, not terminal. quickActions/
                              NDA__c.Move_to_Sent.quickAction-meta.xml is NOT deleted - the
-                             disposition entries below still reference it. -->
+                             disposition entries below still reference it.
+
+                             🔴 AMENDED AGAIN 2026-08-31 (Tranche 3, item 2d/D-7 - NOT OPTIONAL).
+                             THE ENTRY THAT STOOD HERE - NDA__c.Move_to_Approved, one-click
+                             Prepare -> Approved, gated on Disposition_Deal_Actions (the ANALYST
+                             permission, DPEG_Disposition_Edit; FORBIDDEN on DPEG_Disposition_View,
+                             the Principal set) - IS REMOVED, NOT AMENDED, AND ITS quickAction FILE
+                             IS DELETED (quickActions/NDA__c.Move_to_Approved.quickAction-meta.xml).
+                             It was a one-click bypass of the new NDA_Issue_Approval approval
+                             process (approvalProcesses/NDA__c.NDA_Issue_Approval), held by exactly
+                             the wrong persona: an analyst could move a disposition NDA to
+                             'Approved' in one click while a principal could not act on it at all.
+                             REPLACED, IN THE SAME SLOT, UNDER BYTE-IDENTICAL CRITERIA, BY
+                             NDA__c.Submit_NDA_Approval - the gate on WHO may act and WHEN is
+                             unchanged; only the ACTION performed there has changed, from a direct
+                             stage write to a governed approval submission. 🔴 THE MATCHING
+                             RecordStageAdvanceService.NDA_DISPOSITION_NEXT_STAGE MAP ENTRY
+                             ('Prepare' => 'Approved') IS OWNED BY salesforce-developer AND MUST
+                             LAND IN THE SAME WAVE AS, OR BEFORE, THIS FLEXIPAGE EDIT - reversing
+                             that order leaves the server-side allow-list still permitting the
+                             direct write even though no button on this page requests it anymore,
+                             which is a smaller residual than the reverse (a live UI bypass of a
+                             live approval) but still worth landing in order. See that approval
+                             process file's own comment for the full argument. -->
                         <valueListItems>
-                            <value>NDA__c.Move_to_Approved</value>
+                            <value>NDA__c.Submit_NDA_Approval</value>
                             <visibilityRule>
                                 <booleanFilter>1 AND 2 AND 3</booleanFilter>
                                 <criteria>
@@ -426,6 +470,53 @@
                 </componentInstanceProperties>
                 <componentName>force:highlightsPanel</componentName>
                 <identifier>highlightsPanel</identifier>
+            </componentInstance>
+        </itemInstances>
+        <itemInstances>
+            <!-- NEW 2026-08-31 (Tranche 3, item 2e - MANDATORY, not a nicety, per design P-7).
+                 recordEditability=AdminOnly on the new NDA_Issue_Approval process locks a
+                 submitted disposition NDA, and this related-list action bar is the ONLY Recall
+                 route anywhere in the UI. Without it, the first submitted NDA is a locked record
+                 with no way out - the exact gap Disposition_Record_Page closed for Disposition__c
+                 on 2026-08-19 (code review C-3), same two-file shape here: this component plus
+                 layouts/NDA__c-NDA Layout.layout-meta.xml's new RelatedProcessHistoryList block.
+                 Neither half works alone.
+
+                 🔴 NOT force:relatedListSingleContainer - the page's one existing related-list
+                 component (notesAttachmentsList, sidebar region below) uses the Single container
+                 correctly because CombinedAttachments is an ordinary child relationship. Approval
+                 history is not: Disposition_Record_Page measured, against usman-dpeg, that the
+                 Single container answers INVALID_TYPE for ProcessSteps / RelatedProcessHistoryList
+                 / ApprovalHistory as relatedListApiName - it deploys green and renders nothing.
+                 force:relatedListContainer is the layout-driven "Related Lists" component and is
+                 the supported route (repo precedent: Disposition_Record_Page,
+                 Opportunity_Record_Page, Portfolio_Deal_Record_Page, Property_Asset_Record_Page).
+
+                 🔴 THIS COMPONENT IS EMPTY WITHOUT THE LAYOUT HALF. force:relatedListContainer
+                 renders the related lists declared on the object's PAGE LAYOUT
+                 (NDA__c-NDA Layout), not a fixed API name - if that layout edit is ever dropped
+                 from a future deploy, this component still deploys and still renders, but shows
+                 nothing until the layout carries RelatedProcessHistoryList again.
+
+                 Properties are byte-identical to Disposition_Record_Page's proven shape:
+                 relatedListComponentOverride NONE, rowsToDisplay 10, showActionBar true.
+                 showActionBar stays true because Recall is reachable ONLY from this component's
+                 action bar - losing it here would re-open the exact gap this entry closes. -->
+            <componentInstance>
+                <componentInstanceProperties>
+                    <name>relatedListComponentOverride</name>
+                    <value>NONE</value>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>rowsToDisplay</name>
+                    <value>10</value>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>showActionBar</name>
+                    <value>true</value>
+                </componentInstanceProperties>
+                <componentName>force:relatedListContainer</componentName>
+                <identifier>relatedLists</identifier>
             </componentInstance>
         </itemInstances>
         <name>header</name>

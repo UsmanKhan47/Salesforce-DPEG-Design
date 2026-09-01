@@ -10,12 +10,83 @@
          The field itself is NOT deleted (additive retirement, per this repo's standing rule); it
          is simply no longer read by anything on the disposition side. Do not "restore" it here.
 
+         ⚠ THE BASIS IS STILL `Property_Asset__r.Target_Sale_Price__c` AFTER THE 2026-09-01
+         RE-WEIGHTING BELOW. Decision A1 — NO FREEZE — is not revisited: the score keeps measuring
+         against the LIVE target sale price, not a snapshot taken at Conversion 5.
+
+         ═══════════════════════════════════════════════════════════════════════════════════════
+         🔴 RE-WEIGHTED 2026-09-01 — TRANCHE 4 ITEM 1 (story 20), USER DECISION AT GATE 1.
+            THE OLD WEIGHTING IS QUOTED RATHER THAN DELETED, BECAUSE IT IS THE THING A READER WILL
+            OTHERWISE ASSUME IS STILL IN FORCE.
+         ═══════════════════════════════════════════════════════════════════════════════════════
+             RETIRED: Value 50 / Commission 25 / Speed 25 = 100. Three terms, no broker-quality
+             input at all, and `Is_Buyer_Ready__c` / `Is_Known_Performer__c` were INERT — captured
+             by Tranche 1 and read by nothing.
+
+             IN FORCE: Value 40 / Commission 20 / Speed 20 / Buyer Ready 10 / Known Performer 10
+             = 100.
+
+         🔴 IT IS A REBALANCE, NOT A BONUS. The user rejected the "base + up to 20, clamped at 100"
+         shape explicitly. A clamp compresses the top of the range and manufactures ties exactly
+         among the best brokers — the one region where the score has to discriminate — and it would
+         give the org a second definition of a number that is labelled, described and reported as
+         0-100. Every term was rescaled instead, so the total is still exactly 100 with no cap
+         distortion anywhere in the range.
+
+         ⚠ THIS CHANGES EVERY EXISTING SCORE, INCLUDING ON ROWS WHERE NEITHER FLAG IS SET. A row
+         with both flags clear now scores 80% of what it scored before (40/20/20 in place of
+         50/25/25). That is arithmetic, not a defect, and it is why the change cannot be described
+         as "adding two terms".
+
+         ⚠ WHAT THE TWO FLAGS ARE WORTH, STATED SO THE BA CAN SEE THE LEVER THEY SIGNED OFF:
+         20 of 100 points, against a 40-point Value term that spans bid/target from 0 to 110%. Two
+         ticked checkboxes are therefore worth roughly a 55%-of-target swing in bid price — a
+         Buyer-Ready, Known-Performing broker beats a stranger bidding materially more. Worked
+         example (both at 2.5% commission, 30 days to market): a broker bidding 105% of target with
+         neither flag scored 70.65 and WON under the old weights; a broker bidding 98% with both
+         flags now scores 73.97 and wins. That inversion is the requested behaviour, and it is the
+         reason the number — not just the shape — needed sign-off.
+
+         🔴 A DEPLOY OF THIS FILE RE-RANKS READS INSTANTLY AND RE-RANKS NOTHING THAT IS STORED.
+         `BOV_Score__c` is a formula, so the matrix, the Replace Broker picker labels, the
+         `BOV_Tracker` report and every `ORDER BY BOV_Score__c` change the moment this lands.
+         `Submission_Status__c` is STORED, and `BovAutoSelectionService.reselect` re-ranks a parent
+         only on insert / delete / undelete, on one of its six change keys, or on a
+         `Property_Asset__c.Target_Sale_Price__c` edit. A FORMULA DEPLOY IS NONE OF THOSE, and
+         neither is a no-op re-save of a BOV row. So an unlocked sale can sit with a new top scorer
+         beside a stale "Selected" pill indefinitely. The one-off repair is
+         `scripts/backfill-bov-reranking.apex`, which is SHIPPED DELIBERATELY UNRUN — read its
+         banner before executing it, because it re-appoints brokers on live records.
+         ✅ A sale locked by an approval (pending, approved OR rejected) or by
+         `Is_Manually_Appointed__c` moves for nobody, including that script: the lock is evaluated
+         across ALL siblings of the disposition, so a manually-appointed broker is fully protected
+         from this re-weighting.
+
          ⚠ THE GUARD IS DELIBERATELY IDENTICAL IN SHAPE TO THE OLD ONE — blank OR <= 0 OR no
          BOV_Amount__c returns **null**, with formulaTreatBlanksAs = BlankAsBlank. That null means
          "NOT SCOREABLE", never "worst": `BovAutoSelectionService` skips null-scored rows entirely
          and `BovSubmissionSelector`'s `ORDER BY BOV_Score__c DESC NULLS LAST` only keeps them off
          the front of the list. Changing the guard to a 0 would silently make every unpriced sale
          auto-appoint whichever broker quoted first.
+
+         🔴 THE TWO NEW TERMS SIT **INSIDE** THE GUARD, NOT AFTER IT, AND THAT PLACEMENT IS THE
+         WHOLE GUARD. A row with no `BOV_Amount__c` but both flags ticked must still score NULL,
+         not 20. Hoisting the two `IF(...)` terms outside the `IF(OR(...), null, ...)` wrapper
+         would make an unpriced response rankable and defeat the guard from the other end — the
+         same failure as changing the null to a 0, arrived at from a direction nobody is watching.
+
+         ⚠ A CHECKBOX CANNOT EXPRESS "NOT YET ASSESSED", AND NO FORMULA SETTING FIXES THAT.
+         `formulaTreatBlanksAs` does not interact with a Checkbox at all — a Checkbox on a saved
+         row is never null — so an analyst who has not got round to assessing a broker penalises
+         them by exactly as much as one who assessed them and said no. That is a BUSINESS
+         consequence accepted with the weighting, not something `BlankAsZero` vs `BlankAsBlank`
+         can change. Do not "fix" it by flipping that enum; the enum guards the VALUE terms.
+
+         ⚠ `Hist_Success_Rate__c` IS STILL NOT IN THIS FORMULA, AND AFTER TRANCHE 4 THAT IS A
+         SECOND DELIBERATE OMISSION RATHER THAN THE ORIGINAL ONE. It is captured on every
+         submission and granted read in both disposition permission sets. Item 1 was scoped by the
+         user to the two Booleans only. If it is ever folded in, it is a third re-weighting and
+         every sentence above applies again.
 
          ⚠ A NULL `Property_Asset__c` LOOKUP ON THE DISPOSITION IS COVERED BY THE SAME `ISBLANK`.
          The lookup is not required (deleteConstraint SetNull), so the whole chain can be null;
@@ -25,9 +96,15 @@
          formula fields compute in SYSTEM context so the FLS on Target_Sale_Price__c does not
          gate this field. The USER_MODE FLS question applies only to the SOQL that reads the same
          value — see DispositionSelector.selectApprovalContextById.
+         ⚠ THE COMPILED-FORMULA CAP IS 3,900 CHARACTERS AND IS NOT COMPUTABLE FROM SOURCE. Budgeted
+         rather than measured: the two added terms are SAME-OBJECT Checkbox references, so they add
+         ZERO relationship expansion and the count of distinct cross-object paths is UNCHANGED at
+         one (`Disposition__r.Property_Asset__r`, already traversed twice). The failure direction is
+         loud — a deploy error, never a wrong number — which is why this is budgeted here and
+         verified by the deploy rather than asserted.
          ═══════════════════════════════════════════════════════════════════════════════════════ -->
     <fullName>BOV_Score__c</fullName>
-    <description>Composite BOV ranking score, 0-100. Value 50 pts (BOV Amount vs the Disposition&apos;s Property Asset Target Sale Price), Commission 25 pts, Speed 25 pts. Blank when the asset has no Target Sale Price (or it is zero or less), or the BOV has no amount.</description>
+    <description>Composite BOV ranking score, 0-100. Value 40 pts (BOV Amount vs the Disposition&apos;s Property Asset Target Sale Price), Commission 20 pts (inverse), Speed 20 pts (inverse days to market), Buyer Ready 10 pts, Known Performer 10 pts. Re-weighted 2026-09-01 from 50/25/25 - every existing score changed, including on rows where neither flag is set. Blank when the asset has no Target Sale Price (or it is zero or less), or the BOV has no amount - the two flags cannot make an unpriced response scoreable.</description>
     <externalId>false</externalId>
     <formula>IF(
     OR(
@@ -36,12 +113,14 @@
         ISBLANK(BOV_Amount__c)
     ),
     null,
-    (50 * MIN(BOV_Amount__c / Disposition__r.Property_Asset__r.Target_Sale_Price__c, 1.10) / 1.10)
-    + IF(ISBLANK(Commission_Rate__c), 0, 25 * (3 - MAX(1, MIN(3, Commission_Rate__c * 100))) / 2)
-    + IF(ISBLANK(Days_To_Market__c), 0, 25 * (60 - MAX(15, MIN(60, Days_To_Market__c))) / 45)
+    (40 * MIN(BOV_Amount__c / Disposition__r.Property_Asset__r.Target_Sale_Price__c, 1.10) / 1.10)
+    + IF(ISBLANK(Commission_Rate__c), 0, 20 * (3 - MAX(1, MIN(3, Commission_Rate__c * 100))) / 2)
+    + IF(ISBLANK(Days_To_Market__c), 0, 20 * (60 - MAX(15, MIN(60, Days_To_Market__c))) / 45)
+    + IF(Is_Buyer_Ready__c, 10, 0)
+    + IF(Is_Known_Performer__c, 10, 0)
 )</formula>
     <formulaTreatBlanksAs>BlankAsBlank</formulaTreatBlanksAs>
-    <inlineHelpText>Auto-calculated. The value half is scored against the property asset&apos;s Target Sale Price - if that is blank or zero this score stays blank, and a blank score is not a rank, so the response cannot be auto-selected.</inlineHelpText>
+    <inlineHelpText>Auto-calculated, 0-100: Value 40, Commission 20, Speed 20, Buyer Ready 10, Known Performer 10. The value part is scored against the property asset&apos;s Target Sale Price - if that is blank or zero this score stays blank even when both flags are ticked, and a blank score is not a rank, so the response cannot be auto-selected.</inlineHelpText>
     <label>BOV Score</label>
     <precision>5</precision>
     <required>false</required>

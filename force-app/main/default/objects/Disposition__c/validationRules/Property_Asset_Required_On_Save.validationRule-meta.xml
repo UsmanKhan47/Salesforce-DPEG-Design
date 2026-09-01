@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT, NOT IN <description>, AND IT MUST STAY THAT WAY.
+        ValidationRule.Description is capped at 255 characters; the rationale below is longer. A
+        comment is repo-only and never sent to the Metadata API. The comment must sit INSIDE the
+        root element - a comment placed ABOVE <ValidationRule> breaks `sf` deploy at conversion
+        with a misleading "unable to find matching parent xml file" error.
+
+        DISPOSITION GAP CLOSURE TRANCHE 1, ITEM 8 (agent-output/disposition-gap-closure-t1-design.md
+        §3 Item 8, premise P-5, decision D-6, settled at Gate 1 2026-08-31).
+
+        =====================================================================================
+        🔴 WHY THIS IS A VALIDATION RULE AND NOT required=true ON Property_Asset__c.
+        =====================================================================================
+        1. THE DELETE CONSTRAINT. Property_Asset__c is deleteConstraint SetNull today.
+           Salesforce FORCES deleteConstraint Restrict on a required lookup - required=true is not
+           an attribute flip here, it is the schema change SetNull's own choice refuses. Restrict
+           would block deletion of ANY Property_Asset__c that has ever had a disposition,
+           org-wide. Same collision class as BOV_Submission__c.Broker_Required_On_Submission's own
+           header, which this rule's shape follows exactly for the same reason.
+        2. A NULL Property_Asset__c LOOKUP IS A DOCUMENTED, RELIED-ON STATE ELSEWHERE.
+           BOV_Score__c's own header states: "A NULL Property_Asset__c LOOKUP ON THE DISPOSITION
+           IS COVERED BY THE SAME ISBLANK. The lookup is not required (deleteConstraint SetNull),
+           so the whole chain can be null." Forcing required=true would falsify that header's
+           premise without touching BOV_Score__c itself.
+        3. NINE EXISTING TEST CALL SITES ALREADY CREATE A DISPOSITION WITH A NULL ASSET
+           (DispositionMaterialsStampTest:57,109,172,205,220; DispositionBuyerTimelineTest:154;
+           DispositionDomainTest:103,111; RecordStageAdvanceServiceTest:2234 - six of the nine
+           insert). required=true reds ALL of them immediately and unconditionally; this rule reds
+           only NEW or CHANGED saves, so pre-existing fixtures created before this rule deploys
+           remain untouched until they are next edited.
+
+        =====================================================================================
+        WHY OR(ISNEW(), ISCHANGED(Property_Asset__c)) - THIS RULE CANNOT TRAP AN EXISTING NULL
+        ROW.
+        =====================================================================================
+        scripts/seed-lakeline-asset-repair.apex exists specifically to repair a LIVE disposition
+        whose Property_Asset__c was null, which is direct evidence such rows have existed in this
+        org. A bare ISBLANK(Property_Asset__c) with no guard would refuse every future save of
+        every legacy null row for ANY reason, including saves that have nothing to do with the
+        asset. The guard means: a legacy disposition can still be saved for any other reason, and
+        the remedy (supplying the asset) is itself a permitted save. Same shape as
+        Wire_Complete_Before_Sale_Closes's OR(ISNEW(), ISCHANGED(...)) guard on this same object.
+
+        =====================================================================================
+        WHICH CREATION PATHS BREAK - CHECKED, NOT ASSUMED.
+        =====================================================================================
+        DispositionService.findOrCreate:323 and .initiateAndSubmit:445 both set
+        Property_Asset__c = assetId - clean. scripts/seed-dispositions.apex,
+        seed-disposition.apex, seed-disposition-bulk.apex, seed-disp0002.apex,
+        create-on-market-disposition.apex, seed-lakeline-asset-repair.apex all set the asset -
+        clean. THE BREAK IS ENTIRELY IN THE TEST SUITE (the nine TestDataFactory.createDisposition
+        call sites named above), under EITHER mechanism (rule or required=true) - repairing those
+        nine sites via a shared, lazily-built Property_Asset__c is DEVELOPER scope (design doc §4)
+        and is not part of this file.
+
+        ⚠ RE-MEASURE BEFORE DEPLOYING THIS RULE. Run
+        SELECT COUNT(Id) FROM Disposition__c WHERE Property_Asset__c = null against the target
+        org at deploy time. A non-zero result is an ESCALATION to report, not a reason to deploy
+        anyway and not a reason to withhold the rule - the OR(ISNEW(), ISCHANGED(...)) guard means
+        those rows stay saveable for anything else regardless of the count.
+
+        errorDisplayField is Property_Asset__c, anchoring the message on the empty lookup itself,
+        consistent with how the two sibling rules on this object anchor on the field they gate.
+
+        FLS: unaffected - this is a validation rule, not a field grant, and needs no permission
+        set change.
+
+        Risk: MEDIUM per the design doc - low in production (both Apex create paths and all six
+        seed scripts are already clean), certain in the test suite until the developer-scope
+        repair lands. Do not deploy this rule ahead of that repair, or RunLocalTests goes red on
+        every disposition-adjacent test class named above.
+    -->
+    <fullName>Property_Asset_Required_On_Save</fullName>
+    <active>true</active>
+    <description>Blocks creating or changing a Disposition without a Property Asset. A rule, not required=true, because Property_Asset__c is deleteConstraint SetNull and a required lookup forces Restrict. See the XML comment in this file.</description>
+    <errorConditionFormula>AND(
+    OR(ISNEW(), ISCHANGED(Property_Asset__c)),
+    ISBLANK(Property_Asset__c)
+)</errorConditionFormula>
+    <errorDisplayField>Property_Asset__c</errorDisplayField>
+    <errorMessage>A Property Asset is required. Pick the property this disposition is for before saving.</errorMessage>
+</ValidationRule>

@@ -38,8 +38,8 @@ private class ChecklistItemDomainTest {
     @isTest
     static void stampsCompletionOnTransitionOnly() {
         Transaction__c deal = TestDataFactory.createTransactions(1, true)[0];
-        Checklist__c group = TestDataFactory.createChecklist(deal.Id, true);
-        Checklist_Item__c item = TestDataFactory.createChecklistItem(group.Id, true);
+        Checklist__c checklistGroup = TestDataFactory.createChecklist(deal.Id, true);
+        Checklist_Item__c item = TestDataFactory.createChecklistItem(checklistGroup.Id, true);
 
         Test.startTest();
         update new Checklist_Item__c(Id = item.Id, Flag__c = 'Completed');
@@ -65,8 +65,8 @@ private class ChecklistItemDomainTest {
     @isTest
     static void clearsTheStampWhenAnItemIsReopened() {
         Transaction__c deal = TestDataFactory.createTransactions(1, true)[0];
-        Checklist__c group = TestDataFactory.createChecklist(deal.Id, true);
-        Checklist_Item__c item = TestDataFactory.createChecklistItem(group.Id, true);
+        Checklist__c checklistGroup = TestDataFactory.createChecklist(deal.Id, true);
+        Checklist_Item__c item = TestDataFactory.createChecklistItem(checklistGroup.Id, true);
         update new Checklist_Item__c(Id = item.Id, Flag__c = 'Completed');
 
         Test.startTest();
@@ -87,8 +87,8 @@ private class ChecklistItemDomainTest {
         // The Phase 4 migration carries historical completions across and must be able to state who
         // completed them; overwriting that with the migration user would destroy the history.
         Transaction__c deal = TestDataFactory.createTransactions(1, true)[0];
-        Checklist__c group = TestDataFactory.createChecklist(deal.Id, true);
-        Checklist_Item__c item = TestDataFactory.createChecklistItem(group.Id, false);
+        Checklist__c checklistGroup = TestDataFactory.createChecklist(deal.Id, true);
+        Checklist_Item__c item = TestDataFactory.createChecklistItem(checklistGroup.Id, false);
         item.Flag__c = 'Completed';
         item.Completed_By__c = UserInfo.getUserId();
         item.Completed_DateTime__c = Datetime.now().addDays(-40);

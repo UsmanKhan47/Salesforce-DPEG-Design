@@ -71,6 +71,42 @@ private class BovControllerTest {
         d.Disposition_Stage__c = 'BOV Outreach';
         d.Package_Sent__c = Date.today().addDays(-15);
         d.Submission_Deadline__c = Date.today().addDays(1);
+        // ══════════════════════════════════════════════════════════════════════════════════════
+        // 🔴 RE-EXAMINED 2026-08-31 (Tranche 1 item 7) — `Responses_Received__c` NOW HAS A WRITER,
+        //    AND THIS HAND-SET VALUE SURVIVES. THE ANSWER IS "STILL VALID", AND THE REASON IS
+        //    NARROW ENOUGH THAT A FUTURE EDIT COULD DESTROY IT WITHOUT NOTICING.
+        // ══════════════════════════════════════════════════════════════════════════════════════
+        // `DispositionCounterRollupService` recomputes this field from the live `BOV_Submission__c`
+        // count, but ONLY from `BovSubmissionTrigger` — i.e. only when a SUBMISSION is saved. This
+        // line is part of a `Disposition__c` insert with zero submissions in existence, so nothing
+        // fires and the 4 stands.
+        //
+        // ⚠ RE-EXAMINED AGAIN 2026-09-01 (Tranche 4 item 2) AND THE ANSWER FLIPPED FROM "STILL
+        //   VALID" TO "NO LONGER RELIED ON". The paragraph below is QUOTED rather than deleted,
+        //   because its warning is what told the editor how to fix the tests:
+        //
+        //     RETRACTED: "The two tests that ASSERT on it were checked one by one and neither is
+        //     vacuous: `testGetOutreachSummary_positiveScenario` — creates NO submissions, so 4
+        //     stands. `testGetOutreachSummary_belowThreshold_...` — writes 2 by a Disposition
+        //     update, also with no submissions. 2 stands."
+        //
+        //   `matrixGenerated` no longer derives from this field at all — it counts the NON-PREFERRED
+        //   submissions the comparison matrix renders (`BovController.OutreachSummary.matrixGenerated`
+        //   argues why). A fixture with zero submissions and a hand-typed 4 therefore asserted a
+        //   generated matrix on a sale where no broker had responded, which could only ever pass
+        //   vacuously. BOTH tests were repointed to insert real rows, exactly as the surviving
+        //   sentence below instructs, so the counter is now written by
+        //   `DispositionCounterRollupService` and this hand-set 4 is overwritten in every
+        //   outreach-summary test. It still stands for any FUTURE test that inserts no submissions.
+        //
+        // 🔴 THE TRAP FOR THE NEXT EDITOR — STILL LIVE AND NOW ALSO THE PRESCRIBED FIX: adding ONE
+        // `TestDataFactory.createBovSubmission(...)` to a test that asserts this literal would
+        // silently move `responsesReceived` to the real row count and the assertion would fail with
+        // a number nobody wrote. If a fixture needs both submissions AND a specific summary count,
+        // the honest fix is to insert exactly that many submissions — not to re-set the field
+        // afterwards, which the next child save undoes. See `respondersOn(...)` below.
+        // ⚠ `Brokers_Contacted__c` is NOT trigger-owned and stays hand-set: it counts brokers
+        // ASKED, which no child row records.
         d.Responses_Received__c = 4;
         d.Brokers_Contacted__c = 6;
         d.Selected_Broker__c = 'CBRE - Mark Chen';
@@ -278,30 +314,148 @@ private class BovControllerTest {
         System.assertEquals(251, rows.size(), 'All 251 submissions should be returned and transformed');
     }
 
+    // ═══════════════════════════════════════════════════════════════════════════════════════════
+    // 🔴 matrixGenerated — THE POPULATION MOVED ON 2026-09-01 (Tranche 4 item 2, decision D-4)
+    // ═══════════════════════════════════════════════════════════════════════════════════════════
+    // `matrixGenerated` used to read `Responses_Received__c >= 3`. It now counts the population
+    // `c/bovComparisonMatrix` actually renders — every submission EXCEPT the preferred broker.
+    //
+    // 🔴 THAT INVALIDATED THE OLD FIXTURE SHAPE, NOT JUST THE OLD ASSERTIONS, AND THE @TestSetup
+    // BLOCK PREDICTED IT IN TERMS: "If a fixture needs both submissions AND a specific summary
+    // count, the honest fix is to insert exactly that many submissions — not to re-set the field
+    // afterwards, which the next child save undoes." Both tests below used to assert a badge state
+    // on a disposition carrying ZERO submissions and a hand-typed counter. Under the new
+    // derivation that fixture says "no brokers have responded" while claiming a generated matrix —
+    // it could only ever have passed vacuously. Every test in this block now inserts REAL rows, so
+    // `Responses_Received__c` is written by `DispositionCounterRollupService` and the two numbers
+    // are produced by the same data rather than agreeing by hand.
+    //
+    // ⚠ THE FIXTURES ARE UNPRICED ON PURPOSE (`TestDataFactory.createPropertyAssets` deliberately
+    // leaves `Target_Sale_Price__c` null), so every `BOV_Score__c` is null,
+    // `BovAutoSelectionService` appoints nobody, and `Selected_Broker__c` on the parent is left
+    // exactly as @TestSetup wrote it. That is what keeps the `'CBRE - Mark Chen'` assertion below
+    // meaningful rather than accidentally true.
+
+    /**
+     * @param comparable how many ordinary (non-preferred) responses to create.
+     * @param preferred  how many preferred responses to create — these count toward
+     *                   `Responses_Received__c` and NOT toward `matrixGenerated`.
+     */
+    private static void respondersOn(Id dispositionId, Integer comparable, Integer preferred) {
+        List<BOV_Submission__c> rows =
+            TestDataFactory.createBovSubmissions(comparable + preferred, dispositionId, false);
+        for (Integer i = comparable; i < rows.size(); i++) {
+            rows[i].Is_Preferred_Broker__c = true;
+        }
+        insert rows;
+    }
+
     @isTest
     static void testGetOutreachSummary_positiveScenario() {
         Disposition__c d = [SELECT Id FROM Disposition__c LIMIT 1];
+        respondersOn(d.Id, 4, 0);
 
         Test.startTest();
         BovController.OutreachSummary s = BovController.getOutreachSummary(d.Id);
         Test.stopTest();
 
-        System.assertEquals(4, s.responsesReceived, 'Responses received should pass through');
-        System.assertEquals(true, s.matrixGenerated, '4 responses meets the >= 3 threshold for matrix generation');
+        System.assertEquals(4, s.responsesReceived,
+            'Responses received should pass through — and it is now the rollup\'s number, not the '
+            + '@TestSetup literal, because four real submissions exist');
+        System.assertEquals(true, s.matrixGenerated, '4 comparable responses meets the >= 3 threshold for matrix generation');
         System.assertEquals('CBRE - Mark Chen', s.selectedBroker, 'Selected broker should pass through');
     }
 
     @isTest
     static void testGetOutreachSummary_belowThreshold_matrixNotGenerated() {
         Disposition__c d = [SELECT Id FROM Disposition__c LIMIT 1];
-        d.Responses_Received__c = 2;
-        update d;
+        respondersOn(d.Id, 2, 0);
 
         Test.startTest();
         BovController.OutreachSummary s = BovController.getOutreachSummary(d.Id);
         Test.stopTest();
 
+        System.assertEquals(2, s.responsesReceived,
+            'PREMISE — the rollup must have written 2, or the badge assertion below proves nothing');
         System.assertEquals(false, s.matrixGenerated, 'Below the 3-response threshold, the matrix should not be flagged generated');
+    }
+
+    /**
+     * 🔴 THE BOUNDARY ITSELF, AT EXACTLY 3. Neither pre-existing test sat on it — one used 4 and
+     * the other 2 — so an off-by-one in the threshold (`> 3` instead of `>= 3`) would have passed
+     * both. This is the test that stops that.
+     */
+    @isTest
+    static void testGetOutreachSummary_exactlyThreeComparable_matrixIsGenerated() {
+        Disposition__c d = [SELECT Id FROM Disposition__c LIMIT 1];
+        respondersOn(d.Id, 3, 0);
+
+        Test.startTest();
+        BovController.OutreachSummary s = BovController.getOutreachSummary(d.Id);
+        Test.stopTest();
+
+        System.assertEquals(3, s.responsesReceived, 'PREMISE — exactly three responses');
+        Assert.isTrue(s.matrixGenerated,
+            'THE BOUNDARY: three is the threshold, so three comparable responses must generate the '
+            + 'matrix. A `> 3` implementation passes every other test in this class and fails here.');
+    }
+
+    /**
+     * 🔴 THE WHOLE POINT OF TRANCHE 4 ITEM 2, AND THE ONLY TEST THAT CAN FAIL IF THE DERIVATION IS
+     * REVERTED TO `Responses_Received__c >= 3`.
+     *
+     * Three child rows, one of them the PREFERRED broker. `Responses_Received__c` is 3 — correctly,
+     * it counts every broker who came back (T1 decision D-9) — and the comparison matrix renders
+     * TWO rows, because `c/bovComparisonMatrix._visible` excludes the preferred one. The badge must
+     * follow the MATRIX.
+     *
+     * ⚠ BOTH NUMBERS ARE ASSERTED, DELIBERATELY. Asserting only `matrixGenerated == false` would
+     * also pass if someone "fixed" the disagreement by making `countByDispositionIds` skip
+     * preferred rows — which would silently redefine `Responses_Received__c`, break the "n of m"
+     * tile beside this badge, and contradict `countByDispositionIds_countsEveryStatus_notJustSelected`.
+     * Pinning `responsesReceived == 3` in the same test makes the two facts disagree ON PURPOSE and
+     * makes that repair fail here.
+     */
+    @isTest
+    static void testGetOutreachSummary_thirdResponseIsPreferred_matrixNotGenerated() {
+        Disposition__c d = [SELECT Id FROM Disposition__c LIMIT 1];
+        respondersOn(d.Id, 2, 1);
+
+        Test.startTest();
+        BovController.OutreachSummary s = BovController.getOutreachSummary(d.Id);
+        Test.stopTest();
+
+        System.assertEquals(3, s.responsesReceived,
+            '🔴 THE COUNTER MUST STILL SAY 3. It answers "how many brokers came back", the preferred '
+            + 'broker is one of them, and that is Tranche 1 decision D-9. If this drops to 2, the '
+            + 'fix was applied to the wrong end and the "n of m" tile is now wrong.');
+        Assert.isFalse(s.matrixGenerated,
+            '🔴 ...AND THE BADGE MUST STILL SAY NO. Only two of those three rows are comparable — '
+            + 'the matrix excludes the preferred broker — so "Matrix Generated ✓" would be sitting '
+            + 'above a two-row table with nothing on screen explaining why.');
+    }
+
+    /**
+     * The other side of the same line: three COMPARABLE rows plus a preferred one is four children,
+     * and the badge appears.
+     *
+     * ⚠ WITHOUT THIS, THE TEST ABOVE IS HALF AN ARGUMENT. An implementation that simply returned
+     * `false` whenever any preferred row existed would satisfy it and be wrong — a preferred broker
+     * does not disable the matrix, it is merely not IN it.
+     */
+    @isTest
+    static void testGetOutreachSummary_preferredPlusThreeComparable_matrixIsGenerated() {
+        Disposition__c d = [SELECT Id FROM Disposition__c LIMIT 1];
+        respondersOn(d.Id, 3, 1);
+
+        Test.startTest();
+        BovController.OutreachSummary s = BovController.getOutreachSummary(d.Id);
+        Test.stopTest();
+
+        System.assertEquals(4, s.responsesReceived, 'PREMISE — four brokers came back');
+        Assert.isTrue(s.matrixGenerated,
+            'A preferred broker does not SUPPRESS the badge, it is simply not counted toward it: '
+            + 'three comparable responses still generate the matrix');
     }
 
     // ═══════════════════════════════════════════════════════════════════════════

@@ -11,14 +11,27 @@ if (cw.isEmpty()) {
     throw new System.CalloutException('Run scripts/seed-rent-roll.apex first - Cypresswood Retail not found.');
 }
 Id propertyId = cw[0].Id;
+// ⚠ THE TWO EXTRA PREDICATES ARE LOAD-BEARING (fixed 2026-08-29). SOQL ascending order is
+// NULLS FIRST, and seed-rent-roll.apex creates a vacant PAD Unit with a NULL Suite_Number__c
+// (plus a vacant Suite 210 with a NULL Tenant_Name__c). Without these filters units[0] was that
+// PAD — null Tenant_Name__c, null Current_Monthly_Rent__c — and the DEMO-AR-001 Receivables row
+// below rendered with a blank tenant and blank amounts. Filtering (rather than only adding NULLS
+// LAST) also keeps the vacant suites out of positions [1] and [2]. Every row this script picks
+// is now guaranteed to be a tenanted unit with a rent.
 List<Unit__c> units = [SELECT Id, Suite_Number__c, Tenant_Name__c, Current_Monthly_Rent__c
-                        FROM Unit__c WHERE Property_Asset__c = :propertyId ORDER BY Suite_Number__c];
+                        FROM Unit__c
+                        WHERE Property_Asset__c = :propertyId
+                          AND Suite_Number__c != null
+                          AND Tenant_Name__c != null
+                        ORDER BY Suite_Number__c NULLS LAST];
 if (units.size() < 3) {
-    throw new System.CalloutException('Run scripts/seed-rent-roll.apex first - expected 3 Units on Cypresswood Retail, found ' + units.size());
+    throw new System.CalloutException('Run scripts/seed-rent-roll.apex first - expected 3 tenanted Units on Cypresswood Retail, found ' + units.size());
 }
-Unit__c uYei = units[0];   // 100 - Premiumrx Pharmacy (order is by Suite_Number__c: 100, 103, 200)
-Unit__c uVape = units[1];  // 103 - Vape City
-Unit__c uPharmacy = units[2]; // 200 - Yei Dental
+// Variable names are historical and no longer match the tenant they hold — read the debug line
+// below for the actual suite/tenant pairing at run time.
+Unit__c uYei = units[0];      // lowest tenanted suite (100 - Premiumrx Pharmacy)
+Unit__c uVape = units[1];     // next tenanted suite   (101 - Cell Phone Store)
+Unit__c uPharmacy = units[2]; // next tenanted suite   (103 - Vape City)
 System.debug('Units: ' + uYei.Suite_Number__c + '/' + uYei.Tenant_Name__c + ', ' + uVape.Suite_Number__c + '/' + uVape.Tenant_Name__c + ', ' + uPharmacy.Suite_Number__c + '/' + uPharmacy.Tenant_Name__c);
 
 Id secondPropertyId = [SELECT Id FROM Property_Asset__c WHERE Id != :propertyId LIMIT 1].Id;

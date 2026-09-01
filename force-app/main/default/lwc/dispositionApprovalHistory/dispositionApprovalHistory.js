@@ -1,6 +1,30 @@
 /**
- * c/dispositionApprovalHistory — the CONSOLIDATED, READ-ONLY "Approval History" card in the
- * Disposition record page sidebar. Built 2026-08-26.
+ * c/dispositionApprovalHistory — a CONSOLIDATED, READ-ONLY chronological approval log for a
+ * Disposition. BUILT 2026-08-26 AND DELIBERATELY NOT PLACED ON ANY FLEXIPAGE.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════════════════════════
+ * 🔴 RETRACTED IN PLACE 2026-08-31 (review W-5). THIS OPENING LINE READ: *"the CONSOLIDATED,
+ *    READ-ONLY 'Approval History' card in the Disposition record page sidebar."* THAT WAS FALSE
+ *    WHEN WRITTEN AND IS NOW ACTIVELY MISLEADING.
+ * ═══════════════════════════════════════════════════════════════════════════════════════════════
+ * This bundle appears on NO FlexiPage. It was briefly placed in the Disposition record page sidebar
+ * and REVERSED the same day; `Disposition_Record_Page.flexipage-meta.xml` carries the full account
+ * (search that file for this bundle name) and instructs, in terms, that it must not be placed there
+ * or anywhere on that page.
+ *
+ * ⚠ AND THE FALSE SENTENCE GOT WORSE RATHER THAN MERELY STALER. A similarly-named sibling —
+ * `c/dispositionApprovalTracker`, the FIVE-ROW pending-vs-complete checklist — now occupies exactly
+ * the sidebar slot this sentence described, so the claim read as an accurate description of a card
+ * a reader can actually see, on the wrong bundle. The two are not variants of each other: the
+ * tracker answers "which approvals are outstanding", this answers "what happened, in order".
+ *
+ * ⇒ STATUS: BUILT, TESTED, UNPLACED, per the user's 2026-08-31 decision ("Tracker only, leave
+ * history unplaced"). It is not dead code and must not be deleted; it is a completed bundle waiting
+ * on a placement decision. Anyone placing it needs that decision reversed FIRST — not a FlexiPage
+ * edit — and should read the tracker's placement comment on that page before proposing one.
+ *
+ * ⚠ NOTHING BELOW THIS BLOCK IS AFFECTED. The behaviour, the wires and the label mapping are
+ * unchanged; only the claim about where this renders was wrong.
  *
  * 🔴 WHY IT EXISTS. The disposition flow's five approvals target THREE objects: three aim at
  * `Disposition__c`, `Broker_Finalize_Approval` aims at the selected `BOV_Submission__c` and

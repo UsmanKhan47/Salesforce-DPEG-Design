@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<QuickAction xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!-- THIS NOTE LIVES IN A COMMENT INSIDE THE ROOT ELEMENT - a comment placed ABOVE
+         <QuickAction> breaks `sf` deploy at source conversion with a misleading "unable to find
+         matching parent xml file" error. It is also why there is no <description>: no quick
+         action in this repo carries one (0 of 80 measured), QuickAction.Description is capped at
+         255 characters, and a comment is repo-only and never sent to the Metadata API.
+
+         NEW FILE, 2026-08-31 (Tranche 3, item 2d - the NDA approval submit route, design D-9).
+         Headless, mirrors Disposition__c.Submit_Sale_Decision / c/dispositionSubmitForApproval in
+         shape exactly.
+
+         =====================================================================================
+         🔴 RETRACTED 2026-08-31 (TRANCHE 3 METADATA-FIX PASS) - THE BUNDLE NOW EXISTS AND THE
+         NAME MATCHES. DO NOT RENAME THIS ELEMENT.
+         =====================================================================================
+         The superseded warning is quoted and retracted rather than deleted, because it is the
+         claim a future reader is most likely to reason from:
+
+             RETRACTED: "WAVE DEPENDENCY - THE lightningWebComponent BUNDLE THIS ACTION POINTS AT
+             DOES NOT EXIST ON DISK YET. lwc/ndaSubmitForApproval is owned by salesforce-developer
+             (design D-9: a headless RecordAction LWC calling NdaApprovalService.submitForApproval
+             via a thin controller). THIS FILE CANNOT DEPLOY UNTIL THAT BUNDLE LANDS - the same
+             ordering constraint every quickAction-plus-LWC pair in this repo already carries. Name
+             chosen to match the established dispositionSubmitForApproval / bovSubmit* naming
+             convention; confirm with the developer agent's actual bundle name before deploying and
+             rename this element if it differs - the <lightningWebComponent> value must match the
+             deployed bundle's directory name exactly or the quick action fails to resolve it."
+
+         WHAT IS TRUE NOW, VERIFIED 2026-08-31 IN THIS PASS: the developer agent's bundle landed at
+         `lwc/ndaSubmitForApproval/`, and this file's `<lightningWebComponent>ndaSubmitForApproval
+         </lightningWebComponent>` element matches that directory name EXACTLY. The wave dependency
+         is CLOSED, not outstanding. Do not rename this element on the strength of the retracted
+         paragraph above - the name is already correct.
+
+         WHY A NEW QUICK ACTION RATHER THAN THE PLATFORM'S GENERIC SUBMIT BUTTON. NDA_Record_Page
+         has enableActionsConfiguration=true, which discards the page's inherited
+         platformActionList entirely (measured on this project) - the generic "Submit for
+         Approval" button is NOT inherited and was never on this page. Even if it were, design D-9
+         rejected wiring it: it would route around NdaApprovalService's authored pre-checks
+         (Status is Prepare, record type is Disposition_NDA, no pending instance already) and
+         surface an unmet entry criterion as the platform's opaque "no applicable approval process
+         was found" - the same failure mode Closing_Approval's own 2026-08-19 comment names and
+         solves the same way on the Disposition side.
+
+         PLACEMENT: replaces NDA__c.Move_to_Approved in NDA_Record_Page's actionNames list, at the
+         same slot, under criteria that are BYTE-IDENTICAL to the ones the removed action carried
+         (Disposition_Deal_Actions custom permission, RecordType.DeveloperName EQUAL
+         Disposition_NDA, Status__c EQUAL Prepare) - see that FlexiPage's own comment for why the
+         criteria transfer unchanged: the gate on WHO may act and WHEN is the same, only the ACTION
+         performed at that gate has changed, from a direct one-click stage write to a governed
+         approval submission. -->
+    <actionSubtype>Action</actionSubtype>
+    <label>Submit for Approval</label>
+    <lightningWebComponent>ndaSubmitForApproval</lightningWebComponent>
+    <optionsCreateFeedItem>false</optionsCreateFeedItem>
+    <type>LightningWebComponent</type>
+</QuickAction>

@@ -75,6 +75,32 @@
         <apexClass>ChargeLineSelector</apexClass>
         <enabled>true</enabled>
     </classAccesses>
+    <!--
+      ChecklistController (added 2026-09-01, Transaction checklist rewrite Phase 3) is the
+      entry point for c/transactionTaskGroups, c/transactionPhaseCards and
+      c/transactionChecklistSummary once a deal's Checklist_Fanned_Out__c is true. It sits
+      beside TransactionTaskController below, which is the SAME THREE COMPONENTS' entry point
+      while that flag is false — both models are live simultaneously during the Phase 4
+      migration, so BOTH grants are required and neither may be removed until M5.
+
+      Per this file's established pattern only the ENTRY POINT is granted: ChecklistItemService,
+      ChecklistSelector and ChecklistItemSelector are reached only through this controller and
+      need no grant of their own. ChecklistFanoutService, ChecklistRollupService,
+      ChecklistItemDomain and ChecklistItemPrerequisiteService are not @AuraEnabled at all —
+      they run from ChecklistItemTrigger / TransactionTrigger in system context — and are
+      correctly absent.
+
+      🔴 OMITTING THIS ENTRY IS A KNOWN LIVE-BREAK SHAPE HERE, not a theoretical risk: see the
+      2026-08-21 note at the top of this file, where three disposition controllers shipped with
+      full field and object permissions and no classAccesses, and UAT got "You do not have
+      access to the Apex class named ...". The checklist screen's failure mode is quieter and
+      worse — the component catches it and renders its generic load-error state, so the page
+      looks broken rather than unauthorised.
+    -->
+    <classAccesses>
+        <apexClass>ChecklistController</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
     <classAccesses>
         <apexClass>CounterOfferController</apexClass>
         <enabled>true</enabled>
@@ -131,6 +157,64 @@
     -->
     <classAccesses>
         <apexClass>DispositionApprovalHistoryController</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
+    <!--
+      TRANCHE 3 ITEM 3 (2026-08-31). DispositionApprovalTrackerController backs
+      lwc/dispositionApprovalTracker, the five-row "Approval Tracker" CHECKLIST card on the
+      Disposition record page. Added as the fix for code-review finding C-1, which caught it BEFORE
+      UAT did: the class shipped naming its own requirement in its header and with ZERO classAccesses
+      entries in any permission set or profile in this repo, the identical defect to the three live
+      breaks recorded at the top of this file.
+
+      🔴 A MISSING GRANT HERE IS INVISIBLE TO THE DEPLOY AND INVISIBLE TO AN ADMIN SMOKE TEST. A
+      permission set naming a class the org LACKS fails the whole set, loudly; a class MISSING from
+      the set fails nothing at all. It breaks only at runtime, only for non-admins, because Modify
+      All Data bypasses Apex class access entirely. The symptom is "You do not have access to the
+      Apex class named 'DispositionApprovalTrackerController'", which the component's wire routes
+      into its isUnavailable branch, so the card reads "The approval tracker is unavailable right
+      now." on EVERY Disposition record page for EVERY principal and analyst, which is precisely the
+      audience the card was built for.
+
+      ⚠ THAT THE FAILURE IS HONEST IS BY DESIGN, NOT LUCK, AND IS NOT A REASON TO TOLERATE IT. This
+      card fails HARD: the controller never dresses a read failure as a state, so a denied read
+      renders ZERO rows behind a visible banner rather than five confident "Not started" boxes
+      asserting that a sale which has passed four principal approvals has passed none. A visible
+      outage beats a silent wrong answer on a checklist. The full argument is in
+      DispositionApprovalTrackerController's header.
+
+      ONLY THE ENTRY-POINT CONTROLLER IS GRANTED, matching this file's established pattern stated at
+      DispositionOfferFormController and ReleaseMaterialsResponseController below.
+      DispositionApprovalTrackerService and the five selector methods behind it (DispositionSelector,
+      NdaSelector, BovSubmissionSelector, DispositionOfferSelector, ProcessInstanceSelector) are
+      reached ONLY through this controller and get no grant of their own. Measured 2026-08-31 rather
+      than assumed: the sibling DispositionApprovalHistoryController is granted in the org while
+      DispositionApprovalHistoryService is NOT, and its @AuraEnabled method returns a List of
+      DispositionApprovalHistoryService.ApprovalRow regardless, live since 2026-08-26. An inner class
+      used as an @AuraEnabled return type needs no grant on its outer class.
+
+      ProcessInstance / ProcessDefinition still need no objectPermissions or fieldPermissions block
+      anywhere, and that is now MEASURED here rather than inherited from the history card's note
+      above: every field on ProcessDefinition reports IsPermissionable = false (DeveloperName and
+      Name included), and there are ZERO ObjectPermissions and ZERO FieldPermissions rows org-wide
+      for ProcessInstance. No permission set can grant or deny either one; row visibility follows
+      access to the target record, exactly as recorded above.
+
+      🔴 DEPLOY ORDER IS A DEPENDENCY OF THIS ENTRY, NOT AN OPTIONAL EXTRA.
+      DispositionApprovalTrackerController is NOT yet in usman-dpeg (measured 2026-08-31 across all
+      537 ApexClass rows in the org). It must land in the SAME payload as this permission set or an
+      EARLIER one: a classAccesses entry naming a class the org lacks fails the deploy of this whole
+      set, taking all 75 grants down with it.
+
+      RECONCILED ORG to REPO 2026-08-31 immediately before this edit, by SOQL and NOT by retrieve
+      (SetupEntityAccess where SetupEntityType = 'ApexClass', joined to ApexClass.Name on the 15
+      character Id prefix), comparing full NAME LISTS and not counts: 74 grants both sides, ZERO
+      org-only and ZERO repo-only. This set also carries no ObjectPermissions, no FieldPermissions
+      and no other SetupEntityType in the org, so the replace-on-deploy behaviour warned about at
+      DispositionTractionController below can drop nothing that was not looked at.
+    -->
+    <classAccesses>
+        <apexClass>DispositionApprovalTrackerController</apexClass>
         <enabled>true</enabled>
     </classAccesses>
     <classAccesses>

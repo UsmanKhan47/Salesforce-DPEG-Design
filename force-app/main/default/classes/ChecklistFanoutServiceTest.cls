@@ -69,7 +69,7 @@ private class ChecklistFanoutServiceTest {
     @isTest
     static void createsChecklistsAndItemsForALoanDeal() {
         useTestDefinitions();
-        Transaction__c deal = TestDataFactory.createTransactions(1, true)[0];
+        Transaction__c deal = TestDataFactory.createTransactionsOnChecklistModel(1, true)[0];
         update new Transaction__c(Id = deal.Id, Loan_Required__c = true);
 
         Test.startTest();
@@ -92,8 +92,11 @@ private class ChecklistFanoutServiceTest {
             FROM Transaction__c WHERE Id = :deal.Id
         ];
         Assert.isTrue(reloaded.Checklist_Fanned_Out__c, 'The NEW guard must be set');
-        Assert.isFalse(reloaded.Tasks_Fanned_Out__c,
-            'The LEGACY guard must be untouched - the two models coexist behind separate flags');
+        Assert.isTrue(reloaded.Tasks_Fanned_Out__c,
+            'The LEGACY guard is left exactly as the fixture set it. This is a STRONGER proof of guard '
+            + 'independence than asserting it is false: the checklist fan-out ran to completion even '
+            + 'though Tasks_Fanned_Out__c was already TRUE, so it is provably keyed on '
+            + 'Checklist_Fanned_Out__c and on nothing else.');
         Assert.areEqual(5, reloaded.Tasks_Total__c, 'Five items across both groups');
         Assert.areEqual(1, reloaded.Wire_Open_Risks__c,
             'The wire count keys on Is_Wire_Verification__c, never on subject text');
@@ -103,7 +106,7 @@ private class ChecklistFanoutServiceTest {
     static void omitsTheConditionalGroupWhenTheDealNeedsNoLoan() {
         useTestDefinitions();
         // The factory creates deals with Loan_Required__c = false.
-        Transaction__c deal = TestDataFactory.createTransactions(1, true)[0];
+        Transaction__c deal = TestDataFactory.createTransactionsOnChecklistModel(1, true)[0];
 
         Test.startTest();
         ChecklistFanoutService.fanOutNow(new List<Id>{ deal.Id });
@@ -119,7 +122,7 @@ private class ChecklistFanoutServiceTest {
     @isTest
     static void seedsTheFlagAndTheWireMarkersFromTheDefinition() {
         useTestDefinitions();
-        Transaction__c deal = TestDataFactory.createTransactions(1, true)[0];
+        Transaction__c deal = TestDataFactory.createTransactionsOnChecklistModel(1, true)[0];
 
         Test.startTest();
         ChecklistFanoutService.fanOutNow(new List<Id>{ deal.Id });
@@ -147,7 +150,7 @@ private class ChecklistFanoutServiceTest {
         // The whole reason the fan-out needs four statements rather than three: a real self-lookup
         // has no target Id until the items exist.
         useTestDefinitions();
-        Transaction__c deal = TestDataFactory.createTransactions(1, true)[0];
+        Transaction__c deal = TestDataFactory.createTransactionsOnChecklistModel(1, true)[0];
 
         Test.startTest();
         ChecklistFanoutService.fanOutNow(new List<Id>{ deal.Id });
@@ -182,7 +185,7 @@ private class ChecklistFanoutServiceTest {
             new Transaction_Task_Def__mdt(Group_Letter__c = 'B', Sequence__c = 1,
                 Subject__c = 'Unstaged item', Owner_Label__c = 'Danish')
         };
-        Transaction__c deal = TestDataFactory.createTransactions(1, true)[0];
+        Transaction__c deal = TestDataFactory.createTransactionsOnChecklistModel(1, true)[0];
 
         Test.startTest();
         ChecklistFanoutService.fanOutNow(new List<Id>{ deal.Id });
@@ -196,7 +199,7 @@ private class ChecklistFanoutServiceTest {
     @isTest
     static void isIdempotentBehindTheChecklistGuard() {
         useTestDefinitions();
-        Transaction__c deal = TestDataFactory.createTransactions(1, true)[0];
+        Transaction__c deal = TestDataFactory.createTransactionsOnChecklistModel(1, true)[0];
 
         Test.startTest();
         ChecklistFanoutService.fanOutNow(new List<Id>{ deal.Id });
@@ -212,7 +215,7 @@ private class ChecklistFanoutServiceTest {
         // 51 deals: one more than CHUNK_SIZE, which is what proves the per-chunk cost is flat rather
         // than per-record. Scaled-down definitions keep the row count sane while preserving shape.
         useTestDefinitions();
-        List<Transaction__c> deals = TestDataFactory.createTransactions(51, true);
+        List<Transaction__c> deals = TestDataFactory.createTransactionsOnChecklistModel(51, true);
         List<Id> dealIds = new List<Id>();
         for (Transaction__c deal : deals) {
             dealIds.add(deal.Id);
@@ -228,9 +231,19 @@ private class ChecklistFanoutServiceTest {
         Test.stopTest();
 
         Assert.areEqual(51 * 3, items, 'Three items per no-loan deal, 51 deals');
-        Assert.areEqual(1, queries,
-            'ONE selector read for the whole chunk regardless of deal count; the prerequisite second '
-                + 'pass must add ZERO queries. Actual: ' + queries);
+        // 🔴 TWO, NOT ONE, AND THE SECOND IS NOT AVOIDABLE HERE. This asserted 1 and was RED as
+        // written. The second pass issues `Database.update(links, ...)`, and DML FIRES TRIGGERS
+        // REGARDLESS OF `AccessLevel` — SYSTEM_MODE lifts CRUD/FLS, it does not skip automation. So
+        // `ChecklistItemTrigger` runs `ChecklistItemPrerequisiteService.enforceOnUpdate`, which
+        // spends exactly one selector read for that chunk. `ChecklistRollupService
+        // .suppressTriggerRecalc` does NOT cover it: that flag suppresses the ROLLUP arm only, and
+        // suppressing the GATE during fan-out would be the wrong fix anyway — the link write is
+        // precisely the thing the gate exists to police.
+        // What the constant still pins is the property that matters: BOTH reads are once-per-CHUNK
+        // and neither is a function of deal count. 51 deals cost the same 2 as 1 deal would.
+        Assert.areEqual(2, queries,
+            'ONE selector read for the fan-out itself plus ONE from the prerequisite gate firing on '
+                + 'the second-pass link update — both per CHUNK, neither per deal. Actual: ' + queries);
         Assert.isTrue(dml <= 4,
             'Four DML statements per chunk (checklists, items, links, deals). Actual: ' + dml);
     }
@@ -238,7 +251,7 @@ private class ChecklistFanoutServiceTest {
     @isTest
     static void reconcileAddsTheLoanGroupWhenTheFlagIsTurnedOn() {
         useTestDefinitions();
-        Transaction__c deal = TestDataFactory.createTransactions(1, true)[0];
+        Transaction__c deal = TestDataFactory.createTransactionsOnChecklistModel(1, true)[0];
         ChecklistFanoutService.fanOutNow(new List<Id>{ deal.Id });
 
         Test.startTest();
@@ -265,7 +278,7 @@ private class ChecklistFanoutServiceTest {
     @isTest
     static void reconcileRemovesAnUnworkedGroupButRefusesAWorkedOne() {
         useTestDefinitions();
-        Transaction__c deal = TestDataFactory.createTransactions(1, true)[0];
+        Transaction__c deal = TestDataFactory.createTransactionsOnChecklistModel(1, true)[0];
         update new Transaction__c(Id = deal.Id, Loan_Required__c = true);
         ChecklistFanoutService.fanOutNow(new List<Id>{ deal.Id });
         useTestDefinitions();
@@ -289,7 +302,7 @@ private class ChecklistFanoutServiceTest {
     @isTest
     static void reconcileRefusesToDeleteWorkedHistory() {
         useTestDefinitions();
-        Transaction__c deal = TestDataFactory.createTransactions(1, true)[0];
+        Transaction__c deal = TestDataFactory.createTransactionsOnChecklistModel(1, true)[0];
         update new Transaction__c(Id = deal.Id, Loan_Required__c = true);
         ChecklistFanoutService.fanOutNow(new List<Id>{ deal.Id });
         useTestDefinitions();
@@ -318,7 +331,7 @@ private class ChecklistFanoutServiceTest {
     @isTest
     static void reconcileIgnoresDealsThatWereNeverFannedOut() {
         useTestDefinitions();
-        Transaction__c deal = TestDataFactory.createTransactions(1, true)[0];
+        Transaction__c deal = TestDataFactory.createTransactionsOnChecklistModel(1, true)[0];
 
         Test.startTest();
         List<ChecklistFanoutService.ReconcileResult> results =
@@ -334,7 +347,7 @@ private class ChecklistFanoutServiceTest {
     @isTest
     static void invocableEnqueuesExactlyOneJob() {
         useTestDefinitions();
-        Transaction__c deal = TestDataFactory.createTransactions(1, true)[0];
+        Transaction__c deal = TestDataFactory.createTransactionsOnChecklistModel(1, true)[0];
         ChecklistFanoutService.InputDTO request = new ChecklistFanoutService.InputDTO();
         request.transactionId = deal.Id;
 

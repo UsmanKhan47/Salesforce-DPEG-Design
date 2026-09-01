@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ListView xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        DISPOSITION GAP CLOSURE TRANCHE 1, ITEM 13. See All_Dispositions.listView-meta.xml in this
+        same folder for the shared GATE D-13 collision warning and the column/sharedTo rationale -
+        not repeated here.
+
+        🔴 GATE G-6 - THIS FILE USES THE DESIGN DOC'S NAMED FALLBACK, NOT THE PRIMARY SHAPE.
+        The design doc's primary proposal for this view is a direct record-type filter (the
+        RECORD_TYPE pseudo-field on ListView.filters, with an unconfirmed <value> spelling -
+        developer name vs label). That XML shape is NOT exercised anywhere in this repo and
+        cannot be confirmed without the salesforce-api-context MCP (mcp=unavailable, mcp_tools=none
+        - see this report). The design doc's own standing rule is "never guess a shape... deploy
+        ONE list view as a dry-run and read it back before writing the other five" - but this pass
+        is metadata-file creation only, with no deploy step available to run that dry-run.
+
+        SO THIS FILE USES THE DESIGN DOC'S NAMED FALLBACK INSTEAD: Disposition__c.Is_On_Market__c
+        equals true. That field is a formula checkbox
+        (RecordType.DeveloperName = "On_Market") that ALREADY EXISTS on this object PRECISELY so
+        record type can be tested where a direct RecordType reference is unproven (see that
+        field's own XML comment - it documents the identical reasoning for a FlexiPage visibility
+        rule). A Boolean-equals filter on a Checkbox field is a proven ListView shape in this repo
+        (e.g. Lease_Inquiry__c/listViews/Active_Pipeline.listView-meta.xml's Status__c equals
+        Active). This avoids guessing the unproven RECORD_TYPE shape entirely.
+
+        ⚠ Is_On_Market__c reads FALSE on a Master-record-type row (a blank RecordType merge
+        field), so a Master-type disposition, if one ever exists, would NOT appear on this view
+        despite not truly being "off market" either - the same fail-closed/fail-open asymmetry
+        that field's own header documents for its FlexiPage use. Acceptable here for the same
+        reason it is acceptable there: DispositionService stamps a real record type on every row
+        it creates.
+
+        If a future pass proves the RECORD_TYPE filter shape safe via a dry-run, this file and
+        Off_Market_Sales.listView-meta.xml are the two to repoint - not the other four.
+
+        🔴 MEASURED, NOT INFERRED - 2026-08-31, deploy id 0Afiw000000UAoOCAW, validate-only against
+        usman-dpeg. A ListView filter <value> on a Checkbox field MUST be "0" or "1" - "true"
+        produced a hard component error ("Use \"0\" or \"1\""), even though the XML is well-formed,
+        the field is real, and "equals" is a valid operation. This is a green-source/red-deploy
+        defect: nothing but an actual deploy catches it.
+        ⚠ THIS DOES NOT UNDERMINE THE GATE G-6 FALLBACK ABOVE. The checkbox-on-Is_On_Market__c
+        SHAPE is still correct and is still the right call over the unproven RECORD_TYPE filter -
+        only the boolean LITERAL inside that shape was wrong. Do not read this fix as evidence the
+        checkbox fallback failed; it did not. DO NOT "clean this back up" to true/false - 1 is
+        correct and true was not.
+    -->
+    <fullName>On_Market_Sales</fullName>
+    <columns>NAME</columns>
+    <columns>Property_Asset__c</columns>
+    <columns>Disposition_Stage__c</columns>
+    <columns>Selected_Broker__c</columns>
+    <columns>Listing_Date__c</columns>
+    <columns>Closing_Date__c</columns>
+    <columns>LAST_UPDATE</columns>
+    <filterScope>Everything</filterScope>
+    <filters>
+        <field>Is_On_Market__c</field>
+        <operation>equals</operation>
+        <value>1</value>
+    </filters>
+    <label>On Market Sales</label>
+</ListView>

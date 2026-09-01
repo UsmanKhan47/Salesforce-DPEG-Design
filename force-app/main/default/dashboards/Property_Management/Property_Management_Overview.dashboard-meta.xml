@@ -19,7 +19,7 @@
                 <indicatorHighColor>#0B5394</indicatorHighColor>
                 <indicatorLowColor>#0B5394</indicatorLowColor>
                 <indicatorMiddleColor>#0B5394</indicatorMiddleColor>
-                <metricLabel>Properties</metricLabel>
+                <metricLabel>Total Properties</metricLabel>
                 <report>Property_Management/Managed_Properties</report>
                 <showRange>false</showRange>
             </dashboardComponent>
@@ -155,12 +155,18 @@
                 <enableHover>true</enableHover>
                 <expandOthers>false</expandOthers>
                 <groupingColumn>BucketField_RenewalBucket</groupingColumn>
-                <groupingSortProperties/>
+                <groupingSortProperties>
+                    <groupingSorts>
+                        <groupingLevel>g1</groupingLevel>
+                        <inheritedReportGroupingSort>r</inheritedReportGroupingSort>
+                    </groupingSorts>
+                </groupingSortProperties>
                 <legendPosition>Bottom</legendPosition>
                 <report>Property_Management/Renewal_Pipeline_Buckets</report>
                 <showPercentage>false</showPercentage>
                 <showValues>true</showValues>
                 <sortBy>RowLabelAscending</sortBy>
+                <sortLegendValues>false</sortLegendValues>
                 <title>Lease Renewal Pipeline</title>
                 <useReportChart>false</useReportChart>
             </dashboardComponent>
@@ -186,13 +192,20 @@
                 <enableHover>true</enableHover>
                 <expandOthers>false</expandOthers>
                 <groupingColumn>Property_Asset__c.Property_Name__c</groupingColumn>
-                <groupingSortProperties/>
+                <groupingSortProperties>
+                    <groupingSorts>
+                        <groupingLevel>g1</groupingLevel>
+                        <sortColumn>a!Unit__c.Occupied_Pct__c</sortColumn>
+                        <sortOrder>d</sortOrder>
+                    </groupingSorts>
+                </groupingSortProperties>
                 <legendPosition>Bottom</legendPosition>
                 <report>Property_Management/Occupancy_by_Property</report>
                 <showPercentage>false</showPercentage>
                 <showPicturesOnCharts>false</showPicturesOnCharts>
                 <showValues>true</showValues>
                 <sortBy>RowValueDescending</sortBy>
+                <sortLegendValues>false</sortLegendValues>
                 <title>Occupancy by Property</title>
                 <useReportChart>false</useReportChart>
             </dashboardComponent>
@@ -218,13 +231,19 @@
                 <enableHover>true</enableHover>
                 <expandOthers>false</expandOthers>
                 <groupingColumn>Delinquency__c.Aging_Bucket__c</groupingColumn>
-                <groupingSortProperties/>
+                <groupingSortProperties>
+                    <groupingSorts>
+                        <groupingLevel>g1</groupingLevel>
+                        <inheritedReportGroupingSort>r</inheritedReportGroupingSort>
+                    </groupingSorts>
+                </groupingSortProperties>
                 <legendPosition>Bottom</legendPosition>
                 <report>Property_Management/Delinquency_Aging</report>
                 <showPercentage>false</showPercentage>
                 <showPicturesOnCharts>false</showPicturesOnCharts>
                 <showValues>true</showValues>
                 <sortBy>RowLabelAscending</sortBy>
+                <sortLegendValues>false</sortLegendValues>
                 <title>Delinquency Aging ($ balance)</title>
                 <useReportChart>false</useReportChart>
             </dashboardComponent>
@@ -262,6 +281,7 @@
                         <sortOrder>1</sortOrder>
                     </flexTableSortInfo>
                     <hideChatterPhotos>true</hideChatterPhotos>
+                    <useReportTableSetting>false</useReportTableSetting>
                 </flexComponentProperties>
                 <groupingSortProperties/>
                 <header>CAM Reconciliation</header>
@@ -301,6 +321,7 @@
                         <sortOrder>1</sortOrder>
                     </flexTableSortInfo>
                     <hideChatterPhotos>true</hideChatterPhotos>
+                    <useReportTableSetting>false</useReportTableSetting>
                 </flexComponentProperties>
                 <groupingSortProperties/>
                 <header>Insurance Expiry Alerts</header>
@@ -314,8 +335,8 @@
     </dashboardGridLayout>
     <dashboardType>SpecifiedUser</dashboardType>
     <isGridLayout>true</isGridLayout>
-    <owner>test-aysz9meqvl23@example.com</owner>
-    <runningUser>test-aysz9meqvl23@example.com</runningUser>
+    <owner>usman.khan.dpeg@avanzasolutions.com</owner>
+    <runningUser>usman.khan.dpeg@avanzasolutions.com</runningUser>
     <textColor>#000000</textColor>
     <title>Property Management Dashboard</title>
     <titleColor>#000000</titleColor>

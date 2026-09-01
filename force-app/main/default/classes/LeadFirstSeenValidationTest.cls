@@ -113,8 +113,24 @@ private class LeadFirstSeenValidationTest {
         // them, and nothing else in the suite is aimed at that.
         Lead lead = insertedLead();
 
+        // ⚠ `Listing_Status__c` IS FIXTURE SCAFFOLDING, NOT PART OF WHAT THIS TEST ASSERTS.
+        // `Lead/Deal_Facts_Required_For_Under_Review` (live since 2026-08-14) blocks ENTRY to
+        // 'Under Review' unless `Deal_Type__c` AND `Listing_Status__c` are BOTH filled.
+        // `TestDataFactory.createLeads` already supplies `Deal_Type__c = 'Retail'`, so Listing
+        // Status is the only missing fact — it is supplied HERE rather than in the shared factory
+        // on purpose: adding it to `createLeads` would change every Lead fixture in the suite for
+        // one method's benefit, and some of them exist precisely to observe a blank Listing Status.
+        // 'On Market' is on BOTH Lead record types' `Listing_Status__c` subsets (Acquisition_Broker
+        // and IR_Investor), and the field is `restricted`, so a value off the subset would fail the
+        // DML rather than pass quietly.
+        //
+        // 🔴 THIS DOES NOT WEAKEN THE TEST. The assertion is that an update which leaves
+        // `First_Seen_Date__c` ALONE is unaffected by `Broker_First_Seen_Is_System_Set`; neither
+        // added field is `First_Seen_Date__c`, so the shape being pinned is unchanged. Dropping the
+        // 'Under Review' transition instead would have been the weakening fix — that transition is
+        // the stage quick action the comment above names as the regression surface.
         Test.startTest();
-        update new Lead(Id = lead.Id, Status = 'Under Review');
+        update new Lead(Id = lead.Id, Status = 'Under Review', Listing_Status__c = 'On Market');
         Test.stopTest();
 
         Assert.areEqual('Under Review',

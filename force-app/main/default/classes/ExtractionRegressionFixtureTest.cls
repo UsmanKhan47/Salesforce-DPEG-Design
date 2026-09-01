@@ -29,9 +29,14 @@
  *      rather than deleted, so no reader trusts a guard that is gone. The prompt moved to
  *      Broker_Protection_Config__mdt.Default.Extraction_Prompt__c and is Setup data; a test
  *      cannot pin data an admin edits, and pinning the Apex fallback instead would report
- *      green while the live prompt drifted. ⚠ Measured (P3): ENRICHED_EXTRACTION_RULES is
- *      ~95% of the prompt, is not @TestVisible, and was NEVER pinned — so most of this
- *      protection never existed. The full rationale, and what to do instead, is in the
+ *      green while the live prompt drifted. ⚠ ENRICHED_EXTRACTION_RULES is the OVERWHELMING
+ *      MAJORITY of the prompt — roughly 97% at the last measurement (2026-08-31) and RISING,
+ *      since every prompt edit since WS7 has added text to ENRICHED and none to LEGACY — is not
+ *      @TestVisible, and was NEVER pinned, so most of this protection never existed. 🔴 THE
+ *      SHARE IS DELIBERATELY STATED AS A RATIO AND A DIRECTION, NOT A PINNED FIGURE: this
+ *      paragraph previously read "~95%", an older P3 measurement that had already drifted from
+ *      the body of this very class. Neither number is load-bearing for the argument. The full
+ *      rationale, and what to do instead, is in the
  *      section-2 tombstone in the body of this class. READ IT BEFORE RE-ADDING A PIN.
  *   3. THE 40,000-CHARACTER INPUT CLIP (C-15) — asserted not to remove the outermost "From:" /
  *      "Sent:" lines the legacy rules read, which is the ONLY reason clipping is safe at all.
@@ -283,13 +288,36 @@ private class ExtractionRegressionFixtureTest {
     // WS7 added 1,338 characters, and it added ALL of them to ENRICHED_EXTRACTION_RULES —
     // so the numerator moved with the denominator and the SHARE went UP, not down. Anyone
     // recomputing this against the new total while holding the old numerator gets ~90.6%,
-    // which is wrong in the direction that makes the trade look worse than it is. Counted
-    // from source: LEGACY_EXTRACTION_RULES 596 + ENRICHED_EXTRACTION_RULES 19,996 = 20,592,
-    // matching LLMExtractionCalloutService.shippedPrompt()'s documented length exactly.
-    // ENRICHED_EXTRACTION_RULES is 19,996 of the prompt's 20,592 characters — roughly 97%
-    // — and it is NOT @TestVisible and was NEVER pinned by this class or any other. So for
-    // 97% of the prompt there was never a regression guard to lose. What actually went away
-    // is the pin on the two LEGACY constants (~762 characters), which are themselves marked
+    // which is wrong in the direction that makes the trade look worse than it is.
+    // ⚠ RE-MEASURED AGAIN 2026-08-31, AND THE "COUNTED FROM SOURCE" METHOD WAS ITSELF WRONG.
+    // This block previously read "LEGACY 596 + ENRICHED 19,996 = 20,592, matching
+    // shippedPrompt()'s documented length exactly". It matched the DOCUMENTED length, which was
+    // also derived by counting literals — the two agreed because they shared one blind spot.
+    // ENRICHED_EXTRACTION_RULES interpolates MAX_PROPERTIES_IN_PROMPT (= 10, two chars) TWICE
+    // at RUNTIME, so its real length is 20,000, and the prompt's real length is 20,596 —
+    // measured on usman-dpeg at API 67.0 (the org's ApexClass Body was verified byte-identical
+    // to the repo file, so this was never repo/org drift). NEVER RE-DERIVE THIS FIGURE BY
+    // COUNTING LITERALS; it will under-report by 4 and look like a correction.
+    // ⚠ RE-MEASURED-POLICY CHANGE 2026-08-31 (schema-key definition pass): THE TWO TOTALS THAT
+    // USED TO BE PINNED IN THIS PARAGRAPH ARE GONE, AND THAT IS THE FIX, NOT AN OMISSION. This
+    // block read "ENRICHED_EXTRACTION_RULES is 20,000 of the prompt's 20,596 characters —
+    // roughly 97%". Both figures move on every prompt edit, this file has already had to
+    // re-measure them TWICE (see the two dated notes above), and neither number is load-bearing
+    // for the ARGUMENT being made. Per the same policy now applied to shippedPrompt()'s @return
+    // tag and the loader's seed-length line, they are stated as a RATIO and a DIRECTION instead:
+    //   ENRICHED_EXTRACTION_RULES is the overwhelming majority of the prompt — roughly 97% at
+    //   the last measurement (2026-08-31, pre-definition-pass) — and it is NOT @TestVisible and
+    //   was NEVER pinned by this class or any other.
+    // 🔴 THAT SHARE IS A FLOOR, NOT A SNAPSHOT, AND IT ONLY EVER RISES. Every prompt edit since
+    // WS7 has added text to ENRICHED and none to LEGACY (which is marked DO NOT EDIT), so the
+    // numerator and denominator move together and the share goes UP. The 2026-08-31 definition
+    // pass added nine field-definition bullets, all to ENRICHED. So the conclusion below is
+    // strictly stronger now than when it was written, and re-deriving it needs no arithmetic.
+    // ⚠ IF YOU WANT THE CURRENT NUMBERS, MEASURE THEM: evaluate
+    // LLMExtractionCalloutService.shippedPrompt().length() against the org. Do not count the
+    // literals (it under-reports by 4), and do not re-pin the result here.
+    // So for ~97%+ of the prompt there was never a regression guard to lose. What actually went
+    // away is the pin on the two LEGACY constants (~762 characters), which are themselves marked
     // "DO NOT EDIT" in LLMExtractionCalloutService and, on the enriched path,
     // LEGACY_RESPONSE_FORMAT is not even referenced.
     //
@@ -306,6 +334,25 @@ private class ExtractionRegressionFixtureTest {
     // must assert against the CMDT record's live value, and it must be understood that such
     // a test turns every legitimate prompt edit into a required code change — which is the
     // configurability this workstream was asked to deliver, undone.
+    //
+    // ✅ LLMExtractionCalloutServiceTest T1-T5 (added 2026-08-31) DO NOT VIOLATE THIS BANNER,
+    // and must not be deleted as though they did. THEY DO NOT ALL GUARD THE SAME THING, AND THE
+    // DIFFERENCE IS LOAD-BEARING — read both bullets before concluding what is covered.
+    //   T1-T4 assert STRUCTURAL PROPERTIES of the prompt that was ACTUALLY SENT — length > 255,
+    //   contains the token `json`, and which of two candidate prompts won — never verbatim
+    //   bytes. A prompt edit in Setup keeps them green; a truncating READ or a prompt that
+    //   cannot satisfy `response_format: json_object` turns them red. That is the guard this
+    //   paragraph says is missing, built the one way that is compatible with configurability.
+    //   T5 asserts a DIFFERENT property against a DIFFERENT subject: that no response-schema
+    //   key is orphaned — every key in the JSON response template also appears in the rules —
+    //   and it reads `shippedPrompt()`, the COMPILE-TIME Apex constant, with no mock and no
+    //   `overrideForTest`. It says so itself in its own header, and this banner's own carve-out
+    //   near the top of the class is written for the same reason. 🔴 T5 THEREFORE PROVES
+    //   NOTHING ABOUT THE PROMPT THE ORG SENDS. Editing `Extraction_Prompt__c` in Setup to add
+    //   a schema key with no matching rule, or to drop a rule whose key stays in the template,
+    //   leaves T5 green — there is no test anywhere that would catch it. Do not read this file
+    //   as saying the sent prompt is schema-key-guarded; it is not.
+    // Do not "strengthen" any of the five into a byte pin either.
     //
     // ✅ EVERYTHING ELSE IN THIS CLASS SURVIVES UNCHANGED: section 1's parser-contract and
     // PropertyMatchingService.normalizeAddress claim-key assertions, section 3's input-clip

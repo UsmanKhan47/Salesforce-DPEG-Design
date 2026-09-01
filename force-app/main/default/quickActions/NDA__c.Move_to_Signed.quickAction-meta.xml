@@ -1,9 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <QuickAction xmlns="http://soap.sforce.com/2006/04/metadata">
     <!-- THIS NOTE LIVES IN A COMMENT INSIDE THE ROOT ELEMENT - a comment placed ABOVE
-         <QuickAction> breaks `sf` deploy at source conversion. See
-         NDA__c.Move_to_Approved.quickAction-meta.xml for the full rationale behind this set of
-         per-hop actions (user decision, 2026-08-26) and for why no <description> element is used.
+         <QuickAction> breaks `sf` deploy at source conversion. See NDA__c.Move_to_Sent
+         .quickAction-meta.xml for the full rationale behind this set of per-hop actions (user
+         decision, 2026-08-26) and for why no <description> element is used.
+         ⚠ NDA__c.Move_to_Approved.quickAction-meta.xml, previously cross-referenced here, was
+         DELETED 2026-08-31 (Tranche 3, item 2d/D-7) - it was the one-click Prepare -> Approved
+         bypass of the new NDA_Issue_Approval process; see that approval file's own comment and
+         flexipages/NDA_Record_Page.flexipage-meta.xml's for the retirement argument.
 
          THE TERMINAL HOP. NDA_DISPOSITION_NEXT_STAGE maps 'Sent' => 'Signed', and 'Signed' is the
          disposition NDA's terminal - it is NOT a key in that map, so no button follows this one.

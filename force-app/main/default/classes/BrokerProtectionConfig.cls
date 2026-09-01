@@ -35,15 +35,45 @@
  * So the condition the user attached to GATE A was, in practice, usually not being met at
  * all. Do not re-demote the stamp to "nice to have": it IS the accepted condition.
  *
- * ═══ LAYER — WHY THERE IS NO SELECTOR ═══
- * `.claude/rules/apex-layering-rule.md` puts ALL SOQL in selector classes. This class
- * issues NO SOQL: `Broker_Protection_Config__mdt.getInstance(...)` is the platform's
- * custom-metadata accessor, not a query. Measured on `usman-dpeg` 2026-08-30 with
- * anonymous Apex: two `getInstance` calls, `Limits.getQueries() == 0`. There is therefore
- * nothing for a selector to own, and adding `[SELECT ... FROM Broker_Protection_Config__mdt]`
- * would ADD a governor cost this class does not currently pay —
- * `ExtractAddressQueueable`'s pinned QUERY_BUDGET (30 at N=1, 120 at N=10) is precisely why
- * that matters.
+ * ═══ 🔴 LAYER — THIS CLASS NOW ISSUES EXACTLY ONE SOQL, AND THE OLD CLAIM HERE WAS WRONG ═══
+ * ⚠ REWRITTEN 2026-08-31. This block used to be headed "WHY THERE IS NO SELECTOR" and said
+ * this class "issues NO SOQL ... `Limits.getQueries() == 0`, measured". That was true when
+ * written and is FALSE now. It is corrected here, in the same change that made it false,
+ * because a stale "measured, zero SOQL" claim in a header is exactly the failure class this
+ * area has already been burned by — a later reader trusts it and pins a budget against it.
+ *
+ * WHAT CHANGED. `extractionPromptOverride()` — and ONLY that accessor — now reads through
+ * `BrokerProtectionConfigSelector`, lazily and cached. The other seven accessors are
+ * unchanged and still cost zero queries.
+ *
+ * WHY. `getInstance()` / `getAll()` SILENTLY TRUNCATE LongTextArea and Html fields to **255
+ * characters**. MEASURED on `usman-dpeg` at API 67.0 on 2026-08-31, with a control:
+ *   `getInstance('Default').Extraction_Prompt__c`.length()  =    255
+ *   `[SELECT Extraction_Prompt__c FROM ...]`, same row/txn   = 20,596
+ *   identical                                                =  false
+ * The 255-character head carried no `json` token, so OpenAI refused every extraction request
+ * (`response_format: json_object` requires it), `ExtractAddressQueueable.extractOrDegrade`
+ * swallowed the `CalloutException` by design, and the pipeline reported SUCCESS while
+ * extracting nothing. A live P0, invisible for as long as it ran.
+ *
+ * ⚠ `.claude/skills/sf-apex/SKILL.md` ("do NOT use SOQL for `__mdt`") was AMENDED in the same
+ * change, as was `ARCHITECTURE.md` §2. This is not a quiet exception to a standing rule; the
+ * rule now carries the long-text carve-out. Read it before adding a second long-text CMDT
+ * field anywhere in this org.
+ *
+ * 🔴 THE GOVERNOR CONSEQUENCE, STATED PRECISELY, BECAUSE A BUDGET IS PINNED AGAINST IT.
+ * `Limits.getQueries() == 0` STILL HOLDS for every transaction that does not build an
+ * extraction callout — every trigger, every LWC controller, every one of
+ * `PropertyMatchingService`'s claim paths — because the read is lazy and fires only inside
+ * `extractionPromptOverride()`. A transaction that DOES build an extraction callout pays
+ * **+1 SOQL, once, not once per property**, because of the `promptLoaded`/`cachedPrompt` pair
+ * below. `ExtractAddressQueueable`'s pinned QUERY_BUDGET (30 at N=1, 120 at N=10, 60 on the
+ * CFO path, against an async cap of 200) absorbs that; those are ceilings, not equalities, and
+ * `ExtractAddressQueueableTest` was re-run against this change rather than assumed.
+ * ✅ AND BOTH HALVES OF THAT SENTENCE ARE NOW ASSERTED, NOT MERELY STATED (2026-08-31, review
+ * finding W3). `BrokerProtectionConfigTest` pins the seam at ZERO queries and the production
+ * path at EXACTLY ONE across ten calls. Those ceilings could not do it: they are `<=` with
+ * enough headroom to absorb a +1-per-property regression silently.
  *
  * ═══ THE STATIC CACHE, AND WHY IT IS NOT JUST A SPEED TRICK ═══
  * `getInstance` is cheap but not free (it costs CPU, and a 10-property email would resolve
@@ -151,6 +181,48 @@ public with sharing class BrokerProtectionConfig {
     private static Boolean cacheLoaded = false;
     private static Broker_Protection_Config__mdt cached;
 
+    /**
+     * The PROMPT's own cache, deliberately NOT the `cacheLoaded`/`cached` pair above.
+     *
+     * Added 2026-08-31. `extractionPromptOverride()` is the only accessor that reads through
+     * SOQL (see the LAYER block in the class header), so it needs its own laziness: sharing the
+     * `getInstance()` cache would either fire the query for callers who only want
+     * `protectionWindowDays()`, or leave the prompt unresolved when `config()` had already run.
+     *
+     * ⚠ TWO FIELDS, NOT ONE, FOR THE SAME REASON THE PAIR ABOVE HAS TWO — **null is a MEANINGFUL
+     * cached value here too.** "No override" IS null (see `extractionPromptOverride`'s contract),
+     * so a bare `if (cachedPrompt == null)` would re-issue the SOQL on every call in exactly the
+     * common case, once per property on a 10-property email, straight into
+     * `ExtractAddressQueueable`'s pinned QUERY_BUDGET.
+     */
+    private static Boolean promptLoaded = false;
+    private static String cachedPrompt;
+
+    /**
+     * 🔴 THE TEST SEAM'S OWN FLAG. Set to true by `overrideForTest` AND NOWHERE ELSE.
+     *
+     * This exists because `cacheLoaded` is NOT sufficient to detect the seam — the production
+     * path sets it too. Without a seam-only flag, `extractionPromptOverride()` would fall
+     * through to SOQL whenever the injected row was null, and
+     * `PropertyMatchingServiceTest.accessors_returnThePreWS5Literals_whenTheConfigRecordIsAbsent`
+     * would read the org's LIVE `Default` record instead of the injected absence.
+     *
+     * ⚠ THAT FAILURE WOULD LOOK LIKE FLAKE, WHICH IS WHY IT GETS A DEDICATED FIELD AND THIS
+     * COMMENT. Custom Metadata rows ARE visible to SOQL inside Apex tests — CMDT is metadata,
+     * not data, so `SeeAllData` does not gate it. The test would therefore be GREEN in a fresh
+     * org and RED the moment `scripts/load-broker-protection-config.apex` was run, with nothing
+     * in the diff to explain it.
+     *
+     * ✅ THERE IS NOW AN ORG-STATE-INDEPENDENT GUARD, ADDED 2026-08-31 (review finding W3).
+     * `BrokerProtectionConfigTest.extractionPromptOverride_seamGatesTheSoql_ratherThanSittingBesideIt`
+     * asserts that a call made under an installed override spends ZERO queries. Deleting this
+     * field, or the branch that reads it, turns that delta into 1 and reddens the suite
+     * IMMEDIATELY — in a fresh org, a blank-prompt org and a loaded org alike. Do not weaken it
+     * to a value-only assertion: the value assertion is what goes quiet when the org's record is
+     * blank, which is exactly the state this org is in.
+     */
+    private static Boolean testOverrideActive = false;
+
     /** One WARN per transaction for each invariant clamp, and one for each malformed value,
      *  so a 10-property email does not emit 40 identical lines.
      *  ⚠ THE TWO CLAMPS NEED TWO FLAGS. A single shared boolean would let whichever clamp
@@ -183,12 +255,33 @@ public with sharing class BrokerProtectionConfig {
      * `__mdt` row via DML, so the only way to prove the clamp, the defaults and the
      * negative guard is to inject the row.
      *
+     * ═══ 🔴 IT ALSO GATES THE PROMPT SOQL — NOT MERELY SITS BESIDE IT (2026-08-31) ═══
+     * Setting `testOverrideActive` is the load-bearing line. `extractionPromptOverride()` now
+     * reads through `BrokerProtectionConfigSelector`; without this flag it would fall through
+     * to that query whenever the injected row was null, and every test on the callout path
+     * would silently read the org's LIVE `Default` record. `cacheLoaded` cannot serve as the
+     * detector — the production path sets it too. See `testOverrideActive`'s own declaration
+     * for why that failure would present as flake.
+     *
+     * ═══ ⚠ AND THIS SEAM IS WHY THE TRUNCATION BUG WAS INVISIBLE FOR WEEKS ═══
+     * The seam installs an IN-MEMORY sObject. `Extraction_Prompt__c` on an in-memory row is a
+     * plain String — **the platform accessor is bypassed entirely, so no truncation can occur
+     * through here.** Every existing test therefore saw a full-length prompt while production
+     * saw 255 characters. The gap was never the seam's expressiveness: the row seam has always
+     * accepted an arbitrary string, and NO TEST EVER SET THAT FIELD. Reproducing the P0 needs
+     * only `overrideForTest(new Broker_Protection_Config__mdt(Extraction_Prompt__c = <255-char
+     * head>))` — which is exactly what `LLMExtractionCalloutServiceTest` T2 does. Do not add a
+     * second, "more realistic" seam; add the assertion.
+     *
      * @param row The configuration row to serve, or null to simulate "record absent".
      */
     @TestVisible
     private static void overrideForTest(Broker_Protection_Config__mdt row) {
         cached = row;
         cacheLoaded = true;
+        testOverrideActive = true;
+        promptLoaded = false;
+        cachedPrompt = null;
         clampWarned = false;
         confidenceClampWarned = false;
         warnedFields = new Set<String>();
@@ -433,10 +526,21 @@ public with sharing class BrokerProtectionConfig {
      *
      * 🔴 THIS IS THE ONE ACCESSOR THAT MAY RETURN NULL, AND THE DEVIATION IS DELIBERATE.
      * Every other accessor holds its own hardcoded default. This one cannot: its default is
-     * `LLMExtractionCalloutService.EXTRACTION_INSTRUCTION`, 20,592 characters of prompt
-     * (post-WS7; this said 19,254 until WS8's review — the pre-WS7 figure, and the exact
-     * stale number that had already caused one loader defect)
-     * that is the property of the class that OWNS the OpenAI boundary. Copying it here
+     * `LLMExtractionCalloutService.EXTRACTION_INSTRUCTION`, some twenty thousand characters of
+     * prompt that is the property of the class that OWNS the OpenAI boundary.
+     * ⚠ THE EXACT COUNT USED TO BE STATED HERE AND WAS REMOVED 2026-08-31 — DO NOT PUT IT BACK.
+     * It read 19,254 until WS8's review (the pre-WS7 figure), then 20,592 (a LITERAL-ONLY count
+     * that missed the two runtime `MAX_PROPERTIES_IN_PROMPT` interpolations), then 20,596 — and
+     * the schema-key definition pass on 2026-08-31 would have made it stale a fourth time. The
+     * length is only knowable from `shippedPrompt().length()` on a DEPLOYED class, so no comment
+     * anywhere can hold it correctly; see that method's `@return` tag, which was de-pinned in
+     * the same change and is the site every other reader defers to.
+     * ⚠ NOT TO BE CONFUSED WITH THE DATED 255 / 20,596 PROBE FIGURES ELSEWHERE IN THIS FILE
+     * (lines ~52 and ~555-558). Those are MEASUREMENTS TAKEN ON A DATE during the CMDT long-text
+     * truncation P0 and are part of the incident record — they are correct forever and must not
+     * be touched. This one was a forward-looking claim about the CURRENT prompt, which is why it
+     * went stale and this one did not.
+     * Copying the prompt text itself here
      * would create a second, silently-divergeable copy of the exact text whose drift
      * re-keys the broker registry — the precise failure this whole area is defended
      * against. Inverting the dependency (config reaching into the callout service) would be
@@ -447,11 +551,59 @@ public with sharing class BrokerProtectionConfig {
      * constant. That call site is the enforcement point; if a second caller ever appears it
      * must do the same, and it must not invent a different default.
      *
+     * ═══ 🔴 THE ONLY ACCESSOR THAT ISSUES SOQL — REPOINTED 2026-08-31, AND NOT OPTIONAL ═══
+     * This accessor does NOT go through `config()`. `getInstance()` clips LongTextArea and Html
+     * fields to 255 characters, silently, returning a non-blank value that sails through the
+     * `String.isBlank` guard below. Measured on `usman-dpeg` at API 67.0 on 2026-08-31:
+     * getInstance = 255 chars, SOQL on the same row in the same transaction = 20,596,
+     * `identical = false`. The 255-character head carried no `json` token, OpenAI refused every
+     * request, and the pipeline reported SUCCESS while extracting nothing. See the class
+     * header's LAYER block, and `.claude/skills/sf-apex/SKILL.md` / `ARCHITECTURE.md` §2, both
+     * amended in the same change.
+     *
+     * ⚠ DO NOT "TIDY" THIS BACK ONTO `config()`. The other seven accessors are Number / Text /
+     * Picklist, are NOT truncated, and MUST keep using `config()` at zero query cost. This one
+     * cannot. The asymmetry is the fix.
+     *
+     * COST — lazy and cached, so at most ONE SOQL per transaction and ZERO in any transaction
+     * that never resolves a prompt. The `promptLoaded` flag is separate from `cachedPrompt`
+     * because null is a meaningful cached value ("no override"); see their declarations.
+     * ✅ PINNED since 2026-08-31 by
+     * `BrokerProtectionConfigTest.extractionPromptOverride_paysOneSoqlPerTransaction_notOnePerProperty`,
+     * which runs the PRODUCTION path (no seam) ten times and asserts a delta of exactly 1.
+     * Deleting the `promptLoaded` early return makes it 10; reverting this accessor to `config()`
+     * makes it 0. Both fail. That assertion is org-state independent — the selector spends its
+     * query on a non-blank name before it knows whether a row matches.
+     *
+     * ⚠ `testOverrideActive` GATES the query rather than sitting beside it. When
+     * `overrideForTest` has been called, the injected row is served — including a null row —
+     * and no SOQL runs. `cacheLoaded` could not serve that role: the production path sets it
+     * too. Removing the gate reddens
+     * `BrokerProtectionConfigTest.extractionPromptOverride_seamGatesTheSoql_ratherThanSittingBesideIt`
+     * immediately and in any org state (added 2026-08-31, review finding W3). It ALSO turns
+     * `PropertyMatchingServiceTest.accessors_returnThePreWS5Literals_whenTheConfigRecordIsAbsent`
+     * red — but only once the loader has been run, and green again in a fresh org, which is why
+     * that test alone was not sufficient enforcement.
+     *
      * @return The configured prompt, or null when unset/blank or the record is absent.
      */
     public static String extractionPromptOverride() {
-        String value = config() == null ? null : config().Extraction_Prompt__c;
-        return String.isBlank(value) ? null : value;
+        if (promptLoaded) {
+            return cachedPrompt;
+        }
+
+        String value;
+        if (testOverrideActive) {
+            value = cached == null ? null : cached.Extraction_Prompt__c;
+        } else {
+            Broker_Protection_Config__mdt row =
+                BrokerProtectionConfigSelector.selectByDeveloperName(RECORD_NAME);
+            value = row == null ? null : row.Extraction_Prompt__c;
+        }
+
+        cachedPrompt = String.isBlank(value) ? null : value;
+        promptLoaded = true;
+        return cachedPrompt;
     }
 
     // ─────────────────────────────────────────────────────────────────────────

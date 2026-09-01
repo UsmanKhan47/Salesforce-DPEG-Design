@@ -36,7 +36,47 @@
  * a future caller cannot acquire the write path by skipping the controller. The catch clause here
  * exists to translate the resulting exception, not to perform the check.
  *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * 🔴 WIDENED 2026-08-31 (Tranche 3 item 2d) — IT NOW BACKS A **FIFTH** SUBMIT ACTION, ON A
+ *    DIFFERENT OBJECT. THE OPENING SENTENCE ABOVE IS NO LONGER THE WHOLE TRUTH.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * `submitNdaForApproval` backs `quickActions/NDA__c.Submit_NDA_Approval` ->
+ * `c/ndaSubmitForApproval`, submitting a DISPOSITION NDA into `NDA_Issue_Approval`. Its logic lives
+ * in a separate service (`NdaApprovalService`) and NOT ONE LINE of `DispositionApprovalService`
+ * changed.
+ *
+ * ⚠ THIS IS A DELIBERATE DIVERGENCE FROM DESIGN D-9, WHICH SPECIFIED A **NEW** THIN CONTROLLER.
+ * Three alternatives were weighed:
+ *
+ *   a. `OpportunityApprovalController` — REJECTED OUTRIGHT. Wrong module and wrong persona: it
+ *      asserts the ACQUISITIONS gate (`OpportunityActionPermissionService`). A disposition NDA
+ *      answers to `Disposition_Deal_Actions`. Asking the acquisitions question about a disposition
+ *      record would answer it for the wrong persona — the same reason
+ *      `c/dispositionSubmitForApproval` could not reuse `c/submitForApproval`.
+ *   b. Extending `DispositionApprovalService.submitForApproval` to dispatch on
+ *      `Id.getSObjectType()` — REJECTED. That method is a stage-and-record-type derivation table
+ *      for `Disposition__c` and nothing else; folding a second object's rules into it would put
+ *      NDA behaviour inside a class four other quick actions already share, and its first act is a
+ *      `DispositionSelector` read that a foreign Id cannot satisfy.
+ *   c. A NEW `NdaApprovalController` — the design's answer, and rejected for ONE concrete reason:
+ *      🔴 EVERY NEW `@AuraEnabled` CLASS NEEDS A `classAccesses` ENTRY ON `DPEG_Apex_Access`, a
+ *      shared hub permission set whose own header records THREE separate live breaks caused by a
+ *      controller shipping without its grant, and whose deploy REPLACES the file's entire
+ *      `classAccesses` collection. THIS class is already granted there. Reusing it means this
+ *      feature needs NO permission-set change at all, which removes a cross-agent hub-file edit
+ *      and a whole class of deploy-ordering failure from the wave.
+ *
+ * ⇒ The controller is still THIN — three catches and a delegate, no logic — and it is still exactly
+ * ONE authorization boundary: all five methods here are gated by `Disposition_Deal_Actions`,
+ * asserted in their services. What changed is that "disposition approvals" now means the MODULE,
+ * not the `Disposition__c` object. `NdaApprovalService` (not `@AuraEnabled`) is reached only
+ * through this class, matching `DPEG_Apex_Access`'s stated entry-point-only grant pattern.
+ * ⚠ IF A SIXTH OBJECT EVER ARRIVES HERE, RE-OPEN THIS. The argument above is about ONE additional
+ * method on ONE additional object sharing ONE gate; it is not a licence to make this the module's
+ * catch-all controller.
+ *
  * @see force-app/main/default/classes/DispositionApprovalService.cls (all logic)
+ * @see force-app/main/default/classes/NdaApprovalService.cls (the NDA submit logic)
  * @see force-app/main/default/classes/OpportunityApprovalController.cls (the acquisitions twin)
  */
 public with sharing class DispositionApprovalController {
@@ -50,6 +90,15 @@ public with sharing class DispositionApprovalController {
     // from the submit one so a toast tells the reader WHICH action failed — two different fixes.
     private static final String SELECT_OFFER_FAILURE_MESSAGE =
         'The offer could not be selected. Refresh the page or contact your administrator.';
+
+    /**
+     * An Id of the wrong SObject type is a WIRING MISTAKE, not a data state. See
+     * `submitNdaForApproval`. Named for the NDA action specifically because it is the only method
+     * in this class whose parameter is not a `Disposition__c`.
+     */
+    @TestVisible
+    private static final String NDA_WRONG_TYPE_MESSAGE =
+        'This action can only be run on an NDA.';
 
     /**
      * Submits whichever approval this disposition's stage and record type call for.
@@ -103,6 +152,74 @@ public with sharing class DispositionApprovalController {
                 + dispositionId + '/' + offerId + ': ' + e.getMessage() + ' | '
                 + e.getStackTraceString());
             throw ahe(SELECT_OFFER_FAILURE_MESSAGE);
+        }
+    }
+
+    /**
+     * Submits a DISPOSITION NDA into the `NDA_Issue_Approval` approval process — the replacement
+     * for the retired `NDA__c.Move_to_Approved` one-click stage write (Gate 1 decision D-7).
+     *
+     * 🔴 IT IS A DIFFERENT OBJECT FROM EVERY OTHER METHOD IN THIS CLASS, AND THE SAME GATE. See the
+     * class header's 2026-08-31 block for why it lives here rather than in a new controller, and
+     * `NdaApprovalService` for what it refuses and why.
+     *
+     * ⚠ THE THREE CATCHES ARE THE SAME SHAPE AND THE SAME ORDER AS `submitForApproval` ABOVE, but
+     * catch 2 is typed to `NdaApprovalService.ApprovalException` — a SEPARATE type from
+     * `DispositionApprovalService.ApprovalException` on purpose, so a refusal authored for a
+     * Disposition can never surface on the NDA's button and vice versa. Do not merge the two types
+     * to "simplify" this.
+     *
+     * ⚠ IT REUSES `SUBMIT_FAILURE_MESSAGE`, WHICH IS CORRECT BECAUSE THAT STRING SAYS "This" AND
+     * NOT "This disposition". Both actions produce the same fix (refresh, or call an admin), so a
+     * second constant would be two strings to keep in step for no reader benefit.
+     *
+     * ── 🔴 A WRONG SOBJECT TYPE IS REFUSED, OUTSIDE THE TRY (added 2026-08-31, review S-1) ─────
+     * This is the ONLY method in this class whose parameter is not a `Disposition__c`, so it is
+     * also the only one a quick action can plausibly be wired to the wrong way round. A
+     * `Disposition__c` Id reaching `NdaSelector.selectStageRequiredById` throws a raw
+     * `QueryException` ("List has no rows for assignment to SObject"), which catch 3 flattens into
+     * "This could not be submitted for approval. Refresh the page or contact your administrator."
+     * — advice that cannot possibly work, on a defect that is in the METADATA and would survive
+     * every refresh and every admin call. The guard turns the one diagnosable failure this method
+     * has into a message that names it.
+     *
+     * ⚠ IT SITS OUTSIDE THE TRY FOR THE SAME REASON `DispositionApprovalTrackerController.getTracker`
+     * puts its guard there: inside, catch 3's `catch (Exception)` would swallow the
+     * `AuraHandledException` this guard throws and replace the precise message with the generic
+     * one, which is exactly the outcome the guard exists to prevent.
+     *
+     * ⚠ A NULL Id IS **NOT** GUARDED HERE, AND THAT ASYMMETRY WITH THE TRACKER IS DELIBERATE. The
+     * tracker is a `cacheable=true` WIRE that fires on every render, including the transient tick
+     * before `recordId` is provisioned — null is a normal state there and returns an empty list.
+     * This method is an IMPERATIVE call made by a button click on a record that already exists;
+     * a null here is a genuine failure and `NdaApprovalService` authors its own refusal for it.
+     *
+     * @param ndaId the NDA__c the quick action was clicked on
+     * @return an authored confirmation naming the NDA Issue approval
+     * @throws AuraHandledException when the Id is of the wrong SObject type, when the running user
+     *         is not a disposition driver, when a user-actionable rule blocks the submission (its
+     *         guidance is surfaced), or — with a fixed generic message — on an unexpected failure,
+     *         including the platform's own refusal of a submitter who does not own the record
+     *         (`allowedSubmitters = owner`).
+     */
+    @AuraEnabled
+    public static String submitNdaForApproval(Id ndaId) {
+        if (ndaId != null && ndaId.getSObjectType() != NDA__c.SObjectType) {
+            throw ahe(NDA_WRONG_TYPE_MESSAGE);
+        }
+        try {
+            return NdaApprovalService.submitForApproval(ndaId);
+        } catch (DispositionActionPermissionService.AccessDeniedException e) {
+            throw ahe(e.getMessage());
+        } catch (NdaApprovalService.ApprovalException e) {
+            // User-actionable rule violation — surface the guidance verbatim.
+            System.debug(LoggingLevel.INFO, 'DispositionApprovalController.submitNdaForApproval '
+                + 'refused on ' + ndaId + ': ' + e.getMessage());
+            throw ahe(e.getMessage());
+        } catch (Exception e) {
+            System.debug(LoggingLevel.ERROR, 'DispositionApprovalController.submitNdaForApproval '
+                + 'on ' + ndaId + ': ' + e.getMessage() + ' | ' + e.getStackTraceString());
+            throw ahe(SUBMIT_FAILURE_MESSAGE);
         }
     }
 

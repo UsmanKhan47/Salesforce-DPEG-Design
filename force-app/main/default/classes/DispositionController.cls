@@ -64,6 +64,12 @@ public with sharing class DispositionController {
      * because refreshing will refuse identically forever. Apex requires the subclass catch
      * above `catch (Exception e)`; the generic catch must stay beneath it, not be replaced
      * by it.
+     *
+     * ⚠ THERE ARE **THREE** CATCHES SINCE 2026-08-31 AND THE PARAGRAPH ABOVE NOW DESCRIBES TWO OF
+     * THEM. `SellMeterOverridePermissionService.AccessDeniedException` (item 5a — a non-principal
+     * reaching the YELLOW branch) is the second DESIGNED refusal and is rethrown verbatim for
+     * exactly the reason above. The two designed catches are siblings, not a chain: their relative
+     * order is free, and only their position ABOVE the generic catch is required.
      */
     @AuraEnabled(cacheable=false)
     public static String findOrCreate(Id assetId) {
@@ -72,6 +78,19 @@ public with sharing class DispositionController {
         } catch (DispositionService.SellMeterGateException e) {
             // Designed refusal: INFO, not ERROR — nothing failed, the answer is "no".
             System.debug(LoggingLevel.INFO, 'DispositionController.findOrCreate refused on '
+                + assetId + ': ' + e.getMessage());
+            throw ahe(e.getMessage());
+        } catch (SellMeterOverridePermissionService.AccessDeniedException e) {
+            // 🔴 A THIRD CATCH, ADDED 2026-08-31 (item 5a), AND IT IS NOT DECORATION.
+            // `findOrCreate` is a LIVE, still-exposed @AuraEnabled create path with no modal and no
+            // confirmation, so it is the second way to reach a YELLOW creation. Without this catch
+            // a non-principal's refusal would fall into the generic catch below and be reported as
+            // "This change could not be saved. Refresh the page and try again" — advice that can
+            // never work, exactly the failure the SellMeterGateException catch above exists to
+            // prevent, on the exact same button.
+            // Same shape, same reason: a DESIGNED refusal with an authored, user-safe message,
+            // rethrown VERBATIM, logged at INFO because nothing failed.
+            System.debug(LoggingLevel.INFO, 'DispositionController.findOrCreate override-refused on '
                 + assetId + ': ' + e.getMessage());
             throw ahe(e.getMessage());
         } catch (Exception e) {
@@ -103,22 +122,45 @@ public with sharing class DispositionController {
      * something the user can act on, so it is masked rather than surfaced. The service's own
      * declaration carries the argument.
      *
+     * ⚠ THREE CATCHES SINCE 2026-08-31, NOT TWO, AND THE THIRD IS A SECOND DESIGNED REFUSAL RATHER
+     * THAN A SECOND PLATFORM MASK. `SellMeterOverridePermissionService.AccessDeniedException` is
+     * raised when a non-principal reaches the YELLOW branch (item 5a). Its message is authored to
+     * be shown and names WHO can perform the action, which is the only useful thing to say about a
+     * button the user can SEE (the Sell Meter renders Override disabled rather than hiding it), so
+     * it is rethrown verbatim alongside the sell-meter refusal. Letting it fall into the generic
+     * catch would tell a principal-less analyst their save failed, and they would retry forever.
+     *
+     * ⚠ THIS CATCH IS REACHABLE AND IS COVERED BY A REAL DENIAL PERSONA — a `Minimum Access -
+     * Salesforce` user under `System.runAs`, never the test-running administrator, because Modify
+     * All Data bypasses the gate and would make the test pass through the SUCCESS path while
+     * reading as a denial test. See DispositionControllerTest.
+     *
      * @param assetId the Property_Asset__c to initiate against
      * @param recordTypeDeveloperName `On_Market` or `Off_Market`, chosen in the modal
+     * @param overrideReason the principal's free-text override reason; null on the GREEN path,
+     *        collected by `c/sellMeterOverrideModal` on the YELLOW one
      * @return the outcome: Disposition Id, whether it was submitted, and an authored message
-     * @throws AuraHandledException carrying the RED-band refusal verbatim, or the fixed generic
-     *         write-failure message for anything else
+     * @throws AuraHandledException carrying the RED-band refusal or the override denial verbatim,
+     *         or the fixed generic write-failure message for anything else
      */
     @AuraEnabled(cacheable=false)
     public static DispositionService.InitiateOutcome initiateAndSubmit(
         Id assetId,
-        String recordTypeDeveloperName
+        String recordTypeDeveloperName,
+        String overrideReason
     ) {
         try {
-            return DispositionService.initiateAndSubmit(assetId, recordTypeDeveloperName);
+            return DispositionService.initiateAndSubmit(assetId, recordTypeDeveloperName, overrideReason);
         } catch (DispositionService.SellMeterGateException e) {
             // Designed refusal: INFO, not ERROR — nothing failed, the answer is "no".
             System.debug(LoggingLevel.INFO, 'DispositionController.initiateAndSubmit refused on '
+                + assetId + ': ' + e.getMessage());
+            throw ahe(e.getMessage());
+        } catch (SellMeterOverridePermissionService.AccessDeniedException e) {
+            // The second DESIGNED refusal on this path (2026-08-31, item 5a) — see the header.
+            // ⚠ The override reason is deliberately NOT logged here. It is free text a user typed
+            // and the debug log is a different audience from the record it was destined for.
+            System.debug(LoggingLevel.INFO, 'DispositionController.initiateAndSubmit override-refused on '
                 + assetId + ': ' + e.getMessage());
             throw ahe(e.getMessage());
         } catch (Exception e) {

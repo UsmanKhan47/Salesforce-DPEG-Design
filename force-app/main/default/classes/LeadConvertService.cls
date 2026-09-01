@@ -9,6 +9,15 @@
  *      conversion doesn't translate a custom picklist into the record-type
  *      choice, so we apply it here.
  *
+ *      ⚠ CHANGED 2026-08-31: a BLANK Lead Deal Type now DEFAULTS to 'Retail' rather than
+ *      leaving the deal untyped. It used to leave the Opportunity with no Deal Type and
+ *      therefore no RecordTypeId, which costs the deal its Path AND both feasibility tabs on
+ *      Opportunity_Record_Page. The default, why 'Retail', and why it is applied at conversion
+ *      rather than at Lead intake are recorded in full at the one place it is applied, in
+ *      buildOpportunityUpdates. 🔴 THE GOVERNOR CONTRACT BELOW IS UNCHANGED — the default is an
+ *      in-memory choice of literal on a record already being written, plus one describe (not a
+ *      query) on Opportunity.Deal_Type__c. No new read, no new statement.
+ *
  *   2. Property creation — standard conversion only ever creates the
  *      Account, Contact, and Opportunity (all standard objects); it never
  *      creates the custom Property. So we create the Property the deal is about
@@ -189,6 +198,14 @@ public with sharing class LeadConvertService {
     /** Property__c.Name is a Text field, max 80 characters. */
     private static final Integer PROPERTY_NAME_MAX = 80;
 
+    /**
+     * The Deal Type a converted deal takes when its Lead states NONE (2026-08-31).
+     * The whole decision — why a default at all, why this value, and why HERE — is recorded at
+     * the single place it is applied, in buildOpportunityUpdates. Read that block before
+     * changing this constant; it is not a tunable.
+     */
+    private static final String DEFAULT_DEAL_TYPE = 'Retail';
+
     // ── ACTIVE VALUES OF EVERY RESTRICTED PICKLIST THIS CLASS WRITES ────────────────────────────
     // Resolved once per transaction and reused. getDescribe() is a DESCRIBE, not a query — it
     // consumes no SOQL limit — so the memoization is to keep the per-record stamping methods free
@@ -196,6 +213,8 @@ public with sharing class LeadConvertService {
     // through every method as parameters is what keeps buildProperty / applyDealFields about the
     // record they are stamping.
     private static Set<String> assetTypeValuesCache;
+    private static Set<String> opportunityAssetTypeValuesCache;
+    private static Set<String> dealTypeValuesCache;
     private static Set<String> saleProcessValuesCache;
     private static Set<String> parseConfidenceValuesCache;
     private static Set<String> contactRoleValuesCache;
@@ -207,6 +226,42 @@ public with sharing class LeadConvertService {
             assetTypeValuesCache = activePicklistValues(Property__c.Asset_Type__c);
         }
         return assetTypeValuesCache;
+    }
+
+    /**
+     * Active values on OPPORTUNITY.Asset_Type__c (Gap 1, 2026-08-31).
+     *
+     * ⚠ THIS IS NOT `assetTypeValues()` ABOVE, AND THE TWO MUST NEVER BE SWAPPED. That one holds
+     * PROPERTY__C's value set and backs the Property stamp in buildProperty; this one holds
+     * OPPORTUNITY's and backs the deal stamp in applyDealFields. They are separate field
+     * definitions on separate objects: as of 2026-08-31 Opportunity's 8 values are exactly
+     * Lead's 8, and Property__c carries those 8 PLUS C-Store and Storage. So they are not
+     * interchangeable even while they overlap, and using the Property set here would let
+     * `C-Store` / `Storage` through a guard whose whole job is to stop them.
+     */
+    private static Set<String> opportunityAssetTypeValues() {
+        if (opportunityAssetTypeValuesCache == null) {
+            opportunityAssetTypeValuesCache = activePicklistValues(Opportunity.Asset_Type__c);
+        }
+        return opportunityAssetTypeValuesCache;
+    }
+
+    /**
+     * Active values on OPPORTUNITY.Deal_Type__c (the blank-deal-type default, 2026-08-31).
+     *
+     * ⚠ ADDED FOR THE DEFAULT, NOT FOR THE CARRY-OVER. Until 2026-08-31 this class wrote
+     * `Deal_Type__c` unguarded, which was defensible while every value it wrote came off a Lead
+     * that had already passed LLMExtractionParser's own describe validation. `DEFAULT_DEAL_TYPE`
+     * is a LITERAL IN THIS FILE and has passed no such validation, so it is the one Deal Type
+     * value that can be stale with respect to the org — exactly the case the class header's
+     * "why every restricted picklist write is describe-guarded" paragraph exists for. Guarding
+     * the whole assignment (rather than only the default leg) is what keeps the rule stated once.
+     */
+    private static Set<String> dealTypeValues() {
+        if (dealTypeValuesCache == null) {
+            dealTypeValuesCache = activePicklistValues(Opportunity.Deal_Type__c);
+        }
+        return dealTypeValuesCache;
     }
 
     /** Active values on Opportunity.Sale_Process__c. */
@@ -557,9 +612,77 @@ public with sharing class LeadConvertService {
             if (oppToPropertyId.containsKey(oppId)) {
                 o.Property__c = oppToPropertyId.get(oppId);
             }
-            if (String.isNotBlank(l.Deal_Type__c)) {
-                o.Deal_Type__c = l.Deal_Type__c;
-                Id rtId = rtByName.get(l.Deal_Type__c); // dealType is 'Land' or 'Retail'
+            // ── BLANK DEAL TYPE DEFAULTS TO RETAIL (2026-08-31) ──────────────────────────────
+            // WHAT THIS DOES. A Lead that states no Deal Type converts to a Retail-typed
+            // Opportunity instead of an untyped one. Before this line the whole block was
+            // wrapped in `if (String.isNotBlank(l.Deal_Type__c))`, so a blank Lead produced an
+            // Opportunity with NO Deal Type and — because the record type is derived from it —
+            // NO RecordTypeId at all. Measured live on 2026-08-31: Opportunity
+            // 006iw000000fgpiAAA ("Marrowbrook Station Medical Plaza") landed with
+            // RecordTypeId = null from a Lead whose extraction returned deal_type = null.
+            //
+            // 🔴 THE COST OF A NULL RECORD TYPE IS NOT COSMETIC, WHICH IS WHY A DEFAULT IS
+            // JUSTIFIED AT ALL. Three separate things break, and only the first is obvious:
+            //   1. no record type => no Path on the deal, and no record-type picklist subset
+            //      acting as a backstop on any picklist the deal carries;
+            //   2. flexipages/Opportunity_Record_Page gates its Development tab on
+            //      Deal_Type__c = Land and its Construction tab on = Retail. A NULL matches
+            //      NEITHER, so the feasibility-review section of the page vanishes entirely —
+            //      defaulting only RecordTypeId would have left the page half-broken, which is
+            //      why the default belongs on the FIELD and the record type follows from it;
+            //   3. eight classes read Deal_Type__c (BrokerPortalController, BrokerPortalService,
+            //      EmailToLeadService, this class, LLMExtractionCalloutService,
+            //      LLMExtractionParser, OpportunityFunnelController, OpportunitySelector) and a
+            //      null is an unhandled third state in every one of them.
+            //
+            // WHY 'Retail' AND NOT SOME NEW 'Unknown' VALUE. Deal_Type__c is a two-value
+            // LAND / NOT-LAND discriminator whose ONLY job is selecting the Opportunity record
+            // type. It is NOT an asset category, despite sharing the token 'Retail' with
+            // Asset_Type__c — a hotel is correctly Deal_Type__c = Retail and
+            // Asset_Type__c = Hospitality at the same time. 'Retail' is literally "everything
+            // that is not raw land", so it is the correct bucket for an unstated deal type, and
+            // the meaning is ASYMMETRIC: only 'Land' carries positive information. A third value
+            // would break the record-type lookup, both record types' picklist subsets, and the
+            // page's two tab-visibility rules.
+            //
+            // 🔴 WHY AT CONVERSION AND NOT AT INTAKE (EmailToLeadService). The LEAD must stay an
+            // honest record of what the email actually said: a null Deal_Type__c there correctly
+            // means "the broker did not state a deal type", and it is the field the extraction
+            // audit trail (Extracted_JSON__c, the per-field confidence map) is checked against.
+            // Defaulting on the Lead would fabricate an extraction result and make the intake
+            // data lie about its own source — no later reader could tell a stated 'Retail' from
+            // an assumed one. The OPPORTUNITY is the working record: it needs a record type, a
+            // Path and functioning tabs, and it already carries derived-at-conversion values
+            // (Lead_Approved_By__c, the Property link) so a derived Deal Type is in keeping.
+            //
+            // 🔴 THIS IS NOT DEAD CODE AND MUST NOT BE DELETED WHEN THE PROMPT IS FIXED. The
+            // UPSTREAM cause is a prompt gap another stream is fixing: `deal_type` is a
+            // TEMPLATE-ONLY key in the extraction prompt — it appears in the JSON response
+            // shape, in the blanket "must be one of the listed values or null" line and in the
+            // `deal_type must be one of: Land, Retail` enum, and NOWHERE is there a sentence
+            // saying what the two values MEAN. That is why the model returned 'Retail' for two
+            // hotels but null for a medical-office and an industrial deal. When that fix lands,
+            // blanks become rare and this default becomes a FALLBACK rather than the normal
+            // path. It is still load-bearing then: the broker portal and manual Lead entry can
+            // both produce a blank Deal Type with no LLM involved at all, and a prompt is not a
+            // guarantee. Judge it by the live count of untyped Opportunities, never by "the
+            // extraction fills this in now".
+            //
+            // The describe guard is the class header's standing rule, and it matters MORE here
+            // than for the carry-over it replaces: `update updates` is all-or-none, so writing a
+            // value the Opportunity picklist does not offer would roll back the stamping for
+            // every Lead in the chunk, structural fields included. Verified on usman-dpeg
+            // 2026-08-31 (savepoint probe, rolled back): a Retail-typed Opportunity carrying
+            // Asset_Type__c = 'Medical Office' is ACCEPTED, so the default does not collide with
+            // the Retail record type's Asset_Type__c subset. Keep it that way — see
+            // activePicklistValues' header for why this guard is field-level and record-type-blind.
+            String dealType = picklistValueOrNull(
+                String.isNotBlank(l.Deal_Type__c) ? l.Deal_Type__c : DEFAULT_DEAL_TYPE,
+                dealTypeValues()
+            );
+            if (dealType != null) {
+                o.Deal_Type__c = dealType;
+                Id rtId = rtByName.get(dealType); // dealType is 'Land' or 'Retail'
                 if (rtId != null) {
                     o.RecordTypeId = rtId;
                 }
@@ -611,6 +734,24 @@ public with sharing class LeadConvertService {
         // ⚠ NOT Broker_Listing__c.Listing_Status__c, which is the disposition side's On Track / …
         // performance picklist. Nothing may ever map between them.
         o.Listing_Status__c = picklistValueOrNull(l.Listing_Status__c, listingStatusValues());
+        // ── GAP 1 (2026-08-31) — ASSET TYPE, CARRIED PAST CONVERSION ──────────────────────────
+        // Until this line the asset type died at conversion: LeadConvertService wrote it to the
+        // Property__c (buildProperty, below) and to NOTHING else, so every email-born deal reached
+        // OpportunityFunnelController with Asset_Type__c null and the funnel reported a null asset
+        // type for all of them. This one assignment is the whole of the fix.
+        //
+        // THE HEADER'S GOVERNOR CONTRACT IS UNCHANGED. Read the numbers off the header, never off
+        // this line — the WS2 comment below records that restating them here has gone stale twice.
+        // The value is already on `l` (a Trigger.new record) and `o` is already in the `updates`
+        // list the caller writes with ONE statement: zero new queries, zero new DML. The describe
+        // behind opportunityAssetTypeValues() is a describe, not a query, and consumes no SOQL.
+        //
+        // 🔴 THE GUARD HERE IS NOT THE REAL CONTROL — THE THREE-FILE LOCKSTEP IS. See
+        // activePicklistValues at the bottom of this class: it reads a FIELD describe and cannot
+        // see the Land/Retail record-type value subsets. Keeping Lead's 8 values, Opportunity's
+        // field value set and BOTH Opportunity record-type blocks aligned is what makes this write
+        // total; the guard only degrades a FIELD-level drift to a silent null.
+        o.Asset_Type__c = picklistValueOrNull(l.Asset_Type__c, opportunityAssetTypeValues());
         // The three extraction-completeness numbers travel TOGETHER and unguarded — they are
         // Number(3,0) mirrors of their Lead sources, so there is no picklist to validate and no
         // clipping to do. Carrying all three (rather than the percent alone) is what keeps the
@@ -1102,6 +1243,26 @@ public with sharing class LeadConvertService {
      * picklist writes — see the class header for why guarding at source is what lets
      * `update updates` stay all-or-none. getDescribe() is a describe call, not a query: it
      * consumes no SOQL limit, so calling it once per picklist per invocation is free.
+     *
+     * 🔴 THIS HELPER READS THE FIELD DESCRIBE, WHICH IS BLIND TO THE RECORD-TYPE VALUE SUBSET.
+     * A value that is active on the field but absent from the Opportunity Land/Retail record
+     * types PASSES this guard and is then REFUSED at the DML layer with
+     * INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST — which rolls back the ALL-OR-NONE `update updates`
+     * for EVERY Lead in the chunk, structural fields included, and names a picklist rather than a
+     * record type in the error. Measured on usman-dpeg 2026-08-31: a Retail-typed Opportunity
+     * insert carrying 'Hospitality' was refused with exactly that error while the field describe
+     * reported the value active.
+     *
+     * `Asset_Type__c` (added 2026-08-31) is the FIRST guarded picklist in this class whose
+     * record-type subset is a real constraint. `Sale_Process__c`, `Parse_Confidence__c` and
+     * `Listing_Status__c` carry NO picklistValues block in either record-type file, so they are
+     * unconstrained by record type and the field describe is sufficient for them.
+     *
+     * ⚠ DO NOT "HARDEN" THIS HELPER TO BE RECORD-TYPE-AWARE. It looks like the robust fix and it
+     * is not: it would trade a LOUD, correct rollback for a SILENT drop on the very field the
+     * conversion was asked to populate, recreating the original defect invisibly and with no
+     * error anywhere. Keep the field value set and BOTH record-type blocks in lockstep instead —
+     * that is the control. (Design decision, agent-output/gap-fixes-design.md §1.5 and §9 item 2.)
      */
     private static Set<String> activePicklistValues(Schema.SObjectField field) {
         Set<String> values = new Set<String>();

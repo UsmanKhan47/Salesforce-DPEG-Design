@@ -31,6 +31,17 @@
  *            `selectLatestByOpportunityId`, `selectLatestByDispositionId`,
  *            `selectLatestSummaryByDispositionId`, `selectBuyerTimelineByDispositionId`,
  *            `selectByOpportunityIds` and `selectStageRequiredById`.
+ *            ⚠ RE-COUNTED 2026-08-31 (Tranche 3 item 3) — THE TWO NUMBERS IN THE PARAGRAPH ABOVE
+ *            ARE NOW **TEN** AND **EIGHT**. `selectApprovalTrackerTargetsByDispositionId` was added
+ *            for the five-approval tracker and is `WITH USER_MODE`: it backs a read a human asked
+ *            for by opening a record page, so §2's automation-path exception does not apply to it.
+ *            The SYSTEM_MODE count is UNCHANGED AT TWO — and note that this object now carries two
+ *            reads over the SAME `Disposition__c` parentage in two different modes
+ *            (`selectByDispositionIds`, SYSTEM_MODE, behind the auto-create trigger; and this one,
+ *            USER_MODE, on a card). That is the "mode is a property of the METHOD" rule at its
+ *            sharpest on this class, and neither may be collapsed into the other.
+ *            🔴 RE-COUNT AGAINST THE METHOD LIST, NOT AGAINST THIS SENTENCE — the block below says
+ *            so, and this class has miscounted itself once before.
  *            ⚠ `selectBuyerTimelineByDispositionId` (Tranche 2 Workstream D, 2026-08-20) is the
  *            ONLY method here that TRAVERSES A RELATIONSHIP, which under `USER_MODE` adds an
  *            OBJECT-level gate on `Contact` that no NDA__c permission set grants. That is argued at
@@ -559,6 +570,89 @@ public with sharing class NdaSelector {
             WHERE Id = :ndaId
             WITH USER_MODE
             LIMIT 1
+        ];
+    }
+
+    /**
+     * EVERY NDA HANGING OFF ONE DISPOSITION — Id and AutoNumber only. Backs the NDA-issue row of the
+     * five-approval tracker (`DispositionApprovalTrackerService.getTracker` ->
+     * `c/dispositionApprovalTracker`, 2026-08-31, Tranche 3 item 3). The Ids are the
+     * `ProcessInstance.TargetObjectId` values an NDA-issue approval can possibly carry on this sale;
+     * the Names label the rows.
+     *
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * 🔴 UNFILTERED BY STATUS, BY RECORD TYPE AND BY PARTY ROLE — PARENTAGE AND NOTHING ELSE.
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * This is the rule the two sibling approval-target reads state in terms
+     * (`BovSubmissionSelector.selectApprovalTargetsByDispositionId`,
+     * `DispositionOfferSelector.selectApprovalTargetsByDispositionId`): *"an approval-history read
+     * filters on nothing but parentage."* The reason transfers exactly. An NDA that was submitted,
+     * approved and later DECLINED is no longer at a status any forward filter would keep, and
+     * dropping it would delete a completed, audited principal decision from the very card that
+     * exists to display it — and would silently shrink the `n of m` denominator, which is worse than
+     * dropping a row, because the aggregate would then read "2 of 2 approved" on a sale with three
+     * parties.
+     * ⚠ A RECORD-TYPE FILTER IS NOT NEEDED AND IS NOT ADDED. `Disposition__c` is populated only on
+     * disposition NDAs; an acquisition NDA hangs off `Opportunity__c`. Adding
+     * `RecordType.DeveloperName = 'Disposition_NDA'` would traverse to `RecordType` for a predicate
+     * the parentage already enforces, buying nothing and adding a gate.
+     *
+     * ── ⚠ IT IS **NOT** A REUSE OF `selectByDispositionIds`, AND THE DIFFERENCE IS THE MODE ────
+     * That method is `WITH SYSTEM_MODE` on ARCHITECTURE.md §2's automation-path grounds — it runs
+     * behind the disposition NDA auto-create trigger, on a principal's behalf. THIS read happens
+     * because a human opened a record page and asked to see the approval tracker, so the exception
+     * does not apply and `USER_MODE` is the only correct mode. Reusing the automation read would
+     * show a reader NDAs their sharing hides, on an approval-audit surface — the exact inversion
+     * §2 warns about. Two methods, two modes, one object; the mode is a property of the METHOD.
+     * ⚠ Nor is it a reuse of `selectBuyerTimelineByDispositionId`, which filters
+     * `Party_Role__c = 'Buyer'` and would silently drop a broker- or lender-role NDA from the
+     * denominator.
+     *
+     * ── FLS: `WITH USER_MODE`, AND THE SELECT LIST ADDS **ZERO** FIELD GATES ───────────────────
+     * `Id` and `Name` are not permissionable — `Name` is a standard AutoNumber on this object — so
+     * the only gates are OBJECT read on `NDA__c` and FIELD read on `Disposition__c` (USER_MODE
+     * enforces FLS on the `WHERE` clause as well as the `SELECT` list). Both are granted on
+     * `DPEG_Disposition_View` and `DPEG_Disposition_Edit`, and both are ALREADY required by
+     * `selectBuyerTimelineByDispositionId`, which renders on the same page — so this method cannot
+     * be the first thing to fail for a persona.
+     * 🔴 DO NOT WIDEN THIS SELECT LIST CASUALLY. The obvious additions — `Status__c`,
+     * `Counterparty_Name__c`, `Party_Role__c` — are each a real FLS gate, and this card fails HARD
+     * (see `DispositionApprovalTrackerController`): one missing grant replaces the whole tracker
+     * with an error banner. The tracker derives its state from `ProcessInstance.Status`, never from
+     * a field on the NDA, so none of them is needed.
+     *
+     * ── ORDER, AND WHY IT IS ASCENDING ─────────────────────────────────────────────────────────
+     * `CreatedDate ASC, Id ASC` — oldest party first, matching `selectBuyerTimelineByDispositionId`,
+     * so the two cards on the same page list the same NDAs in the same order. `Id ASC` is the
+     * tie-break that makes it total: `CreatedDate` is second-granular and several NDAs created under
+     * one Disposition inside one second is routine in a test transaction.
+     *
+     * ── ⚠ NO `LIMIT`, FOR `selectBuyerTimelineByDispositionId`'S REASONS ───────────────────────
+     * A truncated read here does not truncate a display, it CORRUPTS AN AGGREGATE: the `n of m`
+     * denominator would silently shrink and a partially-approved sale would report fully approved.
+     * Both governor ceilings THROW rather than truncate, and this card converts a throw into a
+     * visible banner, which is strictly preferable. One NDA per counterparty invited into one sale's
+     * data room is bounded by reality, not by luck.
+     *
+     * @param dispositionId Parent Disposition__c Id; null-safe.
+     * @return Every NDA on that sale with Id and Name populated, oldest first; an empty list when
+     *         the input is null or the sale has no NDA. Never null.
+     * @throws System.QueryException when the running user lacks read on `NDA__c` or on
+     *         `NDA__c.Disposition__c`. The caller converts it to an `AuraHandledException`.
+     * @example
+     * List&lt;NDA__c&gt; ndas =
+     *     NdaSelector.selectApprovalTrackerTargetsByDispositionId(dispositionId);
+     */
+    public static List<NDA__c> selectApprovalTrackerTargetsByDispositionId(Id dispositionId) {
+        if (dispositionId == null) {
+            return new List<NDA__c>();
+        }
+        return [
+            SELECT Id, Name
+            FROM NDA__c
+            WHERE Disposition__c = :dispositionId
+            WITH USER_MODE
+            ORDER BY CreatedDate ASC, Id ASC
         ];
     }
 

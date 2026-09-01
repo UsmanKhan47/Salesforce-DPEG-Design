@@ -93,6 +93,29 @@ export default class SellMeterInitiateModal extends LightningModal {
     /** Peak sell date, already formatted (e.g. 'Aug 12, 2027'). */
     @api peakDateLabel;
 
+    /**
+     * The principal's override reason — A PASS-THROUGH. THIS DIALOG NEVER RENDERS IT.
+     *
+     * Added 2026-08-31 (Tranche 2 item 5b, stories 12 / 14). It is collected by
+     * `c/sellMeterOverrideModal`, which runs BEFORE this dialog on the YELLOW band, handed
+     * straight down by `c/sellMeterList`, and forwarded verbatim as the third argument of
+     * `DispositionController.initiateAndSubmit`. It is `null` on the GREEN Initiate path.
+     *
+     * 🔴 IT IS NOT RENDERED, AND THAT IS THE ENTIRE REASON IT IS A PASS-THROUGH RATHER THAN A
+     * FIELD ON THIS FORM. This modal's class header states that Initiate and Override must be
+     * "deliberately identical apart from the toast title, so an override can never diverge from an
+     * initiate". An override-only textarea here — the cheaper design, and the one that was
+     * rejected — would make the two paths visibly different and reverse that recorded decision as
+     * a side effect of an audit change. Adding a `summaryRows` entry for it, or any markup that
+     * reads it, is the same reversal.
+     *
+     * ⚠ IT IS ALSO NOT VALIDATED HERE. Requiredness is enforced by
+     * `c/sellMeterOverrideModal.confirmDisabled`, one dialog earlier, because that is where the
+     * user types it. A second check here would refuse a value this dialog cannot help the user
+     * fix — its form has no field to correct.
+     */
+    @api overrideReason;
+
     /** The chosen record type developer name. Undefined until the user picks one. */
     recordType;
     /** Inline, user-safe text for a failure that must not close the modal. */
@@ -175,12 +198,18 @@ export default class SellMeterInitiateModal extends LightningModal {
         this.error = undefined;
         try {
             // ⚠ PARAMETER NAMES ARE THE APEX SIGNATURE, VERBATIM:
-            // DispositionController.initiateAndSubmit(Id assetId, String recordTypeDeveloperName).
+            // DispositionController.initiateAndSubmit(Id assetId, String recordTypeDeveloperName,
+            // String overrideReason).
             // A mismatch here is not a compile error on either side — the call simply arrives with
-            // a null argument.
+            // a null argument. 🔴 THAT MATTERS MOST FOR `overrideReason` (added 2026-08-31), whose
+            // null is INDISTINGUISHABLE FROM A GREEN INITIATE on the server: a misspelling here
+            // would not throw, would not fail a test that only checks the outcome, and would
+            // silently drop the principal's stated reason on every override while everything
+            // reported success.
             const outcome = await initiateAndSubmit({
                 assetId: this.assetId,
-                recordTypeDeveloperName: this.recordType
+                recordTypeDeveloperName: this.recordType,
+                overrideReason: this.overrideReason
             });
             this.close({ outcome });
         } catch (error) {

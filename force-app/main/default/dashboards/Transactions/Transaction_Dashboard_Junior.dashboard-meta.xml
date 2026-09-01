@@ -5,7 +5,7 @@
     <backgroundStartColor>#FFFFFF</backgroundStartColor>
     <dashboardGridLayout>
         <dashboardGridComponents>
-            <colSpan>2</colSpan>
+            <colSpan>3</colSpan>
             <columnIndex>0</columnIndex>
             <dashboardComponent>
                 <autoselectColumnsFromReport>false</autoselectColumnsFromReport>
@@ -30,8 +30,8 @@
             <rowSpan>4</rowSpan>
         </dashboardGridComponents>
         <dashboardGridComponents>
-            <colSpan>2</colSpan>
-            <columnIndex>2</columnIndex>
+            <colSpan>3</colSpan>
+            <columnIndex>3</columnIndex>
             <dashboardComponent>
                 <autoselectColumnsFromReport>false</autoselectColumnsFromReport>
                 <chartSummary>
@@ -56,25 +56,24 @@
             <rowSpan>4</rowSpan>
         </dashboardGridComponents>
         <dashboardGridComponents>
-            <colSpan>2</colSpan>
-            <columnIndex>4</columnIndex>
+            <colSpan>3</colSpan>
+            <columnIndex>6</columnIndex>
             <dashboardComponent>
                 <autoselectColumnsFromReport>false</autoselectColumnsFromReport>
                 <chartSummary>
                     <aggregate>Sum</aggregate>
                     <column>Transaction__c.Tasks_Overdue__c</column>
                 </chartSummary>
-                <componentChartTheme>light</componentChartTheme>
                 <componentType>Metric</componentType>
                 <decimalPrecision>-1</decimalPrecision>
                 <displayUnits>Auto</displayUnits>
                 <groupingSortProperties/>
-                <indicatorBreakpoint1>1.0</indicatorBreakpoint1>
-                <indicatorBreakpoint2>1.0</indicatorBreakpoint2>
-                <indicatorHighColor>#C23934</indicatorHighColor>
-                <indicatorLowColor>#1B7A4B</indicatorLowColor>
-                <indicatorMiddleColor>#C23934</indicatorMiddleColor>
-                <metricLabel>Overdue Tasks</metricLabel>
+                <header>Overdue Tasks</header>
+                <indicatorBreakpoint1>33.0</indicatorBreakpoint1>
+                <indicatorBreakpoint2>67.0</indicatorBreakpoint2>
+                <indicatorHighColor>#BA1717</indicatorHighColor>
+                <indicatorLowColor>#C23934</indicatorLowColor>
+                <indicatorMiddleColor>#CA8501</indicatorMiddleColor>
                 <report>Transactions/Overdue_Tasks</report>
                 <showRange>false</showRange>
             </dashboardComponent>
@@ -82,12 +81,13 @@
             <rowSpan>4</rowSpan>
         </dashboardGridComponents>
         <dashboardGridComponents>
-            <colSpan>2</colSpan>
-            <columnIndex>6</columnIndex>
+            <colSpan>3</colSpan>
+            <columnIndex>9</columnIndex>
             <dashboardComponent>
                 <autoselectColumnsFromReport>false</autoselectColumnsFromReport>
                 <chartSummary>
-                    <column>RowCount</column>
+                    <aggregate>Sum</aggregate>
+                    <column>Transaction__c.Tasks_Complete__c</column>
                 </chartSummary>
                 <componentChartTheme>light</componentChartTheme>
                 <componentType>Metric</componentType>
@@ -96,19 +96,70 @@
                 <groupingSortProperties/>
                 <indicatorBreakpoint1>1.0</indicatorBreakpoint1>
                 <indicatorBreakpoint2>2.0</indicatorBreakpoint2>
-                <indicatorHighColor>#CC7A00</indicatorHighColor>
-                <indicatorLowColor>#CC7A00</indicatorLowColor>
-                <indicatorMiddleColor>#CC7A00</indicatorMiddleColor>
-                <metricLabel>Financing Active</metricLabel>
-                <report>Transactions/Financing_Active</report>
+                <indicatorHighColor>#1B7A4B</indicatorHighColor>
+                <indicatorLowColor>#1B7A4B</indicatorLowColor>
+                <indicatorMiddleColor>#1B7A4B</indicatorMiddleColor>
+                <metricLabel>Total Completed Tasks</metricLabel>
+                <report>Transactions/Total_Completed_Tasks</report>
                 <showRange>false</showRange>
             </dashboardComponent>
             <rowIndex>0</rowIndex>
             <rowSpan>4</rowSpan>
         </dashboardGridComponents>
         <dashboardGridComponents>
-            <colSpan>2</colSpan>
-            <columnIndex>8</columnIndex>
+            <colSpan>3</colSpan>
+            <columnIndex>0</columnIndex>
+            <dashboardComponent>
+                <autoselectColumnsFromReport>false</autoselectColumnsFromReport>
+                <chartSummary>
+                    <aggregate>Sum</aggregate>
+                    <column>Transaction__c.Tasks_Open__c</column>
+                </chartSummary>
+                <componentChartTheme>light</componentChartTheme>
+                <componentType>Metric</componentType>
+                <decimalPrecision>-1</decimalPrecision>
+                <displayUnits>Auto</displayUnits>
+                <groupingSortProperties/>
+                <indicatorBreakpoint1>1.0</indicatorBreakpoint1>
+                <indicatorBreakpoint2>2.0</indicatorBreakpoint2>
+                <indicatorHighColor>#0B5394</indicatorHighColor>
+                <indicatorLowColor>#0B5394</indicatorLowColor>
+                <indicatorMiddleColor>#0B5394</indicatorMiddleColor>
+                <metricLabel>Total Open Tasks</metricLabel>
+                <report>Transactions/Total_Open_Tasks</report>
+                <showRange>false</showRange>
+            </dashboardComponent>
+            <rowIndex>4</rowIndex>
+            <rowSpan>4</rowSpan>
+        </dashboardGridComponents>
+        <dashboardGridComponents>
+            <colSpan>3</colSpan>
+            <columnIndex>3</columnIndex>
+            <dashboardComponent>
+                <autoselectColumnsFromReport>false</autoselectColumnsFromReport>
+                <chartSummary>
+                    <aggregate>Sum</aggregate>
+                    <column>Transaction__c.Wire_Open_Risks__c</column>
+                </chartSummary>
+                <componentType>Metric</componentType>
+                <decimalPrecision>-1</decimalPrecision>
+                <displayUnits>Auto</displayUnits>
+                <groupingSortProperties/>
+                <header>Wire Sentinel (Open Wire Risks)</header>
+                <indicatorBreakpoint1>33.0</indicatorBreakpoint1>
+                <indicatorBreakpoint2>67.0</indicatorBreakpoint2>
+                <indicatorHighColor>#00716B</indicatorHighColor>
+                <indicatorLowColor>#C23934</indicatorLowColor>
+                <indicatorMiddleColor>#CA8501</indicatorMiddleColor>
+                <report>Transactions/Open_Wire_Risks</report>
+                <showRange>false</showRange>
+            </dashboardComponent>
+            <rowIndex>4</rowIndex>
+            <rowSpan>4</rowSpan>
+        </dashboardGridComponents>
+        <dashboardGridComponents>
+            <colSpan>3</colSpan>
+            <columnIndex>6</columnIndex>
             <dashboardComponent>
                 <autoselectColumnsFromReport>false</autoselectColumnsFromReport>
                 <chartSummary>
@@ -128,17 +179,16 @@
                 <report>Transactions/Closing_In_30_Days</report>
                 <showRange>false</showRange>
             </dashboardComponent>
-            <rowIndex>0</rowIndex>
+            <rowIndex>4</rowIndex>
             <rowSpan>4</rowSpan>
         </dashboardGridComponents>
         <dashboardGridComponents>
-            <colSpan>2</colSpan>
-            <columnIndex>10</columnIndex>
+            <colSpan>3</colSpan>
+            <columnIndex>9</columnIndex>
             <dashboardComponent>
                 <autoselectColumnsFromReport>false</autoselectColumnsFromReport>
                 <chartSummary>
-                    <aggregate>Sum</aggregate>
-                    <column>Transaction__c.Wire_Open_Risks__c</column>
+                    <column>RowCount</column>
                 </chartSummary>
                 <componentChartTheme>light</componentChartTheme>
                 <componentType>Metric</componentType>
@@ -146,15 +196,15 @@
                 <displayUnits>Auto</displayUnits>
                 <groupingSortProperties/>
                 <indicatorBreakpoint1>1.0</indicatorBreakpoint1>
-                <indicatorBreakpoint2>1.0</indicatorBreakpoint2>
-                <indicatorHighColor>#C23934</indicatorHighColor>
-                <indicatorLowColor>#1B7A4B</indicatorLowColor>
-                <indicatorMiddleColor>#C23934</indicatorMiddleColor>
-                <metricLabel>Wire Sentinel (open risks)</metricLabel>
-                <report>Transactions/Open_Wire_Risks</report>
+                <indicatorBreakpoint2>2.0</indicatorBreakpoint2>
+                <indicatorHighColor>#CC7A00</indicatorHighColor>
+                <indicatorLowColor>#CC7A00</indicatorLowColor>
+                <indicatorMiddleColor>#CC7A00</indicatorMiddleColor>
+                <metricLabel>Financing Active</metricLabel>
+                <report>Transactions/Financing_Active</report>
                 <showRange>false</showRange>
             </dashboardComponent>
-            <rowIndex>0</rowIndex>
+            <rowIndex>4</rowIndex>
             <rowSpan>4</rowSpan>
         </dashboardGridComponents>
         <dashboardGridComponents>
@@ -190,10 +240,11 @@
                 <showPicturesOnCharts>false</showPicturesOnCharts>
                 <showValues>true</showValues>
                 <sortBy>RowValueDescending</sortBy>
+                <sortLegendValues>false</sortLegendValues>
                 <title>Checklist Completion by Deal (%)</title>
                 <useReportChart>false</useReportChart>
             </dashboardComponent>
-            <rowIndex>4</rowIndex>
+            <rowIndex>8</rowIndex>
             <rowSpan>9</rowSpan>
         </dashboardGridComponents>
         <dashboardGridComponents>
@@ -234,12 +285,13 @@
                         <sortOrder>1</sortOrder>
                     </flexTableSortInfo>
                     <hideChatterPhotos>true</hideChatterPhotos>
+                    <useReportTableSetting>false</useReportTableSetting>
                 </flexComponentProperties>
                 <groupingSortProperties/>
                 <header>Critical Dates — Countdown</header>
                 <report>Transactions/Critical_Dates_Countdown</report>
             </dashboardComponent>
-            <rowIndex>4</rowIndex>
+            <rowIndex>8</rowIndex>
             <rowSpan>9</rowSpan>
         </dashboardGridComponents>
         <numberOfColumns>12</numberOfColumns>
@@ -247,8 +299,8 @@
     </dashboardGridLayout>
     <dashboardType>SpecifiedUser</dashboardType>
     <isGridLayout>true</isGridLayout>
-    <owner>test-aysz9meqvl23@example.com</owner>
-    <runningUser>test-aysz9meqvl23@example.com</runningUser>
+    <owner>usman.khan.dpeg@avanzasolutions.com</owner>
+    <runningUser>usman.khan.dpeg@avanzasolutions.com</runningUser>
     <textColor>#000000</textColor>
     <title>Transaction Dashboard</title>
     <titleColor>#000000</titleColor>

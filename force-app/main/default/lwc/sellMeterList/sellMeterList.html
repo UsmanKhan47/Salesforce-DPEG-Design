@@ -6,11 +6,36 @@
             <div class="sm-error" role="alert">Sell meter list could not be loaded: {errorMessage}</div>
         </template>
 
+        <!-- ═══════════════════════════════════════════════════════════════════════════
+             SORTING (story 10, 2026-08-31). `c-list-datatable` extends LightningDatatable,
+             so `sorted-by` / `sorted-direction` / `onsort` are INHERITED — there is nothing
+             to add to that subclass and nothing was.
+
+             🔴 THE DATATABLE DOES NOT SORT THE DATA. It renders the header arrow from
+             `sorted-by` / `sorted-direction` and raises `onsort`; the PARENT performs the
+             sort. All three attributes are required: without `onsort` the click does
+             nothing, and without the two `sorted-*` bindings the arrow never moves and the
+             user cannot tell which column is active or in which direction — while the data
+             reorders under them.
+
+             🔴 THE COLUMNS SORT ON RAW VALUES, NOT ON WHAT THEY DISPLAY. Every sortable
+             column here binds a PRE-FORMATTED STRING ('$2.0M', 'Jan 1, 2020', '1.07×'), and
+             sorting on those gives '$10.0M' < '$2.0M' and dates ordered by month name. The
+             `SORT_KEY` map in the JS is what redirects each one to its raw value; read its
+             header before touching a column definition.
+
+             ⚠ JEST CANNOT SEE ANY OF THIS. The datatable stub renders nothing, so the suite
+             proves the sort FUNCTION and the attribute values, never that a sortable header
+             appears or responds to a click. That is a browser check (design gate G-5).
+             ═══════════════════════════════════════════════════════════════════════════ -->
         <c-list-datatable
             key-field="id"
             data={rows}
             columns={columns}
             column-widths-mode="auto"
+            sorted-by={sortedBy}
+            sorted-direction={sortedDirection}
+            onsort={handleSort}
             hide-checkbox-column
             onrowaction={handleRowAction}>
         </c-list-datatable>

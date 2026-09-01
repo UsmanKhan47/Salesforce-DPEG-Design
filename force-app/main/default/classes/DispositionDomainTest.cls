@@ -97,10 +97,32 @@ private class DispositionDomainTest {
             ));
         }
 
+        // 🔴 THE ASSET ARGUMENT WAS `null` ON BOTH LINES BELOW UNTIL 2026-08-31 (Tranche 1 item 8),
+        // AND THESE TWO SITES ARE THE **WEAKEST** OF THE ELEVEN REPAIRED — SAID PLAINLY SO NOBODY
+        // CITES THEM AS PRECEDENT. `Disposition__c.Property_Asset__c` is gaining a rule requiring
+        // it; the mechanism is a VALIDATION RULE, not `required = true` (design decision D-6), and
+        // a validation rule fires on **DML**. These two fixtures pass `doInsert = false` and are
+        // NEVER inserted — they exist only to be handed to `DispositionDomain.recordTypeNameOf`,
+        // which is a pure in-memory read of `RecordTypeId`. So neither line was actually broken.
+        // ⚠ THEY ARE REPAIRED ANYWAY, FOR ONE REASON AND AT ONE COST, BOTH WORTH STATING:
+        //   REASON — the day one of these scenarios grows an `insert`, the failure would be a
+        //   validation-rule error naming a field this class does not care about, in a helper three
+        //   methods away from the test that broke.
+        //   COST — `defaultPropertyAsset()` performs TWO inserts (Property + Property_Asset) the
+        //   first time it is called in a transaction, so this otherwise DML-FREE class now performs
+        //   two. That is a real, if small, regression in this file's hygiene, and it is the price
+        //   of uniformity. It is safe here because `scenarios()` is called from test bodies, never
+        //   inside a `Limits` bracket — this class has none.
+        // 🔴 ONE ASSET FOR THE WHOLE RUN. `defaultPropertyAsset()` caches; do NOT substitute
+        // `createPropertyAsset(...)`, which would build one per call.
         if (onMarketRtId != null) {
             scenarios.add(new Scenario(
                 'explicit On_Market RecordTypeId',
-                TestDataFactory.createDisposition(null, DispositionDomain.RT_ON_MARKET, false),
+                TestDataFactory.createDisposition(
+                    TestDataFactory.defaultPropertyAsset().Id,
+                    DispositionDomain.RT_ON_MARKET,
+                    false
+                ),
                 DispositionDomain.RT_ON_MARKET
             ));
         }
@@ -108,7 +130,11 @@ private class DispositionDomainTest {
         if (offMarketRtId != null) {
             scenarios.add(new Scenario(
                 'explicit Off_Market RecordTypeId',
-                TestDataFactory.createDisposition(null, DispositionDomain.RT_OFF_MARKET, false),
+                TestDataFactory.createDisposition(
+                    TestDataFactory.defaultPropertyAsset().Id,
+                    DispositionDomain.RT_OFF_MARKET,
+                    false
+                ),
                 DispositionDomain.RT_OFF_MARKET
             ));
         }

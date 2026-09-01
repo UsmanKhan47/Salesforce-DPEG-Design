@@ -17,8 +17,8 @@
  * If STEP 1 and the delete were ever split back into two independent queries and only one
  * were repointed, this script would scan zero rows, print "SCAN SKIPPED: there are no broker
  * Contacts in this org", pass the STEP 3 abort gate, and then delete the org's REAL broker
- * roster across five SetNull lookups — reporting SEED VERDICT: COMPLETE while doing it. The
- * guard would not be broken, it would be INVERTED: an all-clear that is itself the evidence
+ * roster across all EIGHT SetNull lookups — reporting SEED VERDICT: COMPLETE while doing it.
+ * The guard would not be broken, it would be INVERTED: an all-clear that is itself the evidence
  * the scan looked at the wrong population.
  *
  * 🔴 NEVER REINTRODUCE A SECOND `[SELECT ... FROM Contact WHERE <broker predicate>]` IN THIS
@@ -26,7 +26,56 @@
  *
  * STEP 6's inserted roster is stamped with the Broker record type for the same reason: an
  * unstamped seed Contact is no longer a broker, so it would satisfy nothing, be invisible to
- * every broker query, and be REFUSED by all six broker lookup filters.
+ * every broker query, and be REFUSED by SEVEN of the eight broker lookup filters.
+ *
+ * ⚠ CORRECTED 2026-08-31 (Tranche 1 code review, W-6). Retracted in place rather than bumped,
+ * because the replacement is NOT simply the new lookup count and a reader who silently swaps
+ * "six" for "eight" would be wrong in the more dangerous direction:
+ *
+ *     RETRACTED: "be REFUSED by all six broker lookup filters."
+ *
+ * EIGHT lookups across SEVEN objects point at these Contacts (the inventory is ~50 lines below,
+ * and it is already right — this line and the two the review named were the stale ones). But
+ * only SEVEN of those eight declare a `<lookupFilter>` at all. `Opportunity.Broker__c` declares
+ * NONE — measured 2026-08-31 by grepping `<lookupFilter>` across all eight field files — because
+ * it is stamped by `LeadConvertService` rather than typed by a user, so there is no picker to
+ * filter. An unstamped seed Contact is therefore refused by seven of them and SILENTLY ACCEPTED
+ * by the eighth, which is worse than being refused everywhere: the bad row lands on the one
+ * object whose lookup nothing validates. That asymmetry is why the number is worth stating
+ * precisely instead of rounding to "all of them".
+ *
+ * =====================================================================================
+ * 🔴 2026-08-31 (Tranche 1 RE-REVIEW, W-4b) — THE FIFTH STALE COUNT, AND THE FIFTH PARTIAL
+ *    EDIT. ONE RECORD BLOCK FOR ALL OF THEM, DELIBERATELY.
+ * =====================================================================================
+ * The staleness note ~100 lines below says a count in this file "has now gone stale on four
+ * separate occasions and every one of them was a partial edit, not a missed grep." W-6 earlier
+ * the same day corrected the headline, the record-type sentence and `BROKER_LOOKUPS` — and left
+ * FOUR OTHER SENTENCES saying five, three or seven. That is occasion number five, by the same
+ * mechanism the note predicted, ONE DAY after it was written.
+ *
+ * Corrected IN PLACE, all four, in one edit, with the dead text recorded HERE rather than in
+ * four more scattered blocks — because four separate retractions is how a reader ends up
+ * quoting whichever one they hit first:
+ *
+ *     RETRACTED (this header, ~15 lines up): "delete the org's REAL broker roster across five
+ *     SetNull lookups".
+ *     RETRACTED (THE GUARD block, STEP 2): "STEP 2 scans all five lookups BEFORE any DML".
+ *     RETRACTED (FORCE block): "⚠ FORCE DOES NOT REPAIR THE OTHER THREE FORMULA OBJECTS".
+ *     RETRACTED (PRE-FLIGHT GATE, in code): "blanked lookups across all five SetNull fields".
+ *
+ * THE FIGURE IS EIGHT LOOKUPS ACROSS SEVEN OBJECTS, as the headline below already said. Three of
+ * the four were plain arithmetic. The FORCE one was not, and it is the one worth reading:
+ * "the other THREE FORMULA objects" was wrong about the KIND, not just the count. There are only
+ * TWO formula objects (`Broker_Assignment__c`, `Lease_Inquiry__c`); `Opportunity` carries no
+ * denormalised copy at all, and `Broker_Listing__c` — the eighth lookup — carries STORED
+ * Text(255) that is not a formula and does not self-heal. FORCE still correctly repairs none of
+ * them, but for THREE different reasons, not one. See the corrected paragraph for the split.
+ *
+ * 🔴 THE STRUCTURAL FIX, NOT JUST THE ARITHMETIC ONE: three of the four sentences never needed a
+ * number. They now say "every entry in `BROKER_LOOKUPS`" / "all EIGHT", and `BROKER_LOOKUPS` is
+ * named as the authority. A prose count that no test and no compiler can falsify will go stale a
+ * sixth time; a pointer to the map cannot. Count from the map.
  *
  * =====================================================================================
  * STEP ORDER — THE RECORD-TYPE GATE RUNS FIRST, BEFORE STEP 1
@@ -79,7 +128,7 @@
  *     entirely — Workstream B added it the same day this count was last corrected, and
  *     BROKER_LOOKUPS / STORED_DENORM_TEXT below had not been updated to match).
  *
- * SEVEN LOOKUPS ACROSS SIX OBJECTS POINT AT THOSE CONTACTS. ALL SEVEN ARE deleteConstraint =
+ * EIGHT LOOKUPS ACROSS SEVEN OBJECTS POINT AT THOSE CONTACTS. ALL EIGHT ARE deleteConstraint =
  * SetNull, so the delete does not fail — it silently BLANKS the lookup on every referencing
  * record:
  *
@@ -101,6 +150,47 @@
  *                                             independent of Outgoing_Broker__c above — a
  *                                             single history row can be orphaned on either
  *                                             field, or both, in the same delete
+ *   Broker_Listing__c.Broker__c              rel. Broker_Listings            🔴 ADDED
+ *                                             2026-08-31 (Tranche 1 item 5), THE EIGHTH.
+ *                                             SEE THE PARAGRAPH IMMEDIATELY BELOW — it is
+ *                                             NOT a stored-text case today, and that is a
+ *                                             measured fact with an expiry date on it.
+ *
+ * ⚠ CORRECTED 2026-08-31, same shape as the two corrections above it. The headline three
+ * paragraphs up previously read:
+ *
+ *     RETRACTED: "SEVEN LOOKUPS ACROSS SIX OBJECTS POINT AT THOSE CONTACTS. ALL SEVEN ARE
+ *     deleteConstraint = SetNull".
+ *
+ * It is EIGHT ACROSS SEVEN. Every other word stands: the new field is `deleteConstraint SetNull`
+ * like its seven siblings (Restrict is forbidden — see the block below), so the delete still does
+ * not fail, it silently BLANKS.
+ *
+ * 🔴 THE HEADLINE ITSELF WAS LEFT SAYING "SEVEN" FOR A DAY AFTER THIS CORRECTION WAS WRITTEN, AND
+ * THAT IS THE FAILURE MODE THIS FILE KEEPS REPEATING (Tranche 1 code review, W-6, 2026-08-31).
+ * Three separate corrections now sit in this header and each one was written UNDER the sentence it
+ * corrects, so a reader hits the wrong number first and the correction only if they keep going.
+ * The headline is now corrected IN PLACE and this block is the record of what it used to say —
+ * which is the convention the rest of the repo uses and the one this file should have used the
+ * first time. ⚠ If a NINTH lookup ever appears, fix the headline, the record-type sentence at the
+ * top of this header, and `BROKER_LOOKUPS` in the SAME edit; a count in this file has now gone
+ * stale on four separate occasions and every one of them was a partial edit, not a missed grep.
+ *
+ * 🔴 WHY `Broker_Listing__c` IS **NOT** IN `STORED_DENORM_TEXT` BELOW, AND WHEN THAT MUST
+ * CHANGE. The object carries `Broker_Firm__c` and `Contact_Name__c` as stored Text(255) —
+ * the same two field NAMES that put `BOV_Submission__c` in that map — so the obvious move is
+ * to add it and the obvious move is WRONG TODAY. On `BOV_Submission__c` those two fields are
+ * STAMPED FROM `Broker__c` by `BovSubmissionBrokerStampService`, which is what makes them a
+ * denormalised copy that goes stale when the lookup is blanked. On `Broker_Listing__c` they
+ * are not: `Broker_Firm__c` is copied from `Disposition__c.Selected_Broker__c` by
+ * `DispositionStageEntryService.openBrokerListings`, `Contact_Name__c` is typed by a human,
+ * and Tranche 1 ships the lookup with NO STAMP SERVICE AT ALL — the field is blank on every
+ * auto-created listing. Listing them here would report text that never named the deleted
+ * broker in the first place, which is a false positive in a guard whose whole value is that
+ * its report can be trusted.
+ * ⚠ THE MOMENT A STAMP SERVICE IS ADDED FOR `Broker_Listing__c.Broker__c`, THIS DECISION
+ * INVERTS and both fields belong in `STORED_DENORM_TEXT`. That is the one thing to re-check
+ * here; nothing else about this entry is conditional.
  *
  * 🔴 DO NOT "FIX" THIS BY SWITCHING ANY OF THOSE FIELDS TO deleteConstraint = Restrict.
  * That was considered and rejected — see the XML comment in
@@ -118,12 +208,22 @@
  * ONES" — that omitted the third object entirely; see its own paragraph below for why its
  * severity is real but PARTIAL, not identical to the other two.
  *
- * Three of the six objects fail VISIBLY. `Broker_Assignment__c.Broker_Name__c` /
+ * Three of the seven objects fail VISIBLY. `Broker_Assignment__c.Broker_Name__c` /
  * `Broker_Firm__c` / `Broker_Email__c` and `Lease_Inquiry__c.Broker_Name__c` /
  * `Broker_Firm__c` are FORMULA fields over `Broker__r.*` (measured, not assumed — read
  * their field-meta.xml), so when the lookup is nulled they evaluate to blank in the same
  * instant. The page goes empty and a human can see that something was lost.
  * `Opportunity.Broker__c` has no denormalised copy at all.
+ *
+ * ⚠ COUNT CORRECTED 2026-08-31 (Tranche 1 code review, W-6). RETRACTED: "Three of the six
+ * objects fail VISIBLY." The denominator moved to SEVEN with `Broker_Listing__c`; the NUMERATOR
+ * did not, and that is the part worth stating rather than a silent bump. `Broker_Listing__c` is
+ * in neither camp: it has no stamp service, so a SetNull there leaves behind NO text naming the
+ * deleted broker (see the paragraph above), and it therefore fails neither visibly nor
+ * corruptingly — it just quietly loses the link. 3 visible + 3 severe stored-text
+ * (Disposition__c, BOV_Submission__c, BOV_Broker_Change__c) + 1 neither = 7.
+ * 🔴 IF A STAMP SERVICE IS EVER ADDED FOR `Broker_Listing__c.Broker__c`, IT MOVES INTO THE
+ * SEVERE GROUP, not the visible one, and this arithmetic becomes 3 + 4 + 0.
  *
  * `Disposition__c.Selected_Broker__c` IS DIFFERENT. It is a STORED Text(255) that
  * `DispositionBrokerStampService` writes from the lookup — a real value on the row, not a
@@ -189,9 +289,21 @@
  * =====================================================================================
  * THE GUARD (requirements 2.6 / risk R1, part 1 of the three-part mitigation)
  * =====================================================================================
- * STEP 2 scans all five lookups BEFORE any DML and reports every record that would be
- * orphaned, by name, with the broker it points at and — for Disposition and BOV_Submission —
- * every stale stored text that would be left behind, field by field.
+ * STEP 2 scans EVERY entry in `BROKER_LOOKUPS` BEFORE any DML and reports every record that
+ * would be orphaned, by name, with the broker it points at and — for Disposition and
+ * BOV_Submission — every stale stored text that would be left behind, field by field.
+ * ⚠ CORRECTED IN PLACE 2026-08-31 (Tranche 1 RE-REVIEW, W-4b). The sentence above still said
+ * "all five lookups" for a day after the correction below was written — the correction was
+ * added UNDER the stale sentence instead of replacing it, which is the exact failure this
+ * file's staleness note describes. The number is gone rather than bumped, on the reasoning
+ * already given below. Dead text recorded in the W-4b block in the header.
+ * ⚠ CORRECTED 2026-08-31 (Tranche 1 item 5). "all five lookups" is retracted rather than
+ * silently bumped, because a reader carrying FIVE needs to see that it has now moved twice
+ * more: it was already SEVEN before this change (the 2026-08-20 re-review added
+ * BOV_Broker_Change__c's two), and `Broker_Listing__c.Broker__c` makes it EIGHT ACROSS SEVEN
+ * OBJECTS. 🔴 THE NUMBER IS THE PART THAT KEEPS DECAYING AND THE SENTENCE NEVER NEEDED IT.
+ * What is load-bearing is that STEP 2 scans EVERY entry in `BROKER_LOOKUPS` — read that map,
+ * do not count from this paragraph.
  *
  * STEP 3 then ABORTS with zero DML if the scan found anything, unless FORCE = true.
  *
@@ -270,9 +382,22 @@
  * yet — and "the guard works only if some other class is deployed" is exactly the failure
  * mode a guard must not have. Writing both fields costs nothing and removes the dependency.
  *
- * ⚠ FORCE DOES NOT REPAIR THE OTHER THREE FORMULA OBJECTS, DELIBERATELY. Their denormalised
- * fields are formulas (see above) and re-derive to blank on their own; there is nothing
- * stored to correct, and an update on them would be DML that changes no observable state.
+ * ⚠ FORCE DOES NOT REPAIR THE OTHER FOUR OBJECTS EITHER, DELIBERATELY — BUT FOR THREE
+ * DIFFERENT REASONS, NOT ONE. Corrected in place 2026-08-31 (Tranche 1 RE-REVIEW, W-4b);
+ * this read "THE OTHER THREE FORMULA OBJECTS ... Their denormalised fields are formulas (see
+ * above) and re-derive to blank on their own", which was wrong about the KIND as well as the
+ * count, and the kind is the part that would have misled someone adding an entry:
+ *   - `Broker_Assignment__c` and `Lease_Inquiry__c` — the only TWO formula objects. Their
+ *     denormalised fields re-derive to blank on their own; there is nothing stored to correct,
+ *     and an update on them would be DML that changes no observable state.
+ *   - `Opportunity` — no denormalised copy of any kind. Nothing to repair, nothing to go stale.
+ *   - `Broker_Listing__c` — the EIGHTH lookup, added by Tranche 1, and NOT a formula object.
+ *     `Broker_Firm__c` / `Contact_Name__c` are STORED Text(255), so they do NOT self-heal. It
+ *     is excluded because Tranche 1 ships no stamp service for `Broker__c`, so that text never
+ *     named the deleted broker in the first place — the full argument is in this header's
+ *     `Broker_Listing__c` paragraph. 🔴 IF A STAMP SERVICE IS ADDED, THIS ENTRY MOVES: it
+ *     becomes a stored-text case like Disposition and BOV, and the decision is then whether to
+ *     clear it, not whether it self-heals. It never self-heals.
  *
  * 🔴 FORCE ALSO DOES NOT CLEAR `BOV_Submission__c`, AND THAT IS A DIFFERENT DECISION FROM
  * THE PARAGRAPH ABOVE — NOT AN OVERSIGHT AND NOT AN INHERITANCE OF IT. Those two fields ARE
@@ -377,16 +502,40 @@ final Boolean FORCE = false;
 //    and lose the other silently" failure STORED_DENORM_TEXT's own header already warns
 //    against a few lines below. The value type therefore changes to `List<String>`, matching
 //    STORED_DENORM_TEXT's existing shape, and STEP 2 / STEP 4 below are rewritten to iterate
-//    every lookup field an object declares rather than assume exactly one. SEVEN lookup
+//    every lookup field an object declares rather than assume exactly one.
+//    [SUPERSEDED — THE NEXT PARAGRAPH RETRACTS THE SENTENCE THAT FOLLOWS. IT IS LEFT VERBATIM
+//    BECAUSE IT IS QUOTED VERBATIM THERE.] SEVEN lookup
 //    fields across SIX objects are the complete set as of 2026-08-20 — re-run the grep above
 //    before trusting this list; a date on a comment is not a measurement.
+//    ⚠ CORRECTED AGAIN 2026-08-31 (Tranche 1 item 5). Retracted rather than bumped, for the
+//    third time in this comment, because the correction carries a fact the number does not:
+//
+//        RETRACTED: "SEVEN lookup fields across SIX objects are the complete set as of
+//        2026-08-20".
+//
+//    `Broker_Listing__c.Broker__c` was created by Tranche 1 and is the EIGHTH, across SEVEN
+//    objects. 🔴 IT IS A PURE ADDITION — no shape change was needed, unlike the 2026-08-20
+//    correction, because this object declares exactly one Contact lookup.
+//    🔴 THE FIELD MAY NOT BE DEPLOYED YET WHEN THIS SCRIPT RUNS, AND THAT IS HANDLED, NOT
+//    IGNORED. Tranche 1's deploy order puts the schema wave ahead of this script, but a
+//    rebuild org can be part-way through: STEP 2 describes every declared field individually
+//    and routes a missing one into `notInThisOrg` rather than failing the run (that
+//    per-field check was itself added on 2026-08-20 for exactly this reason). So adding the
+//    entry now is safe in an org that does not yet have the field, and is REQUIRED in one
+//    that does — the delete blanks it either way, silently, with no error.
+//    ⚠ Re-run `grep -rl "<referenceTo>Contact</referenceTo>" objects/` before trusting THIS
+//    list too. A date on a comment is still not a measurement.
 final Map<String, List<String>> BROKER_LOOKUPS = new Map<String, List<String>>{
     'Disposition__c'       => new List<String>{ 'Broker__c' },
     'BOV_Submission__c'    => new List<String>{ 'Broker__c' },
     'Broker_Assignment__c' => new List<String>{ 'Broker__c' },
     'Lease_Inquiry__c'     => new List<String>{ 'Broker__c' },
     'Opportunity'          => new List<String>{ 'Broker__c' },
-    'BOV_Broker_Change__c' => new List<String>{ 'Outgoing_Broker__c', 'Incoming_Broker__c' }
+    'BOV_Broker_Change__c' => new List<String>{ 'Outgoing_Broker__c', 'Incoming_Broker__c' },
+    // 🔴 ADDED 2026-08-31 (Tranche 1 item 5). Deliberately absent from STORED_DENORM_TEXT
+    // below — its Broker_Firm__c / Contact_Name__c are NOT stamped from this lookup today.
+    // The full argument, and the condition that reverses it, is in this file's header.
+    'Broker_Listing__c'    => new List<String>{ 'Broker__c' }
 };
 
 // ── Objects carrying STORED (non-formula) denormalised copies of the broker, which a
@@ -410,9 +559,12 @@ final Map<String, List<String>> BROKER_LOOKUPS = new Map<String, List<String>>{
 //    NOT be added here.
 //    WHAT BECAME FALSE: "Disposition is the ONLY entry". BOV_Submission__c.Broker_Firm__c
 //    and Contact_Name__c are stored Text(255) stamped by BovSubmissionBrokerStampService
-//    (2026-08-20), so there are now TWO objects with stored copies — and BOV needs TWO
-//    FIELDS, which is why the value type here is List<String> and no longer String. That
-//    shape change is the whole reason this is not a one-line edit.
+//    (2026-08-20), so there were TWO objects with stored copies AT THAT POINT — THREE in the
+//    map today, the third added in the paragraph immediately below, and a FOURTH
+//    (Broker_Listing__c) deliberately excluded for the reason given in the header. Count the
+//    map, not this sentence. ("there are now TWO" corrected in place 2026-08-31, W-4b.)
+//    BOV needs TWO FIELDS, which is why the value type here is List<String> and no longer
+//    String. That shape change is the whole reason this is not a one-line edit.
 //    ⚠ CHECKED AGAIN 2026-08-20 (re-review, same day) FOR BOV_Broker_Change__c, WHICH ALSO
 //    NEEDS TWO FIELDS (Outgoing_Broker_Firm__c, Incoming_Broker_Firm__c — both stored
 //    Text(255), both stamped by BovSubmissionService.replaceSelectedBroker). Unlike
@@ -468,7 +620,9 @@ final Integer MAX_LOG_ROWS_PER_OBJECT = 25;
 //   • 🔴 Record type PRESENT but NOT `isAvailable()` TO THE OPERATOR -> SOQL DOES NOT FILTER BY
 //     RECORD-TYPE VISIBILITY, so STEP 1 still matches every broker Contact in the org, STEP 5
 //     DELETES THEM ALL, and only then does the script discover it cannot re-create them. The org
-//     is left with ZERO brokers and blanked lookups across all five SetNull fields, unrecoverably.
+//     is left with ZERO brokers and blanked lookups across every field in `BROKER_LOOKUPS` —
+//     all EIGHT of them, across seven objects — unrecoverably. ("all five SetNull fields"
+//     corrected in place 2026-08-31, Tranche 1 RE-REVIEW W-4b; see the W-4b block in the header.)
 //     An UNDER-PROVISIONED OPERATOR — not a missing record type — is what turned this script into
 //     data loss, and that is the case the old placement did NOT survive.
 //
@@ -697,8 +851,10 @@ if (doomedIds.isEmpty()) {
 if (!notInThisOrg.isEmpty()) {
     System.debug(LoggingLevel.INFO, 'SCAN NOTE: not scanned because they are not in this org yet - '
         + String.join(notInThisOrg, ', ') + '. Expected in a rebuild org before the broker-lookup '
-        + 'metadata deploys (off-market Disposition__c.Broker__c, and BOV_Submission__c.Broker__c '
-        + 'from 2026-08-20); those lookups hold no data, so they cannot be orphaned. Re-run the '
+        + 'metadata deploys (off-market Disposition__c.Broker__c, BOV_Submission__c.Broker__c '
+        + 'from 2026-08-20, and Broker_Listing__c.Broker__c from Tranche 1 - the example list was '
+        + 'stale until 2026-08-31, W-4b); those lookups hold no data, so they cannot be orphaned. '
+        + 'Re-run the '
         + 'scan after the deploy before trusting a clean result.');
 }
 // 🔴 A TRUNCATED SCAN ABORTS AND **FORCE CANNOT OVERRIDE IT**, deliberately. FORCE means "I have

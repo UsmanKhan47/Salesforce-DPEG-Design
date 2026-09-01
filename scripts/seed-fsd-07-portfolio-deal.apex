@@ -27,9 +27,9 @@ if ([SELECT COUNT() FROM Inbound_Email_Staging__c WHERE Subject__c = :MARKER_SUB
         Message_Id__c = '<pkg-demo-' + String.valueOf(Datetime.now().getTime()) + '@austinretailpartners.com>',
         Raw_Headers__c = 'From: Jordan Reyes <j.reyes@austinretailpartners.com>\nTo: deals@dpeg-demo.com\nSubject: ' + MARKER_SUBJECT,
         Raw_Body__c = 'Hi team,\n\nWe are bringing three South Austin retail assets to market together as a single portfolio offering. Details below:\n\n' +
-            '1) Slaughter Lane Shopping Center - 4200 W Slaughter Ln, Austin, TX - Retail Strip, ~$14.5M guidance, 6.6% cap\n' +
-            '2) Manchaca Village Retail - 9800 Manchaca Rd, Austin, TX - Retail Strip, ~$8.9M guidance, 6.9% cap\n' +
-            '3) Southpark Meadows Pad - 9600 I-35 Frontage Rd, Austin, TX - Retail Strip, ~$6.2M guidance, 7.1% cap\n\n' +
+            '1) Slaughter Lane Shopping Center - 4200 W Slaughter Ln, Austin, TX - Retail, ~$14.5M guidance, 6.6% cap\n' +
+            '2) Manchaca Village Retail - 9800 Manchaca Rd, Austin, TX - Retail, ~$8.9M guidance, 6.9% cap\n' +
+            '3) Southpark Meadows Pad - 9600 I-35 Frontage Rd, Austin, TX - Retail, ~$6.2M guidance, 7.1% cap\n\n' +
             'Offers due in 4 weeks. Happy to set up a call.\n\nBest,\nJordan Reyes\nAustin Retail Partners',
         Status__c = 'Processed',
         Outcome__c = 'Multi-Property (3): all 3 routed to new Leads',

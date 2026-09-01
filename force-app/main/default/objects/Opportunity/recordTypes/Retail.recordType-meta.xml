@@ -39,11 +39,19 @@
     <picklistValues>
         <picklist>Asset_Type__c</picklist>
         <values>
+            <fullName>Hospitality</fullName>
+            <default>false</default>
+        </values>
+        <values>
             <fullName>Industrial</fullName>
             <default>false</default>
         </values>
         <values>
             <fullName>Land</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Medical Office</fullName>
             <default>false</default>
         </values>
         <values>
@@ -59,7 +67,7 @@
             <default>false</default>
         </values>
         <values>
-            <fullName>Retail Strip</fullName>
+            <fullName>Retail</fullName>
             <default>false</default>
         </values>
     </picklistValues>

@@ -34,7 +34,7 @@
  * Creating the Transaction MOVED out of handleExecution on 2026-08-05 (user decision): the
  * Transactions team now picks a deal up when it is genuinely about to close, not at signature.
  * handleExecution still stamps Day 0 — and openTransactionsOnAboutToClose READS THAT STAMP BACK to
- * date the 75-task checklist, so the two remain coupled even though they no longer run together.
+ * date the 82-task checklist, so the two remain coupled even though they no longer run together.
  * Do not re-add Transaction creation to handleExecution.
  *
  * ── 🔴 handleExecution NOW HAS TWO ARMS, ONE PER SIDE OF THE HOUSE (Tranche 3C, 2026-08-09) ──
@@ -178,7 +178,7 @@ public with sharing class ContractExecutionService {
      *   Every acquisition PSA passes THROUGH 'Signed' on its way to 'Executed'. A global repoint
      *   would fire the Day-0 stamp, the four notifications and the Offering shell ONE HOP EARLY —
      *   at signature instead of at execution — and `Contract_Executed_Date__c` dates the entire
-     *   ~75-task Day-0 checklist by offset. Every deadline in every acquisition transaction would
+     *   82-task Day-0 checklist by offset. Every deadline in every acquisition transaction would
      *   shift. Pinned by executingAnAcquisitionPsaThroughSignedDoesNotFireTheHandoff.
      *
      * ⚠ Do not "simplify" the two constants back into one, and do not add 'Signed' to the
@@ -283,7 +283,7 @@ public with sharing class ContractExecutionService {
      *
      * ── 🔴 DAY 0 IS THE CONTRACT EXECUTION DATE, NOT TODAY ──
      * Transaction__c.Contract_Executed_Date__c ARMS the Transaction_Task_Fanout flow, and every one
-     * of the ~75 checklist tasks is dated by offset from it. By the time a deal reaches About to
+     * of the 82 checklist tasks is dated by offset from it. By the time a deal reaches About to
      * Close the contract may have been executed weeks earlier, so dating the checklist "now" would
      * silently shift every deadline. It therefore reads Opportunity.Contract_Executed_Date__c and
      * falls back to today ONLY when the deal reached this stage without an executed contract —
@@ -355,7 +355,7 @@ public with sharing class ContractExecutionService {
             if (transactionOwnerId != null) {
                 for (Transaction__c t : transToInsert) {
                     // ⚠ CASCADES: TaskFanoutService does `tk.OwnerId = t.OwnerId`, so the whole
-                    // ~75-row Day-0 checklist is now owned by this user too. That is intended.
+                    // 82-row Day-0 checklist is now owned by this user too. That is intended.
                     t.OwnerId = transactionOwnerId;
                 }
             }

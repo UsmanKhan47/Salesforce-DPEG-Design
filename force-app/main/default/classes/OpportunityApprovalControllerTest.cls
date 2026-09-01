@@ -9,6 +9,22 @@
  * generic SUBMIT_FAILURE_MESSAGE with no raw platform text leaked (submitFailureMapsToGenericMessage,
  * code-review W2). Per the task, negative tests assert only that an AuraHandledException is
  * thrown — never its message.
+ *
+ * ══ ⚠ W5, 2026-09-01: THE TWO HAPPY PATHS NOW SUBMIT AN `LOI__c`, NOT AN `Opportunity` ═══════
+ * `approvalProcesses/Opportunity.LOI_Approval` is DEACTIVATED, leaving ZERO active approval
+ * processes on `Opportunity`, so `submitsEligibleOpp` and `secondSubmitThrows` both failed with
+ * `AuraHandledException: LOI approval runs on the LOI record...`. They were repointed onto the LOI
+ * (`submitsEligibleOpp` -> `submitsEligibleLoi`); see each method's docstring.
+ * 🔴 NEITHER WAS ON ANY "SCHEDULED TO GO RED" LIST — not the design pack's §6.1, not the markers
+ * in `OpportunityApprovalServiceTest`'s header. Both broke on a FIXTURE line (`makeOpp()` then
+ * submit), not on an assertion encoding old behaviour, and that is the blind spot those lists
+ * share: they enumerate tests that ASSERT the old behaviour, never tests that merely USE it to
+ * build a fixture. Only running the suite finds the second kind.
+ * ⚠ The NEGATIVE tests below still submit an Opportunity and still pass — they expect a throw, and
+ * they still get one (a different one). Their green is therefore weaker than it looks: several now
+ * pass because the process is retired rather than because of the condition they name. Do not read
+ * them as evidence about the stage/orphan/unsupported branches without checking which exception
+ * actually arrived.
  */
 @isTest
 private class OpportunityApprovalControllerTest {
@@ -38,34 +54,93 @@ private class OpportunityApprovalControllerTest {
         return o;
     }
 
+    /**
+     * An acquisition LOI parked at the stage its own approval accepts, under `deal`.
+     *
+     * ══ 🔴 ADDED AT W5, 2026-09-01, BECAUSE THE HAPPY PATH HAD TO MOVE OFF THE OPPORTUNITY ══
+     * `approvalProcesses/Opportunity.LOI_Approval` is DEACTIVATED, so there are now ZERO active
+     * approval processes on `Opportunity` and no Opportunity submission can succeed by any route.
+     * The two happy-path tests below therefore had to be repointed onto the LOI — which is also
+     * the only path a human can now take, so they test more than they did before.
+     *
+     * ⚠ IT CREATES ITS OWN LOI RATHER THAN USING THE ONE `OpportunityReviewService` AUTO-CREATES
+     * on entry to the LOI stage, and that is load-bearing rather than convenience: the auto-created
+     * one is owned by the `Acquisition` QUEUE, and `LOI__c.LOI_Approval` declares
+     * `allowedSubmitters type=owner`, so a submission of the auto-created LOI is refused by the
+     * PLATFORM before entry criteria are considered — green for the wrong reason. Same fixture
+     * shape, and same reasoning, as `OpportunityApprovalServiceTest.makeSubmittableLoi`.
+     *
+     * @param deal The parent deal (from `makeOpp()`, so its primary NDA is signed and the
+     *             service's NDA gate passes).
+     * @return The inserted LOI, at 'Under Review', owned by the test-running user.
+     */
+    private static LOI__c makeSubmittableLoi(Opportunity deal) {
+        LOI__c loi = TestDataFactory.createLoi(deal.Id, true);
+        update new LOI__c(Id = loi.Id, Stage__c = 'Under Review');
+        return loi;
+    }
+
+    /**
+     * ⚠ REPOINTED ONTO THE LOI AT W5, 2026-09-01. Was `submitsEligibleOpp`, submitting an
+     * Opportunity at 'LOI'. That succeeded only while `Opportunity.LOI_Approval` was active.
+     *
+     * 🔴 THIS CLASS WAS NOT ON ANY "SCHEDULED TO GO RED" LIST — not the design pack's §6.1, not
+     * the markers in `OpportunityApprovalServiceTest`'s header. It was found by RUNNING the suite
+     * after the W5 deploy, which is the only check that would have caught it: both failures here
+     * are fixture lines (`makeOpp()` + submit) rather than assertions encoding old behaviour.
+     *
+     * The test's JOB is unchanged — prove the controller's delegation is TRANSPARENT on the happy
+     * path — and it is now proven on the live path instead of a retired one.
+     */
     @isTest
-    static void submitsEligibleOpp() {
+    static void submitsEligibleLoi() {
         Opportunity o = makeOpp();
+        LOI__c loi = makeSubmittableLoi(o);
+
         Test.startTest();
-        String msg = OpportunityApprovalController.submitForApproval(o.Id);
+        String msg = OpportunityApprovalController.submitForApproval(loi.Id);
         Test.stopTest();
 
         System.assertNotEquals(null, msg, 'A success message should be returned');
         System.assertEquals(1,
+            [SELECT COUNT() FROM ProcessInstance WHERE TargetObjectId = :loi.Id],
+            'A pending approval instance should exist on the LOI after submit');
+        System.assertEquals(0,
             [SELECT COUNT() FROM ProcessInstance WHERE TargetObjectId = :o.Id],
-            'A pending approval instance should exist after submit');
+            'and NOTHING may land on the parent deal — Opportunity.LOI_Approval is retired');
     }
 
+    /**
+     * ⚠ REPOINTED ONTO THE LOI AT W5, 2026-09-01, for the same reason as `submitsEligibleLoi`:
+     * its first line built the fixture by submitting an Opportunity, which now throws.
+     *
+     * 🔴 THE GUARD MATTERS MORE ON THIS PATH THAN IT DID ON THE OLD ONE. The LOI page's
+     * `LOI_Status__c NE 'Pending Approval'` visibility criterion is INERT (nothing in production
+     * writes that value), so the Submit button STAYS VISIBLE after a submission and a second click
+     * is refused in Apex or not at all.
+     */
     @isTest
     static void secondSubmitThrows() {
         Opportunity o = makeOpp();
-        OpportunityApprovalController.submitForApproval(o.Id);
+        LOI__c loi = makeSubmittableLoi(o);
+        OpportunityApprovalController.submitForApproval(loi.Id);
+
+        System.assertEquals(1, [
+            SELECT COUNT() FROM ProcessInstance
+            WHERE TargetObjectId = :loi.Id AND Status = 'Pending'
+        ], 'FIXTURE PRECONDITION: the FIRST submission must really have created a pending instance, '
+            + 'or the assertion below passes for the wrong reason.');
 
         Test.startTest();
         Boolean threw = false;
         try {
-            OpportunityApprovalController.submitForApproval(o.Id);
+            OpportunityApprovalController.submitForApproval(loi.Id);
         } catch (Exception e) {
             threw = true;
         }
         Test.stopTest();
 
-        System.assert(threw, 'Submitting an already-pending deal should throw');
+        System.assert(threw, 'Submitting an already-pending LOI should throw');
     }
 
     @isTest
@@ -122,25 +197,63 @@ private class OpportunityApprovalControllerTest {
             'Submitting from the Underwriting record must NEVER submit the parent deal');
     }
 
+    /**
+     * ⚠ INVERTED 2026-09-01 (W4 of the LOI approval cutover). It asserted that submitting from an
+     * LOI put the PARENT DEAL into approval; the LOI now submits ITSELF, which is the whole point
+     * of that change, so the old assertion was reversed rather than repaired. The service-level
+     * twin, with the full reasoning, is
+     * `OpportunityApprovalServiceTest.submitsFromLoiRecordTargetsTheLoiItself`.
+     *
+     * ⚠ `Stage__c` IS DRIVEN TO 'Under Review' — the factory inserts an acquisition LOI at
+     * 'Draft', and `LOI__c.LOI_Approval`'s entry criteria are Stage = 'Under Review' AND record
+     * type Acquisition_LOI.
+     *
+     * 🔴 IT ASSERTS ONLY THE NEGATIVE, BECAUSE `LOI__c.LOI_Approval` CURRENTLY ACCEPTS NOTHING.
+     * Measured 2026-09-01: an LOI satisfying its entry criteria literally still gets
+     * NO_APPLICABLE_PROCESS, and zero ProcessInstances exist against that definition. The cause is
+     * in the approval process file (the org normalised the criterion field to `LOI__c.RecordType`
+     * and kept an 18-character Id as its value; a `RecordType` criterion compares the record type
+     * NAME). The full measurement is on
+     * `OpportunityApprovalServiceTest.submitsFromLoiRecordTargetsTheLoiItself`.
+     * ⇒ ADD THE POSITIVE ONCE THAT IS FIXED:
+     *     System.assertEquals(1, [SELECT COUNT() FROM ProcessInstance
+     *         WHERE TargetObjectId = :loi.Id AND Status = 'Pending'], ...);
+     */
     @isTest
     static void submitsFromLoiRecord() {
-        Opportunity o = makeOpp(); // Stage = LOI
+        Opportunity o = makeOpp(); // Stage = LOI, primary NDA signed
         LOI__c loi = TestDataFactory.createLoi(o.Id, true);
+        update new LOI__c(Id = loi.Id, Stage__c = 'Under Review');
 
         Test.startTest();
-        OpportunityApprovalController.submitForApproval(loi.Id);
+        try {
+            OpportunityApprovalController.submitForApproval(loi.Id);
+        } catch (AuraHandledException e) {
+            // The controller masking a PLATFORM refusal is out of scope here; this test is about
+            // WHICH RECORD the submission was aimed at.
+        }
         Test.stopTest();
 
-        System.assertEquals(1,
-            [SELECT COUNT() FROM ProcessInstance WHERE TargetObjectId = :o.Id AND Status = 'Pending'],
-            'Submitting from the LOI record routes the PARENT deal into approval');
+        System.assertEquals(0,
+            [SELECT COUNT() FROM ProcessInstance WHERE TargetObjectId = :o.Id],
+            '🔴 THE FALSIFIER. Nothing may land on the parent deal — and this deal WOULD be '
+            + 'accepted by Opportunity.LOI_Approval (StageName = LOI, signed NDA, owned by the '
+            + 'running user, process still active until W5), so reverting the routing puts an '
+            + 'instance here immediately.');
     }
 
+    /**
+     * ⚠ REPOINTED FROM `LOI__c` TO `Contract_Review__c`, 2026-09-01 (W4), for the reason its
+     * service-level twin `unlinkedContractReviewThrowsApprovalException` records: after the
+     * repoint an orphan LOI resolves to ITSELF, so `targetId` is not null and the "not linked to
+     * a deal" branch is never reached. 🔴 THIS TEST WOULD HAVE STAYED GREEN — the orphan LOI is
+     * still refused, by a different line, for a different reason, and a bare `catch (Exception)`
+     * cannot tell the two apart. `Contract_Review__c` is now the only child whose branch can
+     * return null.
+     */
     @isTest
     static void unlinkedChildThrows() {
-        LOI__c orphan = TestDataFactory.createLoi(null, false);
-        orphan.Offer_Price__c = 500000;
-        insert orphan;
+        Contract_Review__c orphan = TestDataFactory.createContractReview(null, true);
 
         Test.startTest();
         Boolean threw = false;
@@ -150,7 +263,7 @@ private class OpportunityApprovalControllerTest {
             threw = true;
         }
         Test.stopTest();
-        System.assert(threw, 'An LOI with no parent deal cannot be submitted');
+        System.assert(threw, 'A Contract Review with no parent deal cannot be submitted');
     }
 
     @isTest

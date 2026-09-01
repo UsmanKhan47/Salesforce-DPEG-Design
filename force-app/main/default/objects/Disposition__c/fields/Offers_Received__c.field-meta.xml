@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY. A comment placed ABOVE
+        <CustomField> breaks `sf` deploy at source conversion with a misleading "unable to find
+        matching parent xml file" error.
+
+        DISPOSITION GAP CLOSURE TRANCHE 1, ITEM 7 - ADMIN HALF ONLY
+        (agent-output/disposition-gap-closure-t1-design.md §3 Item 7, decisions D-9/D-10). This
+        file creates the FIELD ONLY. The writer (a trigger-driven recompute service) is DEVELOPER
+        scope and is NOT built by this pass - see the design doc's "Developer half" for the full
+        layer plan (new DispositionCounterRollupService, DispositionOfferTriggerHandler +3
+        contexts, BovSubmissionTriggerHandler +1 context). Until that lands, this field is a
+        plain, inert Number that nothing writes.
+
+        ⚠ RETRACTED 2026-08-31 (code review W-5): this paragraph originally said the design's
+        "Developer half" reused `DispositionOfferSelector.countByDispositionIds`. That method
+        NO LONGER EXISTS - it was replaced 2026-08-21 by
+        `DispositionOfferSelector.selectOfferTractionByDispositionIds`, per that selector's own
+        class header ("IF A THIRD DOCUMENT NAMES `countByDispositionIds`, IT IS QUOTING THE SAME
+        DEAD PREMISE"). This field's writer, when built, reuses
+        `selectOfferTractionByDispositionIds` instead - its `offerCount` is the same number the
+        dead method used to return.
+
+        Shape matches Broker_Listing__c.Offers_Received__c exactly (Number(4,0), defaultValue 0) -
+        same counter concept, different parent.
+
+        =====================================================================================
+        🔴 Offers_Received__c NOW EXISTS ON THREE OBJECTS: Contact, Broker_Listing__c, and this
+        one. Days_On_Market__c already exists on two objects plus Contact.Avg_Days_On_Market__c.
+        =====================================================================================
+        sf sobject describe is a stale cache (memory: sobject-describe-is-a-stale-cache) and a
+        same-named sibling on another object makes a sloppy post-deploy verification confirm the
+        WRONG field. Any post-deploy verification of this field must use the Tooling API
+        CustomField query with an explicit TableEnumOrId, never a bare describe and never a bare
+        name match.
+
+        =====================================================================================
+        WHAT THIS COUNTS (decision D-9, settled): ALL Disposition_Offer__c rows on the
+        disposition, every status. Story 37 keeps Rejected/Countered/Withdrawn rows visible, so
+        this is a total count, not a filtered one - matching Broker_Listing__c.Offers_Received__c's
+        own unfiltered shape. Recompute, never increment (developer scope) - an incrementing
+        counter cannot survive a reparent, a partial rollback, or a data load.
+
+        =====================================================================================
+        NAMING TENSION - NOTED, NOT ACTED ON. ARCHITECTURE.md §1's type-suffix discipline would
+        prefer a _Count__c suffix for a Number whose name reads categorical. Offers_Received__c
+        is kept for consistency with the two existing siblings of the same name and with FSD
+        Table 24's own label - a suffix mismatch here would create a THIRD spelling for the same
+        concept across three objects, which is worse than the suffix drift itself.
+        Brokers_Contacted__c stays manual, as directed - it records how many brokers were ASKED,
+        which the child records cannot derive.
+
+        =====================================================================================
+        FLS: READ-ONLY IN BOTH DISPOSITION SETS. These are machine-maintained. Granting edit
+        would let a user overwrite a counter that the next child save silently recomputes - a
+        confident wrong answer with no error anywhere. Applied in the consolidated
+        permission-set pass, not this file.
+        =====================================================================================
+
+        Risk: the FIELD alone is LOW. The design doc rates item 7 overall HIGH, but that risk
+        (four new trigger contexts, the documented BovSubmissionTrigger after-undelete refusal,
+        the SYSTEM_MODE-does-not-bypass-sharing question, six seed/test overwrite sites) lives
+        entirely in the developer half, not in this field definition.
+    -->
+    <fullName>Offers_Received__c</fullName>
+    <defaultValue>0</defaultValue>
+    <description>Machine-maintained count of ALL Disposition_Offer__c rows on this disposition, every status (story 37 keeps Rejected/Countered/Withdrawn visible). Written by DispositionCounterRollupService (developer scope, not yet built). Read-only in both disposition permission sets. See the XML comment in this file.</description>
+    <externalId>false</externalId>
+    <inlineHelpText>Total number of offers received on this disposition, across every status. Maintained automatically - do not edit.</inlineHelpText>
+    <label>Offers Received</label>
+    <precision>4</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

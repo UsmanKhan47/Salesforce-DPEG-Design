@@ -19,12 +19,25 @@
  * `effectiveConfidenceMediumMin()`'s clamp, and the `LLMExtractionParser` repoint. Its own header
  * block explains why these guards can be proven nowhere else.
  *
+ * ═══ EXTENDED 2026-08-31 (P0 truncation-fix review, finding W3) ═══
+ * The third section below pins the two GOVERNOR invariants of `extractionPromptOverride()` —
+ * the one accessor that now reads through SOQL. Until then both were asserted in prose only.
+ * That section's own header block explains why they must be org-state INDEPENDENT and why the
+ * pre-existing guard was not.
+ *
  * ═══ BULK VOLUME IS NOT APPLICABLE HERE — DELIBERATE, NOT AN OVERSIGHT ═══
  * `.claude/rules/bulk-test-rule.md` mandates 251 records for triggers, batches, queueables and
- * DML-performing services. This class is none of those — `BrokerProtectionConfig` issues no SOQL
- * and no DML (see its own header, "WHY THERE IS NO SELECTOR"); every method here is a pure
- * arithmetic/string decision over a single injected `Broker_Protection_Config__mdt` row via the
- * `overrideForTest` seam. There is no collection and no loop to force a second batch chunk.
+ * DML-performing services. This class is none of those; every method here is a decision over a
+ * single injected `Broker_Protection_Config__mdt` row via the `overrideForTest` seam, or (in the
+ * third section) a query-COUNT observation on a single-record read by `DeveloperName`. There is
+ * no collection and no loop to force a second batch chunk.
+ *
+ * ⚠ CORRECTED 2026-08-31. This block used to justify the exemption with "`BrokerProtectionConfig`
+ * issues no SOQL and no DML (see its own header, 'WHY THERE IS NO SELECTOR')". That header block
+ * no longer exists and that claim is now FALSE: `extractionPromptOverride()` reads through
+ * `BrokerProtectionConfigSelector`. The exemption still holds for the reasons restated above —
+ * and additionally because a test cannot insert `__mdt` rows at all, so 251 of them is not merely
+ * pointless but impossible. See `BrokerProtectionConfigSelector`'s own BULK-TEST-RULE block.
  *
  * ═══ WHY overrideForTest, NOT DML ═══
  * A test cannot insert a `__mdt` row — custom metadata records are not insertable from Apex.
@@ -376,5 +389,130 @@ private class BrokerProtectionConfigTest {
             + 'raw accessor would put 0.90 here, above CONFIDENCE_HIGH_MIN, making toBand\'s '
             + 'MEDIUM leg unreachable and lowConfidenceFieldCount flag fields the record '
             + 'displays as HIGH.');
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────────────────
+    // THE PROMPT ACCESSOR'S TWO GOVERNOR INVARIANTS (2026-08-31 review, finding W3)
+    //
+    // `extractionPromptOverride()` is the ONE accessor that reads through SOQL — repointed onto
+    // `BrokerProtectionConfigSelector` as the root-cause half of a live P0, because
+    // `getInstance()` clips LongTextArea to 255 characters and SOQL does not. That repoint pinned
+    // two claims in prose which, until these two tests, NOTHING enforced:
+    //
+    //   (a) `testOverrideActive` GATES the query rather than sitting beside it, so an injected
+    //       row — including an injected ABSENCE — is served without the org's live `Default`
+    //       record ever being read;
+    //   (b) the `promptLoaded` / `cachedPrompt` pair makes the read cost **+1 SOQL ONCE PER
+    //       TRANSACTION, not once per property** — the number `ExtractAddressQueueable`'s pinned
+    //       QUERY_BUDGET (30 at N=1, 120 at N=10, against an async cap of 200) has to absorb.
+    //
+    // 🔴 BOTH ARE ORG-STATE INDEPENDENT, AND THAT IS THE WHOLE REASON THEY EXIST.
+    // The only prior guard on (a) was
+    // `PropertyMatchingServiceTest.accessors_returnThePreWS5Literals_whenTheConfigRecordIsAbsent`,
+    // which can go red ONLY once the org's `Default.Extraction_Prompt__c` is POPULATED — and it
+    // is deliberately blank right now (a zero-code Setup unblock, 2026-08-31). So deleting the
+    // gate today reddens nothing at all, and would redden that test in some later session after
+    // the loader is re-run, with nothing in the diff to explain it — a failure indistinguishable
+    // from flake. Nothing guarded (b) at all:
+    // `BrokerProtectionConfigSelectorTest.queryCount_isExactlyOnePerCall` pins the SELECTOR at 1
+    // query per CALL, not the CALLER at 1 per TRANSACTION, and `ExtractAddressQueueableTest`'s
+    // budgets are `<=` ceilings with enough headroom to absorb the +1-per-property that deleting
+    // `promptLoaded` would cost.
+    //
+    // Both tests below assert a QUERY COUNT, which is identical whether the org's record is
+    // absent, blank or fully loaded: `selectByDeveloperName('Default')` spends exactly one query
+    // on a non-blank name however many rows come back, and the seam spends none.
+    //
+    // ⚠ THE DELTA IS COMPUTED INSIDE start/stopTest ON PURPOSE. `Test.stopTest()` restores the
+    // pre-test governor counters, so a `Limits.getQueries()` reading taken after it is silently
+    // vacuous. This repo has been caught by that before; the sibling assertions in
+    // `BrokerProtectionConfigSelectorTest` are written the same way.
+    // ─────────────────────────────────────────────────────────────────────────────────────
+
+    /**
+     * (a) THE SEAM GATES THE SOQL — IT DOES NOT MERELY SIT BESIDE IT.
+     *
+     * With `overrideForTest` installed, `extractionPromptOverride()` must serve the injected row
+     * and spend ZERO queries. `cacheLoaded` cannot serve as that detector because the production
+     * path sets it too, which is why `testOverrideActive` is a dedicated field.
+     *
+     * 🔴 THE MUTATION THIS CATCHES: delete `testOverrideActive` (or just the
+     * `if (testOverrideActive)` branch in `extractionPromptOverride()`) so the accessor falls
+     * through to `BrokerProtectionConfigSelector.selectByDeveloperName(RECORD_NAME)`. The delta
+     * becomes 1 and this fails — in a fresh org, in a blank-prompt org and in a fully loaded org
+     * alike, because the selector issues its query before it knows whether any row matches.
+     *
+     * The two value assertions are the readable half. The COUNT is the org-state-independent
+     * half, and it is the one a future reader must protect.
+     */
+    @isTest
+    static void extractionPromptOverride_seamGatesTheSoql_ratherThanSittingBesideIt() {
+        String injected = 'INJECTED SEAM PROMPT - answer in json. ' + 'x'.repeat(400);
+
+        BrokerProtectionConfig.overrideForTest(
+            new Broker_Protection_Config__mdt(Extraction_Prompt__c = injected));
+
+        Test.startTest();
+        Integer before = Limits.getQueries();
+        String first = BrokerProtectionConfig.extractionPromptOverride();
+        String second = BrokerProtectionConfig.extractionPromptOverride();
+        Integer spent = Limits.getQueries() - before;
+        Test.stopTest();
+
+        Assert.areEqual(0, spent,
+            'The seam must GATE the SOQL, not sit beside it. A non-zero count here means '
+            + 'extractionPromptOverride() fell through to BrokerProtectionConfigSelector while an '
+            + 'injected row was installed - i.e. every test on the callout path is silently '
+            + 'reading the org LIVE Default record instead of its own fixture. Spent: ' + spent);
+        Assert.areEqual(injected, first,
+            'The injected row must be what is served, not the org record');
+        Assert.areEqual(injected, second,
+            'The second call must return the same value from cache - see (b) for the count');
+    }
+
+    /**
+     * (b) ONE SOQL PER TRANSACTION, NOT ONE PER PROPERTY.
+     *
+     * ⚠ THIS TEST DELIBERATELY DOES NOT CALL `overrideForTest`. It must run the PRODUCTION path:
+     * `testOverrideActive` starts false in a fresh transaction, so the accessor reads through the
+     * selector, and the `promptLoaded` / `cachedPrompt` pair is what keeps the second and every
+     * later call free. Installing the seam here would measure zero either way and prove nothing.
+     * Nothing before the loop may touch `BrokerProtectionConfig`.
+     *
+     * Ten calls stands in for a ten-property inbound email — `ExtractAddressQueueable`'s
+     * `MAX_PROPERTIES`, and the N=10 case its QUERY_BUDGET of 120 is pinned at.
+     *
+     * 🔴 THE MUTATION THIS CATCHES: delete the `if (promptLoaded) { return cachedPrompt; }`
+     * early return (or the `promptLoaded = true` assignment) in `extractionPromptOverride()`. The
+     * delta becomes 10 and this fails. Nothing else in the repo notices that change — the
+     * selector's own per-call assertion still reads 1, and `ExtractAddressQueueableTest`'s
+     * budgets are `<=` ceilings that absorb +1 at N=1 and +10 at N=10.
+     *
+     * It also fails at 0 if a future edit "tidies" this accessor back onto `config()` /
+     * `getInstance()`, which is the P0 itself returning. Exactly one is the only correct answer.
+     *
+     * ORG-STATE INDEPENDENT: the query is issued for a non-blank `DeveloperName` before any row
+     * is matched, so the count is 1 whether the `Default` record is absent, present with a blank
+     * prompt (today's org), or fully loaded. No assertion is made about the VALUE, which is the
+     * only part that varies.
+     */
+    @isTest
+    static void extractionPromptOverride_paysOneSoqlPerTransaction_notOnePerProperty() {
+        Test.startTest();
+        Integer before = Limits.getQueries();
+        // NOT SOQL-in-a-loop: this loop exists to PROVE the query does not repeat. If it ever
+        // starts repeating, this assertion is what says so.
+        for (Integer i = 0; i < 10; i++) {
+            BrokerProtectionConfig.extractionPromptOverride();
+        }
+        Integer spent = Limits.getQueries() - before;
+        Test.stopTest();
+
+        Assert.areEqual(1, spent,
+            'extractionPromptOverride() must cost EXACTLY one SOQL for a whole transaction, '
+            + 'however many properties an inbound email carries. 10 means the promptLoaded cache '
+            + 'is gone and ExtractAddressQueueable now pays this query PER PROPERTY against a '
+            + 'pinned QUERY_BUDGET; 0 means the accessor has been put back on getInstance(), '
+            + 'which is the 255-character truncation P0 returning. Spent: ' + spent);
     }
 }

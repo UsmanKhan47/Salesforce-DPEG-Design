@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Earnest_Money_Sent__c</fullName>
+    <defaultValue>false</defaultValue>
+    <description>True once the earnest money wire has been sent, stamped from the group B checklist item. A NEW FIELD IS REQUIRED AND EM_Wired__c CANNOT BE REPURPOSED: EM_Wired__c is a formula TEXT field that renders Earnest_Money__c as a display string such as $1.5M, so it is neither boolean nor writable. Naming follows the Subject then PastParticiple boolean convention. Feeds the earnest-at-risk derivation together with Feasibility_Deadline__c.</description>
+    <inlineHelpText>Ticked when the earnest money wire has actually been sent. Set from the checklist; do not edit directly.</inlineHelpText>
+    <label>Earnest Money Sent</label>
+    <trackHistory>true</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Checkbox</type>
+</CustomField>

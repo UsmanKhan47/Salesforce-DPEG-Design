@@ -461,6 +461,299 @@
  * year built must come back with `noi` scored 0.9+ and `year_built` below 0.60 — one email, both
  * directions, because a model that returns a flat 0.9 for everything satisfies either half alone.
  *
+ * ═══ SCHEMA-KEY DEFINITION PASS — 2026-08-31. ONE ENRICHED-BLOCK EDIT, NINE KEYS DEFINED ═══
+ * Nine response-schema keys were **template-only**: they appeared in the JSON response shape and
+ * NOWHERE ELSE, so the model was shown a slot and never told what belongs in it —
+ * `building_sf`, `broker_phone`, `broker_mobile`, `broker_title`, `walt_years`, `adr`, `zoning`,
+ * `seller_entity`, `deal_room_link`. Each now has one definition bullet in the
+ * ANTI-HALLUCINATION list, in the register of the peers that already worked (`unit_count` is
+ * defined, `cap_rate`/`occupancy_pct` carry a units rule, `year_built` carries a worked example).
+ * `building_sf` was additionally added to the PER-FIELD CONFIDENCE exemplar key list.
+ * LEGACY_EXTRACTION_RULES and LEGACY_RESPONSE_FORMAT are untouched AGAIN, and so are the INPUT
+ * SHAPE, BROKER vs LISTING BROKER, `broker_company`, `sent_datetime`, the response template and
+ * the picklist-value lines — EIGHT regions, each verified byte-identical to HEAD by its own
+ * per-paragraph hash (region name / HEAD md5 / working md5 / verdict), not by assertion and not
+ * by a whole-file diff. ⚠ THE ENUMERATION AND THE COUNT ARE THE AUDIT RECORD OF WHAT WAS
+ * ACTUALLY HASHED — if you add a region, add it to both, and if they disagree trust neither.
+ *
+ * 🔴 THE NARROWING EDITS — THERE ARE THREE, NOT ONE, AND EACH CARRIES ITS OWN RISK STATEMENT.
+ * Everything else in this pass is purely additive; these three can SUPPRESS a value the previous
+ * prompt would have emitted, which is why they are enumerated rather than described in aggregate.
+ * A fourth suppressing change — the `broker_phone`/`broker_mobile` role-mailbox carve-out — is
+ * recorded separately below under the taken review suggestions; it is not repeated here.
+ *
+ * (1) `lot_size` — THE ONLY ONE THAT IS ALSO A RE-ROUTE. The `lot_size` bullet previously read
+ * "lot_size_sf ONLY if it states square feet" — the ONLY rule in the whole prompt that fired on
+ * the bare phrase "square feet", and its trailing "Never fill both from a single figure" then
+ * forbade `building_sf` outright. It is now scoped to the LAND or SITE area. This NARROWS
+ * `lot_size_sf` and can widen nothing: it cannot cause a value to be invented, only stop a
+ * BUILDING figure being captured as LAND. That mis-route matters because there is no
+ * `Lot_Size_SF__c` — LLMExtractionParser converts `lot_size_sf` to acres and EmailToLeadService
+ * writes it to `Lot_Size_Acres__c`, so a mis-routed building area would have become a FABRICATED
+ * lot size that looks like a successful extraction. ⚠ MEASURED 2026-08-31: `lot_size_sf` is
+ * populated on 0 of 4 property objects — it has not fired anywhere in the SURVIVING corpus. This
+ * narrowing is therefore PROPHYLACTIC: there is no bad data to remediate and no corpus sweep is
+ * owed. 🔴 BOUND THAT CLAIM BEFORE RELYING ON IT — THREE LIMITATIONS, STATED SO NOBODY READS IT
+ * AS STRONGER THAN IT IS:
+ *   1. N = 4 property objects across 6 staging rows. `Inbound_Email_Staging__c` rows are never
+ *      deleted BY THE PIPELINE, but most of this org's history was removed in an unrelated
+ *      clean-slate wipe earlier on 2026-08-31, so "the whole corpus" means the POST-WIPE
+ *      remainder, not the project's history.
+ *   2. The method was string matching over the whole `Extracted_JSON__c`, so a key appearing only
+ *      in `field_confidence` counts as "present" even when `properties[0]` lacks it. It
+ *      over-reports presence and therefore UNDER-reports the defect.
+ *   3. Two of the three populated `building_sf` values are the same number (96400, 96400) — about
+ *      2-3 distinct emails, not 3 independent observations.
+ * None of the three overturns the conclusion (0 of 4 is still 0), but all three cap how much
+ * weight it can carry. Re-measure before treating any of this as a rate.
+ *
+ * (2) `seller_entity` — "A description rather than a name … is not a seller entity; leave it
+ * empty." This SUPPRESSES a value: an email whose only ownership language is descriptive
+ * ("the seller is a private family office") previously had nothing stopping the model putting
+ * that phrase in `seller_entity`, and it reaches a stored field — EmailToLeadService writes it
+ * to `Lead.Seller_Entity__c`, which LeadConvertService carries onward. The narrowing is right
+ * (a description is not a legal entity, and a Lead field named for one should not hold prose)
+ * but it is a behaviour change, not a clarification, and it is named here so nobody discovers
+ * that by finding the field newly blank.
+ *   ⚠ MEASURED 2026-08-31, `usman-dpeg`, all 6 `Inbound_Email_Staging__c` rows: `seller_entity`
+ *   is emitted as "" on every row that emits the key at all (IES-0000065/66/67) and is absent
+ *   from the rest, and NO Lead in the org carries a non-null `Seller_Entity__c`. So this
+ *   narrowing is PROPHYLACTIC in the surviving corpus — it empties nothing today. 🔴 A prior
+ *   draft of this note asserted it would empty IES-0000067's live value; that was WRONG and the
+ *   query above is why. Do not restore that claim without re-running it — the corpus is the
+ *   POST-WIPE remainder and the same three limitations stated under (1) apply here unchanged.
+ *
+ * (3) `walt_years` — "If the email states it in months, return null rather than converting."
+ * Also suppressing, and also reaching a stored field (`Lead.WALT_Years__c`). Returning null
+ * is deliberate: the key is named `_years`, so a months figure passed through unconverted would
+ * be wrong by 12x in a field nothing downstream re-checks, and "NEVER derive one number from
+ * another" forbids the conversion that would fix it. Losing the fact is the lesser harm.
+ *   ⚠ MEASURED 2026-08-31, same 6 rows: exactly one row emits a `walt_years` value — IES-0000065,
+ *   6.5 — and that email states "6.5 years of weighted average lease term", i.e. in YEARS. The
+ *   months clause therefore suppresses nothing in the surviving corpus either. It is a guard
+ *   against an input shape not yet observed, not a change to observed behaviour.
+ *
+ * 🔴 THE ACCEPTANCE ASSERTION FOR THIS CHANGE IS NOT "Lot_Size_Acres__c IS NULL". IT WAS, IN THE
+ * DESIGN DOC, AND IT IS WRONG — DO NOT EXECUTE IT. `agent-output/design-requirements.md` states
+ * at §6 V4.3, §10 step 13 and §13 devops step 10 that the acceptance email must yield a NULL
+ * `Lot_Size_Acres__c`, on the premise that it "states no site area". IT STATES ONE:
+ * IES-0000068's body reads "The hotel sits on 4.6 acres". The model dropped `lot_size_acres` by
+ * the same key-omission that dropped `building_sf` — which is why the field is null TODAY and why
+ * null looks like the right answer.
+ *   ✅ EXPECT `Lot_Size_Acres__c` = 4.6 after this change. That is the fix WORKING, not failing.
+ *   🔴 THE MIS-ROUTE SIGNATURE IS `Lot_Size_Acres__c` ≈ 2.58 — 112,400 sq ft pushed through
+ *      LLMExtractionParser's sq-ft-to-acres conversion (112400 / 43560 = 2.5803). THAT is the
+ *      value that means Part A failed. 4.6 means it worked; 2.58 means roll back.
+ * Executing the design doc's assertion literally would roll back a correct fix at gate G4 or loop
+ * forever at G5. The design doc has been corrected at all three sites in the same change.
+ *
+ * ⚠ THE CAUSE IS NOT "TEMPLATE-ONLY KEYS ARE NEVER EMITTED" — MEASURED, AND WEAKER THAN THAT.
+ * Same corpus, same prompt: `building_sf` was populated on 3 of 4 property objects (96400, 96400,
+ * 61200). It failed on exactly one row, IES-0000068, where the model returned a property object
+ * carrying only 14 of the template's 24 keys and dropped every key it had no labelled fact-list
+ * line for — including `lot_size_acres` ("sits on 4.6 acres") and `year_renovated` ("renovation
+ * completed in 2023"), BOTH OF WHICH WERE ALREADY RULE-BEARING. So a definition is not sufficient
+ * on its own, and nobody should read this entry as proof that it is. What the definitions do buy
+ * is a stated meaning, a stated unit, and — for `building_sf` — the removal of a contradicting
+ * instruction and an explicit "prose counts as stated", which is the exact shape of the observed
+ * miss (that email's 112,400 SF reached only the `deal_summary` narrative).
+ *
+ * 🔴 EVERY WORKED EXAMPLE IN THE NEW BULLETS USES INVENTED VALUES THAT APPEAR IN NO LIVE EMAIL,
+ * AND THAT IS A CORRECTNESS PROPERTY, NOT HOUSE STYLE. The first draft of this pass wrote the
+ * `building_sf` example as "112,400 square feet of building on a 4.6-acre site" — the exact two
+ * figures in IES-0000068, the email the acceptance run re-sends. That would have destroyed the
+ * only real proof this change has: the model is mocked in every Apex test, so a live extraction
+ * is the sole evidence, and an exemplar the model can copy makes "it read the email" and "it
+ * copied the prompt" indistinguishable. It is also a production leakage vector in both
+ * directions — a concrete number in the prompt can come back for an email that states none, the
+ * parser accepts it under MAX_COUNT, EmailToLeadService stamps it, nothing logs it, and
+ * `building_sf` is outside SCORED_KEYS so `Extraction_Score_Pct__c` does not move either.
+ * FOUR MORE LEAKS WERE FOUND BY THE SAME CHECK AND FIXED: `walt_years` "6.5" (IES-0000065/67),
+ * `adr` "148" (IES-0000068's unit_count — a CROSS-KEY leak, worse than a same-key one),
+ * `seller_entity` "a local physician partnership" (IES-0000067 verbatim), and `broker_title`
+ * "Senior Director, Hospitality Investment Sales" (IES-0000068's signature verbatim).
+ * ✅ VERIFIED, AND THE METHOD MATTERS AS MUCH AS THE RESULT — COPY THE METHOD, NOT JUST THE
+ * VERDICT. The leakage vector is the BARE EMITTED VALUE, not the phrase it sits in: the parser
+ * receives 205, never "ADR $205", so searching for the phrase can pass while the value leaks.
+ * That is exactly the shape of the `adr` "148" CROSS-KEY leak found above. The corpus also
+ * stores building areas UN-SEPARATED (96400, 61200), so a comma-formatted-only search for
+ * "84,500" would have been vacuous. And the model is fed the SUBJECT LINE concatenated ahead of
+ * the body (see the composition at the ExtractAddressQueueable call site), with INPUT SHAPE
+ * declaring the subject readable for property_name, property_address,
+ * unit_count, offer_due_date, asset_type and sale_process — so the body alone is not the corpus.
+ * THE CHECK IS THEREFORE: match each exemplar in BOTH its prompt-formatted form AND its bare
+ * emitted form ("84,500" and 84500; "ADR $205" and 205), against `Subject__c` CONCATENATED WITH
+ * `Raw_Body__c`, across every `Inbound_Email_Staging__c` row, and require zero hits.
+ *   ⚠ MEASURED 2026-08-31, `usman-dpeg`, all 6 staging rows, subject+body, bare values: 84500 /
+ *   84,500 / 3.7 / 8.3 / 205 / C-2 / PD-14 / "Land SF" / "Lot SF" / "Site SF" / "a family
+ *   partnership" / "Managing Director, Capital Markets" — ZERO HITS, each one individually.
+ *   🔴 THE ACRE EXEMPLAR WAS 2.1 AND HAD TO BE CHANGED TO 3.7: 2.1 HIT IES-0000068, the
+ *   acceptance email, inside "a $2.1M soft-goods renovation". Different unit and different
+ *   context, so the copy risk was low — but IES-0000068's expected `lot_size_acres` is 4.6, and a
+ *   returned 2.1 would have been indistinguishable between "copied the prompt" and "misread the
+ *   $2.1M". Removing that ambiguity cost one token. 5.3, 7.4 and 9.2 also measured clean if a
+ *   future edit needs another.
+ *   ⚠ FOUR STRINGS IN THESE BULLETS ARE DELIBERATELY EXCLUDED FROM THE SWEEP, NOT MISSED —
+ *   "Building Size", "Net rentable area", "GLA" and "meeting, workspace or storefront area".
+ *   They are LABEL and CATEGORY strings telling the model what to recognise; they are not values
+ *   a model can copy into a numeric or text slot, so a hit on them would be expected and
+ *   harmless. Stated explicitly because a ✅ VERIFIED list reads as exhaustive otherwise.
+ * ⚠ RE-RUN THAT CHECK BEFORE ADDING ANY WORKED EXAMPLE TO THIS PROMPT, and re-run it against the
+ * corpus AS IT IS THEN — a clean value today is not clean after new mail arrives. The house style
+ * elsewhere already does this by instinct ("Orion ParkView, 1400 Royal Lane", "88/22"); this
+ * pass is the first that had to be told.
+ *
+ * ⚠ THREE REVIEW SUGGESTIONS WERE TAKEN, AND ALL THREE CHANGE MODEL BEHAVIOUR — RECORDED, NOT
+ * SILENT.
+ *   W5 — `broker_phone`/`broker_mobile` now carry the SAME role-mailbox carve-out that
+ *   `broker_company` and `broker_title` already had. Without it the bullet actively instructed
+ *   the mis-attribution: "if only one number is given and it is not labelled, put it in
+ *   broker_phone". On a marketplace blast where broker_email is listings@<platform> and the only
+ *   number is the LISTING broker's direct line, `Lead.Phone` would carry a named human's number
+ *   under a no-reply address and somebody would call it believing it was the submitting broker.
+ *   S2 — the same `broker_phone`/`broker_mobile` carve-out now ROUTES the discarded number to
+ *   `deal_summary` instead of dropping it. W5 alone made the two carve-outs asymmetric:
+ *   `broker_company` already sent its refused value onward ("put the platform's own name,
+ *   together with any listing brokerage the email names, in deal_summary"), while the phone
+ *   one silently destroyed it. There is no `listing_broker_phone` key and none is being added,
+ *   so on a marketplace blast the listing broker's only phone number was unrecoverable from
+ *   Salesforce entirely — the email body is retained on `Inbound_Email_Staging__c`, but nothing
+ *   a user works from surfaces it. This is a behaviour change and it is deliberately a NARROW
+ *   one: the number lands in a free-text narrative field, never in a typed field, so it cannot
+ *   re-create the mis-attribution W5 exists to prevent. `Lead.Phone` still comes only from
+ *   `broker_phone`, which stays empty for a role mailbox.
+ *   W6 — the bare label "SF" is now qualified to "when it labels the improvements", and
+ *   "Land SF" / "Lot SF" / "Site SF" are named explicitly as `lot_size_sf`. An unqualified "SF"
+ *   made `building_sf` the nearest match for "Lot Size: 43,560 SF" — the MIRROR IMAGE of the
+ *   defect this pass exists to fix. The asymmetry that caused the original bug (a positive
+ *   example for one side, no negative for the other) is now closed on both sides.
+ *
+ * ⚠ NEITHER UNIT-TESTABLE NOR REGRESSION-GUARDED, exactly as WS7 records above. The model is
+ * mocked in every Apex test. The ONLY mitigations are the manual ones: run UAT D and D′ before
+ * and after and diff `broker_email` and
+ * `PropertyMatchingService.normalizeAddress(property_address)` BY HAND, and re-run the two
+ * standing classification checks (an OM with a bid deadline from a named broker must still be
+ * `acquisition_deal`; a genuine marketplace blast must still be `call_for_offers`). This edit
+ * touches none of the four legacy values, so no claim SHOULD be re-keyed — "should" is the
+ * accurate word for the same reason WS7 gives.
+ *
+ * 🔴 AND THE APEX DEPLOY ALONE CHANGES NOTHING AT RUNTIME. `resolvePrompt()` prefers the
+ * `Broker_Protection_Config__mdt.Default.Extraction_Prompt__c` record, which currently holds a
+ * copy of the PRE-edit prompt. `scripts/load-broker-protection-config.apex` MUST be re-run after
+ * this class is deployed, and it is ASYNCHRONOUS — poll until
+ * `BrokerProtectionConfig.extractionPromptOverride().length()` changes before concluding the edit
+ * failed. Full ordered protocol, including the anti-vacuity control probe that must be taken
+ * BETWEEN the deploy and the loader run: agent-output/design-requirements.md §6 V3 and §10.
+ *
+ * ⚠ TWO NEW LINES NAME `broker_email`, AND THAT IS ANCHORING, NOT RE-DEFINITION — CHECKED.
+ * The broker_phone/broker_mobile and broker_title bullets both read "…of broker_email's owner".
+ * They consume `broker_email` as an already-decided value in order to say WHOSE phone and WHOSE
+ * title to take; they state no rule about which line `broker_email` is read from, add no source,
+ * remove no source, and change no precedence. Every such rule still lives exclusively in
+ * LEGACY_EXTRACTION_RULES ("the OUTERMOST / EARLIEST From: line"), the INPUT SHAPE paragraph
+ * ("THE SUBJECT LINE IS NEVER A SOURCE FOR broker_name, broker_email OR sent_datetime") and the
+ * BROKER vs LISTING BROKER paragraph — all three verified byte-identical to HEAD. This is the
+ * same anchoring `broker_company` has always used ("the firm of the person identified by
+ * broker_email"), which is the established pattern here precisely because it makes a new field
+ * DEPEND on the arbitration value instead of competing with it. 🔴 The failure mode to watch for
+ * in any future edit is the opposite shape — a new bullet that offers `broker_email` a NEW place
+ * to be read from, or that lets another field's evidence override it. Neither line does that.
+ *
+ * ⚠ `building_sf` IS DELIBERATELY NOT IN `ExtractionScoreUtil.SCORED_KEYS` and must not be added
+ * because this edit made it extract better. The nine-key denominator was signed off 2026-08-14
+ * and `building_sf` was cut on purpose: a land deal has no building area, so scoring it would
+ * report a complete extraction as a poor one.
+ *
+ * ═══ ACCEPTANCE-RUN FIXES TO THE ABOVE — 2026-08-31. TWO ENRICHED-BLOCK BULLETS ═══
+ * The nine-key pass above was deployed and confirmed on three live emails (Email A hit the
+ * three-way criterion exactly — `Building_SF__c` 112400 and `Lot_Size_Acres__c` 4.6, the PASS
+ * value, not the 2.58 mis-route; Email B populated SIX of six newly-ruled keys on a different
+ * broker and asset class, which is what validates the rule-bearing-vs-template-only diagnosis
+ * rather than a mention-count theory; Email C confirmed the role-mailbox carve-out fires). The
+ * SAME RUN surfaced two further defects, fixed here. LEGACY_EXTRACTION_RULES and
+ * LEGACY_RESPONSE_FORMAT are untouched AGAIN, and so are INPUT SHAPE, BROKER vs LISTING BROKER,
+ * `broker_company`, `sent_datetime`, the response template, the blanket closed-set line and the
+ * four picklist-value lines — NINE regions, each verified byte-identical to the pre-edit working
+ * copy by its own per-region hash, not by a whole-file diff (the tree is shared with a
+ * concurrent session, so a diff cannot distinguish "unchanged" from "not shown").
+ *
+ *   FIX 2 — `deal_type` NOW HAS A RULE, WRITTEN AS DEFAULT-TO-RETAIL. 🔴 MEASURED ACROSS FOUR
+ *   LIVE EXTRACTIONS: `Retail` for both hotels, NULL for the medical office and NULL for the
+ *   industrial deal. Null is not cosmetic — and 🔴 THE CONVERSION LAYER HAS SINCE MOVED, SO READ
+ *   THE NEXT SENTENCE IN THE PAST TENSE. `LeadConvertService` USED TO guard its record-type
+ *   lookup with `if (String.isNotBlank(l.Deal_Type__c))`, which is how Opportunity
+ *   006iw000000fgpiAAA ("Marrowbrook Station Medical Plaza") came to be live with
+ *   `RecordTypeId = null`: no Path, and no record-type picklist backstop. That Opportunity is
+ *   real and is STILL untyped — the default below is not retroactive.
+ *   🔴 AS OF 2026-08-31 THAT WRAPPER NO LONGER EXISTS. `LeadConvertService` now DEFAULTS a blank
+ *   Deal Type at conversion (`DEFAULT_DEAL_TYPE`, describe-guarded) instead of skipping the
+ *   lookup, so a blank Lead yields a Retail-typed Opportunity rather than an untyped one. DO NOT
+ *   GO HUNTING FOR A `String.isNotBlank` GUARD IN THAT CLASS AND DO NOT CONCLUDE THE CONVERSION
+ *   LAYER IS UNPROTECTED WHEN YOU FAIL TO FIND ONE — its absence is the fix, not a regression to
+ *   restore. This prompt-side fix is UPSTREAM of that default and does not replace it: it makes
+ *   the LEAD state a deal type in the first place, so the default is reached rarely rather than
+ *   on the normal path.
+ *   🔴 IT IS WRITTEN AS A DEFAULT, NOT AS A TWO-WAY CHOICE, AND THAT FRAMING IS THE FIX. A
+ *   Land/Retail-agnostic asset class (medical office, industrial, hospitality) is the NORMAL
+ *   case here, not the edge case, so "choose Land or Retail" reproduces the null. The bullet
+ *   therefore says RETURN Retail FOR EVERYTHING ELSE and names the normal case explicitly.
+ *   🔴 `Deal_Type__c` IS A RECORD-TYPE SELECTOR, NOT A PROPERTY CATEGORY. It is a two-value
+ *   picklist whose only job is choosing the Opportunity record type, and it shares the token
+ *   `Retail` with `Asset_Type__c` while meaning something entirely different: `deal_type =
+ *   Retail` on a HOTEL is CORRECT. The bullet says so in terms ("Retail here means 'not raw
+ *   land'; it does NOT mean the property is a shop, and deal_type must NEVER be made to agree
+ *   with asset_type") because the one failure mode worse than the null is a model that starts
+ *   aligning the two fields.
+ *   ⚠ THE ENUM LINE AND EVERY PICKLIST VALUE LIST ARE UNTOUCHED — a definition was ADDED, a
+ *   constraint was not edited. Those lines are hardcoded and drift there loses properties with
+ *   no exception and no log (see the D3 repoint comment at the `deal_type` enum line).
+ *   ⚠ NO WORKED EXAMPLE WAS ADDED TO THIS BULLET, so no exemplar-leak sweep is owed for it. The
+ *   only concrete strings it carries are CATEGORY nouns ("a hotel, a clinic, a warehouse") which
+ *   name what a property IS; they are not values a model can copy into a closed two-value slot.
+ *   The 84,500 SF / 3.7-acre example above is undisturbed and its sweep still stands.
+ *   ⚠ `LeadConvertService` IS NOT CHANGED HERE — it is owned by a concurrent session, and as of
+ *   2026-08-31 it DEFAULTS a blank Deal Type at conversion (see the past-tense correction above;
+ *   the null-tolerant skip it used to perform is gone). This fix reduces how often that default
+ *   is reached; it does not replace it.
+ *
+ *   FIX 3 (PROMPT HALF) — `listing_broker_email` MUST BE AN ADDRESS WRITTEN IN THE EMAIL.
+ *   🔴 MEASURED: Lead 00Qiw000000wuY7EAI carries `Listing_Broker_Email__c =
+ *   info@nordhavencommercial.com` while the email's actual sender is
+ *   `listings@crexi-listings.example.com` — a different domain — and the body contains NO `@`
+ *   CHARACTER AT ALL. The model invented a plausible address from the firm name in the
+ *   signature. `broker_email` is fabricated the same way but is overwritten by
+ *   `applySenderFirstBrokerIdentity` with the envelope sender; the LISTING pair had no
+ *   equivalent backstop. This is the "somebody contacts the wrong person" failure the
+ *   `broker_phone` role-mailbox carve-out exists to prevent, displaced one field across and
+ *   worse, because a plausible address invites use.
+ *   🔴 THE PROMPT BULLET IS THE WEAKER HALF AND IS NOT THE CONTROL. A code-side guard —
+ *   `ExtractAddressQueueable.dropUngroundedListingBrokerEmail` — ships in the same change and
+ *   drops the value when it appears nowhere in `Subject__c` + `Raw_Body__c`. BOTH were taken,
+ *   deliberately: this bullet reduces the rate, the guard makes the outcome deterministic. The
+ *   reasoning is that the model has ALREADY been measured disobeying this instruction's subject
+ *   matter, and that a prompt rule is not unit-testable in this repo AT ALL (see the two
+ *   NEITHER-UNIT-TESTABLE notes above) while a text-presence guard is — and is tested, with a
+ *   fabricated-address fixture and a grounded negative control.
+ *   ⚠ IT NAMES `broker_email` NOWHERE AND NARROWS NOTHING IT OWNS. The bullet closes with the
+ *   established deferral sentence ("it does not change how broker_name, broker_email,
+ *   property_address or sent_datetime are determined"), and the guard is scoped to the LISTING
+ *   pair only — `broker_email` is half the `Property_Registry__c` claim key and is deliberately
+ *   left to its existing envelope backstop.
+ *   ⚠ `listing_broker_name` IS NOT GUARDED, on measured grounds: on the same defective
+ *   extraction "Yvette Marchetti" was correctly DEMOTED rather than promoted or invented, so the
+ *   name path behaved. A literal-substring guard on a name would also drop legitimate
+ *   re-spacings ("Y. Marchetti", "Yvette Marchetti, CCIM"), which an exact-token address cannot
+ *   suffer from.
+ *
+ * ⚠ THE STRUCTURAL GUARD ON THIS BLOCK WAS STRENGTHENED IN THE SAME CHANGE.
+ * `LLMExtractionCalloutServiceTest.everyResponseTemplateKey_isRuleBearingElsewhereInThePrompt`
+ * used to assert each response-template key was MENTIONED elsewhere; `deal_type` PASSED that
+ * while being effectively template-only, because a blanket "MUST be one of the listed values"
+ * line and an enum line are mentions that define nothing. It now EXCLUDES the template, the
+ * blanket line and the enum lines and requires a mention in the remainder. A mention COUNT was
+ * considered and rejected as wrong in both directions — measured, five healthy keys carry two
+ * mentions while the broken `deal_type` carried three.
+ *
  * @see LLMExtractionParser.cls (turns the response into typed values; never throws)
  * @see LLMExtractionResult.cls / PropertyExtraction.cls (the return types)
  * @see ExtractAddressQueueable.cls (the only caller; owns the degrade path)
@@ -669,8 +962,20 @@ public with sharing class LLMExtractionCalloutService {
         '- NEVER derive one number from another. Do not compute price from cap rate and ' +
         'NOI, do not compute NOI from price and cap rate, and do not convert square feet ' +
         'to acres or acres to square feet. Report only what is written.\n' +
-        '- lot_size_acres ONLY if the email states acres. lot_size_sf ONLY if it states ' +
-        'square feet. Never fill both from a single figure.\n' +
+        '- lot_size_acres and lot_size_sf are the LAND or SITE area only: lot_size_acres ' +
+        'ONLY if the email states the site in acres, lot_size_sf ONLY if it states the site ' +
+        'in square feet. Never fill both from a single figure, and never put a building or ' +
+        'floor area in either.\n' +
+        '- building_sf is the BUILDING area — the gross, rentable or net rentable square feet ' +
+        'of the improvements, however the email labels it ("Building Size", "Net rentable ' +
+        'area", "GLA", or a bare "SF" when it labels the improvements). It is NOT the site: ' +
+        '"84,500 square feet of building on a 3.7-acre site" gives building_sf 84500 and ' +
+        'lot_size_acres 3.7. "Land SF", "Lot SF" and "Site SF" are lot_size_sf, NEVER ' +
+        'building_sf. Where the email gives several areas, building_sf is the WHOLE building, ' +
+        'never a component within it such as meeting, workspace or storefront area. Return it ' +
+        'whenever the email states a building size, including when the figure is written in a ' +
+        'sentence of prose rather than in a labelled fact list; return null when the email ' +
+        'states none.\n' +
         '- Numbers must be plain numerics with no symbols, units or separators: write ' +
         '7100000, not "$7.1M".\n' +
         '- cap_rate and occupancy_pct are PERCENTAGE numbers: 6.75 means 6.75 percent and ' +
@@ -683,6 +988,44 @@ public with sharing class LLMExtractionCalloutService {
         'and leave guidance_price null. If a single asking price is quoted, use ' +
         'guidance_price and leave the range null.\n' +
         '- unit_count is apartment units, or hotel keys for a hospitality asset.\n' +
+        '- walt_years is the weighted average lease term remaining, in YEARS, as a plain ' +
+        'number: "WALT 8.3 years" gives 8.3. If the email states it in months, return null ' +
+        'rather than converting.\n' +
+        '- adr is the average daily rate of a hospitality asset, in dollars: "ADR $205" gives ' +
+        '205. It is never RevPAR and never occupancy.\n' +
+        '- zoning is the zoning designation or code exactly as written ("C-2", "PD-14"); leave ' +
+        'it empty if the email states none.\n' +
+        '- seller_entity is the named legal owner or selling entity when the email names one. ' +
+        'A description rather than a name — "a family partnership" — is not a seller ' +
+        'entity; leave it empty.\n' +
+        '- deal_room_link is the URL of a deal room, data room or document portal the email ' +
+        'links to. A website, unsubscribe, map or calendar link is not one; leave it empty.\n' +
+        '- broker_phone is the office, main or direct telephone number of broker_email\'s ' +
+        'owner, as written; broker_mobile is their mobile or cell number when the email labels ' +
+        'one as such. If only one number is given, it is not labelled, and it plainly belongs ' +
+        'to broker_email\'s owner, put it in broker_phone and leave broker_mobile empty. WHEN ' +
+        'broker_email IS NOT AN INDIVIDUAL\'S ADDRESS, LEAVE BOTH EMPTY: if broker_email ' +
+        'belongs to a listing platform, a marketplace, a CRM or marketing system, or a role ' +
+        'mailbox such as listings@, deals@, info@, marketing@, notifications@, no-reply@ or ' +
+        'do-not-reply@, then a number in the body is somebody else\'s — usually the listing ' +
+        'broker\'s — and there is no "number of broker_email\'s owner" ' +
+        'to state. Put that number, and whose it is, in deal_summary rather than dropping ' +
+        'it, exactly as broker_company does with a platform name it must not use. An ' +
+        'empty value ' +
+        'is always safe, whereas the wrong number there sends a caller to a person who did not ' +
+        'send the email.\n' +
+        '- broker_title is that same person\'s job title as written in their signature block — ' +
+        '"Managing Director, Capital Markets". Never infer one, and never take the ' +
+        'title of anyone other than broker_email\'s owner.\n' +
+        '- listing_broker_email must be an address WRITTEN IN THE EMAIL for the person the ' +
+        'message names as the listing broker. Copy it character for character from the text. ' +
+        'NEVER construct one: not from the firm\'s name, not from its website or domain, not ' +
+        'from the person\'s name, and not from any address pattern you have seen elsewhere. If ' +
+        'the email names a listing broker but states no address for them, fill ' +
+        'listing_broker_name and leave listing_broker_email EMPTY — an empty value is always ' +
+        'safe, whereas an invented address is one somebody will write to. This adds a ' +
+        'restriction on listing_broker_email only; it does not change how broker_name, ' +
+        'broker_email, property_address or sent_datetime are determined.\n' +
         '- Relative deadlines are resolved against sent_datetime: "offers due today" means ' +
         'the date of sent_datetime, or the date of the anchor A defined below when the ' +
         'email states no send date. For an auction DATE RANGE use the START date. ' +
@@ -694,6 +1037,18 @@ public with sharing class LLMExtractionCalloutService {
         'use knowledge of when a real-world campaign or listing happened.\n' +
         '- asset_type, deal_type, sale_process and listing_status MUST be one of the ' +
         'listed values or null. Never invent a value.\n' +
+        '- deal_type is NOT a property category and is NOT a second opinion about asset_type, ' +
+        'even though both use the word Retail. It records ONE fact: whether what is being sold ' +
+        'is RAW LAND or not. Return Land when the subject of the sale is undeveloped ground — a ' +
+        'development site, a pad, acreage, or a ground lease of unimproved ground. RETURN Retail ' +
+        'FOR EVERYTHING ELSE: any property that includes a standing building, whatever kind of ' +
+        'building it is. A hotel, a clinic, a warehouse, an office building, an apartment ' +
+        'community, a self-storage facility and a shopping center are ALL deal_type Retail. ' +
+        'Retail here means "not raw land"; it does NOT mean the property is a shop, and ' +
+        'deal_type must NEVER be made to agree with asset_type. A property that is neither raw ' +
+        'land nor a store is the NORMAL case and its answer is Retail — do not return null ' +
+        'because neither word seems to describe the building. Return null ONLY when the email ' +
+        'does not say what is being sold at all.\n' +
         '- listing_status is On Market when the email shows the property is being marketed ' +
         'publicly — a listing platform or marketplace page, a public listing link, an ' +
         'advertised campaign, or wording such as "now listed", "just listed", "on the ' +
@@ -795,7 +1150,8 @@ public with sharing class LLMExtractionCalloutService {
         'says anything about whether you read the NOI or the year built correctly. Include one ' +
         'entry per key you returned a non-empty value for, named exactly as it appears in the ' +
         'shape below and with no prefix for the property-level keys ("noi", "year_built", ' +
-        '"cap_rate"), and give it a number from 0 to 1. OMIT any key you left empty or null: an ' +
+        '"cap_rate", "building_sf"), and give it a number from 0 to 1. OMIT any key you left ' +
+        'empty or null: an ' +
         'absent entry means "no value", never "a value I doubt". Score a value the email states ' +
         'outright at 0.9 or above; score below 0.60 anything you inferred, converted, or read ' +
         'from a table, a footnote or attached marketing material — 0.60 is the line below which ' +
@@ -840,11 +1196,58 @@ public with sharing class LLMExtractionCalloutService {
      *
      * ⚠ SINCE WS5 (2026-08-30) THIS IS THE FALLBACK, NOT NECESSARILY THE LIVE PROMPT.
      * resolvePrompt() below returns Broker_Protection_Config__mdt.Default.Extraction_Prompt__c
-     * when that record exists and carries a non-blank value, and this constant otherwise.
-     * This composition is 20,592 characters — 19,254 as measured on 2026-08-30, plus the 1,338
-     * WS7 added later the same day — and it is exactly what
+     * when that record exists, carries a non-blank value, AND that value passes the two
+     * usability tests added 2026-08-31 (longer than 255 characters, contains the token 'json').
+     * This constant is used otherwise. It is exactly what
      * scripts/load-broker-protection-config.apex writes into the record, so a freshly
      * loaded org sends a byte-identical prompt to a never-loaded one.
+     *
+     * ═══ 🔴 THE LENGTH IS NOT STATED HERE, AND THAT IS THE POLICY — DO NOT ADD A NUMBER ═══
+     * The 2026-08-31 schema-key definition pass moved the prompt's length. It is deliberately
+     * NOT restated, because there is no way to state it correctly from this file:
+     *   • the only authority is `shippedPrompt().length()` evaluated AT RUNTIME on a DEPLOYED
+     *     class — and until it is deployed that value does not exist;
+     *   • any figure written here in advance is therefore a SOURCE COUNT, and a source count
+     *     under-reports by exactly 4 because ENRICHED_EXTRACTION_RULES interpolates
+     *     MAX_PROPERTIES_IN_PROMPT twice. That is the exact error made below in 2026-08-31's
+     *     20,592 → 20,596 correction, and it looks like a plausible fix when it is wrong;
+     *   • and filling one in after deployment would mean re-deploying this class purely to
+     *     correct a comment.
+     * A tag that names no number cannot go stale a fifth time. This mirrors the policy already
+     * adopted for Extraction_Prompt__c's field <description> and its in-root XML comment, both
+     * of which had their numbers removed for this same reason.
+     * 🔴 IF YOU NEED THE LENGTH, EVALUATE `LLMExtractionCalloutService.shippedPrompt().length()`
+     * AGAINST THE ORG. Never count the literals, and never copy a figure out of a comment.
+     *
+     * ═══ THE PRIOR MEASUREMENT, KEPT BECAUSE ITS ARITHMETIC LESSON STILL APPLIES ═══
+     * MEASURED on `usman-dpeg` at API 67.0 on 2026-08-31, BEFORE the definition pass:
+     * `LLMExtractionCalloutService.shippedPrompt().length()` == **20,596**.
+     *
+     * This block, ExtractionRegressionFixtureTest and the loader all said 20,592 until then.
+     * THE ORG AND THE REPO NEVER DISAGREED — the org's ApexClass Body was verified
+     * byte-identical to this file on 2026-08-31. 20,592 is what you get by adding up the STRING
+     * LITERALS ONLY (LEGACY 596 + ENRICHED's literals 19,996). It misses the FOUR characters
+     * that ENRICHED_EXTRACTION_RULES interpolates at RUNTIME:
+     * `MAX_PROPERTIES_IN_PROMPT` (= 10, two characters) appears TWICE in that concatenation.
+     * 596 + 19,996 + 4 = 20,596.
+     *
+     * ⚠ CONSEQUENCE FOR ANYONE RE-DERIVING THIS NUMBER FROM SOURCE: the length is
+     * VALUE-DEPENDENT. Changing MAX_PROPERTIES_IN_PROMPT from 10 to 9 or to 100 changes the
+     * prompt length without touching a single string literal. Counting the literals by hand or
+     * with a script WILL under-report by 4 and look like a plausible correction back to 20,592.
+     * The authority is a live `shippedPrompt().length()`, nothing else. This repo was bitten
+     * THREE times by a stale prompt-length figure (19,254 → 20,592 → 20,596); the first two
+     * were real edits, the third was this arithmetic blind spot. There is no fourth entry
+     * because the 2026-08-31 definition pass DE-PINNED the figure instead of restating it —
+     * see the block above. Do not restart the sequence by adding a number back.
+     *
+     * 🔴 THE PROMPT IS ALSO NOW READ BY SOQL, NOT getInstance(). Broker_Protection_Config__mdt's
+     * Extraction_Prompt__c is a LongTextArea, and getInstance()/getAll() SILENTLY CLIP long text
+     * to 255 characters. That truncated head contains no 'json', OpenAI refused every request,
+     * and ExtractAddressQueueable degraded silently — a live P0 (measured 2026-08-31:
+     * getInstance 255 / SOQL 20,596 / identical = false). BrokerProtectionConfig now reads this
+     * one field through BrokerProtectionConfigSelector. See .claude/skills/sf-apex/SKILL.md and
+     * ARCHITECTURE.md §2, both amended in the same change.
      *
      * 🔴 THAT EQUIVALENCE IS NOT AUTOMATIC AFTER WS7 — THE LOADER MUST BE RE-RUN. An org whose
      * record was seeded BEFORE the WS7 edit holds the 19,254-character prompt and will keep
@@ -852,10 +1255,14 @@ public with sharing class LLMExtractionCalloutService {
      * `field_confidence` at all, LLMExtractionParser degrades to an empty map without throwing,
      * and every Lead is stamped `Low_Confidence_Field_Count__c = 0` — the feature is silently
      * absent, not broken, and nothing logs it. Re-running the loader is what turns it on.
-     * ✅ scripts/load-broker-protection-config.apex's seed-length debug line was CORRECTED to
-     * 20592 in WS8 and now agrees with this block. (This paragraph used to say it was still
-     * stale — a to-do that had already been done. Left standing it would have sent the next
-     * reader to "fix" a line that was already right, or worse, to trust "19254" as current.)
+     * ✅ THERE IS NOTHING LEFT TO KEEP IN SYNC. This paragraph used to say the loader's
+     * seed-length debug line "agrees with this block", and tracked the corrections that kept
+     * them agreeing (19254 → 20592 → 20596). BOTH HALVES ARE NOW OBSOLETE: the 2026-08-31
+     * definition pass de-pinned the loader line AND this block, so neither states a figure and
+     * there is no agreement to maintain. ⚠ DO NOT GO LOOKING FOR A 20596 IN THE LOADER — it was
+     * removed on purpose, and restoring a pin "so they agree again" reinstates exactly the
+     * failure mode the de-pinning removed. The loader now simply PRINTS the length it seeded;
+     * that print IS the measurement.
      */
     private static final String EXTRACTION_INSTRUCTION =
         LEGACY_EXTRACTION_RULES + ENRICHED_EXTRACTION_RULES;
@@ -864,13 +1271,13 @@ public with sharing class LLMExtractionCalloutService {
      * The prompt this CLASS ships — i.e. EXTRACTION_INSTRUCTION, the compile-time fallback.
      *
      * 🔴 THIS IS NOT THE LIVE PROMPT. The live prompt is resolvePrompt(), which prefers the
-     * Setup-configured Broker_Protection_Config__mdt.Default.Extraction_Prompt__c. Do not
-     * call this to find out what the org actually sends.
+     * Setup-configured Broker_Protection_Config__mdt.Default.Extraction_Prompt__c when that
+     * value is present and usable. Do not call this to find out what the org actually sends.
      *
      * WHY IT IS PUBLIC. It exists for exactly one caller:
      * scripts/load-broker-protection-config.apex, which SEEDS the CMDT record. Seeding from
      * this method rather than from a transcribed copy of the prompt is a correctness
-     * property, not a convenience — a hand-copied 20,592-character literal in the loader
+     * property, not a convenience — a hand-copied 20,596-character literal in the loader
      * would be a SECOND copy of the exact text that keys the broker registry, and the first
      * time someone edited the Apex constant and re-ran the loader the two would disagree
      * silently. Sourcing the seed from here makes "the loaded record equals the shipped
@@ -879,8 +1286,26 @@ public with sharing class LLMExtractionCalloutService {
      * ⚠ It also means the loader must run AFTER this class is deployed. That ordering is
      * stated in the loader's own header.
      *
-     * @return LEGACY_EXTRACTION_RULES + ENRICHED_EXTRACTION_RULES (20,592 chars as of
-     *         2026-08-30, post-WS7); never null, never blank.
+     * 🔴 AND AFTER 2026-08-31 IT MEANS MORE THAN THAT: RE-RUNNING THE LOADER BEFORE THE
+     * TRUNCATION FIX IS DEPLOYED REINSTATES THE P0. The loader writes this full string into the
+     * record; the DEFECT was on the READ side (getInstance clipping it back to 255). Until
+     * BrokerProtectionConfig + BrokerProtectionConfigSelector are live, a populated record is
+     * strictly worse than a blank one, because blank falls back to this constant and works.
+     *
+     * @return LEGACY_EXTRACTION_RULES + ENRICHED_EXTRACTION_RULES. Never null, never blank.
+     *         🔴 NO CHARACTER COUNT IS STATED HERE, ON PURPOSE — DO NOT ADD ONE. This tag used
+     *         to name a figure, and scripts/load-broker-protection-config.apex and
+     *         Extraction_Prompt__c's field <description> both defer to it BY NAME, which made
+     *         it the single site whose staleness propagated everywhere. It went stale three
+     *         times (19,254 → 20,592 → 20,596), and the third correction was not a prompt edit
+     *         at all but an arithmetic blind spot: counting the string literals under-reports
+     *         by exactly 4, because ENRICHED_EXTRACTION_RULES interpolates
+     *         MAX_PROPERTIES_IN_PROMPT twice at RUNTIME. A number cannot be written here
+     *         correctly in advance — the only authority is `shippedPrompt().length()` evaluated
+     *         against a DEPLOYED class — and writing it afterwards would mean re-deploying this
+     *         class to fix a comment. A tag that names no number cannot go stale.
+     *         ⚠ NEED THE LENGTH? Run `System.debug(LLMExtractionCalloutService
+     *         .shippedPrompt().length());` against the org. Never count the literals.
      */
     public static String shippedPrompt() {
         return EXTRACTION_INSTRUCTION;
@@ -902,11 +1327,158 @@ public with sharing class LLMExtractionCalloutService {
      * callout with no instructions — the latter would return unparseable output for every
      * inbound email and silently stop the pipeline producing Leads.
      *
-     * @return The configured prompt when one is set, otherwise EXTRACTION_INSTRUCTION.
+     * ═══════════════════════════════════════════════════════════════════════════════════
+     * 🔴 THE DEFENSIVE GUARD (2026-08-31) — A CONFIGURED PROMPT THAT CANNOT WORK NEVER
+     *    REACHES OpenAI
+     * ═══════════════════════════════════════════════════════════════════════════════════
+     * Added as the first half of a live-P0 fix. Two rejection tests, each with a DISTINCT
+     * diagnosis, both falling back to EXTRACTION_INSTRUCTION:
+     *
+     *   1. `length() <= PROMPT_TRUNCATION_BOUNDARY` (255) ⇒ TRUNCATED_AT_OR_BELOW_255
+     *   2. `!containsIgnoreCase('json')`                  ⇒ MISSING_JSON_TOKEN
+     *
+     * WHY THE `json` TEST. It is NOT a heuristic — it is the literal precondition OpenAI
+     * enforces, quoted verbatim from the error this org received on every inbound email:
+     * "'messages' must contain the word 'json' in some form, to use 'response_format' of type
+     * 'json_object'." buildRequestBody sets exactly that response_format.
+     *
+     * WHY THE LENGTH TEST, AND WHY 255 AND NOT A ROUNDER NUMBER. 255 is the width
+     * `getInstance()`/`getAll()` clip a LongTextArea to — so a configured value at or below it
+     * is INDISTINGUISHABLE from a truncation artifact. Any other threshold (500, 1000) would be
+     * an invented number; this one is the boundary itself, which is the only non-arbitrary
+     * choice available. Measured on `usman-dpeg` 2026-08-31: getInstance 255 / SOQL 20,596.
+     *
+     * ⚠ ORDER MATTERS AND IS DELIBERATE. The 255-char head of the real prompt fails BOTH tests.
+     * Length is checked FIRST because "this value was truncated" is the correct ROOT-CAUSE
+     * diagnosis, and "this prompt lacks the json token" would send the next reader to rewrite a
+     * prompt that is in fact fine and merely clipped. The two must never share one message.
+     *
+     * 🔴 RESIDUAL RISK, ACCEPTED AND STATED PLAINLY. A GENUINE prompt of 255 characters or
+     * fewer is now SILENTLY IGNORED in favour of the shipped constant. That is a real cost of
+     * the length floor and it is accepted for two reasons: the guard is SELF-HEALING (the
+     * pipeline keeps working on a known-good prompt rather than failing), and a real extraction
+     * prompt for this task — which must enumerate the JSON schema, ten asset types, the
+     * deal/sale/listing enumerations and the date rules — cannot be that short. If a legitimate
+     * short prompt is ever wanted, raise the boundary deliberately; do not delete the check.
+     *
+     * ⚠ THE OVERRIDE IS CHECKED, NEVER THE COMPOSED MESSAGE. `json` could arrive accidentally
+     * from `referenceDateLine()` or the forwarded email body, which would make the guard pass
+     * or fail per-email and non-deterministically. The prompt is the admin-editable part and
+     * the only part worth gating.
+     *
+     * ⚠ THE GUARD LIVES HERE, NOT IN BrokerProtectionConfig, ON PURPOSE. This class owns the
+     * OpenAI boundary and is therefore the only class entitled to know that
+     * `response_format: json_object` requires the token `json` in `messages`. A config accessor
+     * that learned an integration precondition would be the exact dependency inversion
+     * BrokerProtectionConfig's own header forbids.
+     *
+     * ⚠ KNOWN LIMITATION — SAID OUT LOUD RATHER THAN REPEATING WS8 FINDING W6. The ERROR line
+     * this guard emits will, in practice, be read by nobody. BrokerProtectionConfig's header
+     * already establishes why: a Salesforce debug log exists only while a trace flag is active
+     * ON THE EXECUTING PRINCIPAL, and this runs inside an async queueable as the Email Service
+     * context user — the principal least likely to be traced. That is ACCEPTABLE HERE, and the
+     * reason is specific: unlike GATE A's audit trail, this guard is self-healing. The cost of
+     * an unread log is "my Setup override is being ignored and I don't know why", not an
+     * outage. A durable stamp was considered and is out of the approved scope.
+     *
+     * @return The configured prompt when one is set AND usable, otherwise EXTRACTION_INSTRUCTION.
      */
     private static String resolvePrompt() {
         String configured = BrokerProtectionConfig.extractionPromptOverride();
-        return configured == null ? EXTRACTION_INSTRUCTION : configured;
+        if (configured == null) {
+            return EXTRACTION_INSTRUCTION;
+        }
+        if (configured.length() <= PROMPT_TRUNCATION_BOUNDARY) {
+            rejectPromptOnce(PromptRejectionReason.TRUNCATED_AT_OR_BELOW_255, configured.length());
+            return EXTRACTION_INSTRUCTION;
+        }
+        if (!configured.containsIgnoreCase('json')) {
+            rejectPromptOnce(PromptRejectionReason.MISSING_JSON_TOKEN, configured.length());
+            return EXTRACTION_INSTRUCTION;
+        }
+        return configured;
+    }
+
+    /**
+     * The width `getInstance()` / `getAll()` clip a LongTextArea or Html CMDT field to.
+     *
+     * 🔴 THIS IS A MEASURED PLATFORM CONSTANT, NOT A TUNING KNOB. `usman-dpeg`, API 67.0,
+     * 2026-08-31: `getInstance('Default').Extraction_Prompt__c`.length() == 255 while SOQL on
+     * the same row in the same transaction returned 20,596. Changing this number changes what
+     * "looks truncated" means and re-opens the residual risk argued at `resolvePrompt`.
+     */
+    private static final Integer PROMPT_TRUNCATION_BOUNDARY = 255;
+
+    /**
+     * Why a configured prompt was rejected. An enum rather than two booleans or a free string,
+     * so the two diagnoses cannot be conflated by a caller or a test — they send a reader to
+     * different places (a truncating READ vs. a badly WRITTEN prompt).
+     */
+    public enum PromptRejectionReason { TRUNCATED_AT_OR_BELOW_255, MISSING_JSON_TOKEN }
+
+    /**
+     * The reason logged this transaction, or null when nothing was rejected.
+     *
+     * Doubles as the ONCE-PER-TRANSACTION guard — a 10-property email must not emit ten
+     * identical ERROR lines. `extract()` runs once per queueable execution today and the
+     * config is cached, so this is belt-and-braces; it costs nothing and makes the invariant
+     * explicit rather than incidental.
+     *
+     * ⚠ @TestVisible because a `System.debug` line is not assertable. This field is the only
+     * observable a test has for "the guard fired, and for THIS reason".
+     *
+     * ═══ 🔴 A SECOND, DIFFERENT REJECTION IN THE SAME TRANSACTION IS MASKED — BY DESIGN ═══
+     * ⚠ CORRECTED 2026-08-31 (review finding S1). This block used to say "Tests reset it by
+     * assigning null directly". NO TEST DOES, and none needs to today: each of T1-T4 in
+     * `LLMExtractionCalloutServiceTest` provokes at most one rejection, and the only test that
+     * calls `BrokerProtectionConfig.overrideForTest` twice in one transaction
+     * (`blankOverride_yieldsTheShippedPrompt_withoutLoggingARejection`) rejects nothing in either
+     * leg — so a reset there would assert nothing and would merely look like one.
+     *
+     * The consequence is stated here rather than left to be discovered: because this field IS the
+     * once-per-transaction guard, the FIRST reason wins and every later one is discarded. A future
+     * test that injects a TRUNCATED override and then a `json`-less one in a single transaction
+     * would assert the first reason and pass while proving nothing about the second. Such a test
+     * must either use two transactions (two test methods) or set this field back to null between
+     * legs — it is `@TestVisible`, so any test class can simply assign to it. No
+     * reset method is offered, because the assignment is one line and adding a production-visible
+     * reset would suggest the guard is resettable at runtime, which it must not be.
+     */
+    @TestVisible
+    private static PromptRejectionReason promptRejectionLogged = null;
+
+    /**
+     * Emit ONE ERROR per transaction naming the type, the record, the field, the resolved
+     * length, the reason and the action.
+     *
+     * ERROR, not WARN, and the sibling comparison is the justification: BrokerProtectionConfig's
+     * `warnOnce` uses WARN for "an admin typed a bad number, we defaulted" — one field degraded.
+     * This is "the admin's configured feature is ENTIRELY INOPERATIVE and every inbound email is
+     * being processed with a prompt they did not choose". That is one severity up.
+     *
+     * @param reason Which test the configured value failed.
+     * @param length The resolved override's length, so a truncation is recognisable on sight.
+     */
+    private static void rejectPromptOnce(PromptRejectionReason reason, Integer length) {
+        if (promptRejectionLogged != null) {
+            return;
+        }
+        promptRejectionLogged = reason;
+
+        String diagnosis = reason == PromptRejectionReason.TRUNCATED_AT_OR_BELOW_255
+            ? 'it is ' + length + ' characters, at or below the ' + PROMPT_TRUNCATION_BOUNDARY
+              + '-character width that getInstance()/getAll() clip a LongTextArea to, so this '
+              + 'value is indistinguishable from a TRUNCATED READ rather than a real prompt'
+            : 'it is ' + length + ' characters but does NOT contain the token \'json\', which '
+              + 'OpenAI requires in \'messages\' to use response_format of type \'json_object\'';
+
+        System.debug(LoggingLevel.ERROR,
+            'BROKER PROTECTION REJECTED THE CONFIGURED EXTRACTION PROMPT ['
+            + reason + ']: Broker_Protection_Config__mdt.' + BrokerProtectionConfig.RECORD_NAME
+            + '.Extraction_Prompt__c was not used because ' + diagnosis
+            + '. Falling back to the shipped prompt (LLMExtractionCalloutService.shippedPrompt()), '
+            + 'so extraction continues — but the Setup override is being IGNORED. '
+            + 'FIX THE RECORD IN SETUP.');
     }
 
     /**

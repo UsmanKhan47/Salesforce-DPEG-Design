@@ -3,7 +3,7 @@
     <apiVersion>67.0</apiVersion>
     <isExposed>true</isExposed>
     <masterLabel>Transaction Checklist Summary</masterLabel>
-    <description>Sidebar card showing overall task-checklist completion for a Transaction.</description>
+    <description>Sidebar card showing overall checklist completion for a Transaction. Reads Checklist__c when Checklist Fanned Out is true, otherwise the legacy Tasks, and computes its percentage from the same rows the checklist itself renders.</description>
     <targets>
         <target>lightning__RecordPage</target>
     </targets>

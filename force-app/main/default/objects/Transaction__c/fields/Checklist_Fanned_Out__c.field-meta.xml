@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Checklist_Fanned_Out__c</fullName>
+    <defaultValue>false</defaultValue>
+    <description>One-shot guard for the Checklist__c fan-out. A SEPARATE FIELD FROM Tasks_Fanned_Out__c ON PURPOSE, and this is the single most important field of the migration: the Task model and the Checklist model must coexist during cutover, and sharing one guard would make either fan-out suppress the other. It is also a single-writer discriminator - only ChecklistFanoutService writes it - so TestDataFactory and every seed script are immune by construction rather than by a bypass flag. The group F reconcile keys on this field, never on Tasks_Fanned_Out__c, so it cannot disturb the legacy model.</description>
+    <inlineHelpText>Ticked once the new checklist has been generated for this deal. System-maintained; do not edit.</inlineHelpText>
+    <label>Checklist Fanned Out</label>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Checkbox</type>
+</CustomField>

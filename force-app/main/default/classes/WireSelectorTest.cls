@@ -24,7 +24,33 @@
 @isTest
 private class WireSelectorTest {
 
-    private static final Datetime VERIFIED_AT = Datetime.newInstance(2026, 7, 16, 10, 30, 0);
+    /**
+     * 🔴 NEAR-NOW BY CONSTRUCTION, NEVER A LITERAL — AND IT MUST STAY THAT WAY.
+     *
+     * `Wire__c.Verified_DateTime_Not_Backdatable` (Disposition gap closure T1, item 12b) refuses
+     * ANY insert or change of `Verified_DateTime__c` more than ~1 minute (0.0007 day) away from
+     * `NOW()`, in EITHER direction — the rule is symmetric, so a forward-dated literal is refused
+     * exactly like a backdated one. That rule guards on `OR(ISNEW(), ISCHANGED(...))`, and both
+     * fixtures below stamp the field on the INSERT, so it fires on them.
+     *
+     * This constant used to be `Datetime.newInstance(2026, 7, 16, 10, 30, 0)`. ⚠ REPLACING IT WITH
+     * A FRESHER LITERAL IS NOT A FIX — it buys exactly one minute and then reds this class forever,
+     * which is the same defect with a later start date. Deriving the value from `Datetime.now()` is
+     * the only shape that cannot expire.
+     *
+     * Truncated to whole seconds on purpose: it keeps the round-trip equality assertions below
+     * comparing a value the database is guaranteed to hand back unchanged, rather than depending on
+     * sub-second storage precision. A `static final` initialises ONCE per transaction, so all uses
+     * within a test method see the same instant — the insert and the assertion cannot disagree.
+     *
+     * ⚠ `selectMostRecentByDispositionId_251Wires_resolvesExactlyOne` deliberately does NOT use
+     * this constant. `createWires` leaves `Verified_DateTime__c` null, and the rule's
+     * `NOT(ISBLANK(Verified_DateTime__c))` clause exempts a blank — so the 251-row volume test is
+     * untouched by the rule and must stay that way. Do not "consistently" stamp it there: 251 rows
+     * inside the tolerance window proves nothing the two single-row tests do not already prove.
+     */
+    private static final Datetime VERIFIED_AT =
+        Datetime.newInstance((Datetime.now().getTime() / 1000) * 1000);
 
     @testSetup
     static void setup() {

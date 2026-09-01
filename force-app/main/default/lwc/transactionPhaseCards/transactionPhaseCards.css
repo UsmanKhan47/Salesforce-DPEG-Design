@@ -27,3 +27,9 @@
     gap: 0.5rem;
     padding: var(--slds-g-spacing-1, 4px) var(--slds-g-spacing-4, 16px) 14px;
 }
+/* Empty state — deliberately quieter than .kpi-error. "No checklist exists" is information,
+   not a failure, and must not read as one. */
+.kpi-empty {
+    color: var(--slds-g-color-neutral-base-60, #706e6b);
+    font-size: var(--slds-g-font-scale-base, 13px);
+}

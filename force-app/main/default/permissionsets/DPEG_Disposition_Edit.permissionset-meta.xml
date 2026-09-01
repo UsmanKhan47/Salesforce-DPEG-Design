@@ -1586,8 +1586,37 @@
         <field>Disposition__c.PSA_Executed__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!--
+        AMENDED 2026-08-31, TRANCHE 1. editable true to FALSE. readable STAYS true.
+        🔴 THIS REMOVES A CAPABILITY THIS PERSONA HAD. DO NOT RESTORE IT. Read the reason before
+        assuming it was a slip: the field stopped being user data.
+
+        Gate 1 decision D-9 makes Responses_Received__c an APEX RECOMPUTED counter.
+        DispositionCounterRollupService recomputes it from the BOV_Submission__c children on every
+        child save, insert, delete and undelete; it NEVER increments, which is what lets it survive
+        a reparent, a partial rollback or a data load. A hand edit to a recomputed field is
+        therefore discarded on the very next child save, and the user is shown a SUCCESS TOAST
+        while it happens.
+
+        That silent write defect class has already been paid for twice in this repo: a before save
+        flow recomputing Contract_Review__c.Stage__c, so a direct write commits and is thrown away;
+        and lightning record edit form FLS checking every key in its payload, so a non editable
+        field vanishes from the save with no error. Read only is the honest grant: it tells the
+        user the truth instead of accepting a value the system will overwrite.
+
+        Matches Disposition__c.Offers_Received__c, the sibling counter the same service maintains,
+        which is read only in both disposition sets. DPEG_Disposition_View already carried
+        editable=false here (measured, not assumed) and is unchanged by this edit.
+
+        ⚠ DO NOT FLIP Disposition__c.Brokers_Contacted__c ALONGSIDE IT, AND THE ASYMMETRY IS A
+        DECISION, NOT AN OVERSIGHT. It stays editable=true on this set deliberately. It records how
+        many brokers were ASKED, which is not derivable from any child object: an unanswered
+        outreach creates no BOV_Submission__c row, so no counter can ever reconstruct it. It is
+        genuinely manual data and the analyst is its only source. The two fields sit next to each
+        other and read alike; only one of them has a machine writer.
+    -->
     <fieldPermissions>
-        <editable>true</editable>
+        <editable>false</editable>
         <field>Disposition__c.Responses_Received__c</field>
         <readable>true</readable>
     </fieldPermissions>
@@ -2059,8 +2088,32 @@
         <field>Wire__c.Verbal_Verification_Completed__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!--
+        AMENDED 2026-08-31, TRANCHE 1 ITEM 12a. editable true to FALSE. readable STAYS true.
+        This is one of only two downgrades in the whole tranche, and it is deliberate: the field
+        is a verification timestamp and a hand editable one is backdatable, which is the tamper
+        story 12 exists to stop.
+
+        ✅ readable=true IS LOAD BEARING AND MUST NOT BE DROPPED WITH THE EDIT GRANT.
+        WireSelector.selectRequiredById is WITH USER_MODE and SELECTS this field deliberately;
+        its own header warns that narrowing that field set reintroduces a System.SObjectException.
+        USER_MODE throws rather than degrading, so removing read here breaks the wire card.
+
+        ✅ REMOVING THE EDIT GRANT DOES NOT BREAK THE SAVE, and that was checked rather than
+        assumed. WireService.saveWire performs a bare upsert, which is ordinary Apex DML in system
+        context and does not consult FLS, so the stamp still writes. lwc/wireVerification calls
+        saveWire IMPERATIVELY; it does not use lightning record edit form. Had it done so, an
+        editable=false field in the payload would have been FLS checked and dropped SILENTLY with
+        a success toast, which is a live failure mode in this repo. It does not apply here, but it
+        is why the check was made.
+
+        ⚠ FLS IS HALF THE FIX, NOT THE FIX. It does not stop a data loader, an administrator, or a
+        future AccessLevel.USER_MODE refactor. Item 12b ships the validation rule that does, and a
+        validation rule still evaluates under SYSTEM_MODE. Do not treat this flip as sufficient on
+        its own.
+    -->
     <fieldPermissions>
-        <editable>true</editable>
+        <editable>false</editable>
         <field>Wire__c.Verified_DateTime__c</field>
         <readable>true</readable>
     </fieldPermissions>
@@ -2299,6 +2352,428 @@
         <field>Contract_Review__c.Selected_Offer__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!--
+        ADDED 2026-08-31. TRANCHE 1 CONSOLIDATED ACCESS PASS, items 10, 11 and 12a of
+        agent-output/disposition-gap-closure-t1-design.md, PLUS the FLS for every field items 1
+        to 7 create. ONE pass across three files by design: a PermissionSet deploy REPLACES this
+        set's entire fieldPermissions collection, so splitting the work means the second pass
+        silently revokes the first.
+
+        THE ORG BASELINE WAS MEASURED BEFORE THIS EDIT, NOT INFERRED. All three sets were
+        retrieved from usman-dpeg on 2026-08-31 into a scratch directory and compared with HEAD
+        by an XML parsed, order independent diff. For DPEG_Disposition_Edit the org copy held 12
+        objectPermissions and 155 fieldPermissions and HEAD held exactly the same:
+        ORG ONLY grants NONE, value differences NONE, label, description and recordTypeVisibilities
+        identical. The retrieve returned real content, so this is a measurement and not the vacuous
+        pass an empty retrieve would produce. Nothing exists org side for a deploy of this file to
+        wipe, and every entry below is an ADDITION. Purely additive: no pre existing grant was
+        reordered, altered or removed anywhere in this file.
+
+        🔴 FORWARD REFERENCE, STATED PLAINLY SO IT IS NOT MISTAKEN FOR A TYPO. The nine item 1 to
+        7 fields granted below were verified ABSENT from force-app/main/default/objects/** at the
+        time of writing. salesforce-admin owns objects/** in this tranche and creates them in
+        wave 1; this file is wave 2. THIS FILE CANNOT DEPLOY UNTIL WAVE 1 LANDS, and that ordering
+        is the point: a Metadata API deployed field arrives with NO FLS for anyone, System
+        Administrator included, and an ungranted field ABORTS THE WHOLE DML STATEMENT rather than
+        degrading, so the grant has to be in place before anything writes the field.
+
+        POSTURE ON THIS SET, per field, and the four that differ from DPEG_Disposition_View are the
+        only four. Membership is IDENTICAL to that set's; only the editable flag differs.
+          NDA__c.Buyer_Response_Date__c           EDITABLE. Hand entered, no default, no writer.
+                                                  Matches Date_Signed__c, Counter_Signed_Date__c
+                                                  and Materials_Released_Date__c on this set.
+          BOV_Submission__c.Is_Buyer_Ready__c     EDITABLE. Analyst judgement, story 20 requires
+          BOV_Submission__c.Is_Known_Performer__c them to be settable. Matches
+                                                  Is_Preferred_Broker__c, and deliberately NOT
+                                                  Is_System_Selected__c / Is_Manually_Appointed__c,
+                                                  which are system written and read only.
+          Broker_Listing__c.Broker__c             EDITABLE. The analyst picks it; tranche 1 ships
+                                                  no stamp service, so it is blank on every auto
+                                                  created listing and can only be hand set.
+                                                  Matches Disposition__c.Broker__c on this set.
+          NDA__c.Principal_Approved__c            READ ONLY EVEN HERE. Approval written audit
+          NDA__c.Principal_Approved_Date__c       facts. Precedent is BOV_Broker_Change__c: an
+                                                  edit grant would let the analyst rewrite who
+                                                  approved and when.
+          NDA__c.Is_Approved_For_Release__c       READ ONLY. It is a FORMULA. editable=true on a
+          Broker_Listing__c.Days_On_Market_Live__c formula field is a DEPLOY ERROR, not a policy
+                                                  choice.
+          Disposition__c.Offers_Received__c       READ ONLY. Apex maintained by item 7's rollup
+                                                  service, which RECOMPUTES on every child save.
+                                                  An edit grant would let a user overwrite a
+                                                  counter the next child save silently discards.
+          Disposition__c.Responses_Received__c   READ ONLY. Flipped from editable=true in this
+                                                same pass, see its own comment at the grant site.
+        ⚠ RETRACTION, MARKED HERE RATHER THAN DELETED. An earlier draft of THIS comment said
+        "Disposition__c.Responses_Received__c IS LEFT AT editable=true IN THIS FILE AND THAT IS A
+        REPORTED GAP", and that it was outside this pass's scope. THAT SENTENCE IS NO LONGER TRUE
+        AND MUST NOT BE ACTED ON. It was raised to the coordinator, ruled in scope, and the flip
+        was made in the same pass. The field is now editable=false here.
+
+        Every items 10 and 11 entry below (the four cross module objects) is editable=false on
+        THIS set too. They are other modules' data and this persona has no business writing them.
+
+        The four new objectPermissions blocks sit at the tail of the objectPermissions list below,
+        with their own comment. They carry viewAllRecords=false DELIBERATELY.
+    -->
+    <!-- Items 1 to 7. Nine new fields. See the posture table in the header comment. -->
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>BOV_Submission__c.Is_Buyer_Ready__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>BOV_Submission__c.Is_Known_Performer__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Broker_Listing__c.Broker__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Broker_Listing__c.Days_On_Market_Live__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Disposition__c.Offers_Received__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>NDA__c.Buyer_Response_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>NDA__c.Is_Approved_For_Release__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>NDA__c.Principal_Approved__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>NDA__c.Principal_Approved_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!-- Item 10 plus item 11 Argus. Property_Asset__c, the 8 fields the disposition reports read. -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Property_Asset__c.Argus_Signal__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Property_Asset__c.Argus_Value__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Property_Asset__c.Property_Name__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Property_Asset__c.Property_Type__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Property_Asset__c.Readiness_Score__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Property_Asset__c.Sell_Readiness_Band__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Property_Asset__c.Sell_Readiness_Score__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Property_Asset__c.Status__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!-- Item 10 plus item 11 CoStar. Property__c, the D-11 named minimal set. NOT all 54 fields. -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Property__c.Address__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Property__c.Asset_Type__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Property__c.City__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Property__c.CoStar_Asking_Rent_PSF__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Property__c.CoStar_Data_Source__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Property__c.CoStar_Exit_Cap_Rate__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Property__c.CoStar_Fetch_Status__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Property__c.CoStar_Last_Synced_DateTime__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Property__c.CoStar_Location_Score__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Property__c.CoStar_Pct_Leased__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Property__c.CoStar_URL__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Property__c.Square_Footage__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Property__c.State__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Property__c.Zip__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!-- Item 10. Transaction__c, the D-11 named minimal set. NOT all 27 fields. -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Transaction__c.Contract_Value__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Transaction__c.Opportunity__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Transaction__c.Property__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Transaction__c.Property_Name__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Transaction__c.Stage__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Transaction__c.Status__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Transaction__c.Target_Close_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!-- Item 10. Offering__c, all 3 of its custom fields, per D-11. -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Offering__c.IR_Owner__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Offering__c.Opportunity__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Offering__c.Status__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!--
+        ADDED 2026-08-31 (Tranche 2, item 5b; design D-13). ONE new field grant:
+        Disposition__c.Sell_Meter_Override_Reason__c, readable=true, editable=FALSE.
+        Appended at the tail of the fieldPermissions run, following this file's convention of
+        appending rather than reflowing alphabetically. Identical membership AND identical
+        editable flag on DPEG_Disposition_View.
+
+        🔴 THIS SET DELIBERATELY DOES *NOT* RECEIVE THE MATCHING CUSTOM PERMISSION, AND THAT
+        OMISSION IS THE ENTIRE ITEM. Tranche 2 also adds the custom permission
+        Disposition_Sell_Meter_Override, which gates the Sell Meter's YELLOW band "Override"
+        action. It is granted by DPEG_Disposition_View ONLY, because stories 12 and 14 scope the
+        override to PRINCIPALS, and the Principal persona holds the VIEW set (DPEG_Principal_PSG),
+        not this one. DPEG_Junior_Analyst_PSG carries THIS file, so adding the token here would
+        hand the override to the entire junior analyst population, i.e. exactly the population the
+        gate exists to exclude.
+        IF THAT READS BACKWARDS, IT IS SUPPOSED TO. It is the mirror image of the token this file
+        already grants near the top: Disposition_Deal_Actions lives HERE (analyst), and its own
+        metadata file forbids it on the View set in terms:
+        "🔴 DPEG_Disposition_View DOES NOT AND MUST NOT CARRY THIS PERMISSION. Principals hold the
+        View set and APPROVE dispositions; granting it there would put the submit and advance
+        buttons in front of the approvers of those submissions. The two disposition sets are
+        deliberately asymmetric on this grant."
+        Disposition_Sell_Meter_Override is that sentence pointed the other way, so the correct
+        reading of BOTH files is: each set holds exactly one of the two tokens, and neither set
+        ever holds both. The two tokens are crossed
+        on purpose. Do not "restore symmetry" in either direction; full argument is in
+        customPermissions/Disposition_Sell_Meter_Override's XML comment and in the matching
+        comment on DPEG_Disposition_View.
+        ⚠ A CONSEQUENCE THE ANALYST PERSONA WILL NOTICE: after item 5a ships, a holder of this set
+        can no longer start a disposition on a YELLOW band asset at all. The button renders
+        disabled rather than hidden, so the capability is visibly gated rather than mysteriously
+        missing. That is a REMOVAL of something this persona can do today, and it is intended.
+
+        WHY THE FIELD IS READ ONLY HERE. It is an approval audit fact captured once, at override
+        time, by Apex, in the same DML as the Disposition__c insert; it is not an input anyone
+        edits on the record page afterwards. Granting editable would let an analyst rewrite the
+        justification recorded against an override, which is the same "actor can rewrite the audit
+        row" shape this file already refused on BOV_Broker_Change__c (2026-08-20 C3
+        reconciliation, earlier in this file): "Granting allowCreate/allowEdit here ... let
+        the analyst who replaced a broker go back and rewrite WHO did it and WHEN". Same shape,
+        same answer. ⚠ Note what readable=true is FOR on this persona: after item 5a the analyst
+        cannot trigger an override at all, so they never author this value. The read grant exists
+        so they can SEE why a disposition they are working was overridden, and by implication
+        that a principal authorised it.
+
+        editable=false DOES NOT BREAK THE WRITE. Measured, not assumed: DispositionService's two
+        create paths carry no AccessLevel ("`insert d` / `Database.insert(d, true)` carry no
+        `AccessLevel`, so both create paths run in SYSTEM mode for CRUD and FLS", class header),
+        and SYSTEM mode bypasses CRUD and FLS.
+        ⚠ THE ONE THING THAT WOULD BREAK IT is the change that same class header contemplates:
+        "Closing it means switching BOTH inserts to `AccessLevel.USER_MODE`". A USER_MODE insert
+        throws on the first field the running user lacks EDIT FLS on. Whoever makes that change
+        owns flipping this flag, and the matching one on DPEG_Disposition_View, at the same time.
+
+        🔴 THE GRANT MUST NOT SHIP LATER THAN THE FIELD. A Metadata API deployed field arrives
+        with NO FLS for anyone, System Administrator included, and an ungranted field ABORTS THE
+        WHOLE DML STATEMENT rather than degrading.
+        🔴 FORWARD REFERENCE, DELIBERATE: measured 2026-08-31, Disposition__c.
+        Sell_Meter_Override_Reason__c does NOT exist in usman-dpeg (Tooling API CustomField, zero
+        rows) and its field-meta.xml was not on disk when this edit was written; the schema pass
+        of the same tranche is creating it concurrently. THIS FILE CANNOT DEPLOY UNTIL THAT WAVE
+        LANDS, and the first failure will read as an unknown field, not as a typo. That is
+        expected, not a defect.
+        UPDATE, same day, later in the tranche: both artefacts have since appeared in the WORKING
+        TREE (customPermissions/Disposition_Sell_Meter_Override.customPermission-meta.xml and
+        objects/Disposition__c/fields/Sell_Meter_Override_Reason__c.field-meta.xml, the latter a
+        LongTextArea length 4000, NOT required, so it is legal to carry fieldPermissions at all).
+        They are still ABSENT FROM usman-dpeg, so the ordering constraint above is unchanged: the
+        schema deploy first, this file second or in the same package.
+
+        RECONCILED AGAINST usman-dpeg IMMEDIATELY BEFORE THIS EDIT, by SOQL rather than retrieve
+        (a retrieve would destructively overwrite the commentary in this file). Three way, because
+        a FieldPermissions plus ObjectPermissions diff is NOT complete: this file's existing
+        Disposition_Deal_Actions grant is invisible to both of those objects and shows up only in
+        SetupEntityAccess. FieldPermissions 196 repo / 196 org, ObjectPermissions 16 / 16,
+        SetupEntityAccess 1 / 1 (Disposition_Deal_Actions, present on both sides), compared as
+        full sorted NAME LISTS and not as counts. Zero org only grants, zero value differences,
+        zero drift in either direction. This edit is purely additive: one fieldPermissions entry,
+        nothing reordered, nothing removed. A PermissionSet deploy REPLACES the whole
+        fieldPermissions collection, which is why that reconciliation is a precondition and not a
+        formality.
+    -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Disposition__c.Sell_Meter_Override_Reason__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!--
+        ADDED 2026-08-31 (Tranche 3, Approvals). ONE new field grant:
+        NDA__c.OneDrive_URL__c, readable=true, editable=FALSE. Appended at the tail of the
+        fieldPermissions run, following this file's convention of appending rather than reflowing
+        alphabetically. Identical membership AND identical editable flag in DPEG_Disposition_View:
+        this is a read-only grant on BOTH sides, matching the posture used for
+        Disposition__c.Sell_Meter_Override_Reason__c in the Tranche 2 block immediately above.
+
+        WHY IT IS NEEDED NOW. Tranche 3 adds approvalProcesses/NDA__c.NDA_Issue_Approval, and
+        OneDrive_URL__c is listed in that process's approvalPageFields block (verified on disk in
+        that file). It is the link to the executed NDA document, i.e. the single most
+        decision-relevant fact on the page a principal is being asked to approve from. Measured
+        2026-08-31: neither disposition set granted this field, so the approval page would render
+        it BLANK for the approving principal. Both sets already grant the NDA__c object
+        (DPEG_Disposition_View read-only, this set create/read/edit), so object access was never
+        the gap; the field is granted today only on DPEG_Acquisition_View / DPEG_Acquisition_Edit.
+
+        WHY READ-ONLY RATHER THAN EDITABLE. The approval page is a reading surface. The URL is
+        written elsewhere in the NDA lifecycle, and the approver's job is to consult the document,
+        not to rewrite the link while approving. DPEG_Acquisition_Edit carries this same field
+        with editable=true and is deliberately NOT touched by this edit.
+
+        CORRECTION TO THE TRANCHE 3 BRIEF, RECORDED HERE SO IT IS NOT REPEATED. The brief stated
+        that the approval page is the ONLY surface this field appears on, and that a missing grant
+        therefore delivers a blank rather than an error. The first half is FALSE, measured on disk
+        2026-08-31: NDA__c.OneDrive_URL__c is ALSO on flexipages/NDA_Record_Page (as
+        Record.OneDrive_URL__c, uiBehavior "none", i.e. editable) and on the layout
+        "NDA__c-NDA Layout" (behavior "Edit"). The consequence is NOT a deploy risk, because FLS
+        outranks both: a readable, non-editable grant renders the field read-only on those
+        surfaces rather than erroring. It does mean this grant has a UI-visible side effect wider
+        than the brief assumed. Disposition personas see nothing today where this field sits on
+        the NDA record page and layout; once this deploys they will see the URL, read-only, on
+        all three surfaces. That is strictly less restrictive than today and is the intended
+        direction of travel, but it is stated here rather than left to be discovered.
+
+        WAVE DEPENDENCY. approvalProcesses/NDA__c.NDA_Issue_Approval is being authored
+        concurrently by another agent in this tranche and is not yet in usman-dpeg, so this grant
+        is INERT until that approval process deploys. It is not a deploy BLOCKER for this file:
+        NDA__c.OneDrive_URL__c is an existing Url field with required=false (so it is legal to
+        carry fieldPermissions at all) and exists both on disk and in the org, so this file
+        deploys standalone in either order.
+
+        RECONCILED BEFORE EDITING, by SOQL rather than retrieve (a retrieve would destroy this
+        file's commentary). THREE reads against usman-dpeg on 2026-08-31, AFTER the Tranche 1
+        (0Afiw000000UCLVCA4) and Tranche 2 (0Afiw000000UJwTCAW) deploys: FieldPermissions,
+        ObjectPermissions and SetupEntityAccess, compared as full sorted NAME LISTS rather than
+        counts (counts cannot exclude an offsetting add/remove pair). Result for this set: 197
+        fieldPermissions, 16 objectPermissions and 1 customPermission
+        (Disposition_Deal_Actions, resolved from SetupEntityAccess.SetupEntityId against
+        CustomPermission on the 15-char Id prefix) on BOTH sides, zero org-only grants, zero
+        repo-only grants, zero value differences. SetupEntityAccess is the third read because a
+        custom-permission grant is invisible to the other two. This edit is purely additive: one
+        fieldPermissions entry, nothing reordered, nothing removed. A PermissionSet deploy
+        REPLACES the whole fieldPermissions collection, which is why that reconciliation is a
+        precondition and not a formality.
+    -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>NDA__c.OneDrive_URL__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <hasActivationRequired>false</hasActivationRequired>
     <label>DPEG Disposition Edit</label>
     <objectPermissions>
@@ -2416,6 +2891,60 @@
         <modifyAllRecords>false</modifyAllRecords>
         <object>Release_Materials_Response__c</object>
         <viewAllRecords>true</viewAllRecords>
+    </objectPermissions>
+    <!--
+        ADDED 2026-08-31, TRANCHE 1 ITEM 10. Four cross module objects this set has never granted
+        at any level: Property_Asset__c, Property__c, Transaction__c and Offering__c. Read only,
+        and appended at the TAIL of this list following this file's convention of appending later
+        additions rather than reflowing the existing order.
+
+        🔴 viewAllRecords=false IS DELIBERATE AND MUST NOT BE TIDIED TO MATCH THE FOUR OLDER DISP
+        OBJECTS ABOVE, which carry true. NDA__c and LOI__c were themselves dropped to false by
+        decisions D17 and D20.1 precisely because view all is an informed widening rather than a
+        default, and these four are OTHER MODULES' data. Sharing scoped read is the conservative
+        choice. If a disposition only persona then cannot see enough Property Asset rows to render
+        the readiness donuts, that is a SHARING RULE conversation and it must surface as a finding,
+        not be pre empted here by a blanket true.
+
+        allowCreate, allowEdit, allowDelete and modifyAllRecords are all false on BOTH disposition
+        sets, including the Edit persona: item 10 is an IR hand off READ, story 8. The two files
+        are identical on these four objects and must move together.
+    -->
+    <objectPermissions>
+        <allowCreate>false</allowCreate>
+        <allowDelete>false</allowDelete>
+        <allowEdit>false</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>false</modifyAllRecords>
+        <object>Property_Asset__c</object>
+        <viewAllRecords>false</viewAllRecords>
+    </objectPermissions>
+    <objectPermissions>
+        <allowCreate>false</allowCreate>
+        <allowDelete>false</allowDelete>
+        <allowEdit>false</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>false</modifyAllRecords>
+        <object>Property__c</object>
+        <viewAllRecords>false</viewAllRecords>
+    </objectPermissions>
+    <objectPermissions>
+        <allowCreate>false</allowCreate>
+        <allowDelete>false</allowDelete>
+        <allowEdit>false</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>false</modifyAllRecords>
+        <object>Transaction__c</object>
+        <viewAllRecords>false</viewAllRecords>
+    </objectPermissions>
+    <objectPermissions>
+        <allowCreate>false</allowCreate>
+        <allowDelete>false</allowDelete>
+        <allowEdit>false</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>false</modifyAllRecords>
+        <object>Offering__c</object>
+        <viewAllRecords>false</viewAllRecords>
     </objectPermissions>
     <recordTypeVisibilities>
         <recordType>Disposition__c.Off_Market</recordType>

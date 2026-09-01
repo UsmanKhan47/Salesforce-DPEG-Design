@@ -135,6 +135,83 @@
         by name or label - confirmed by grep across force-app/main/default/classes, which found
         no setProcessDefinitionNameOrId call anywhere in the repo.
         =====================================================================================
+
+        =====================================================================================
+        2026-08-31 - TRANCHE 3, ITEMS 1 + 4. THIS IS THE FILE THE TWO UNPROVEN SHAPES (G-3, G-4)
+        ARE BEING PROVEN ON, FIRST AND ALONE, IN ONE EDIT, PER THIS FILE'S OWN 2026-08-21 PROTOCOL.
+        =====================================================================================
+        WHAT CHANGED: a THIRD <approver> (Junior Dhanani) was appended inside <assignedApprover>,
+        and Sell_Meter_Override_Reason__c was appended to <approvalPageFields>, immediately after
+        Sell_Decision_Trigger__c. Nothing else in this file changed - not whenMultipleApprovers
+        (stays FirstResponse, which is what makes "any ONE of the roster satisfies the gate" true),
+        not the step <name>/<label>, not entryCriteria, not any action block.
+
+        🔴 ITEM 1 IS THREE APPROVERS, NOT FOUR. Gate 1 (2026-08-31) resolved the four intended
+        principals against usman-dpeg: Nikhil Dhanani (nikhil.dhanani@usmandpeg.uat) and Aftab Ali
+        (aftab.ali.dpeg.usman@avanzasolutions.com) were already wired; Junior Dhanani
+        (junior.dhanani@usmandpeg.uat) is ACTIVE and is added here. 🔴 "Nick" DOES NOT EXIST IN
+        THIS ORG - checked active AND inactive, by Name, FirstName and Username, zero rows. Per
+        explicit user decision, Nick is NOT invented or substituted with any other username; adding
+        a fourth approver is a PROVISIONING REQUEST against the client (someone must be identified
+        and created/activated as a User), not a metadata gap. This process therefore carries THREE
+        approvers, not four, until that provisioning question is answered. Re-check this comment
+        against a live User query before assuming the roster is complete.
+
+        SCOPE, PER GATE 1 DECISION D-3. Only the five DISPOSITION approval processes gain this
+        roster change: this file, Disposition__c.Broker_Selection_Approval,
+        Disposition__c.Closing_Approval, BOV_Submission__c.Broker_Finalize_Approval and
+        Disposition_Offer__c.Offer_Selection_Approval. The THREE ACQUISITION approval processes
+        (Opportunity.LOI_Approval, Opportunity.Underwriting_Approval,
+        Underwriting__c.Underwriting_Approval) carry the identical two-approver defect and are
+        DELIBERATELY left untouched - a separate, separately-reviewed change, not an oversight.
+        After this wave, "any one of three principals" is true on the sell side and still "either
+        of two" on the buy side; that asymmetry is a recorded decision, not a gap nobody noticed.
+
+        ITEM 4: Sell_Meter_Override_Reason__c (LongTextArea, 4000, Tranche 2) is added to
+        approvalPageFields, positioned immediately after Sell_Decision_Trigger__c so the approver
+        reads WHY next to WHAT KIND. DPEG_Disposition_View already grants this field read=true
+        (Tranche 2), so the approver will not see a blank if the element renders at all.
+        🔴 NO LongTextArea HAS EVER BEEN AN approvalPageFields ENTRY IN THIS REPO - every existing
+        entry across all eight approval files is Name/Owner/picklist/checkbox/currency/number/
+        text/lookup/formula. This shape is UNPROVEN (G-4) and this field is on NO other FlexiPage
+        and NO layout, so a refusal here leaves it permanently unreadable by anyone until the
+        fallback (design D-18: add it to Disposition_Record_Page or the classic layout instead) is
+        taken. That fallback was NOT taken in this change - it is named here so a future reader
+        knows it exists and was deliberately not exercised.
+
+        🔴 NEITHER G-3 NOR G-4 WAS DISCHARGED BY THIS AGENT. Per this wave's explicit instruction,
+        no deploy (not even check-only) was run against usman-dpeg while building this file. The
+        required proof - a check-only dry-run, a metadata readback, AND a real submission showing
+        THREE assignees and the reason field rendering on the approval request page - is therefore
+        OUTSTANDING and must be performed by whichever agent next deploys this file, BEFORE the
+        other four roster edits in this wave are trusted. A green deploy alone proves neither: no
+        test in this repo's Apex or Jest suite can observe an approver roster or an approval-page
+        field render.
+        =====================================================================================
+
+        =====================================================================================
+        2026-08-31 (SAME DAY, METADATA-FIX PASS, W-9) - <description> ARITHMETIC FIXED, AND THE
+        WORDING BUG WAS MASKING A CAP OVERRUN.
+        =====================================================================================
+        The prior <description> read "Either principal decides, first response wins." - a
+        BINARY count left over from before this same 2026-08-31 wave added the third approver
+        (Junior Dhanani) above. This is the only one of this repo's six approval-process
+        descriptions that names an approver count in prose, and the reviewer that flagged it
+        checked all six. Reworded to "Any one of three principals decides, first response wins.",
+        which matches the roster now on this file.
+
+        ⚠ MEASURED WHILE FIXING IT: the PRIOR description was 260 characters (apostrophe decoded)
+        / 265 characters (raw XML with &apos;) - already OVER the 255-character cap this repo has
+        measured for ApprovalProcess.description elsewhere (two Tranche 1 overruns failed a
+        deploy on exactly this element). Whether that pre-existing 260/265-character string was
+        ever actually deployed to usman-dpeg, or only ever lived in this repo, was NOT
+        investigated as part of this fix - it is out of scope for a metadata-only wording
+        correction, and this file's own protocol above already requires a check-only dry-run and
+        readback before this file is trusted. The NEW description, dropped and tightened at the
+        same time as removing the trailing "See this file's XML comment." sentence (which the
+        comment block itself makes redundant), measures 242 characters - under the cap, measured
+        by this agent, not assumed.
+        =====================================================================================
     -->
     <active>true</active>
     <allowRecall>true</allowRecall>
@@ -147,6 +224,7 @@
         <field>Disposition_Stage__c</field>
         <field>Property_Asset__c</field>
         <field>Sell_Decision_Trigger__c</field>
+        <field>Sell_Meter_Override_Reason__c</field>
     </approvalPageFields>
     <approvalStep>
         <allowDelegate>false</allowDelegate>
@@ -159,12 +237,16 @@
                 <name>aftab.ali.dpeg.usman@avanzasolutions.com</name>
                 <type>user</type>
             </approver>
+            <approver>
+                <name>junior.dhanani@usmandpeg.uat</name>
+                <type>user</type>
+            </approver>
             <whenMultipleApprovers>FirstResponse</whenMultipleApprovers>
         </assignedApprover>
         <label>Principal decides to sell</label>
         <name>Principal_Review_Step</name>
     </approvalStep>
-    <description>Principal decision on whether to sell this asset. Either principal decides, first response wins. Entry: stage is Disposition Readiness. Approval fires the Set_Approval_Advance_Pending semaphore; a Queueable then advances the stage. See this file&apos;s XML comment.</description>
+    <description>Principal decision on whether to sell this asset. Any one of three principals decides, first response wins. Entry: stage is Disposition Readiness. Approval fires the Set_Approval_Advance_Pending semaphore; a Queueable then advances the stage.</description>
     <enableMobileDeviceAccess>false</enableMobileDeviceAccess>
     <entryCriteria>
         <criteriaItems>

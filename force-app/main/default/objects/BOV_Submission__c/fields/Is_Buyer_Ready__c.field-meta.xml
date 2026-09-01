@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY. A comment placed ABOVE
+        <CustomField> breaks `sf` deploy at source conversion with a misleading "unable to find
+        matching parent xml file" error.
+
+        DISPOSITION GAP CLOSURE TRANCHE 1, ITEM 4 (agent-output/disposition-gap-closure-t1-design.md
+        §3 Item 4, decision D-8, settled 2026-08-31). Analyst judgement, hand-entered. API name
+        and label follow decision D-8: Is_-prefixed to match ARCHITECTURE.md §1's Boolean
+        convention and this object's three existing siblings (Is_Preferred_Broker__c,
+        Is_System_Selected__c, Is_Manually_Appointed__c), label "Buyer Ready" so BA-facing
+        surfaces read as the story asked.
+
+        =====================================================================================
+        ✅ TRANCHE-4 HAS NOW HAPPENED (2026-09-01). THIS FIELD IS NO LONGER INERT.
+        =====================================================================================
+        The four warnings below were written in Tranche 1 as things Tranche 4 must not get wrong.
+        Tranche 4 item 1 shipped on 2026-09-01 and every one of them is now ANSWERED - the answers
+        are inline under each number, and the warnings are QUOTED RATHER THAN DELETED because a
+        future reader needs to know these questions were asked and how they were closed.
+
+        WHAT SHIPPED: BOV_Score__c was REBALANCED, not extended - Value 40 / Commission 20 /
+        Speed 20 / Buyer Ready 10 / Known Performer 10 = 100. The user rejected bonus-on-top with
+        a MIN(...,100) clamp at Gate 1, because a clamp compresses the top of the range and
+        manufactures ties exactly among the best brokers. Read BOV_Score__c.field-meta.xml's own
+        header for the arithmetic, the worked rank inversion, and the live-data consequence.
+
+        🔴 THE ONE THING THAT IS **NOT** CLOSED: a re-weighting re-ranks READS instantly and
+        re-ranks NOTHING that is stored. Warning 4 below is therefore still live in a different
+        form - see its answer.
+
+        RETAINED VERBATIM (the Tranche-1 text):
+
+        This field (and its sibling Is_Known_Performer__c) is INERT in T1: no formula, no flow,
+        no Apex reads it yet. The story that motivates it (story 20) expects both Booleans folded
+        into BOV_Score__c, and that is explicitly OUT of T1 scope. Recorded here so Tranche 4 does
+        not treat the fold-in as a simple re-weighting:
+          1. BOV_Score__c already spans TWO relationship hops
+             (Disposition__r.Property_Asset__r.Target_Sale_Price__c) and the 3,900-character cap
+             is on the COMPILED formula, not the source - count before adding branches.
+
+             ✅ ANSWERED 2026-09-01: BUDGETED, and the budget is structural rather than a count.
+             Both added terms are SAME-OBJECT Checkbox references, so they add ZERO relationship
+             expansion and the number of distinct cross-object paths is UNCHANGED at one. The
+             compiled size is not computable from source, so this is verified by the deploy - and
+             that is the safe direction, because the failure is a LOUD deploy error and never a
+             wrong number.
+
+          2. BOV_Score__c's null guard is LOAD-BEARING and must survive intact: its own header
+             states "That null means NOT SCOREABLE, never worst ... Changing the guard to a 0
+             would silently make every unpriced sale auto-appoint whichever broker quoted first."
+             BovAutoSelectionService skips null-scored rows and BovSubmissionSelector's
+             ORDER BY BOV_Score__c DESC NULLS LAST depends on it.
+
+             ✅ ANSWERED 2026-09-01: THE GUARD SURVIVED BYTE-IDENTICAL. The whole
+             IF(OR(ISBLANK(...), ... <= 0, ISBLANK(BOV_Amount__c)), null, ...) wrapper is
+             unchanged, and 🔴 THE TWO NEW FLAG TERMS WERE PLACED **INSIDE** IT. That placement is
+             the guard: hoisting them outside would let a row with no BOV_Amount__c but both flags
+             ticked score 20 instead of null, defeating the guard from the direction nobody watches.
+
+          3. formulaTreatBlanksAs is BlankAsBlank on BOV_Score__c DELIBERATELY - folding this
+             Boolean in with BlankAsZero would make an unset flag score as an explicit "no",
+             which is a different fact from "not yet assessed".
+
+             ✅ ANSWERED 2026-09-01, AND THE PREMISE TURNED OUT TO BE PARTLY WRONG.
+             formulaTreatBlanksAs was NOT changed (it is still BlankAsBlank, and it guards the
+             VALUE terms). But it does not interact with a Checkbox AT ALL: a Checkbox on a saved
+             row is never null, so NO setting of that enum could have expressed "not yet assessed".
+             🔴 The concern therefore survives the fix and is now a BUSINESS fact the BA accepted
+             with the weighting: an unassessed broker is penalised by exactly as much as one who
+             was assessed and rejected. Do not try to solve it by flipping the enum.
+
+          4. Any re-weighting changes WHICH BROKER IS AUTO-APPOINTED on live in-flight sales -
+             a data-affecting change, not a formula edit.
+
+             🔴 STILL LIVE, IN A SHARPER FORM. It changes which broker is auto-appointed on the
+             NEXT QUALIFYING SAVE, and a formula deploy is not one. Every DISPLAYED score moves the
+             instant this deploys; Submission_Status__c is stored and does not, so an unlocked sale
+             can show a new top scorer beside a stale "Selected" pill indefinitely. The repair is
+             scripts/backfill-bov-reranking.apex, shipped DELIBERATELY UNRUN - it performs real
+             DML on live records and re-appoints brokers, so it is an authorised business step, not
+             a deploy step.
+             ✅ A sale locked by an approval (pending, approved OR rejected) or by
+             Is_Manually_Appointed__c is fully protected, including from that script: the lock is
+             evaluated across ALL siblings of the disposition, not per row.
+
+        FLS: readable in DPEG_Disposition_View; EDITABLE in DPEG_Disposition_Edit (unlike items
+        1-2, this is an analyst judgement, hand-entered, and story 20 requires it to be settable).
+        Applied in the consolidated permission-set pass, not this file.
+        ✅ CONFIRMED UNCHANGED BY TRANCHE 4: a formula field computes in SYSTEM context, so folding
+        this Boolean into BOV_Score__c needed NO FLS work and NO selector widening. The T1 grants
+        stand exactly as shipped; nothing in item 1 touched a permission set.
+
+        Risk: LOW in T1 (an inert Boolean). All risk is deferred into Tranche 4.
+        ⚠ AND THAT RISK HAS NOW BEEN TAKEN, on 2026-09-01. What remains open is not the formula but
+        the live-data divergence in warning 4 above.
+    -->
+    <fullName>Is_Buyer_Ready__c</fullName>
+    <defaultValue>false</defaultValue>
+    <description>Analyst judgement: TRUE when this BOV respondent is assessed as a buyer ready to transact. Hand-entered. Since 2026-09-01 (Tranche 4 item 1) it is worth 10 of BOV_Score__c&apos;s 100 points - it is NO LONGER inert and ticking it can change which broker the system auto-appoints on the next qualifying save. An unticked box scores 0, which the score cannot distinguish from &quot;assessed and rejected&quot;. See the XML comment in this file.</description>
+    <inlineHelpText>Check if this respondent is assessed as a buyer ready to transact, based on analyst judgement.</inlineHelpText>
+    <label>Buyer Ready</label>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Checkbox</type>
+</CustomField>

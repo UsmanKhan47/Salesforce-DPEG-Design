@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT, NOT IN <description>. ValidationRule.Description is capped
+        at 255 characters and the comment must sit INSIDE the root element - a comment placed
+        ABOVE <ValidationRule> breaks `sf` deploy at conversion with a misleading "unable to find
+        matching parent xml file" error.
+
+        DISPOSITION GAP CLOSURE TRANCHE 1, ITEM 9 (agent-output/disposition-gap-closure-t1-design.md
+        §3 Item 9, story 2's AC). Shape follows Account.Record_Type_Is_Immutable exactly,
+        including its $Permission exemption pattern.
+
+        =====================================================================================
+        NOT(ISNEW()) + ISCHANGED(RecordTypeId) - MUST NOT FIRE ON CREATE.
+        =====================================================================================
+        DispositionService stamps the record type AT INSERT on both create paths
+        (findOrCreate:323, initiateAndSubmit:445). NOT(ISNEW()) keeps this rule out of that path
+        entirely; ISCHANGED(RecordTypeId) then means only a SUBSEQUENT change to an already-saved
+        record can ever trip it.
+
+        =====================================================================================
+        🔴 LOCK BOUNDARY - USER DECISION AT GATE 1, 2026-08-31, OVERRIDING THE DESIGN DOC'S OWN
+        D-7 RECOMMENDATION. DO NOT "CORRECT" THIS BACK TO THE DESIGN DOC'S SHAPE.
+        =====================================================================================
+        The record type is changeable ONLY while Disposition_Stage__c = 'Disposition Readiness'.
+        It is LOCKED from 'BOV Outreach' onward through 'Sale Closes', on BOTH record types. There
+        is no 'BOV Outreach' exemption in the formula below, even though 'BOV Outreach' is (like
+        'Disposition Readiness') a stage that precedes Broker Selection.
+
+        agent-output/disposition-gap-closure-t1-design.md's own D-7 row recommended a LOOSER
+        boundary - free at both 'Disposition Readiness' AND 'BOV Outreach', locked only from
+        'Broker Selection' onward. The user was asked this explicitly at Gate 1 and chose
+        "lock as soon as the sale decision is approved" over that recommendation. THIS FILE
+        IMPLEMENTS THE USER'S CHOICE, NOT THE DESIGN DOC'S. A future reader who opens the design
+        doc and finds the looser rule recommended there should not conclude this file is wrong -
+        the design doc records a recommendation that was NOT the one taken.
+
+        WHY THIS BOUNDARY, IN THE USER'S OWN TERMS: a principal approves a specific disposition
+        path at Approval #1 (Sale_Decision_Approval), and nothing downstream of THAT approval may
+        change it. Sale_Decision_Approval's entry criterion is Disposition_Stage__c =
+        'Disposition Readiness' - so "past Readiness" and "past the sale decision" are the SAME
+        boundary. That is why the lock starts at 'BOV Outreach' and not one stage later: by the
+        time a disposition reaches 'BOV Outreach' the sale-decision approval has already run, and
+        the path it approved is meant to stick.
+
+        CONSEQUENCE WORTH STATING: an OFF-MARKET disposition never passes through 'BOV Outreach'
+        at all - that value is excluded from the Off_Market record type's Disposition_Stage__c
+        set (Off_Market's sequence is Readiness, Broker Selection, NDA, Release Materials, Offer
+        Selection, LOI, PSA, Closing, Sale Closes - see Disposition_Stage__c's own header). So the
+        NOW-REMOVED 'BOV Outreach' exemption in the design doc's looser proposal would only ever
+        have applied to ON-MARKET deals; an off-market disposition would already have locked one
+        stage earlier than an on-market one under that looser rule. Under THIS boundary (locked
+        from BOV Outreach) both record types behave IDENTICALLY: changeable at Readiness, locked
+        from the very next stage onward, whatever that stage is called on either path.
+
+        THE STAGE TEST IS STILL AN EXCLUSION LIST, NOT A RANK COMPARISON, AND THAT IS STILL
+        DELIBERATE - the two record types have different stage sequences (On_Market 11 stages,
+        Off_Market 9), so no single numeric stage index means the same thing on both paths. With
+        only ONE free stage now, the exclusion list has shrunk to a single ISPICKVAL term, but the
+        reasoning for using ISPICKVAL rather than an index is unchanged.
+
+        =====================================================================================
+        🔴 $Permission MUST BE THE THREE-SEGMENT FORM: {!$Permission.<Name>}.
+        =====================================================================================
+        {!$CustomPermission.<Name>} is REJECTED by the Metadata API - measured on this project
+        2026-08-12. Account.Record_Type_Is_Immutable's working spelling
+        (NOT($Permission.Lead_Convert_Account_RecordType_Stamp)) is the template copied here
+        verbatim in shape, substituting Disposition_Record_Type_Override.
+
+        🔴 THIS RULE'S CUSTOM PERMISSION, customPermissions/Disposition_Record_Type_Override, MUST
+        LAND IN THE SAME OR AN EARLIER DEPLOY THAN THIS FILE. If this rule deploys first, the
+        merge field resolves to a permission that does not yet exist - which the platform accepts
+        (it simply evaluates false, so nobody can override, rather than failing the deploy) but
+        means the admin escape hatch does not function until the permission both exists AND is
+        assigned via the consolidated permission-set pass.
+
+        =====================================================================================
+        errorDisplayField -> Disposition_Stage__c, matching the two sibling rules on this object
+        (All_NDAs_Signed_Before_Progression, Wire_Complete_Before_Sale_Closes) which both anchor
+        their error there rather than on the field that actually changed.
+        =====================================================================================
+
+        =====================================================================================
+        ⚠ TWO SWEEPS OWED TO THE DEVELOPER AGENT, NOT PERFORMED BY THIS FILE.
+        =====================================================================================
+        1. Grep whether anything writes Disposition__c.RecordTypeId AFTER insert anywhere in the
+           Apex codebase. Nothing was found in the paths read while designing this change, but
+           the sweep itself is explicit developer scope (design doc §4).
+        2. TestDataFactory.dispositionRecordTypeId DELIBERATELY DEGRADES TO NO RECORD TYPE when
+           the type is absent or unavailable ("an undeployed record type must not turn every
+           disposition test in the repo red"). A test that later tries to stamp a record type
+           onto an ALREADY-INSERTED fixture (NOT(ISNEW()) making it a change, not a create) would
+           now be refused by this rule for the first time. Sweep owed, not performed here.
+
+        FLS: unaffected - this is a validation rule, not a field grant.
+
+        Risk: MEDIUM - the custom permission is a new dependency this rule cannot function
+        correctly without. The stage boundary itself is NOT a judgement call left open here; it
+        is a settled user decision (Gate 1, 2026-08-31) - see the LOCK BOUNDARY block above.
+    -->
+    <fullName>Record_Type_Is_Immutable</fullName>
+    <active>true</active>
+    <description>A disposition&apos;s record type cannot change once BOV Outreach or later stages begin - the principal already approved a specific path at the sale-decision approval, whose entry criterion is Disposition Readiness.</description>
+    <errorConditionFormula>AND(
+    NOT(ISNEW()),
+    ISCHANGED(RecordTypeId),
+    NOT(ISPICKVAL(Disposition_Stage__c, &apos;Disposition Readiness&apos;)),
+    NOT($Permission.Disposition_Record_Type_Override)
+)</errorConditionFormula>
+    <errorDisplayField>Disposition_Stage__c</errorDisplayField>
+    <errorMessage>This disposition&apos;s record type cannot be changed once the sale-decision approval has run. The principal already approved a specific on-market or off-market path. Contact a system administrator if this was filed under the wrong path.</errorMessage>
+</ValidationRule>

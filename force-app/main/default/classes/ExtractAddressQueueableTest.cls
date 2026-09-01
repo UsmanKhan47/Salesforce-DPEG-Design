@@ -2559,7 +2559,16 @@ private class ExtractAddressQueueableTest {
         Inbound_Email_Staging__c staging = insertForwardedByCoordinator(
             'usmankhan-96@hotmail.example.invalid',
             'Deal for you',
-            'Hi team — take a look at this one and let me know. Thanks.',
+            // ⚠ THE BODY-NAMED BROKER'S ADDRESS WAS ADDED HERE 2026-08-31 WITH SEQUENCING DEFECT
+            // A, for the same reason it was added to `listingBrokerAlreadySet_isNotOverwritten`
+            // on the same day: THE FIXTURE WAS UNREALISTIC WITHOUT IT. This test's premise is
+            // that THE BODY NAMES A DIFFERENT BROKER — and a body that names one writes their
+            // address down. Under the old body the model was returning an address appearing
+            // nowhere in the email, which is precisely the fabrication shape the grounding guard
+            // now refuses on its post-demotion pass. Stating it leaves this test measuring the
+            // one thing it is named for: the identity swap.
+            'Hi team — take a look at this one and let me know. Mark Stern, '
+            + 'mark.stern@jll.example.invalid, is running it. Thanks.',
             'msg-u1-swap@example.invalid');
         setBodyBrokerMock('mark.stern@jll.example.invalid', '900 Sender First Rd');
 
@@ -2831,7 +2840,12 @@ private class ExtractAddressQueueableTest {
         Inbound_Email_Staging__c staging = insertForwardedByCoordinator(
             'colleague@jll.example.invalid',
             'Passing this to you',
-            'Mark asked me to send this over.',
+            // ⚠ ADDRESS ADDED 2026-08-31 (SEQUENCING DEFECT A) — same reason as
+            // `envelopeBroker_bodyNamesADifferentContact_swapsIdentity`: the demoted address must
+            // be one the email actually states, or the post-demotion grounding pass correctly
+            // refuses it and this test stops measuring the same-firm company retention it is
+            // named for.
+            'Mark asked me to send this over — mark.stern@jll.example.invalid.',
             'msg-u1-samefirm@example.invalid');
         setBodyBrokerMock('mark.stern@jll.example.invalid', '908 Same Firm St');
 
@@ -2910,7 +2924,16 @@ private class ExtractAddressQueueableTest {
         Inbound_Email_Staging__c staging = insertForwardedByCoordinator(
             'forwarder.person@hotmail.example.invalid',
             'Passing this along',
-            'Thought this might interest you.',
+            // ⚠ THE LISTING BROKER'S ADDRESS WAS ADDED TO THIS BODY 2026-08-31 WITH FIX 3 (THE
+            // ACCEPTANCE-RUN GROUNDING GUARD — not the 2026-08-03 "FIX 1"/"FIX 2" series), AND
+            // THE FIXTURE WAS UNREALISTIC WITHOUT IT. This test's premise is that a populated
+            // listing_broker_email is an EXPLICIT model call; under the old body the model was
+            // returning an address that appeared NOWHERE in the email, which is exactly the
+            // fabrication `dropUngroundedListingBrokerEmail` now refuses. Grounding it makes the
+            // fixture the shape it always claimed to be and leaves this test measuring the one
+            // thing it is named for: the demotion is FILL-IF-BLANK.
+            'Thought this might interest you. Listing broker: Alex Lister, '
+            + 'alex.lister@listingco.example.invalid.',
             'msg-u1-listing-kept@example.invalid');
         Test.setMock(HttpCalloutMock.class, new LLMExtractionCalloutMock(200,
             LLMExtractionCalloutMock.enrichedBody(new Map<String, Object>{
@@ -2960,6 +2983,469 @@ private class ExtractAddressQueueableTest {
             'THE DEMOTED CONTACT IS STILL RECOVERABLE: with the listing slot already occupied, the '
             + 'staging row\'s Extracted_JSON__c is the only record of who the body named — which is '
             + 'why removing the note is safe ONLY as long as that field keeps the raw response');
+    }
+
+    // ── FIX 3 (2026-08-31 ACCEPTANCE RUN): the listing-broker address grounding guard ───────
+    //
+    // ⚠ THE NUMBER IS NOT A SEQUEL TO THE "FIX 1"/"FIX 2" COMMENTS ELSEWHERE IN THIS CLASS —
+    // those belong to the unrelated 2026-08-03 extraction-completeness series.
+    //
+    // 🔴 THESE TWO TESTS ARE A PAIR AND NEITHER MEANS ANYTHING ALONE. The positive one is
+    // satisfied by a guard that drops EVERY listing address; the negative control is satisfied by
+    // no guard at all. Run or delete them together.
+    //
+    // ⚠ WHY THE GUARD IS TESTABLE AND THE PROMPT RULE SHIPPED ALONGSIDE IT IS NOT: the model is
+    // mocked in every test in this repo, so the prompt sentence added in the same change
+    // ("listing_broker_email must be an address WRITTEN IN THE EMAIL") cannot be exercised here
+    // at all. That asymmetry is the whole argument for the code-side guard — see
+    // `ExtractAddressQueueable.dropUngroundedListingBrokerEmail`'s header.
+
+    @isTest
+    static void fabricatedListingBrokerEmail_isDroppedAndRecordedOnDealNotes() {
+        // THE MEASURED DEFECT, reproduced. Lead 00Qiw000000wuY7EAI carried
+        // Listing_Broker_Email__c = info@nordhavencommercial.com for an email whose body contains
+        // no '@' character at all — the model built a plausible address out of the firm name in
+        // the signature block, and it landed on a field a human reads as "who do I call".
+        String body = 'Nordhaven Commercial is pleased to present Nordhaven Plaza, a 12-suite '
+            + 'neighborhood center. Listing broker: Yvette Marchetti. Please call the office for '
+            + 'the full offering memorandum.';
+        String subject = 'Nordhaven Plaza offering';
+        Assert.isFalse((subject + body).contains('@'),
+            'FIXTURE PRECONDITION: the source text must contain NO email address at all, or this '
+            + 'test could pass because the guard matched something rather than because it '
+            + 'refused a fabrication');
+
+        Inbound_Email_Staging__c staging = insertStaging(
+            'dana.pitch@brokerfirm.example.invalid', 'coordinator@dpeg.example.invalid',
+            subject, body, 'msg-fix3-fabricated@example.invalid', null, null);
+        // broker_email EQUALS the envelope, so applySenderFirstBrokerIdentity is a no-op and
+        // nothing but the guard can touch the listing slot.
+        Test.setMock(HttpCalloutMock.class, new LLMExtractionCalloutMock(200,
+            LLMExtractionCalloutMock.enrichedBody(new Map<String, Object>{
+                'email_category' => 'acquisition_deal',
+                'is_acquisition_related' => true,
+                'confidence' => 0.95,
+                'broker_name' => 'Dana Pitch',
+                'broker_email' => 'dana.pitch@brokerfirm.example.invalid',
+                'listing_broker_name' => 'Yvette Marchetti',
+                'listing_broker_email' => 'info@nordhavencommercial.example.invalid',
+                'sent_datetime' => ''
+            }, new List<Map<String, Object>>{
+                new Map<String, Object>{ 'property_address' => '905 Nordhaven Plaza' }
+            })));
+
+        Test.startTest();
+        System.enqueueJob(new ExtractAddressQueueable(staging.Id, null, null));
+        Test.stopTest();
+
+        Id leadId = [
+            SELECT Result_Record_Id__c FROM Inbound_Email_Staging__c WHERE Id = :staging.Id
+        ].Result_Record_Id__c;
+        Lead created = [
+            SELECT Email, Listing_Broker_Email__c, Listing_Broker_Name__c, Deal_Notes__c,
+                   Fields_Captured_Count__c, Fields_Missing_Count__c
+            FROM Lead WHERE Id = :leadId
+        ];
+
+        Assert.isNull(created.Listing_Broker_Email__c,
+            'THE FIX: an address the email never states must not reach a contactable field. A '
+            + 'plausible-looking invented address is worse than an empty one, because somebody '
+            + 'will write to it');
+        Assert.areEqual('Yvette Marchetti', created.Listing_Broker_Name__c,
+            'THE NAME IS DELIBERATELY NOT GUARDED and must survive. Measured on the live '
+            + 'defect, the name path behaved correctly; a literal-substring test on a name would '
+            + 'drop legitimate re-spacings ("Y. Marchetti") — see the guard\'s header');
+        Assert.areEqual('dana.pitch@brokerfirm.example.invalid', created.Email,
+            'AND THE CLAIM VALUE IS UNTOUCHED. broker_email is half the Property_Registry__c key '
+            + 'and is deliberately outside this guard\'s scope');
+        Assert.isTrue(
+            created.Deal_Notes__c != null
+                && created.Deal_Notes__c.contains('info@nordhavencommercial.example.invalid'),
+            'THE DISCARDED VALUE IS RECORDED, NOT SILENTLY DESTROYED — the parser\'s "every '
+            + 'rejection reaches a human" contract. Actual: ' + created.Deal_Notes__c);
+
+        // 🔴 THE SCORE MOVES WITH THE GUARD, AND THIS PINS IT (code review W2, 2026-08-31).
+        // `listing_broker_email` is 1 of only 9 members of ExtractionScoreUtil.SCORED_KEYS, and
+        // the score is computed on WHAT THE LEAD CARRIES — so dropping the fabrication also costs
+        // one captured key. That is the correct answer (the Lead genuinely captured no listing
+        // broker email) but it is a movement in a denominator signed off 2026-08-14, so it is
+        // asserted rather than left implicit.
+        //
+        // The expected numbers are DERIVED FROM THE FIXTURE, not copied from a passing run. Of
+        // the nine keys this email supplies exactly three: property_address ('905 Nordhaven
+        // Plaza'), listing_broker_name ('Yvette Marchetti') and listing_broker_email (the
+        // fabrication). The guard removes the third, so 2 captured / 7 missing. ⚠ THE 2 IS THE
+        // FALSIFIER: without the guard this line reads 3, so an edit that stands the guard down
+        // fails HERE as well as on the isNull assertion above.
+        Assert.areEqual(2, created.Fields_Captured_Count__c,
+            'THE DROPPED KEY IS ALSO A LOST CAPTURE. property_address + listing_broker_name '
+            + 'survive; the fabricated listing_broker_email does not, so this reads 2 and not 3');
+        Assert.areEqual(7, created.Fields_Missing_Count__c,
+            'and the missing count moves with it — captured + missing must always equal '
+            + 'ExtractionScoreUtil.DENOMINATOR (9)');
+        Assert.areEqual(ExtractionScoreUtil.DENOMINATOR,
+            created.Fields_Captured_Count__c + created.Fields_Missing_Count__c,
+            'the two counts are stated against the CONSTANT, so a future change to the nine-key '
+            + 'denominator surfaces here instead of quietly re-basing the percentage');
+    }
+
+    @isTest
+    static void statedListingBrokerEmail_survivesTheGroundingGuard() {
+        // 🔴 THE NEGATIVE CONTROL. Without it, a guard that unconditionally nulls
+        // listing_broker_email passes the test above and this suite reports a working fix while
+        // silently destroying every legitimate listing contact.
+        String body = 'Off-market introduction for Marchetti Commons. Listing broker: Yvette '
+            + 'Marchetti, yvette.marchetti@nordhaven.example.invalid.';
+        Inbound_Email_Staging__c staging = insertStaging(
+            'dana.pitch@brokerfirm.example.invalid', 'coordinator@dpeg.example.invalid',
+            'Marchetti Commons', body, 'msg-fix3-grounded@example.invalid', null, null);
+        Test.setMock(HttpCalloutMock.class, new LLMExtractionCalloutMock(200,
+            LLMExtractionCalloutMock.enrichedBody(new Map<String, Object>{
+                'email_category' => 'acquisition_deal',
+                'is_acquisition_related' => true,
+                'confidence' => 0.95,
+                'broker_name' => 'Dana Pitch',
+                'broker_email' => 'dana.pitch@brokerfirm.example.invalid',
+                'listing_broker_name' => 'Yvette Marchetti',
+                'listing_broker_email' => 'yvette.marchetti@nordhaven.example.invalid',
+                'sent_datetime' => ''
+            }, new List<Map<String, Object>>{
+                new Map<String, Object>{ 'property_address' => '906 Marchetti Commons' }
+            })));
+
+        Test.startTest();
+        System.enqueueJob(new ExtractAddressQueueable(staging.Id, null, null));
+        Test.stopTest();
+
+        Id leadId = [
+            SELECT Result_Record_Id__c FROM Inbound_Email_Staging__c WHERE Id = :staging.Id
+        ].Result_Record_Id__c;
+        Lead created = [
+            SELECT Listing_Broker_Email__c, Deal_Notes__c FROM Lead WHERE Id = :leadId
+        ];
+
+        Assert.areEqual('yvette.marchetti@nordhaven.example.invalid',
+            created.Listing_Broker_Email__c,
+            'AN ADDRESS THE EMAIL ACTUALLY STATES MUST SURVIVE. If this goes red the guard has '
+            + 'become a blanket delete and the feature it protects is gone');
+        Assert.isFalse(
+            created.Deal_Notes__c != null && created.Deal_Notes__c.contains('was discarded'),
+            'and no rejection note is written for a value that was kept. Actual: '
+            + created.Deal_Notes__c);
+    }
+
+    @isTest
+    static void subjectOnlyListingBrokerEmail_survivesTheGroundingGuard() {
+        // ⚠ THE SOURCE TEXT IS SUBJECT + BODY, NOT THE BODY ALONE — `buildLlmText` prepends
+        // 'Subject: ...' before the callout, so an address quoted only in the subject line was
+        // genuinely in front of the model and must not be treated as invented. This is the same
+        // correction the exemplar-leak sweep needed, and a body-only guard would fail HERE.
+        String subject = 'FW: Marchetti Commons — from yvette.marchetti@nordhaven.example.invalid';
+        String body = 'Passing this along, see below.';
+        Assert.isFalse(body.contains('@'),
+            'FIXTURE PRECONDITION: the BODY must carry no address, or this test would pass under '
+            + 'a body-only guard and prove nothing about the subject line');
+
+        Inbound_Email_Staging__c staging = insertStaging(
+            'dana.pitch@brokerfirm.example.invalid', 'coordinator@dpeg.example.invalid',
+            subject, body, 'msg-fix3-subject@example.invalid', null, null);
+        Test.setMock(HttpCalloutMock.class, new LLMExtractionCalloutMock(200,
+            LLMExtractionCalloutMock.enrichedBody(new Map<String, Object>{
+                'email_category' => 'acquisition_deal',
+                'is_acquisition_related' => true,
+                'confidence' => 0.95,
+                'broker_name' => 'Dana Pitch',
+                'broker_email' => 'dana.pitch@brokerfirm.example.invalid',
+                'listing_broker_name' => 'Yvette Marchetti',
+                'listing_broker_email' => 'yvette.marchetti@nordhaven.example.invalid',
+                'sent_datetime' => ''
+            }, new List<Map<String, Object>>{
+                new Map<String, Object>{ 'property_address' => '907 Subject Line Way' }
+            })));
+
+        Test.startTest();
+        System.enqueueJob(new ExtractAddressQueueable(staging.Id, null, null));
+        Test.stopTest();
+
+        Id leadId = [
+            SELECT Result_Record_Id__c FROM Inbound_Email_Staging__c WHERE Id = :staging.Id
+        ].Result_Record_Id__c;
+        Assert.areEqual('yvette.marchetti@nordhaven.example.invalid',
+            [SELECT Listing_Broker_Email__c FROM Lead WHERE Id = :leadId].Listing_Broker_Email__c,
+            'AN ADDRESS STATED ONLY IN THE SUBJECT LINE IS STILL IN THE EMAIL THE MODEL WAS '
+            + 'GIVEN. Guarding against the body alone would discard it');
+    }
+
+    // ── SEQUENCING DEFECT A + DEFECT B (2026-08-31) ─────────────────────────────────────────
+    //
+    // 🔴 THE THREE TESTS ABOVE COULD NOT HAVE CAUGHT DEFECT A, AND THAT IS THE POINT. Every one
+    // of them sets `listing_broker_email` DIRECTLY in the mock, so the guard's blank-skip is
+    // never reached and `demoteBodyBroker`'s fill-if-blank never runs. The defect lives entirely
+    // on the path where the model returns the listing key EMPTY and puts its fabrication in
+    // `broker_email` instead — a path with no coverage at all until these tests. The four below
+    // enter the demotion, which is where the field's LAST WRITER actually is.
+    //
+    // 🔴 STILL A PAIR-OF-PAIRS, AND STILL MEANINGLESS SPLIT UP. The first two are the
+    // fabricated/grounded pair for the post-demotion pass (a guard that drops everything passes
+    // the first alone). The second two are the preserve/clear pair for the conditional contact
+    // block (a fix that never clears passes the third alone). Run or delete them in pairs.
+    //
+    // ⚠ NO 251-RECORD BULK TEST, PER `.claude/rules/bulk-test-rule.md`'s per-transaction-singleton
+    // exemption — the same one this class already carries and states. `dropUngroundedListing-
+    // BrokerEmail`, `demoteBodyBroker` and `isMistypedSenderAddress` are all EMAIL-LEVEL: one
+    // staging row, one queueable execution, no trigger, no loop, and they sit OUTSIDE the
+    // per-property loop entirely. There is no second batch chunk for 251 records to force, and
+    // all three are pure in-memory mutations of an already-loaded DTO — zero SOQL and zero DML,
+    // which `budget_singleProperty_...` already asserts against a named ceiling.
+
+    @isTest
+    static void fabricatedBrokerEmail_demotedIntoTheListingSlot_isDropped() {
+        // 🔴 THIS IS THE TEST THAT WOULD HAVE CAUGHT SEQUENCING DEFECT A, AND IT IS WRITTEN TO
+        // THE EXACT SEQUENCE READ OFF THE LIVE EXTRACTION JSON:
+        //   1. the model returns `listing_broker_email` EMPTY — the prompt bullet WORKED;
+        //   2. the guard's first call hits the blank-skip and returns, correctly;
+        //   3. the model's fabrication is in `broker_email` instead, which this guard
+        //      deliberately never touches;
+        //   4. the demotion's FILL-IF-BLANK copies that unguarded value into the slot the guard
+        //      had just skipped.
+        // Live consequence: Lead 00Qiw000000xEVBEA2 carried
+        // `Listing_Broker_Email__c = info@kestrelmoor.com` on a subject and body containing no
+        // '@' at all. With only the pre-2026-08-31 "before the demotion" call, this test reads
+        // the fabricated address instead of null and goes red — which is the falsifier.
+        String subject = 'Kestrel Moor — medical office offering';
+        String body = 'Kestrel Moor Advisors is pleased to present a 42,000 sq ft medical office '
+            + 'building. Please call the office for the offering memorandum.';
+        Assert.isFalse((subject + body).contains('@'),
+            'FIXTURE PRECONDITION: the source text must contain NO address at all, or this test '
+            + 'could pass because the guard matched something rather than because it refused a '
+            + 'fabrication');
+
+        Inbound_Email_Staging__c staging = insertStaging(
+            'dana.pitch@brokerfirm.example.invalid', 'coordinator@dpeg.example.invalid',
+            subject, body, 'msg-defectA-demoted@example.invalid', null, null);
+        Test.setMock(HttpCalloutMock.class, new LLMExtractionCalloutMock(200,
+            LLMExtractionCalloutMock.enrichedBody(new Map<String, Object>{
+                'email_category' => 'acquisition_deal',
+                'is_acquisition_related' => true,
+                'confidence' => 0.95,
+                'broker_name' => 'Priya Raman',
+                // THE FABRICATION, in broker_email rather than the listing key. A DIFFERENT local
+                // part from the envelope on purpose: this test is about SEQUENCING only, and a
+                // matching local part would also engage the Defect B same-person branch and
+                // conflate the two.
+                'broker_email' => 'info@kestrelmoor.example.invalid',
+                // 🔴 THE EMPTY LISTING KEY IS THE WHOLE FIXTURE. Setting it, as all three earlier
+                // grounding tests do, is what made this defect invisible.
+                'listing_broker_email' => '',
+                'sent_datetime' => ''
+            }, new List<Map<String, Object>>{
+                new Map<String, Object>{ 'property_address' => '910 Kestrel Moor Way' }
+            })));
+
+        Test.startTest();
+        System.enqueueJob(new ExtractAddressQueueable(staging.Id, null, null));
+        Test.stopTest();
+
+        Id leadId = [
+            SELECT Result_Record_Id__c FROM Inbound_Email_Staging__c WHERE Id = :staging.Id
+        ].Result_Record_Id__c;
+        Lead created = [
+            SELECT Email, Listing_Broker_Email__c, Listing_Broker_Name__c, Deal_Notes__c
+            FROM Lead WHERE Id = :leadId
+        ];
+
+        Assert.isNull(created.Listing_Broker_Email__c,
+            'THE FIX: the guard must be the LAST WRITER of the field it protects. A fabrication '
+            + 'that reaches the slot via the demotion is no less contactable than one the model '
+            + 'put there directly');
+        Assert.areEqual('dana.pitch@brokerfirm.example.invalid', created.Email,
+            'AND broker_email IS STILL UNTOUCHED BY THIS GUARD — U1 overwrote it with the '
+            + 'envelope sender, which is the backstop that makes guarding it unnecessary and the '
+            + 'reason half the Property_Registry__c claim key stays out of scope');
+        Assert.areEqual('Priya Raman', created.Listing_Broker_Name__c,
+            'THE DEMOTED NAME STILL LANDS. The name path is deliberately unguarded, so the fix '
+            + 'removes the invented address without discarding who the model said was selling');
+        Assert.isTrue(
+            created.Deal_Notes__c != null
+                && created.Deal_Notes__c.contains('info@kestrelmoor.example.invalid'),
+            'and the discarded value is recorded rather than silently destroyed, on the demoted '
+            + 'path too. Actual: ' + created.Deal_Notes__c);
+    }
+
+    @isTest
+    static void statedBodyBrokerEmail_demotedIntoTheListingSlot_survives() {
+        // 🔴 THE GROUNDED NEGATIVE CONTROL FOR THE SAME PATH. Without it, a second guard call
+        // that dropped EVERY demoted address would pass the test above and this suite would
+        // report a working fix while destroying the listing contact on every ordinary
+        // coordinator-forwarded email — the exact information-recovery behaviour the first call
+        // exists to produce.
+        String body = 'Forwarding this on. The listing is being run by Priya Raman, '
+            + 'priya.raman@kestrelmoor.example.invalid — she has the full OM.';
+        Inbound_Email_Staging__c staging = insertStaging(
+            'dana.pitch@brokerfirm.example.invalid', 'coordinator@dpeg.example.invalid',
+            'Kestrel Moor medical office', body, 'msg-defectA-grounded@example.invalid',
+            null, null);
+        Test.setMock(HttpCalloutMock.class, new LLMExtractionCalloutMock(200,
+            LLMExtractionCalloutMock.enrichedBody(new Map<String, Object>{
+                'email_category' => 'acquisition_deal',
+                'is_acquisition_related' => true,
+                'confidence' => 0.95,
+                'broker_name' => 'Priya Raman',
+                'broker_email' => 'priya.raman@kestrelmoor.example.invalid',
+                'listing_broker_email' => '',
+                'sent_datetime' => ''
+            }, new List<Map<String, Object>>{
+                new Map<String, Object>{ 'property_address' => '911 Kestrel Moor Way' }
+            })));
+
+        Test.startTest();
+        System.enqueueJob(new ExtractAddressQueueable(staging.Id, null, null));
+        Test.stopTest();
+
+        Id leadId = [
+            SELECT Result_Record_Id__c FROM Inbound_Email_Staging__c WHERE Id = :staging.Id
+        ].Result_Record_Id__c;
+        Lead created = [
+            SELECT Email, Listing_Broker_Email__c, Deal_Notes__c FROM Lead WHERE Id = :leadId
+        ];
+
+        Assert.areEqual('priya.raman@kestrelmoor.example.invalid', created.Listing_Broker_Email__c,
+            'A DEMOTED ADDRESS THE EMAIL ACTUALLY STATES MUST SURVIVE THE SECOND CALL. This is '
+            + 'the whole point of running the guard twice rather than moving it: call 1 empties '
+            + 'the slot so this real address can be demoted into it, and call 2 must then let it '
+            + 'stand');
+        Assert.areEqual('dana.pitch@brokerfirm.example.invalid', created.Email,
+            'the identity swap still happened — this test constrains only what survives it');
+        Assert.isFalse(
+            created.Deal_Notes__c != null && created.Deal_Notes__c.contains('was discarded'),
+            'and no rejection note is written for a value that was kept. Actual: '
+            + created.Deal_Notes__c);
+    }
+
+    @isTest
+    static void mistypedSenderDomain_keepsTheEnvelopeSendersPhoneAndTitle() {
+        // 🔴 DEFECT B, REPRODUCED FROM THE MEASURED PAIR. Same broker, same sender, hours apart:
+        //   14:10 `00Qiw000000wtx0EAA` — Phone 4695550288, Title "Senior Vice President, ..."
+        //   18:30 `00Qiw000000x9fCEAQ` — Phone null, Title null, plus an invented listing address
+        // The email genuinely carried that phone and that title and they belong to the ENVELOPE
+        // SENDER, a registered broker. They were destroyed because the model mistyped ONE WORD of
+        // the sender's own domain in an unrelated field, which was enough to make
+        // `sender != broker_email` and fire a demotion of the sender onto themselves.
+        //
+        // ⚠ THIS TEST ALSO PROVES THE TWO FIXES COMPOSE: the same mistyped address is preserved
+        // as an identity signal AND refused as a contactable value, in one run.
+        String body = 'Following up on Beacon Ridge Medical Plaza. Happy to walk you through the '
+            + 'rent roll whenever suits.';
+        Assert.isFalse(body.containsIgnoreCase('beaconridge.example.invalid'),
+            'FIXTURE PRECONDITION: the mistyped address must appear NOWHERE in the source text — '
+            + 'that absence is the discriminator the same-person test turns on, not the domain '
+            + 'similarity');
+
+        Inbound_Email_Staging__c staging = insertStaging(
+            'tomas.berger@beaconridgeadvisors.example.invalid', 'coordinator@dpeg.example.invalid',
+            'Beacon Ridge Medical Plaza', body, 'msg-defectB-nearmiss@example.invalid',
+            null, null);
+        Test.setMock(HttpCalloutMock.class, new LLMExtractionCalloutMock(200,
+            LLMExtractionCalloutMock.enrichedBody(new Map<String, Object>{
+                'email_category' => 'acquisition_deal',
+                'is_acquisition_related' => true,
+                'confidence' => 0.95,
+                'broker_name' => 'Tomas Berger',
+                // SAME LOCAL PART, ONE WORD DROPPED FROM THE DOMAIN, PRESENT NOWHERE IN THE TEXT.
+                'broker_email' => 'tomas.berger@beaconridge.example.invalid',
+                'broker_phone' => '469-555-0288',
+                'broker_mobile' => '469-555-0290',
+                'broker_title' => 'Senior Vice President, Healthcare Real Estate',
+                'listing_broker_email' => '',
+                'sent_datetime' => ''
+            }, new List<Map<String, Object>>{
+                new Map<String, Object>{ 'property_address' => '912 Beacon Ridge Plaza' }
+            })));
+
+        Test.startTest();
+        System.enqueueJob(new ExtractAddressQueueable(staging.Id, null, null));
+        Test.stopTest();
+
+        Id leadId = [
+            SELECT Result_Record_Id__c FROM Inbound_Email_Staging__c WHERE Id = :staging.Id
+        ].Result_Record_Id__c;
+        Lead created = [
+            SELECT Email, Phone, Title, Listing_Broker_Email__c FROM Lead WHERE Id = :leadId
+        ];
+
+        Assert.areEqual('tomas.berger@beaconridgeadvisors.example.invalid', created.Email,
+            'THE DEMOTION STILL HAPPENED — the envelope still wins the identity. Defect B changes '
+            + 'only what the demotion DESTROYS on the way, never who it names');
+        Assert.areEqual('469-555-0288', created.Phone,
+            'THE FIX: a real phone number belonging to the ENVELOPE SENDER must survive a demotion '
+            + 'of that same person onto themselves. Before this change it was nulled because the '
+            + 'model mistyped one word in an unrelated field');
+        Assert.areEqual('Senior Vice President, Healthcare Real Estate', created.Title,
+            'and so must their real job title');
+        Assert.isNull(created.Listing_Broker_Email__c,
+            'AND THE MISTYPED ADDRESS ITSELF IS STILL REFUSED. It is good enough to identify the '
+            + 'sender and NOT good enough to write to — the near-miss is the dangerous shape '
+            + 'precisely because it looks real');
+    }
+
+    @isTest
+    static void roleMailboxDemotion_stillClearsThePhoneAndTitle() {
+        // 🔴 THE FALSIFIER FOR THE SAME-PERSON EXCEPTION, AND THE PROOF THAT DEFECT B DID NOT
+        // UNDO THE ROLE-MAILBOX CARVE-OUT THAT SHIPPED THE SAME DAY. Everything here matches the
+        // test above EXCEPT the local part: both sides read `listings@`, which is a shared
+        // mailbox, not an identity — `listings@firm-a` and `listings@firm-b` are not the same
+        // person, and the contact details the model attached belong to whoever the BODY firm put
+        // behind theirs. Delete `ROLE_LOCAL_PARTS` from `isMistypedSenderAddress` and this test
+        // goes red while the near-miss test above still passes; that asymmetry is what makes the
+        // exception a rule rather than a hole.
+        //
+        // ⚠ THE OTHER HALF OF THE CARVE-OUT NEEDS NO TEST BECAUSE IT HOLDS BY CONSTRUCTION: the
+        // conditional branch can only ever REFRAIN FROM CLEARING a value the model already
+        // returned; it never writes one. So when the prompt's carve-out correctly leaves
+        // broker_phone / broker_mobile / broker_title EMPTY for a role mailbox, empty is what
+        // reaches the Lead whichever way the branch goes.
+        String body = 'New listing announcement — Kestrel Moor medical office, 42,000 sq ft. '
+            + 'Full details on the listing page.';
+        Inbound_Email_Staging__c staging = insertStaging(
+            'listings@crexi-listings.example.invalid', 'coordinator@dpeg.example.invalid',
+            'New listing — Kestrel Moor', body, 'msg-defectB-rolemailbox@example.invalid',
+            null, null);
+        Test.setMock(HttpCalloutMock.class, new LLMExtractionCalloutMock(200,
+            LLMExtractionCalloutMock.enrichedBody(new Map<String, Object>{
+                'email_category' => 'acquisition_deal',
+                'is_acquisition_related' => true,
+                'confidence' => 0.95,
+                'broker_name' => 'Kestrel Moor Advisors',
+                // SAME COMPACTED LOCAL PART as the envelope, different domain, absent from the
+                // text — identical in every respect to the near-miss fixture except that
+                // `listings` names a mailbox rather than a human.
+                'broker_email' => 'listings@kestrelmoor.example.invalid',
+                'broker_phone' => '469-555-0311',
+                'broker_title' => 'Director, Investment Sales',
+                'listing_broker_email' => '',
+                'sent_datetime' => ''
+            }, new List<Map<String, Object>>{
+                new Map<String, Object>{ 'property_address' => '913 Kestrel Moor Way' }
+            })));
+
+        Test.startTest();
+        System.enqueueJob(new ExtractAddressQueueable(staging.Id, null, null));
+        Test.stopTest();
+
+        Id leadId = [
+            SELECT Result_Record_Id__c FROM Inbound_Email_Staging__c WHERE Id = :staging.Id
+        ].Result_Record_Id__c;
+        Lead created = [SELECT Email, Phone, Title FROM Lead WHERE Id = :leadId];
+
+        Assert.areEqual('listings@crexi-listings.example.invalid', created.Email,
+            'the envelope still wins the identity on this path too');
+        Assert.isNull(created.Phone,
+            'THE DEMOTION\'S ORIGINAL INTENT MUST KEEP WORKING. A shared mailbox is not a person, '
+            + 'so a phone number attached to a DIFFERENT firm\'s listings@ address must not be '
+            + 'attributed to this sender — that mis-attribution is exactly what the clearing '
+            + 'exists to prevent, and Defect B narrowed it without removing it');
+        Assert.isNull(created.Title,
+            'and the same for the title — the two move together or the exception has a hole');
     }
 
     @isTest
@@ -3048,9 +3534,15 @@ private class ExtractAddressQueueableTest {
         Assert.isTrue(ExtractAddressQueueable.lastRunQueryCount <= singlePropertyQueryBudget,
             'GOVERNOR HEADROOM: a single-property email consumed '
             + ExtractAddressQueueable.lastRunQueryCount + ' SOQL queries against a budget of '
-            + singlePropertyQueryBudget + '. U1 must add NONE — if this fails, someone has given '
-            + 'the override a database lookup (most likely a second findBrokerSubmission on the '
-            + 'demoted address, which the design explicitly rejects: +1 query PER PROPERTY)');
+            + singlePropertyQueryBudget + '. U1 itself must add NONE — if this fails, someone has '
+            + 'given the override a database lookup (most likely a second findBrokerSubmission on '
+            + 'the demoted address, which the design explicitly rejects: +1 query PER PROPERTY). '
+            + 'AMENDED 2026-08-31: the ONE known-and-approved addition to this path is '
+            + 'BrokerProtectionConfig.extractionPromptOverride() reading the Setup prompt through '
+            + 'BrokerProtectionConfigSelector — the fix for the getInstance() 255-char truncation '
+            + 'P0. That is +1 for the whole transaction, NOT +1 per property (the promptLoaded '
+            + 'cache, pinned by BrokerProtectionConfigTest), and this ceiling absorbs it. Do not '
+            + 'read a failure here as that change regressing');
         Assert.isTrue(ExtractAddressQueueable.lastRunDmlCount <= singlePropertyDmlBudget,
             'GOVERNOR HEADROOM: consumed ' + ExtractAddressQueueable.lastRunDmlCount
             + ' DML statements against a budget of ' + singlePropertyDmlBudget + ' (async cap 150)');
@@ -4391,7 +4883,14 @@ private class ExtractAddressQueueableTest {
         Inbound_Email_Staging__c staging = insertStaging(
             'listings@buildout.example.invalid', 'coordinator@dpeg.example.invalid',
             'Call for Offers | 4100 Matched Ave | Offers due',
-            'Offers are due on 4100 Matched Ave.',
+            // ⚠ THE LISTING BROKER'S ADDRESS IS NOW STATED IN THIS BODY (2026-08-31, FIX 3 — THE
+            // ACCEPTANCE-RUN GROUNDING GUARD, NOT THE 2026-08-03 "FIX N" SERIES). The
+            // mock returns listing_broker_email = 'listing.' + the envelope address, and
+            // `dropUngroundedListingBrokerEmail` refuses any listing address that appears nowhere
+            // in the email. Stating it here keeps the fixture realistic AND keeps this test
+            // measuring the call-for-offers stamp rather than the grounding guard.
+            'Offers are due on 4100 Matched Ave. Listing broker: Dana Lister, '
+            + 'listing.listings@buildout.example.invalid.',
             'msg-cfo-matched@example.invalid', null, null);
         setCallForOffersPropertiesMock('listings@buildout.example.invalid',
             new List<String>{ '4100 Matched Ave' }, due, 'Dana Lister');
@@ -4604,7 +5103,17 @@ private class ExtractAddressQueueableTest {
         Inbound_Email_Staging__c staging = insertStaging(
             'listings@buildout.example.invalid', 'coordinator@dpeg.example.invalid',
             'Call for Offers | 4400 No Send Time Ave',
-            'Offers are due on 4400 No Send Time Ave.',
+            // ⚠ THE LISTING BROKER'S ADDRESS IS NOW STATED IN THIS BODY (2026-08-31, FIX 3 — THE
+            // ACCEPTANCE-RUN GROUNDING GUARD). SAME REASON AS THE MATCHED-WINNER FIXTURE ABOVE,
+            // AND THIS ONE WAS MISSED IN THAT SWEEP. `setCallForOffersPropertiesMock` emits
+            // listing_broker_email = 'listing.' + the envelope address whenever a listing broker is
+            // passed, and 'Dana Lister' is passed below — so without this line
+            // `dropUngroundedListingBrokerEmail` drops it and the fixture silently exercises the
+            // GUARD instead of the sent_datetime fallback this test is named for. It stayed green
+            // only because it asserts nothing about the listing broker, which is exactly the
+            // vacuity the sweep exists to prevent.
+            'Offers are due on 4400 No Send Time Ave. Listing broker: Dana Lister, '
+            + 'listing.listings@buildout.example.invalid.',
             'msg-cfo-nosendtime@example.invalid', null, null);
         // setCallForOffersPropertiesMock sends sent_datetime = '' — the blank case, which is also
         // why every OTHER call-for-offers test in this class stamps today rather than a fixed date.

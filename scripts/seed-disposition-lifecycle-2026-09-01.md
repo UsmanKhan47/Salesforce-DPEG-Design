@@ -1,0 +1,384 @@
+# Disposition lifecycle seed — `usman-dpeg`, 2026-09-01
+
+Companion document for the four `seed-disposition-lifecycle-0*.apex` phase scripts.
+
+All of the reasoning lives here. The scripts carry only a short header each, because anonymous
+Apex has a **32,000-character source limit** and the original single-file version was 69,900
+characters — of which only 27,112 were comments, so stripping prose would not have saved it.
+It had to be split, and the prose had to leave the budget entirely.
+
+---
+
+## Run order
+
+| # | File | Writes | Irreversible? |
+|---|---|---|---|
+| 1 | `seed-disposition-lifecycle-01-advance.apex` | NDA `Status__c`, Opportunity prep, `StageName = 'Closed Won'` | 🔴 **YES** |
+| 2 | `seed-disposition-lifecycle-02-assets.apex` | `Property_Asset__c` sell-meter inputs | no (an update; re-runnable) |
+| 3 | `seed-disposition-lifecycle-03-dispositions.apex` | 2 × `Disposition__c` | no delete available, but harmless |
+| 4 | `seed-disposition-lifecycle-04-bovs.apex` | 4 × `BOV_Submission__c` + final report | no delete available, but harmless |
+
+Every phase ships with `DRY_RUN = true`. **Run all four in DRY RUN first**, read the plans, then
+flip `DRY_RUN = false` one phase at a time and re-run in order.
+
+```
+sf apex run --file scripts/seed-disposition-lifecycle-01-advance.apex
+```
+
+⚠ **`sf apex run` can print nothing at all on a compile failure**, with the CLI emitting
+`Access is denied.` to stderr and swallowing the real message. If a phase produces no output,
+capture stderr to a file before assuming it succeeded.
+
+---
+
+## 🔴 THE COST OF SPLITTING: THERE IS NO LONGER A CROSS-SCRIPT ROLLBACK
+
+In the single-file version every quality gate ran last, as a `System.assert`, and a failure threw —
+unwinding the **entire** anonymous transaction including the Closed Won advance, the assets the
+triggers created, the Onboardings, and the enqueued jobs. A seed that committed but did not achieve
+its purpose left nothing behind.
+
+**That property is gone.** Four scripts are four transactions. If phase 4's gate fails, phases 1–3
+are already committed and **cannot be undone** — the brief forbids `delete`, and the phase-1 cascade
+(Onboardings, ~135 Tasks, SharePoint folder claims) is not deletable in any case.
+
+Two things were done about it rather than just noting it:
+
+**(a) Each gate was moved to the phase that can actually cause it**, instead of pooling them at the
+end where they would fail after the damage.
+
+| Gate | Lives in | Why there |
+|---|---|---|
+| ≥ 2 Opportunities left at `New` | phase 1 — **both as a pre-check and a post-check** | phase 1 is the only writer of `StageName` |
+| `Dead/Pass` count unmoved | phase 1 — pre-check and post-check | same |
+| All three readiness bands present | phase 2 | phase 2's stamping is what determines the bands |
+| Portfolio Upside ≠ Sell-Ready Upside | phase 2 | same |
+| Both record types have a Disposition | phase 3 | phase 3 creates them |
+| Matrix badge (responses ≥ 3) | phase 4 | phase 4 creates the BOVs |
+
+A failure in phases 2–4 therefore rolls back only that phase, and every one of those phases is
+re-runnable after you fix the input. Phase 1 remains the sole irreversible step.
+
+**(b) Phase 1 carries a feasibility pre-flight for the WHOLE run.** Before it advances anything it
+checks the things phases 2–4 will need — FLS on all 26 fields across all four scripts, both
+Disposition record types available, at least 3 Broker Contacts, and enough stampable assets to
+produce a three-band spread. The point is that the irreversible step refuses to fire unless the
+rest of the run can plausibly complete. It is not a guarantee, but it removes the obvious way to
+end up with 135 Tasks and no demo.
+
+**Each phase also re-derives its own inputs by querying the org rather than trusting that the
+previous phase ran.** Phase 2 finds its assets via "properties of Closed Won Opportunities", phase 3
+finds green/yellow by re-reading peak dates, phase 4 finds the On_Market disposition by record type.
+A phase that finds nothing bails loudly instead of writing into a gap.
+
+---
+
+## Approval decision: DO NOT SUBMIT. Zero approvals, zero emails.
+
+The alternative was `DispositionService.initiateAndSubmit`, which inserts the identical record and
+then calls `Approval.process` on `Disposition__c.Sale_Decision_Approval`. Rejected, for four
+reasons in descending weight.
+
+**(a) The emails are real, go to the client's principals, and cannot be recalled.** That process has
+a single step with three approvers and `whenMultipleApprovers = FirstResponse`
+(`approvalProcesses/Disposition__c.Sale_Decision_Approval.approvalProcess-meta.xml`, lines 232-244),
+so every submission mails all three:
+
+- `nikhil.dhanani@usmandpeg.uat`
+- `aftab.ali.dpeg.usman@avanzasolutions.com`
+- `junior.dhanani@usmandpeg.uat`
+
+Submitting both dispositions would be **2 × 3 = 6** approval-request emails asking two principals
+and a junior to approve the sale of a property, generated by a seed script.
+
+**(b) A pending approval LOCKS the record and would block the demo the seed exists for.**
+`recordEditability = AdminOnly` (line 290). A pending Sale Decision approval freezes the Disposition
+for every non-admin persona — exactly the audience who would walk the Path.
+
+**(c) Not submitting is one click from being fixed; submitting is not.** Both dispositions are left
+at `Disposition Readiness`, which is precisely that process's `entryCriteria` (lines 251-257). The
+real **Submit for Approval** button therefore works on both records whenever you want it, with the
+emails going out at a moment you chose. The reverse does not exist: `delete` is forbidden, a
+`ProcessInstance` cannot be deleted anyway, and Recall leaves a permanent history row.
+
+> This is also why `ADVANCE_ON_MARKET_TO_BOV_OUTREACH` defaults to `false` in phase 3. Advancing
+> past `Disposition Readiness` takes the record out of the entry criteria and removes your ability
+> to run the real approval at all.
+
+**(d) The inserted record is byte-for-byte the same either way.** `initiateAndSubmit` STEP 4/4b
+writes only `Property_Asset__c` + `Disposition_Stage__c` + `RecordTypeId`, plus the
+`Sell_Decision_Trigger__c = 'Principal Decision'` / `Sell_Meter_Override_Reason__c` pair on a YELLOW
+band (`DispositionService.cls` lines 604-660). Phase 3 builds exactly that field set, including the
+override pair on the off-market record. The `DispositionTrigger` fires identically on both paths.
+The **only** thing given up is the `Approval.process` call.
+
+### What you actually lose — less than it first appears
+
+Only the **Sale Decision** row reads "Not started". The **record-type-dependent** row you wanted to
+see (Broker Selection vs Broker Finalize) is derived from `DispositionDomain.recordTypeNameOf` with
+**no `ProcessInstance` involved** — `DispositionApprovalTrackerService` lines 500-525 — so it renders
+correctly on both records with nothing submitted.
+
+---
+
+## Blast radius of `StageName: 'New' → 'Closed Won'` (phase 1)
+
+Traced from source, not assumed.
+
+### 🔴 CORRECTION: there is no Transaction, and therefore no `Transaction_Task_Fanout`
+
+The brief anticipated Transaction creation and the 131 → 766 Task incident.
+`ContractExecutionService.openTransactionsOnAboutToClose` keys on the **`'About to Close'`** stage,
+not `'Closed Won'` (`OpportunityReviewTriggerHandler` line 127). Phase 1 moves deals
+`New → Closed Won` directly, never entering `About to Close`, so it creates **no `Transaction__c`**
+and triggers **no 82-task Transaction checklist**. Phase 1 asserts the Transaction count is
+unchanged, so if this is ever wrong you will see it.
+
+### What does fire, per advanced Opportunity
+
+**Before update**
+1. `OpportunityStageEntryService.stampStageEntryDates` — in-memory stamp. Free.
+
+**After update** (`OpportunityReviewTriggerHandler.route`, in order)
+
+2. `OpportunityReviewService.createReviewRecords` — **no-op**. Its stage keys are Development
+   Review / Construction Review / Under Contract (PSA) / Underwriting / LOI.
+3. `OpportunityReviewService.ensureNda` — **no-op**, creation-only.
+4. `ContractExecutionService.openTransactionsOnAboutToClose` — **no-op** (above).
+5. `PropertyAssetService.ensureOnClosedWon` — **the point of the exercise.** 2 SOQL + 1 DML per
+   trigger chunk. One `Property_Asset__c` per property that does not already have one, with
+   `Name` = the Property's name verbatim, `Status__c = 'Active'`, and
+   `Closing_Date__c = Opportunity.CloseDate`.
+6. `DealFolderService.ensureOnClaimStageEntry` — **FIRES.**
+
+### 🔴 Step 6 makes real Microsoft Graph callouts
+
+`'Closed Won'` **is** in `CLAIM_STAGES` (`DealFolderService.cls` lines 334-339) and `'New'` is not,
+so every advanced deal is a fresh entry. Synchronously it stamps
+`Property__c.SharePoint_Folder_Status__c = 'Pending'` and enqueues **one** `DealFolderQueueable` for
+the whole chunk. That queueable makes **real callouts against DPEG's own Entra tenant**
+(ARCHITECTURE.md §3.4) **after this transaction commits**. Zero callouts happen inside the script,
+and nothing in the script can undo them.
+
+> ⚠ `DealFolderService.cls` line ~55 states in prose that "`Closed Won` is not in `CLAIM_STAGES`".
+> The `Set` literal at lines 334-339 lists it. **The literal is authoritative** — the comment is
+> stale.
+
+**Record-triggered flow**
+
+7. `Opportunity_Closed_Won_Notify` — ACTIVE, filter `StageName = 'Closed Won'`, **no** `ISCHANGED`,
+   `CreateAndUpdate`. Two `GroupNotifier` custom notifications per deal:
+   `DPEG_Property_Mgmt_Team` and `Investor_Relations`. Not emails. Note `GroupNotifier` hardcodes
+   the `Acquisitions_Deal_Update` notification type, and group membership is not deployable — if
+   those groups are empty in this org the notifications land nowhere.
+
+### 🔴 The real Task bomb is the asset, not the Transaction
+
+8. `PropertyAssetTriggerHandler.afterInsert` → `OnboardingAutoCreateService.ensureOnClosing`
+   **fires**, because step 5 populated `Closing_Date__c` from `Opportunity.CloseDate` — a required
+   standard field, never null. It creates one `Onboarding__c` per new asset with
+   `Stage__c = 'Property Set up'`, `Status__c = 'In Progress'`, `Start_Date__c = TODAY`,
+   `Target_Completion_Date__c = +90d`, and sends a `Property_Mgmt_Update` notification.
+9. `Onboarding_Task_Fanout` — ACTIVE, entry `Start_Date__c != null AND Tasks_Fanned_Out__c = false`.
+   Step 8 satisfies both. It **enqueues** a Queueable that creates **~45 Tasks per Onboarding** from
+   `Onboarding_Task_Def__mdt`.
+
+> **Expected Task delta at `MAX_OPPS_TO_ADVANCE = 3`: 139 → approximately 274 (+135)**, arriving
+> **asynchronously**, after phase 1 has printed its summary. Phase 1 reports the *synchronous*
+> delta (which will be 0) and tells you to re-count in a minute. If the `Onboarding_Task_Def__mdt`
+> rows are not loaded in this org the delta is 0 instead — a separate go-live gap, not a failure.
+
+10. Phase 2's later `update` of those same assets re-enters `ensureOnClosing`, but its prior-value
+    guard (`prior.Closing_Date__c != null` → skip, lines 175-182) means **no second Onboarding**.
+
+**Async job budget:** 1 `DealFolderQueueable` + one fan-out enqueue per Onboarding = 4 at the
+default settings, against a limit of 50. Comfortable. **CPU is the real governor risk**, not SOQL or
+DML — the whole cascade runs in one synchronous transaction. If you hit a CPU limit, drop
+`MAX_OPPS_TO_ADVANCE` to 2 and run phase 1 twice.
+
+---
+
+## Why phase 1 is three DML statements and not one
+
+Two ACTIVE validation rules fire on `ISCHANGED(StageName)` into `Closed Won`:
+
+**`Contract_Signed_Before_Closed_Won`** — `NOT(Contract_Signed__c)`. `Contract_Signed__c` is a plain
+Checkbox, and a validation rule sees the record's **post-save** values, so this *could* be ticked in
+the same DML as the stage change. Phase 1 sets it one step earlier anyway, purely so that a failure
+is attributable to the right statement.
+
+**`NDA_Signed_Before_Deal_Progression`** — `ISBLANK(Primary_NDA__c) OR NOT(Primary_NDA__r.NDA_Signed__c)`.
+This one **spans to the parent NDA, which is read from the database**. The NDA must therefore be
+signed in a **separate, earlier** DML statement. That is the whole reason for the three-statement
+shape:
+
+1. `update` the NDAs
+2. `update` the Opportunities' `Primary_NDA__c` / `Contract_Signed__c`
+3. **re-read from the database to confirm the gate is actually open**
+4. `update` `StageName = 'Closed Won'`
+
+Step 3 is not ceremony. The project runbook's rule is *"they report success having written zero
+rows — count, never trust the success line"*, and the gate depends on a before-save flow having
+fired on a different object.
+
+### 🔴 Sign an NDA by writing `Status__c`, never `NDA_Signed__c`
+
+`NDA_Signed__c` is a plain Checkbox, so it looks directly writable. But `NDA_Signed_Status_Sync` is
+an ACTIVE **before-save** flow on `NDA__c` (`CreateAndUpdate`) that **derives** it:
+`Status__c = 'Signed'` → `true`, `'Declined'` → `false`, and it stamps `Date_Signed__c`. Writing the
+checkbox fights the flow; writing the status is the app's own path.
+
+`'Signed'` is valid on the `Acquisition_NDA` record type — verified against
+`objects/NDA__c/recordTypes/Acquisition_NDA.recordType-meta.xml`, **not** against the field describe,
+which would show it valid regardless of the record-type subset. It also happens to be the only value
+shared with `Disposition_NDA`.
+
+### Rules that do NOT apply
+
+`Approved_LOI_Before_PSA`, `Completed_LOI_Before_PSA`, `Underwriting_Approved_Before_LOI` and
+`Close_Date_Before_About_To_Close` are all `ISCHANGED(StageName)` + `ISPICKVAL(StageName, <stage>)`
+for stages this path never enters. `No_Backward_Stage_Movement` ranks `New` = 1 and `Closed Won` = 8,
+so the skip-ahead is forward and permitted. `Dead_Pass_Not_Allowed_From_Closed_Won` is irrelevant —
+phase 1 never selects a `Dead/Pass` deal, because its `WHERE` clause is `StageName = 'New'`.
+
+---
+
+## Band spread and the two upside tiles (phase 2)
+
+### The band is days-to-peak, not a value ratio
+
+`SellMeterService.bandForPeak`, and the `Sell_Readiness_Band__c` formula agrees:
+
+| Days until `Peak_Sell_Date__c` | Band |
+|---|---|
+| ≤ 30 (including already past) | GREEN |
+| 31 – 90 | YELLOW |
+| > 90, **or null** | RED |
+
+🔴 **A RED asset must carry a peak date further out than 90 days to be visible at all.**
+`PropertyAssetSelector` filters **both** meter queries to
+`Property__c != null AND Peak_Sell_Date__c != null`, so a null-peak asset bands RED in the function
+but never appears on the widget. Profile 2 therefore uses **+210 days**, not null.
+
+### The two tiles must show different numbers
+
+`SellMeterController.getMeterSummary`:
+
+```
+implied          = NOI__c / (Market_Cap_Rate__c / 100)
+upside          += (implied - Target_Sale_Price__c)   // EVERY band, when positive
+sellReadyUpside += the same amount                    // GREEN band ONLY
+```
+
+So a portfolio where every in-the-money asset is green makes **Portfolio Upside** and
+**Sell-Ready Upside** identical and indistinguishable on screen. The profile table is built so that
+at least one in-the-money asset is *not* green:
+
+| Profile | Band | Peak | NOI | Cap % | Target | Implied | Upside |
+|---|---|---|---|---|---|---|---|
+| 0 | GREEN | +12d | 2,400,000 | 6.00 | 34,000,000 | 40,000,000 | **+6,000,000** |
+| 1 | YELLOW | +55d | 1,650,000 | 5.50 | 27,500,000 | 30,000,000 | **+2,500,000** |
+| 2 | RED | +210d | 900,000 | 7.25 | 15,000,000 | 12,413,793 | negative — not counted |
+
+**Expected: Portfolio Upside = 8,500,000, Sell-Ready Upside = 6,000,000.** Phase 2 recomputes both
+from the org and fails if they are equal.
+
+### Other stamped fields
+
+`Property_Type__c` values come from the field's own value set (`Retail` / `Industrial` /
+`Multifamily` / `Office` / `Mixed-Use`). Note that `PropertyAssetService` maps only five
+`Asset_Type__c` values onto it, so an asset off a `Hospitality`, `Medical Office` or `Land` property
+arrives with this field **blank** — which is why phase 2 sets it explicitly rather than assuming the
+trigger did.
+
+`Argus_Signal__c` values come from its restricted value set: `Sell Now`, `12 mo`, `Hold`.
+
+### `RESTAMP_EXISTING_SELL_METER_INPUTS`
+
+Defaults to `false`: an asset that already carries a `Peak_Sell_Date__c` is left completely alone, so
+no curated data is overwritten and a second run is a no-op. Set it `true` only to deliberately
+re-stamp the seed set to the profile table above.
+
+---
+
+## Disposition field choices (phase 3)
+
+The field set is verbatim what `initiateAndSubmit` STEP 4/4b builds. In particular:
+
+- **No `Asking_Price__c`.** It was retired from this flow on 2026-08-25 and both former consumers
+  now read `Target_Sale_Price__c` off the asset.
+- **No `Broker__c` on either record.** `Broker_Lookup_Is_Off_Market_Only` refuses it on an
+  `On_Market` row, and on the off-market row the broker belongs to a deliberate appointment step,
+  not to a seed.
+- **`Sell_Decision_Trigger__c`** is left on its `Sell Meter Green` default for the on-market/green
+  record (which is *true* for it) and set to `Principal Decision` on the off-market/yellow one,
+  exactly as `initiateAndSubmit` does for a yellow-band override. `Principal Decision` is verified
+  present on **both** record types' subsets — restricted picklists are DML-enforced in this org and a
+  record type that omits a value drops it for that type.
+- **`Responses_Received__c` is never hand-set.** `DispositionCounterRollupService` owns it and the
+  BOV trigger recalculates it, so a hand-set value is a lie that gets overwritten seconds later in
+  the same transaction. `Brokers_Contacted__c`, `Package_Sent__c` and `Submission_Deadline__c` are
+  *not* rollup-owned and are seeded.
+- **`Property_Asset_Required_On_Save`** makes a Disposition with no asset impossible, which is why
+  phase 3 bails rather than degrading if it cannot find a green and a yellow asset.
+
+---
+
+## BOV submissions (phase 4)
+
+`BovController.getOutreachSummary` sets `matrixGenerated = responsesReceived >= 3`, and
+`responsesReceived` is `Disposition__c.Responses_Received__c`, maintained by
+`DispositionCounterRollupService` off the BOV trigger. **The "Matrix Generated ✓" badge is earned by
+inserting real child rows, never by writing the counter.** Four rows are created so the ranking is
+visible rather than a three-way tie.
+
+Two ACTIVE rules constrain each row:
+
+- `Broker_Required_On_Submission` — `Broker__c` must be set, and its **active, non-optional** lookup
+  filter restricts it to `Contact.RecordType.DeveloperName = 'Broker'`.
+- `BOV_Amount_Required_On_Submission` — `BOV_Amount__c` required unless `Is_Preferred_Broker__c`.
+
+`Submission_Status__c` is **omitted** so the field default (`Backup`) applies and
+`BovAutoSelectionService.reselect` — which runs on `afterInsert` — picks the winner itself.
+Hand-setting `Selected` would fight `BovSubmissionSelectionGuardService`'s exclusivity guard.
+`Is_Preferred_Broker__c` is likewise omitted: the preferred slot is a separate, exclusive concept and
+seeding into it would perturb `BovPreferredBrokerService`.
+
+---
+
+## Run-as preconditions
+
+**Anonymous Apex cannot use `WITH SYSTEM_MODE` or `AccessLevel.SYSTEM_MODE`**
+(`Cannot use SYSTEM_MODE access level in anonymous execution of Apex`), and there is no
+`without sharing` either. So **both FLS and record sharing apply** to everything the scripts do.
+`Property_Asset__c`, `Disposition__c` and `BOV_Submission__c` are all `sharingModel Private`.
+
+Run as a **System Administrator with Modify All Data** who also holds:
+
+| Permission set | Covers |
+|---|---|
+| `DPEG_Acquisition_Edit` | `Opportunity.Contract_Signed__c`, `NDA__c.Status__c` |
+| `DPEG_PropertyMgmt_Edit` | the `Property_Asset__c` sell-meter fields |
+| `DPEG_Disposition_Edit` | `Disposition__c` and `BOV_Submission__c` |
+
+Phase 1's pre-flight checks **every field all four scripts write** and names the exact missing one.
+A Metadata-API-deployed field arrives with **no `FieldPermissions` for anyone**, System Administrator
+included, so this is a live failure mode and not a formality.
+
+`TestDataFactory` is `@isTest`-annotated and unreachable from anonymous Apex; every row is
+hand-built.
+
+---
+
+## Standing constraints, preserved across the split
+
+- **Zero `delete` statements** in any of the four files.
+- **Zero `Approval.process`** calls in any of the four files.
+- Every phase is **independently idempotent** — guarded by a query for what already exists — and
+  **re-derives its inputs from the org** rather than trusting the previous phase.
+- Every phase **counts and reports its own writes** and prints an unmissable banner when it wrote
+  nothing.
+- `DRY_RUN = true` and `STRICT = true` are the defaults in **all four** files.
+- Neither the `Dead/Pass` Opportunity nor any record outside the chosen set is touched. The
+  `Dead/Pass` exclusion is enforced by phase 1's `WHERE StageName = 'New'` clause, not by a
+  downstream check.

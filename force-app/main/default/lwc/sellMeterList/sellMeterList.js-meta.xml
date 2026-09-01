@@ -3,7 +3,7 @@
     <apiVersion>67.0</apiVersion>
     <isExposed>true</isExposed>
     <masterLabel>Sell Meter List</masterLabel>
-    <description>Disposition Sell Meter — portfolio table with meter score, sell signal badges, and action buttons.</description>
+    <description>Disposition Sell Meter — portfolio table with meter score, sell signal badges, and action buttons. Every data column is sortable on raw values; the default view is band order (Green, Yellow, Red).</description>
     <targets>
         <target>lightning__AppPage</target>
         <target>lightning__HomePage</target>

@@ -113,7 +113,13 @@ If any constraint would be violated in generated code, **stop and explain the pr
 - Use selective queries with proper `WHERE` clauses; use indexed fields (`Id`, `Name`, `OwnerId`, lookup/master-detail fields, `ExternalId` fields, custom indexes) in filters when possible
 - `SELECT *` does not exist in SOQL -- always specify the exact fields needed
 - Apply `LIMIT` clauses to bound result sets; use `ORDER BY` for deterministic results
-- When querying Custom Metadata Types (objects ending with `__mdt`), do NOT use SOQL — use the built-in methods (`{CustomMdt__mdt}.getAll().values()`, `getInstance()`, etc.)
+- When querying Custom Metadata Types (objects ending with `__mdt`), do NOT use SOQL — use the built-in methods (`{CustomMdt__mdt}.getAll().values()`, `getInstance()`, etc.) — **EXCEPT for LongTextArea and Html fields, which those accessors SILENTLY TRUNCATE to 255 characters.**
+  - 🔴 **MEASURED, not theorised.** `usman-dpeg`, API 67.0, 2026-08-31, same row and same transaction: `getInstance('Default').Extraction_Prompt__c`.length() = **255**; `[SELECT Extraction_Prompt__c FROM Broker_Protection_Config__mdt WHERE ...]` = **20,596**; `identical = false`. SOQL does not truncate.
+  - **Cost of getting this wrong:** a live P0 in which every inbound broker email reported SUCCESS while extracting nothing. The clipped value is non-blank, so it passes every `String.isBlank()` guard; the 255-char head happened not to contain the token `json`, so OpenAI refused `response_format: json_object` on every request, and a degrade-on-exception boundary swallowed the failure by design. Nothing logged, nothing bounced, no job failed.
+  - **What to do instead:** a `__mdt` type carrying a long-text field needs a **selector** for that field, and the selector must justify itself at its own declaration. Two escape valves keep the cost near zero:
+    1. **Select ONLY the long-text field** (plus `DeveloperName`). Leave every Number / Text / Picklist field on `getInstance()` — they are not truncated, and widening the SELECT only enlarges the CRUD/FLS-mode surface.
+    2. **Cache the result in the caller**, not in the selector — the read is not free on a governor-budgeted async path, and an internal cache would defeat any `overrideForTest`-style seam.
+  - Reference implementation: `BrokerProtectionConfigSelector.cls` + `BrokerProtectionConfig.extractionPromptOverride()`. Same rule in `ARCHITECTURE.md` §2.
 
 ### Caching
 

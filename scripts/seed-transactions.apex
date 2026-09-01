@@ -1,4 +1,7 @@
-// Seed the 5 Active Transactions shown in both mockups (KPI row + table) and the record page.
+// Seed the 5 Transactions shown in both mockups (KPI row + table) and the record page.
+// ⚠ FOUR are Active; the fifth (Pasadena Industrial) is Stage__c='Closed' and, since 2026-08-31,
+// Status__c='Closed' too — so the Active-Transactions KPI and scripts/fanout-seeded-transactions
+// .apex (WHERE Status__c='Active') see FOUR rows here, not five. See that row's own comment.
 //   Prices: 31.5 + 52.2 + 18.9 + 41.7 + 14.4 = $158.7M → KPI "In Contract" rounds to $159M
 //   TTC spans (Target − Executed): 70 + 55 + 60 + 75 + 60 = 320 / 5 = 64d avg
 //   Earnest at risk: 0.9M (Magnolia) + 1.5M (Cypress) = $2.4M
@@ -65,7 +68,23 @@ List<Transaction__c> txns = new List<Transaction__c>{
         EM_Wired_Date__c = dMemorial.addDays(-71),
         Earnest_Money__c = 600000, Is_Earnest_At_Risk__c =false, Is_Wire_Approval_Due__c =false,
         Feasibility_Deadline__c = toughDay.addDays(30), Feasibility_Missed__c = false),
-    new Transaction__c(Status__c = 'Active', Property_Name__c = 'Pasadena Industrial',
+    // 🔴 Status__c = 'Closed', NOT 'Active' (changed 2026-08-31, Gap 2). This row is the seed's
+    // ONE closed demo deal — Stage__c='Closed', Risk__c='Closed' — and it carried
+    // Status__c='Active' in the same breath. That contradiction WAS Gap 2 in miniature:
+    // Status__c had no writer that ever advanced it, so a closed Transaction stayed 'Active'
+    // forever. The new before-save flow Transaction_Stage_Closed_Sets_Status now assigns
+    // 'Closed' here on INSERT (recordTriggerType=CreateAndUpdate) whatever this literal says,
+    // so leaving 'Active' would not have kept the old behaviour — it would only have made the
+    // source disagree with the row. Stating it explicitly keeps the seed honest and
+    // flow-independent, and the flow's assignment becomes a no-op rather than a correction.
+    //
+    // ⚠ THIS ROW HAS NO Opportunity__c, AND THAT IS LOAD-BEARING, NOT INCIDENTAL. The after-save
+    // flow Transaction_Complete_Close fires on Status__c='Closed' AND Opportunity__c != null,
+    // and it closes the parent deal (StageName='Closed Won', Deal_Status__c='Asset Under
+    // Management'), which then makes PropertyAssetService.ensureOnClosedWon mint a Property
+    // Asset and GroupNotifier post to Acquisitions_Team. Adding an Opportunity__c to this row
+    // would fire all of that ON INSERT of a seed script. Do not add one without meaning to.
+    new Transaction__c(Status__c = 'Closed', Property_Name__c = 'Pasadena Industrial',
         Stage__c = 'Closed', Risk__c = 'Closed', Owner_Name__c = 'Danish',
         Contract_Value__c = 14400000, Tasks_Complete__c = 75,
         Target_Close_Date__c = dPasadena, Contract_Executed_Date__c = dPasadena.addDays(-60),
@@ -74,4 +93,8 @@ List<Transaction__c> txns = new List<Transaction__c>{
         Feasibility_Deadline__c = toughDay.addDays(30), Feasibility_Missed__c = false)
 };
 insert txns;
-System.debug('Inserted ' + txns.size() + ' active transactions.');
+// 'transactions', not 'active transactions' (2026-08-31). Four of the five are Active; Pasadena
+// Industrial is Closed, by its Stage__c and now by its Status__c too. The old wording would have
+// become a lie the moment Transaction_Stage_Closed_Sets_Status deployed, and a wrong count in a
+// message is exactly how the 75-vs-82 defect hid for weeks.
+System.debug('Inserted ' + txns.size() + ' transactions (4 Active, 1 Closed).');

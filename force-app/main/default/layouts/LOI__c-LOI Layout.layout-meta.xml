@@ -239,6 +239,30 @@
     <relatedLists>
         <relatedList>RelatedNoteList</relatedList>
     </relatedLists>
+    <!-- APPROVAL HISTORY, ADDED 2026-09-01 — W1 of the LOI approval cutover
+         (agent-output/loi-approval-cutover-design.md). RelatedProcessHistoryList IS the Approval
+         History list (verified live on this org's describeLayout, and already carried by
+         layouts/Underwriting__c-Underwriting Layout.layout-meta.xml and 20+ other layouts in this
+         repo). Direct copy of that file's own block — same five columns, same reasoning.
+         🔴 THIS BLOCK IS ONE HALF OF A TWO-FILE FIX AND IS USELESS ALONE. LOI__c has never had an
+         Approval History list in Lightning. Adding the list here without the
+         force:relatedListContainer component on flexipages/LOI_Record_Page shows nothing, and
+         adding the component without this list shows nothing either —
+         force:relatedListSingleContainer (used elsewhere on that same page for
+         CombinedAttachments) returns INVALID_TYPE for approval history — deploys green, renders
+         nothing — so relatedListContainer is the only supported route, and it renders exactly
+         what this layout declares.
+         WHY IT IS NEEDED AT ALL: approvalProcesses/LOI__c.LOI_Approval sets allowRecall=true and
+         recordEditability=AdminOnly. Recall Approval Request exists ONLY on this list. Without
+         it, a submitted LOI locks with no visible pending approval and no recall route. -->
+    <relatedLists>
+        <fields>CreatedDate</fields>
+        <fields>StepStatus</fields>
+        <fields>OriginalActor</fields>
+        <fields>Actor</fields>
+        <fields>Comments</fields>
+        <relatedList>RelatedProcessHistoryList</relatedList>
+    </relatedLists>
     <showEmailCheckbox>false</showEmailCheckbox>
     <showHighlightsPanel>false</showHighlightsPanel>
     <showInteractionLogPanel>false</showInteractionLogPanel>

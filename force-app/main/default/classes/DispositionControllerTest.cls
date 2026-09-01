@@ -241,7 +241,7 @@ private class DispositionControllerTest {
 
         Test.startTest();
         DispositionService.InitiateOutcome outcome =
-            DispositionController.initiateAndSubmit(asset.Id, 'On_Market');
+            DispositionController.initiateAndSubmit(asset.Id, 'On_Market', null);
         Test.stopTest();
 
         System.assertNotEquals(null, outcome.dispositionId, 'A Disposition Id must be populated');
@@ -263,7 +263,7 @@ private class DispositionControllerTest {
         Test.startTest();
         Boolean refused = false;
         try {
-            DispositionController.initiateAndSubmit(asset.Id, 'On_Market');
+            DispositionController.initiateAndSubmit(asset.Id, 'On_Market', null);
             Assert.fail('A RED asset must be refused at the controller boundary too');
         } catch (AuraHandledException e) {
             refused = true;
@@ -290,7 +290,7 @@ private class DispositionControllerTest {
         Test.startTest();
         Boolean refused = false;
         try {
-            DispositionController.initiateAndSubmit(asset.Id, 'Not_A_Real_Type');
+            DispositionController.initiateAndSubmit(asset.Id, 'Not_A_Real_Type', null);
             Assert.fail('An off-allow-list record type must be refused');
         } catch (AuraHandledException e) {
             refused = true;
@@ -321,7 +321,7 @@ private class DispositionControllerTest {
 
         Test.startTest();
         DispositionService.InitiateOutcome outcome =
-            DispositionController.initiateAndSubmit(asset.Id, 'On_Market');
+            DispositionController.initiateAndSubmit(asset.Id, 'On_Market', null);
         Test.stopTest();
 
         System.assertEquals(existing.Id, outcome.dispositionId,
@@ -343,7 +343,7 @@ private class DispositionControllerTest {
         System.runAs(u) {
             Test.startTest();
             try {
-                DispositionController.initiateAndSubmit(asset.Id, 'On_Market');
+                DispositionController.initiateAndSubmit(asset.Id, 'On_Market', null);
                 Assert.fail('expected AuraHandledException from initiateAndSubmit under a bare user');
             } catch (AuraHandledException e) {
                 Assert.isTrue(e.getMessage().contains('could not be saved'),
@@ -351,5 +351,182 @@ private class DispositionControllerTest {
             }
             Test.stopTest();
         }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // THE THIRD CATCH — SellMeterOverridePermissionService.AccessDeniedException
+    // (2026-08-31, Tranche 2 item 5a, stories 12 and 14)
+    //
+    // 🔴 A SECOND DESIGNED REFUSAL, NOT A SECOND PLATFORM MASK. The two tests below are the
+    // MATCHED PAIR for this catch, in the same shape as refusalSurfacesTheSellMeterWording vs
+    // readPathsThrowAuraHandledException above: they assert OPPOSITE message contents. Asserting
+    // only "an AuraHandledException was thrown" would pass with the catch DELETED, because the
+    // generic catch beneath it also throws one — and the user would be told their save failed and
+    // would retry forever against a permanent, correct refusal.
+    //
+    // ⚠ THIS CATCH IS ONLY REACHABLE AS A REAL NON-PRINCIPAL PERSONA. The test-running
+    // administrator holds "Modify All Data" and is bypassed by the gate before the custom
+    // permission is consulted, so the same code run as the running user takes the SUCCESS path.
+    // A denial test that skipped System.runAs would be green, would cover the wrong lines, and
+    // would read exactly like a denial test.
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    @isTest
+    static void initiateAndSubmit_overrideDenial_surfacesTheAuthoredWordingVerbatim() {
+        Property_Asset__c asset = [SELECT Id, Peak_Sell_Date__c FROM Property_Asset__c LIMIT 1];
+        asset.Peak_Sell_Date__c = Date.today().addDays(60); // 31-90 days => YELLOW
+        update asset;                                        // record DML BEFORE the User insert
+
+        User analyst = provisionAnalystPersona('dctlA');
+
+        Test.startTest();
+        Boolean refused = false;
+        SellMeterOverridePermissionService.clearCache();
+        System.runAs(analyst) {
+            try {
+                DispositionController.initiateAndSubmit(asset.Id, 'On_Market', 'let me through');
+                Assert.fail('A non-principal must be refused the YELLOW override at the controller '
+                    + 'boundary too');
+            } catch (AuraHandledException e) {
+                refused = true;
+                Assert.isTrue(e.getMessage().contains('principal'),
+                    'The AUTHORED denial must reach the user verbatim — it names WHO can perform '
+                    + 'the action, which is the only useful thing to say about a button the user '
+                    + 'can SEE (the Sell Meter renders Override disabled, not hidden): '
+                    + e.getMessage());
+                Assert.isFalse(e.getMessage().contains('could not be saved'),
+                    '🔴 DELETING THE AccessDeniedException CATCH TURNS THIS RED. Without it the '
+                    + 'refusal falls into the generic catch and the user is told their save failed '
+                    + '— advice that can never work against a permanent, correct refusal, and '
+                    + 'exactly the defect the SellMeterGateException catch exists to prevent on '
+                    + 'this same button: ' + e.getMessage());
+                Assert.isFalse(e.getMessage().contains('not ready to sell'),
+                    'An override denial is not a RED-band refusal and must not borrow its wording: '
+                    + e.getMessage());
+            }
+        }
+        SellMeterOverridePermissionService.clearCache();
+        Test.stopTest();
+
+        Assert.isTrue(refused, 'The analyst persona must have been refused');
+        Assert.areEqual(0, [SELECT COUNT() FROM Disposition__c WHERE Property_Asset__c = :asset.Id],
+            'A refused override must leave no Disposition behind');
+    }
+
+    /**
+     * The same catch on `findOrCreate` — the second live @AuraEnabled create path, still exposed,
+     * still creating on YELLOW with no modal and no confirmation. Gating only the modal path would
+     * leave the whole restriction one call away from being defeated.
+     */
+    @isTest
+    static void findOrCreate_overrideDenial_surfacesTheAuthoredWordingVerbatim() {
+        Property_Asset__c asset = [SELECT Id, Peak_Sell_Date__c FROM Property_Asset__c LIMIT 1];
+        asset.Peak_Sell_Date__c = Date.today().addDays(60); // YELLOW
+        update asset;
+
+        User analyst = provisionAnalystPersona('dctlB');
+
+        Test.startTest();
+        Boolean refused = false;
+        SellMeterOverridePermissionService.clearCache();
+        System.runAs(analyst) {
+            try {
+                DispositionController.findOrCreate(asset.Id);
+                Assert.fail('findOrCreate must refuse a non-principal on YELLOW too');
+            } catch (AuraHandledException e) {
+                refused = true;
+                Assert.isTrue(e.getMessage().contains('principal'),
+                    'The authored denial must reach the user verbatim here too: ' + e.getMessage());
+                Assert.isFalse(e.getMessage().contains('could not be saved'),
+                    'Deleting findOrCreate\'s AccessDeniedException catch turns this red: '
+                    + e.getMessage());
+            }
+        }
+        SellMeterOverridePermissionService.clearCache();
+        Test.stopTest();
+
+        Assert.isTrue(refused, 'The analyst persona must have been refused on this path too');
+    }
+
+    /**
+     * 🔴 THE OVER-REACH CONTROL, AT THE CONTROLLER BOUNDARY. Without it, both tests above pass
+     * against an assert that was hoisted out of the YELLOW branch and applied to the whole method —
+     * which would close GREEN Initiate to every junior analyst, a capability removal nobody asked
+     * for and one that no other test in this class would notice (they all run as the bypassed
+     * administrator).
+     *
+     * `simulateLookupFailure` makes the permission service throw the instant it is called,
+     * regardless of who is running or what they hold, so it probes "was the gate reached?" and
+     * nothing else. On GREEN it must never be reached, so the create must succeed untouched.
+     */
+    @isTest
+    static void initiateAndSubmit_greenAsset_isUnaffectedByTheOverrideGate() {
+        Property_Asset__c asset = [SELECT Id FROM Property_Asset__c LIMIT 1]; // @TestSetup = GREEN
+
+        Test.startTest();
+        SellMeterOverridePermissionService.clearCache();
+        SellMeterOverridePermissionService.simulateLookupFailure = true;
+        DispositionService.InitiateOutcome outcome;
+        try {
+            outcome = DispositionController.initiateAndSubmit(asset.Id, 'On_Market', null);
+        } catch (AuraHandledException e) {
+            Assert.fail('🔴 THE OVERRIDE GATE WAS CONSULTED ON A GREEN ASSET. The assert has been '
+                + 'un-scoped from the YELLOW branch, closing Initiate to every junior analyst. '
+                + 'Underlying: ' + e.getMessage());
+        }
+        SellMeterOverridePermissionService.clearCache();
+        Test.stopTest();
+
+        Assert.isNotNull(outcome, 'GREEN Initiate stays open to analysts (Gate 1, 2026-08-31)');
+        Assert.isNotNull(outcome.dispositionId, 'and it still creates the Disposition');
+    }
+
+    /**
+     * Builds a disposition ANALYST persona: can read the asset and create Dispositions, holds
+     * `Disposition_Deal_Actions`, does NOT hold `Disposition_Sell_Meter_Override`.
+     *
+     * ⚠ `DPEG_PropertyMgmt_View` IS NOT OPTIONAL. Neither disposition permission set grants FLS on
+     * `Property_Asset__c.Peak_Sell_Date__c`, and `PropertyAssetSelector.selectPeakSellDateById` is
+     * `WITH USER_MODE`, which THROWS on an inaccessible field rather than degrading — so without it
+     * the persona dies at the selector, BEFORE the gate, and every test above would still "pass"
+     * if its only assertion were that something was thrown. That is why those tests assert the
+     * message contents rather than the exception type alone.
+     *
+     * ⚠ Setup DML (User + assignments) is wrapped in `System.runAs(current user)` so it can share a
+     * transaction with the record DML the caller does first. Without the wrapper:
+     * MIXED_DML_OPERATION.
+     */
+    private static User provisionAnalystPersona(String tag) {
+        User analyst;
+        System.runAs(new User(Id = UserInfo.getUserId())) {
+            Profile standard = [SELECT Id FROM Profile WHERE Name = 'Standard User' LIMIT 1];
+            String unique = tag + String.valueOf(Datetime.now().getTime())
+                + String.valueOf(Math.abs(Crypto.getRandomInteger()));
+            analyst = new User(
+                FirstName = 'Junior',
+                LastName = 'Analyst',
+                Alias = 'jranly',
+                Email = 'junior.analyst@example.invalid',
+                Username = unique + '@example.invalid.dpeg',
+                ProfileId = standard.Id,
+                TimeZoneSidKey = 'America/Chicago',
+                LocaleSidKey = 'en_US',
+                EmailEncodingKey = 'UTF-8',
+                LanguageLocaleKey = 'en_US'
+            );
+            insert analyst;
+            List<String> names = new List<String>{ 'DPEG_Disposition_Edit', 'DPEG_PropertyMgmt_View' };
+            List<PermissionSetAssignment> rows = new List<PermissionSetAssignment>();
+            for (PermissionSet ps : [SELECT Id FROM PermissionSet WHERE Name IN :names]) {
+                rows.add(new PermissionSetAssignment(AssigneeId = analyst.Id, PermissionSetId = ps.Id));
+            }
+            Assert.areEqual(names.size(), rows.size(),
+                'FIXTURE PRECONDITION: every named permission set must exist in this org. A set '
+                + 'resolved BY NAME that has been renamed or deleted silently produces a persona '
+                + 'with fewer grants, turning a denial test into a selector failure. Expected '
+                + String.valueOf(names) + ', found ' + rows.size() + '.');
+            insert rows;
+        }
+        return analyst;
     }
 }

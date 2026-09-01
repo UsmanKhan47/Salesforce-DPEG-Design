@@ -118,6 +118,20 @@
         across force-app/main/default/classes, which found no setProcessDefinitionNameOrId call
         anywhere in the repo.
         =====================================================================================
+
+        =====================================================================================
+        2026-08-31 - TRANCHE 3, ITEM 1. ROSTER ONLY. ONE OF THE OTHER FOUR, DEPLOYED ONLY AFTER
+        Disposition__c.Sale_Decision_Approval's SAME-SHAPE EDIT WAS PROVEN FIRST AND ALONE (see
+        that file's 2026-08-31 entry for the full G-3 argument, the "Nick" absence, and the
+        acquisition-scope decision D-3 - not repeated here).
+        =====================================================================================
+        A THIRD <approver> (Junior Dhanani, junior.dhanani@usmandpeg.uat) is appended inside
+        <assignedApprover>, after Nikhil Dhanani and Aftab Ali. whenMultipleApprovers stays
+        FirstResponse. Nothing else in this file changes - not the step, not entryCriteria, not
+        any action block, not approvalPageFields. This is the file whose recallActions has the
+        MOST to lose from a mistaken deploy (see the 2026-08-21 entry above); the roster addition
+        does not touch that mechanism at all.
+        =====================================================================================
     -->
     <active>true</active>
     <allowRecall>true</allowRecall>
@@ -143,6 +157,10 @@
             </approver>
             <approver>
                 <name>aftab.ali.dpeg.usman@avanzasolutions.com</name>
+                <type>user</type>
+            </approver>
+            <approver>
+                <name>junior.dhanani@usmandpeg.uat</name>
                 <type>user</type>
             </approver>
             <whenMultipleApprovers>FirstResponse</whenMultipleApprovers>

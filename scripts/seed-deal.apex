@@ -9,7 +9,7 @@ Opportunity opp = new Opportunity(
     My_Cap_Rate__c = 6.5,
     Market_Cap_Rate__c = 6.5,
     Deal_Status__c = 'LOI Signed',
-    Asset_Type__c = 'Retail Strip',
+    Asset_Type__c = 'Retail',
     // WS2 (2026-08-30): DateTime now, not Date — a Date literal no longer compiles here.
     Broker_First_Seen__c = Datetime.now().addDays(-38)
 );

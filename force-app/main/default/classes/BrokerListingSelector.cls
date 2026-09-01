@@ -8,6 +8,9 @@
  *     Disposition record page)                       -> selectMostRecentByDispositionId
  *   - DispositionStageEntryService.openBrokerListings (the Active Listing
  *     auto-create idempotency guard, Tranche 5B)      -> selectByDispositionIds
+ *   - BovSubmissionService.replaceSelectedBroker (the "has this sale been listed
+ *     yet?" gate on the broker-change listing APPEND, Tranche 4 item 5,
+ *     2026-09-01)                                     -> selectByDispositionIds
  *
  * ⚠ MIXED MODES SINCE 2026-08-10 (Tranche 5B) — READ THE METHOD, NEVER THIS HEADER.
  * `selectMostRecentByDispositionId` stays `WITH USER_MODE`: it backs a card a human
@@ -50,11 +53,40 @@ public with sharing class BrokerListingSelector {
      * traction badge is computed from, and it rides the EXISTING grandparent path,
      * so the traction computation costs this query ZERO extra SOQL.
      *
-     * ⚠ `Days_On_Market__c` (the Broker_Listing__c one) is still selected and is now
-     * LEGACY: it is a hand-keyed Number that nothing writes, and the controller no
-     * longer derives anything from it. It is retained so the field is still
-     * available to a caller that wants the stored value, and so removing it is a
-     * deliberate decision rather than a side effect of this change.
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * 🔴 REPOINTED 2026-08-31 (Tranche 1 item 6): `Days_On_Market__c` -> `Days_On_Market_Live__c`.
+     *    The paragraph below is RETRACTED IN PLACE because it was a correct description of a
+     *    field that is no longer in this SELECT, and its final sentence is now the thing that
+     *    happened:
+     *
+     *        RETRACTED: "⚠ `Days_On_Market__c` (the Broker_Listing__c one) is still selected and
+     *        is now LEGACY: it is a hand-keyed Number that nothing writes, and the controller no
+     *        longer derives anything from it. It is retained so the field is still available to a
+     *        caller that wants the stored value, and so removing it is a deliberate decision
+     *        rather than a side effect of this change."
+     *
+     *    WHAT STAYS TRUE: every word about the STORED `Days_On_Market__c`. It is still a
+     *    hand-keyed Number that nothing writes, it is still in the org, and it is NOT deleted —
+     *    additive retirement, per this repo's standing rule; its removal is deferred and is
+     *    blocked on a report that cannot be repointed without a report type that does not exist.
+     *    Dropping it from this SELECT is the deliberate decision that sentence asked for.
+     *
+     * `Days_On_Market_Live__c` is a NUMBER FORMULA — `IF(ISBLANK(List_Date__c), null, TODAY() -
+     * List_Date__c)` — so nothing writes it, it cannot go stale, and it cannot be seeded.
+     *
+     * 🔴 IT IS RAW ELAPSED DAYS AND IT IS **NOT** THE ESCALATION CLOCK (design decision D-3). The
+     * marketing clock lives in `DispositionTractionService`, which computes days in Apex and is to
+     * gain a PAUSE at the first offer. This formula keeps counting after an offer arrives, so the
+     * two WILL disagree on the same card once that pause ships — by design, because they answer
+     * different questions. NOTHING MAY READ THIS FIELD TO DRIVE AN ALERT. `BrokerListingController`
+     * does not read it (it derives `daysOnMarket` from the raw date via the traction service) and
+     * must not start.
+     *
+     * ⚠ ADDING IT HERE IS AN FLS CHANGE ON A `USER_MODE` READ, WHICH THROWS RATHER THAN DEGRADES.
+     * The grant for `Broker_Listing__c.Days_On_Market_Live__c` must land in the SAME deploy wave as
+     * this line or the Active Listing card red-banners for everyone. A formula field can only ever
+     * be `editable=false`; `editable=true` on one is a deploy error, which is exactly what the
+     * still-present `DPEG_Disposition_Edit` grant on the STORED field is allowed to remain.
      *
      * @param dispositionId Disposition__c Id to read the latest listing for.
      * @return The most recently created Broker_Listing__c for the Disposition
@@ -68,7 +100,7 @@ public with sharing class BrokerListingSelector {
             SELECT Id, Disposition__r.Property_Asset__r.Name,
                    Disposition__r.Listing_Date__c,
                    Broker_Firm__c, Contact_Name__c, List_Date__c,
-                   Call_For_Offers_Date__c, Days_On_Market__c, Listing_Status__c,
+                   Call_For_Offers_Date__c, Days_On_Market_Live__c, Listing_Status__c,
                    Offers_Received__c
             FROM Broker_Listing__c
             WHERE Disposition__c = :dispositionId
@@ -109,6 +141,22 @@ public with sharing class BrokerListingSelector {
      *
      * Bulk-safe: ONE query for the whole chunk, never one per record. Only the
      * parent lookup is selected — the guard asks "does one exist?", nothing more.
+     *
+     * ── ⚠ A SECOND CALLER SINCE 2026-09-01, AND ITS POLARITY IS THE OPPOSITE ────
+     * `BovSubmissionService.replaceSelectedBroker` asks the same question to decide
+     * whether to APPEND a listing for an incoming broker (Tranche 4 item 5, D-10).
+     * The two callers read the same emptiness in opposite directions — the stage
+     * entry creates when this returns NOTHING, the broker change appends when it
+     * returns SOMETHING — and both are safe under the sharing note above for the
+     * SAME reason, which is worth stating because it is not obvious that it
+     * survives the inversion: a short read makes the stage entry open a duplicate
+     * listing (visible, removable by hand) and makes the broker change skip an
+     * append (visible on the card, repairable by hand). Neither direction produces
+     * a silent wrong state. 🔴 IF THIS METHOD EVER GAINS `without sharing` FOR THE
+     * FIRST CALLER, RE-READ THE SECOND: a read that starts seeing rows the running
+     * user cannot would let a Replace Broker at BOV Outreach append a listing, and
+     * THAT failure is silent and permanent (it turns the stage-entry auto-create
+     * into a no-op forever). Read `replaceSelectedBroker`'s `saleIsListed` block.
      *
      * @param dispositionIds Disposition__c Ids; null/empty-safe.
      * @return Broker Listings on those dispositions, Id + Disposition__c only;

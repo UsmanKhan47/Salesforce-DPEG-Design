@@ -46,11 +46,18 @@ public with sharing class CriticalDateSelector {
     /**
      * The `(Transaction + Type)` keys that already exist for the supplied deals.
      *
-     * 🔴 `WITH SYSTEM_MODE` — AUTOMATION PATH. `CriticalDateService.ensureFor` is fired from
-     * `TransactionTrigger`'s after-update context (and from the repointed seed script), on the
-     * saving user's behalf rather than at their request. `USER_MODE` throws rather than degrades,
-     * and a throw inside an after-update trigger rolls back the deal save that provoked it.
-     * `Type__c` and `Transaction__c` are both Metadata-API-deployed custom fields.
+     * 🔴 `WITH SYSTEM_MODE` — AUTOMATION PATH. ⚠ AMENDED 2026-09-01: this named
+     * `TransactionTrigger`'s after-update context FIRST and the seed script as an aside. That arm
+     * was REMOVED by user decision, so the ORDER IS NOW REVERSED — `CriticalDateService.ensureFor`
+     * has exactly one production caller, `scripts/seed-critical-dates.apex`, and the trigger
+     * consequence below is DORMANT rather than current. See `TransactionTriggerHandler.afterUpdate`
+     * for what must be true before the arm returns.
+     * The exemption is unchanged and is carried by the script path on its own: the read is performed
+     * ON A PRINCIPAL'S BEHALF (a bulk projection, not a row the operator asked for), `USER_MODE`
+     * THROWS rather than degrades, and `Type__c` and `Transaction__c` are both
+     * Metadata-API-deployed custom fields — one ungranted field would abort the whole run.
+     * When the arm returns, so does the sharper consequence: a throw inside an after-update trigger
+     * rolls back the deal save that provoked it.
      * 🔴 AND `without sharing`, via the inner class — SEPARATELY JUSTIFIED IN THIS CLASS'S HEADER.
      * SYSTEM_MODE alone would leave this an idempotency guard that inverts into a duplicate-maker.
      *

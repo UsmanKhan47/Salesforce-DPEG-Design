@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY. A comment placed ABOVE
+        <CustomField> breaks `sf` deploy at source conversion with a misleading "unable to find
+        matching parent xml file" error.
+
+        DISPOSITION GAP CLOSURE TRANCHE 1, ITEM 2 (agent-output/disposition-gap-closure-t1-design.md
+        §3 Item 2, decision D-1, settled at Gate 1 2026-08-31). A FORMULA (Checkbox), not a
+        flow-written or trigger-written field:
+
+            ISPICKVAL(Status__c, 'Signed')
+
+        API NAME per decision D-8 (settled 2026-08-31): Is_Approved_For_Release__c, not the
+        request's literal Approved_For_Release__c - ARCHITECTURE.md §1's Boolean convention
+        requires an Is_/Has_ prefix or a <Subject>_<PastParticiple> shape, and the three sibling
+        Booleans on BOV_Submission__c (Is_Preferred_Broker__c, Is_System_Selected__c,
+        Is_Manually_Appointed__c) are all Is_-prefixed. LABEL stays "Approved for Release" so
+        every BA-facing surface reads exactly as the story asked.
+
+        =====================================================================================
+        WHY A FORMULA - THE THREE MECHANISMS THAT WERE PRICED, NOT JUST THE ONE THAT WAS PICKED.
+        =====================================================================================
+        Formula (chosen): cannot latch, cannot be hand-edited, no FLS-write exposure, no flow, no
+        trigger, no rollback path, no SYSTEM_MODE question, no bulk-test obligation. Structurally
+        incapable of the NDA_Signed__c failure class (see that field's own header).
+        Flow-written checkbox (rejected): would be a FOURTH automation on NDA__c alongside
+        NDA_Signed_Status_Sync and NDA_Signed_Rollup. NDA_Signed_Rollup already runs
+        SystemModeWithoutSharing with a fault connector that converts a failed parent update into
+        a stale count rather than a visible error - this repo does not need a second silently
+        degrading NDA automation.
+        Trigger-written (rejected): NdaTrigger (before insert, before update) is safe by
+        construction today because its one service is change-keyed on Buyer__c with one in-memory
+        pass and zero queries. An unconditional status-derived write would widen that blast radius
+        across every acquisition NDA in the org for a value a formula computes for free.
+
+        =====================================================================================
+        🔴 HOW A DECLINED NDA BEHAVES - STATED EXPLICITLY, AS REQUESTED.
+        =====================================================================================
+        This field reads FALSE the MOMENT Status__c moves to 'Declined', with no writer and no
+        latch to fight. This is the DELIBERATE INVERSE of the NDA_Signed__c latch defect, whose
+        own field header warns in terms: "DO NOT USE THIS FIELD TO ANSWER 'DID THIS PARTY SIGN'.
+        Use Status__c. The checkbox latches true across Sent, Received, Pending and Not Sent." A
+        party who signs and later declines LOSES release approval automatically - correct
+        behaviour, and unreachable by any checkbox a human or a flow could hand-write, because
+        there is nothing here to write.
+
+        =====================================================================================
+        RELATIONSHIP TO THE EXISTING MACHINERY - NOTHING ELSE IS CHANGED, AND HERE IS WHY.
+        =====================================================================================
+        - NDA_Signed__c LATCHES and is granted ONLY to the acquisition permission sets.
+          Deliberately not read by this field or by anything disposition-side. Unchanged.
+        - NDA_Signed_Status_Sync (before-save) sets NDA_Signed__c true on Signed, false on
+          Declined, and touches nothing else. Unchanged.
+        - NDA_Signed_Rollup (after-save) maintains NDA_Count__c / Signed_NDA_Count__c and
+          DELIBERATELY counts Declined rows toward the total (see Status__c's 2026-08-24
+          amendment). Unchanged - that is a PARENT-LEVEL count; this is a PER-PARTY flag. They
+          answer different questions and must never be reconciled into one.
+        - ⚠ This field and All_NDAs_Signed_Before_Progression (on Disposition__c) now key on the
+          SAME condition (Status__c = 'Signed'), BY DESIGN, per decision Q6 recorded in
+          Counter_Signed_Date__c's own header: "the all-signed release gate keys on Status__c =
+          Signed alone ... requiring two [signatures] would be an invention." One release
+          condition, two surfaces.
+
+        =====================================================================================
+        FLS: read-only in BOTH disposition permission sets.
+        =====================================================================================
+        A formula field cannot be granted editable=true - that is a Metadata API deploy error on
+        any formula field, in either set. Applied in the consolidated permission-set pass, not
+        this file.
+
+        Risk: LOW-MEDIUM per the design doc. The only real exposure is D-1 itself: if "fully
+        executed" is later redefined to require a counter-signature as well as Status__c =
+        'Signed', this formula must change, and it will silently disagree with the stage gate
+        (All_NDAs_Signed_Before_Progression) until it does. See Counter_Signed_Date__c's header
+        for the counter-signature field this formula deliberately does NOT reference.
+
+        ⚠ S-2 (code review, 2026-08-31): this formula carries NO record-type guard. It reads TRUE
+        on every 'Signed' NDA regardless of record type, including ACQUISITION NDAs, not just
+        disposition ones - Status__c = 'Signed' is not disposition-specific. Nothing in Tranche 1
+        consumes this field, so this is not a live defect today, but Tranche 3 is expected to wire
+        a reader. If that reader must be scoped to disposition NDAs only, it should filter on the
+        existing Is_Disposition_NDA__c field rather than assume this formula already does that
+        scoping - it does not.
+    -->
+    <fullName>Is_Approved_For_Release__c</fullName>
+    <description>TRUE when Status__c = &apos;Signed&apos;. A formula, not a written field - cannot latch, self-corrects the moment Status__c changes. Reads FALSE automatically on Decline. Keys on the SAME condition as Disposition__c.All_NDAs_Signed_Before_Progression, by design (Q6). See the XML comment in this file for the full reasoning and the mechanisms that were rejected.</description>
+    <inlineHelpText>Ticked automatically once this NDA&apos;s Status is Signed. Clears itself if the status ever moves away from Signed (e.g. Declined). Cannot be edited directly.</inlineHelpText>
+    <label>Approved for Release</label>
+    <type>Checkbox</type>
+    <formula>ISPICKVAL(Status__c, &apos;Signed&apos;)</formula>
+    <formulaTreatBlanksAs>BlankAsBlank</formulaTreatBlanksAs>
+</CustomField>
