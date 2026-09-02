@@ -301,30 +301,65 @@ public with sharing class ChecklistRollupService {
      *   CORRECTLY; this block was the outlier, and it was the sole justification for the
      *   escalation below.
      *
-     * ⚠ WHAT THAT HONESTLY LEAVES: an escalation whose stated reason is gone and which nobody has
-     * re-priced. It is deliberately NOT being flipped to `with sharing` in the Phase 3 UI change -
-     * that is a behaviour change to a deployed class, outside that change's scope, and the incident
-     * it was reacting to is real: an approval's parent write failed silently for every approver who
-     * did not OWN the record, worked in every test because the test's approver WAS the owner, and
-     * was swallowed by `allOrNone = false`.
+     * ═══════════════════════════════════════════════════════════════════════════════════════
+     * 🔴 RESOLVED 2026-09-02 - THE ESCALATION IS **REMOVED**. THIS CLASS IS NOW `with sharing`.
+     *    THE DECISION IS RECORDED HERE RATHER THAN MADE SILENTLY, IN EITHER DIRECTION.
+     * ═══════════════════════════════════════════════════════════════════════════════════════
+     * The narrow re-pricing question this block used to leave open was: IS THERE ANY CALLER OF
+     * `recalc` WHOSE RUNNING PRINCIPAL LACKS EDIT SHARING ON THE DEALS IN `transactionIds`?
+     * As of today the answer is NO, for every caller that exists:
+     *   • `ChecklistItemTrigger` (after contexts) - the corrected `writeRequiresMasterRead=false`
+     *     reading above PROVES the saving user holds edit on the deal, or the platform would have
+     *     refused their item edit before this code ran. Not an edge case; it cannot happen.
+     *   • `ChecklistFanoutService.reconcile` - fires from a `Transaction__c` save, so the principal
+     *     just edited the deal.
+     *   • `ChecklistFanoutQueueable` - runs as its enqueuer, who created or edited the deal. (And
+     *     the rollup is suppressed throughout the fan-out anyway.)
+     *   • `ChecklistMigrationService` (Phase 4 M1) - THE ONE SHAPE THAT WOULD NOT HOLD THE ACCESS,
+     *     and it is no longer hypothetical: it was built, and it deliberately routes AROUND this
+     *     class entirely. It suppresses this rollup across all four of its statements and writes
+     *     the counters itself from what it just created (`ChecklistMigrationService.cls:79-83`).
+     *     So the future-migration premise this escalation rested on has now been tested by reality
+     *     and did not need it.
+     * ⇒ ZERO identified callers require the escalation. An unjustified `without sharing` on a class
+     *   exercised on EVERY checklist completion is standing privilege with no beneficiary, and the
+     *   correct disposition of a control whose premise is gone is removal, not indefinite deferral.
      *
-     * THE RE-PRICING QUESTION IS NARROW, so whoever picks it up should not re-derive it: is there
-     * any caller of `recalc` whose running principal lacks EDIT sharing on the deals in
-     * `transactionIds`? Every caller today is user-initiated - `ChecklistItemTrigger`,
-     * `ChecklistFanoutService.reconcile` off a Transaction save, and the fan-out Queueable running
-     * as its enqueuer - and for all three the argument above says the principal has edit access. A
-     * future migration batch or Schedulable would NOT, and `ChecklistMigrationBatch` (Phase 4 M1)
-     * is exactly that shape. Decide it with a NON-OWNER test that actually fails under
-     * `with sharing`, not on the sentence this block replaced. `TaskRollupService` documents a
-     * related hazard and accepts it as a residual; that is a different object with a different
-     * relationship and its reasoning does not transfer here in either direction.
+     * ⚠ WHY THIS IS SAFE DESPITE THE INCIDENT THAT MOTIVATED IT. That incident was an approval's
+     * parent write failing SILENTLY for every approver who did not own the record, swallowed by
+     * `allOrNone = false` and green in every test because the test's approver WAS the owner. THAT
+     * SHAPE IS STRUCTURALLY IMPOSSIBLE HERE: this method uses `allOrNone = true`, so an access gap
+     * raises a `DmlException` that aborts the caller's save. Loud, immediate, and attributable.
+     * ⚠ `AccessLevel.SYSTEM_MODE` IS UNCHANGED AND IS A SEPARATE DECISION. It answers CRUD/FLS -
+     * `DPEG_Checklist_Edit` grants `allowEdit=false` on `Transaction__c` - and it never answered
+     * sharing. Removing the sharing escalation does not touch it.
+     * ⚠ LIVE PRECEDENT ON THE IDENTICAL WRITE PATH: `ChecklistOutcomeService.commitDealWrites`
+     * writes the same parent `Transaction__c`, on the same completion path, `with sharing` plus
+     * `SYSTEM_MODE`, and declined to copy this escalation for exactly these reasons.
      *
-     * Scoped as narrowly as Apex allows: `private`, one class, one method, reached only from
-     * `recalc`. Inner classes do NOT inherit the outer class's sharing keyword, so it is declared
-     * explicitly and `ChecklistRollupService` itself STAYS `with sharing`. It writes ONLY derived
-     * counters - no field a user supplied, nothing read back, nothing returned to a caller - so it
-     * cannot leak a row the running user could not otherwise see.
-     * PRECEDENT: `OnboardingTaskRollupService.RollupWrites`, `OnboardingSelector.IdempotencyReads`.
+     * 🔴 WHAT BREAKS IF A CALLER WITHOUT EDIT SHARING APPEARS LATER, STATED SO NOBODY HAS TO GUESS.
+     * The `Database.update` below raises `INSUFFICIENT_ACCESS_ON_CROSS_REFERENCE_ENTITY` (or
+     * `INSUFFICIENT_ACCESS_OR_READONLY`) and, because `allOrNone = true`, aborts that caller's
+     * whole transaction. On a user path that cannot arise. On a future Schedulable or batch it
+     * means the JOB FAILS with a stack rather than writing partial counters - which is the right
+     * failure for numbers the dashboard, the KPIs and the wire-risk tile all read.
+     * ⇒ RESTORING IT IS A ONE-WORD CHANGE BACK TO `without sharing`, AND IT MUST COME WITH A NAMED
+     *   CALLER IN THIS BLOCK. Never flip it back on a hypothetical, which is how it got here.
+     *   Prove the need with a NON-OWNER test that actually fails under `with sharing`.
+     * ⚠ `TaskRollupService` documents a related hazard and ACCEPTS it as a residual; that is a
+     * different object with a different relationship and its reasoning does not transfer here in
+     * either direction.
+     *
+     * ⚠ THE INNER CLASS IS KEPT DELIBERATELY, EVEN THOUGH ITS ONLY REASON FOR EXISTING WAS TO SCOPE
+     * THE ESCALATION. Collapsing it into a private static method is the obvious follow-up and is
+     * NOT bundled here: it would turn a one-word, reviewable sharing change to a deployed class
+     * into a structural one, in a payload that already carries two phases. Inner classes do NOT
+     * inherit the outer class's sharing keyword, so the mode is declared EXPLICITLY rather than
+     * left to the caller.
+     * It writes ONLY derived counters - no field a user supplied, nothing read back, nothing
+     * returned to a caller - so it could never leak a row the running user cannot otherwise see;
+     * that was true before this change and is why the escalation was low-risk rather than harmless.
+     * PRECEDENT FOR THE SHAPE (not for the mode): `OnboardingTaskRollupService.RollupWrites`.
      *
      * `allOrNone = true` so this can never fail silently again. If the write is genuinely impossible
      * the caller's save fails loudly, which is the correct outcome for counters the dashboard, the
@@ -333,7 +368,7 @@ public with sharing class ChecklistRollupService {
      * ⚠ Apex forbids static methods on inner classes, hence the instance method and the
      * `new RollupWrites()` at the call site.
      */
-    private without sharing class RollupWrites {
+    private with sharing class RollupWrites {
 
         /**
          * Persists the recomputed counters at both levels.

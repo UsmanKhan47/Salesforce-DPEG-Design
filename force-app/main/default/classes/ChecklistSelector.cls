@@ -129,10 +129,21 @@ public with sharing class ChecklistSelector {
      *
      * ⚠ `Transaction__c` IS A MASTER-DETAIL FIELD and therefore non-permissionable — it can never
      * appear in a `fieldPermissions` block and has no FLS to deny, so it is safe in either mode.
-     * `Pct_Complete__c`, `Items_Total__c` and `Items_Complete__c` DO need read grants.
+     * `Group_Letter__c`, `Group_Name__c`, `Owner_Label__c`, `Sequence__c`, `Stage__c` and
+     * `Is_Conditional__c` DO need read grants.
      *
-     * ⚠ `Pct_Complete__c` IS A FORMULA and must be granted `editable=false` in every permission
-     * set — `editable=true` on a formula field FAILS THE DEPLOY.
+     * ⚠ SELECTS ONLY WHAT `ChecklistController.ChecklistRow` ACTUALLY RENDERS, for the same
+     * reason as its `ChecklistItemSelector` twin: under `USER_MODE` every extra column is another
+     * FLS grant that must exist or the WHOLE QUERY throws and the whole screen goes dark.
+     * `Items_Total__c`, `Items_Complete__c` and `Pct_Complete__c` were dropped for exactly that
+     * reason — the controller DELIBERATELY does not read them (it counts from the items it
+     * returns, so one screen cannot contradict itself), and `Pct_Complete__c` is additionally a
+     * FORMULA, which carries an `editable=false` requirement in every permission set because
+     * `editable=true` on a formula field FAILS THE DEPLOY. Three FLS dependencies for a value
+     * nothing reads. `Sequence__c` is the exception and stays: it is the ORDER BY
+     * key, and although ordering does not require selection, returning it lets a reader inspecting
+     * these rows see WHY they are in that order. It is an already-granted Number, so it costs one
+     * FLS dependency the permission set already carries.
      *
      * NOT-FOUND CONTRACT: a list read. An empty list is MEANINGFUL, not exceptional — a deal that
      * has never been fanned out has no checklists, and the caller renders that as a visible empty
@@ -150,8 +161,7 @@ public with sharing class ChecklistSelector {
         }
         return [
             SELECT Id, Transaction__c, Group_Letter__c, Group_Name__c, Owner_Label__c,
-                   Sequence__c, Stage__c, Is_Conditional__c,
-                   Items_Total__c, Items_Complete__c, Pct_Complete__c
+                   Sequence__c, Stage__c, Is_Conditional__c
             FROM Checklist__c
             WHERE Transaction__c IN :transactionIds
             WITH USER_MODE

@@ -48,10 +48,15 @@ public with sharing class CriticalDateSelector {
      *
      * 🔴 `WITH SYSTEM_MODE` — AUTOMATION PATH. ⚠ AMENDED 2026-09-01: this named
      * `TransactionTrigger`'s after-update context FIRST and the seed script as an aside. That arm
-     * was REMOVED by user decision, so the ORDER IS NOW REVERSED — `CriticalDateService.ensureFor`
-     * has exactly one production caller, `scripts/seed-critical-dates.apex`, and the trigger
-     * consequence below is DORMANT rather than current. See `TransactionTriggerHandler.afterUpdate`
-     * for what must be true before the arm returns.
+     * was REMOVED by user decision, so the ORDER IS NOW REVERSED. See
+     * `TransactionTriggerHandler.afterUpdate` for what must be true before the arm returns.
+     * 🔴 AMENDED AGAIN 2026-09-02: this said `ensureFor` "has exactly one production caller,
+     * `scripts/seed-critical-dates.apex`". IT HAS TWO. Phase 5's
+     * `ChecklistOutcomeService.applyForCompletedItems` calls it when an ORDINARY USER completes
+     * checklist item A5. Still no trigger — but the "rolls back the save that provoked it"
+     * consequence is NO LONGER DORMANT, because that call runs in the same transaction as the
+     * user's own checklist completion. Only the TRIGGER-specific sharpening (every deal in the org
+     * on its next stage move) is still hypothetical.
      * The exemption is unchanged and is carried by the script path on its own: the read is performed
      * ON A PRINCIPAL'S BEHALF (a bulk projection, not a row the operator asked for), `USER_MODE`
      * THROWS rather than degrades, and `Type__c` and `Transaction__c` are both

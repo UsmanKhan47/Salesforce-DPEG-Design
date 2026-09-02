@@ -5,6 +5,15 @@
  * layer=service. All SOQL delegated to `TransactionSelector.selectForCriticalDates` and
  * `CriticalDateSelector.selectExistingKeysByTransactionIds`.
  *
+ * ── PRODUCTION CALLERS (authoritative list — ARCHITECTURE.md §2 makes this header the inventory) ──
+ *   1. `scripts/seed-critical-dates.apex`                    — an operator, deliberately, in bulk.
+ *   2. `ChecklistOutcomeService.applyForCompletedItems`      — an ORDINARY USER completing checklist
+ *      item **A5** ("Log critical dates into Salesforce deal record"), one deal at a time, in the
+ *      same transaction as their own checklist save. Added by Phase 5, 2026-09-02.
+ * ⚠ NO TRIGGER CALLS THIS CLASS. Caller 2 is not a re-wiring of the removed
+ * `TransactionTriggerHandler` arm and must not be read as permission to restore it — see the
+ * GATE-B3 block below, and `TransactionTriggerHandler.afterUpdate` for the removal conditions.
+ *
  * ═══════════════════════════════════════════════════════════════════════════════════════════
  * THE RULES BELOW ARE LIFTED VERBATIM FROM `scripts/seed-critical-dates.apex`, WHICH IS THE SPEC.
  * ═══════════════════════════════════════════════════════════════════════════════════════════
@@ -51,12 +60,39 @@
  * said `TransactionTriggerHandler` wires it to AFTER UPDATE ONLY. That arm was REMOVED by user
  * decision: with GATE-B2 (`Contract Executed` missing from the restricted `Type__c`) and GATE-B4
  * (source of truth) still open, wiring it live would have made Phase 2 non-neutral for every deal in
- * the org on its next stage move. So the window is not merely narrowed, it is currently CLOSED - a
- * deal only becomes undeletable if someone runs the seed script against it.
+ * the org on its next stage move. The TRIGGER window remains closed.
+ *
+ * 🔴 AMENDED AGAIN 2026-09-02 — THE WINDOW IS NO LONGER CLOSED. THIS PARAGRAPH USED TO END "a deal
+ *    only becomes undeletable if someone runs the seed script against it." THAT IS NOW FALSE, AND
+ *    THIS IS THE PARAGRAPH SOMEONE READS TO ANSWER GATE-B3, SO IT MUST NOT LIE.
+ * Phase 5 added a SECOND production caller: `ChecklistOutcomeService.applyForCompletedItems` invokes
+ * `ensureFor` when checklist item **A5** ("Log critical dates into Salesforce deal record") is
+ * completed. So a deal becomes permanently undeletable the moment an ordinary user ticks A5 on it -
+ * no script, no administrator, no deploy.
+ * WHAT IS AND IS NOT DIFFERENT FROM THE TRIGGER ARM:
+ *   • STILL NARROWER. It is opt-in per deal, by the person whose job that step is, on a step whose
+ *     subject literally says to log the dates. It is NOT every deal in the org on its next stage
+ *     move, which is what the removal was protecting against.
+ *   • BUT IT IS ORDINARY USERS, NOT OPERATORS. The seed-script framing ("someone runs it") no longer
+ *     describes the reachable population. Any deal whose group A is worked will become undeletable
+ *     in the normal course of business.
+ *   • GATE-B2 IS UNAFFECTED: this class writes only `Closing Date`, `Feasibility End` and
+ *     `Loan Commitment`, all three valid today. `Contract Executed` is still absent and must stay
+ *     absent until the picklist value is deployed.
+ * ⇒ GATE-B3 IS NOW A LIVE QUESTION FOR THE CHECKLIST, NOT A DEFERRED ONE FOR THE TRIGGER. If the
+ *   business refuses the undeletability, the A5 call is in scope of that answer too.
+ *
+ * ⚠ TRANSACTION SCOPE ON THE A5 PATH — the dormancy claim below is also retired. `ensureFor` runs in
+ * the SAME transaction as the user's checklist completion, so a throw here rolls back their save.
+ * The `allOrNone = false` insert means a single bad ROW cannot do that (it is logged and skipped),
+ * but a failure in the two READS, or a `Database.insert` that throws outright, still would. That was
+ * the "rolls back the user's own save" consequence recorded as dormant while only the script called
+ * this class; it is dormant no longer.
+ *
  * THE SERVICE IS NOT DEAD CODE AND MUST NOT BE DELETED AS SUCH: `scripts/seed-critical-dates.apex`
- * calls it directly, and it is the tested, reviewed implementation the trigger arm will use when the
- * gates close. See `TransactionTriggerHandler.afterUpdate` for the full re-wiring conditions,
- * recorded at the removal site.
+ * and `ChecklistOutcomeService` both call it directly, and it is the tested, reviewed implementation
+ * the trigger arm will use when the gates close. See `TransactionTriggerHandler.afterUpdate` for the
+ * full re-wiring conditions, recorded at the removal site.
  * GATE-B3 is still the real answer to the delete constraint - either accept it, or relax the lookup
  * to `SetNull` + `required=false` with a validation rule in its place - and it is a
  * business/architecture decision, not one this class can take.

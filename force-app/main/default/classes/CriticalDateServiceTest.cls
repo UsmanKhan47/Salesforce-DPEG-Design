@@ -150,9 +150,13 @@ private class CriticalDateServiceTest {
 
         Assert.areEqual(0, [SELECT COUNT() FROM Critical_Date__c WHERE Transaction__c = :deal.Id],
             'CriticalDateService must NOT be reachable from TransactionTrigger - not on a counter '
-            + 'write, not on a stage change, and not on a pinned-date change. Its only production '
-            + 'caller is scripts/seed-critical-dates.apex. If this fails, the arm was re-added: read '
-            + 'the withheld-arm note in TransactionTriggerHandler before deciding that is correct.');
+            + 'write, not on a stage change, and not on a pinned-date change. If this fails, the '
+            + 'arm was re-added: read the withheld-arm note in TransactionTriggerHandler before '
+            + 'deciding that is correct. NOTE (2026-09-02): this message used to claim the seed '
+            + 'script was the ONLY production caller. It is not - ChecklistOutcomeService calls '
+            + 'ensureFor when a user completes checklist item A5. That is a SERVICE path, not a '
+            + 'trigger path, so it does not weaken what this test asserts; the deal below never '
+            + 'gets a checklist item, let alone a completed A5.');
     }
 
     @isTest

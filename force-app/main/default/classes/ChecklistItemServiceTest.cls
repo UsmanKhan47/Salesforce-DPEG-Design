@@ -57,6 +57,49 @@ private class ChecklistItemServiceTest {
         return TestDataFactory.createTransactionsOnChecklistModel(1, true)[0];
     }
 
+    /**
+     * A checklist group at a letter that carries NO Phase 5 capture coordinate.
+     *
+     * 🔴 THE FIXTURE MATTERS AS SOON AS A GROUP HAS MORE THAN FOUR ITEMS. `TestDataFactory
+     * .createChecklist` always produces letter `A`, and `createChecklistItems` sequences from 1 -
+     * so a 200- or 251-item group is `A1 … A251`, which CONTAINS `A5`. `A5` is a real Phase 5
+     * coordinate ("Log critical dates into Salesforce deal record"), so completing that batch fires
+     * `CriticalDateService.ensureFor` and spends 2 extra SOQL and 1 extra DML that a one-item batch
+     * does not. The bulkification invariant below would then fail for a reason that has nothing to
+     * do with bulkification.
+     *
+     * ⚠ THIS IS NOT HIDING THE COST - IT IS ISOLATING IT. The outcome pass's own 1-vs-200 cost
+     * equality, measured WITH a derived coordinate present in both calls, is asserted by
+     * `ChecklistOutcomeServiceTest.outcomeCostAt200RowsMatchesCostAtOne`. This helper exists so the
+     * two properties are measured separately instead of one masking the other.
+     *
+     * Capture-free letters today are D, E, H, H2 and I. A, B, C, F, G and J all carry at least one.
+     *
+     * @param dealId the parent deal.
+     * @param letter a capture-free group letter.
+     * @return the inserted checklist.
+     */
+    private static Checklist__c captureFreeChecklist(Id dealId, String letter) {
+        return checklistAtLetter(dealId, letter);
+    }
+
+    /**
+     * A checklist group at a CHOSEN letter. Neutral name, because the Phase 5 wiring tests below
+     * deliberately use it for capture-BEARING letters (A, B, F) while the cost tests above use
+     * `captureFreeChecklist` for capture-free ones. Same mechanism, opposite intent, so the two
+     * names are worth keeping distinct.
+     *
+     * @param dealId the parent deal.
+     * @param letter the `Group_Letter__c` to stamp.
+     * @return the inserted checklist.
+     */
+    private static Checklist__c checklistAtLetter(Id dealId, String letter) {
+        Checklist__c checklistGroup = TestDataFactory.createChecklist(dealId, false);
+        checklistGroup.Group_Letter__c = letter;
+        insert checklistGroup;
+        return checklistGroup;
+    }
+
     private static Checklist_Item__c reload(Id itemId) {
         return [
             SELECT Id, Flag__c, Comment__c, Completed_By__c, Completed_DateTime__c,
@@ -71,6 +114,133 @@ private class ChecklistItemServiceTest {
         return new List<ChecklistItemService.CompletionRequest>{
             new ChecklistItemService.CompletionRequest(itemId, comment)
         };
+    }
+
+    /**
+     * One item at an EXACT coordinate. Items 1..sequence are created under a group re-pointed to
+     * `letter`, and the last one is returned. The coordinate is the whole point - Phase 5 keys on
+     * `(Group_Letter__c, Sequence__c)` and never on `Subject__c`.
+     */
+    private static Checklist_Item__c itemAtCoordinate(Id dealId, String letter, Integer sequence) {
+        Checklist__c checklistGroup = checklistAtLetter(dealId, letter);
+        return TestDataFactory.createChecklistItems(sequence, checklistGroup.Id, true)[sequence - 1];
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════════════════
+    // 🔴 PHASE 5 WIRING — these three tests exist because DELETING THE TWO PHASE 5 CALLS FROM
+    //    `complete()` LEFT THE ENTIRE APEX SUITE GREEN.
+    //
+    // `ChecklistCaptureService` and `ChecklistOutcomeService` are thoroughly tested DIRECTLY, in
+    // their own classes. Nothing proved that `ChecklistItemService.complete` actually calls them,
+    // so the one line joining the feature to the only path a human uses was unpinned. Each test
+    // below goes through `complete()` and asserts an effect that ONLY the wiring can produce.
+    //
+    // ⚠ These are deliberately NOT in the cost/volume block above, which uses capture-free group
+    // letters so it measures bulkification alone (see `captureFreeChecklist`). Separating the two
+    // is what stops either property masking the other.
+    // ═══════════════════════════════════════════════════════════════════════════════════════
+
+    @isTest
+    static void completeRefusesACaptureItemWhoseOutputIsNotOnFile() {
+        // Pins the `assertCaptureSatisfied` call. F5 selects the lender; with no Loan__c at all
+        // there is nothing on file, so the completion must be refused BEFORE any DML.
+        Transaction__c deal = newDeal();
+        Checklist_Item__c f5 = itemAtCoordinate(deal.Id, 'F', 5);
+
+        Test.startTest();
+        String message;
+        try {
+            ChecklistItemService.complete(one(f5.Id, null));
+        } catch (ChecklistCaptureService.CaptureRequiredException e) {
+            message = e.getMessage();
+        }
+        Test.stopTest();
+
+        Assert.isNotNull(message,
+            'complete() must run the capture guard. If this passes with a null message the guard '
+                + 'call has been removed from complete() and every capture item closes empty');
+        Assert.isTrue(message.containsIgnoreCase('lender'),
+            'and the refusal names the missing output, was: ' + message);
+        Assert.areEqual('None', reload(f5.Id).Flag__c,
+            'Nothing was written - the refusal is raised before the DML, not after it');
+    }
+
+    @isTest
+    static void completeStampsEarnestMoneySentForB5() {
+        // Pins the `applyForCompletedItems` call for the EARNEST_MONEY_SENT outcome.
+        Transaction__c deal = newDeal();
+        Checklist_Item__c b5 = itemAtCoordinate(deal.Id, 'B', 5);
+
+        Test.startTest();
+        ChecklistItemService.complete(one(b5.Id, null));
+        Test.stopTest();
+
+        Transaction__c after = [
+            SELECT Earnest_Money_Sent__c, Earnest_Money_Sent_Date__c
+            FROM Transaction__c WHERE Id = :deal.Id
+        ];
+        Assert.areEqual(true, after.Earnest_Money_Sent__c,
+            'Completing B5 through complete() must stamp the deal. A false here means the outcome '
+                + 'call has been removed and B5 records nothing again');
+        Assert.areEqual(Date.today(), after.Earnest_Money_Sent_Date__c, 'and stamp its date');
+    }
+
+    @isTest
+    static void reCompletingAnAlreadyDoneItemDoesNotReApplyItsOutcome() {
+        // 🔴 PINS THAT `complete()` PASSES ITS PRE-DML READ AS THE PRIOR STATE. Without that
+        // argument, an unrelated edit to an already-complete item re-enters the outcome path.
+        //
+        // THE DISCRIMINATOR IS THE DATE, NOT THE FLAG. `Earnest_Money_Sent__c` stays true from the
+        // first completion, so re-application would be invisible on it. Nulling the DATE in between
+        // gives the second call something to re-stamp if the gate is not armed: `buildDealWrites`
+        // stamps `Earnest_Money_Sent_Date__c` whenever it is blank AND the item is in this batch's
+        // earnest set. Gate armed -> B5 never enters that set -> the date stays null.
+        Transaction__c deal = newDeal();
+        Checklist_Item__c b5 = itemAtCoordinate(deal.Id, 'B', 5);
+
+        Test.startTest();
+        ChecklistItemService.complete(one(b5.Id, 'first pass'));
+        Assert.areEqual(Date.today(),
+            [SELECT Earnest_Money_Sent_Date__c FROM Transaction__c WHERE Id = :deal.Id]
+                .Earnest_Money_Sent_Date__c,
+            'Control: the first completion DID stamp, so this test is not vacuous');
+
+        update new Transaction__c(Id = deal.Id, Earnest_Money_Sent_Date__c = null);
+        // An ordinary edit to an already-complete item — the exact case the gate exists for.
+        ChecklistItemService.complete(one(b5.Id, 'a later comment on a done item'));
+        Test.stopTest();
+
+        Transaction__c after = [
+            SELECT Earnest_Money_Sent__c, Earnest_Money_Sent_Date__c
+            FROM Transaction__c WHERE Id = :deal.Id
+        ];
+        Assert.isNull(after.Earnest_Money_Sent_Date__c,
+            'The second call must NOT re-stamp. A date here means complete() stopped passing its '
+                + 'prior-state map and every edit to a done item re-applies its outcomes');
+        Assert.areEqual(true, after.Earnest_Money_Sent__c,
+            'and the flag from the first completion is untouched - the gate skips re-application, '
+                + 'it does not undo anything');
+    }
+
+    @isTest
+    static void completeProjectsCriticalDatesForA5() {
+        // Pins the `applyForCompletedItems` call for the CRITICAL_DATES outcome, which is the arm
+        // that reaches `CriticalDateService` - the one Phase 5 side effect with a blast radius
+        // outside this module (a projected date makes the deal undeletable).
+        Transaction__c deal = newDeal();
+        Checklist_Item__c a5 = itemAtCoordinate(deal.Id, 'A', 5);
+        Assert.areEqual(0, [SELECT COUNT() FROM Critical_Date__c WHERE Transaction__c = :deal.Id],
+            'Control: no critical dates before A5 is completed');
+
+        Test.startTest();
+        ChecklistItemService.complete(one(a5.Id, null));
+        Test.stopTest();
+
+        Assert.isTrue(
+            [SELECT COUNT() FROM Critical_Date__c WHERE Transaction__c = :deal.Id] > 0,
+            'Completing "Log critical dates into Salesforce deal record" through complete() must '
+                + 'actually log them'
+        );
     }
 
     // ═══════════════════════════════════════════════════════════════════════════════════════
@@ -527,8 +697,11 @@ private class ChecklistItemServiceTest {
         // bumping a number. 200 rows is the largest SINGLE trigger chunk, so this isolates the
         // service's own cost from the platform's per-chunk trigger firing (see the class header).
         Transaction__c deal = newDeal();
-        Checklist__c smallGroup = TestDataFactory.createChecklist(deal.Id, true);
-        Checklist__c largeGroup = TestDataFactory.createChecklist(deal.Id, true);
+        // Capture-free letters, so neither call carries a Phase 5 coordinate — see
+        // `captureFreeChecklist`. Without this the 200-row group contains A5 and the one-row group
+        // does not, and the equality below fails on the outcome pass rather than on bulkification.
+        Checklist__c smallGroup = captureFreeChecklist(deal.Id, 'D');
+        Checklist__c largeGroup = captureFreeChecklist(deal.Id, 'E');
         Checklist_Item__c single = TestDataFactory.createChecklistItem(smallGroup.Id, true);
         List<Checklist_Item__c> many = TestDataFactory.createChecklistItems(200, largeGroup.Id, true);
 
@@ -582,7 +755,9 @@ private class ChecklistItemServiceTest {
         // which is the whole reason the rule picks that number over 200: a bug that only appears
         // when the trigger logic runs more than once per transaction surfaces here and nowhere else.
         Transaction__c deal = newDeal();
-        Checklist__c checklistGroup = TestDataFactory.createChecklist(deal.Id, true);
+        // Capture-free letter: this test measures TRIGGER CHUNKING at 251, not the Phase 5 outcome
+        // pass. `ChecklistOutcomeServiceTest` covers that separately. See `captureFreeChecklist`.
+        Checklist__c checklistGroup = captureFreeChecklist(deal.Id, 'D');
         List<Checklist_Item__c> items = TestDataFactory.createChecklistItems(251, checklistGroup.Id, true);
 
         List<ChecklistItemService.CompletionRequest> requests =
@@ -617,7 +792,10 @@ private class ChecklistItemServiceTest {
     @isTest
     static void recordWireVerificationLandsAll251RowsInOneCall() {
         Transaction__c deal = newDeal();
-        Checklist__c checklistGroup = TestDataFactory.createChecklist(deal.Id, true);
+        // Capture-free letter, same reason as the sibling 251 test above. Note that a VERIFIED item
+        // is DONE (`ChecklistItemDomain.isDone` is a two-value test), so an A5 in this batch would
+        // fire the Phase 5 outcome pass just as a completion does.
+        Checklist__c checklistGroup = captureFreeChecklist(deal.Id, 'D');
         List<Checklist_Item__c> items = TestDataFactory.createChecklistItems(251, checklistGroup.Id, false);
         for (Checklist_Item__c item : items) {
             item.Is_Wire_Verification__c = true;
@@ -649,5 +827,108 @@ private class ChecklistItemServiceTest {
         );
         Assert.isTrue(queriesUsed < 20, 'Query count should be a small constant, was ' + queriesUsed);
         Assert.isTrue(dmlUsed < 20, 'DML statement count should be a small constant, was ' + dmlUsed);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════════════════
+    // Coverage of the paths a happy-path suite never reaches
+    // ═══════════════════════════════════════════════════════════════════════════════════════
+
+    @isTest
+    static void completeSkipsNullEntriesAndStillProcessesTheRest() {
+        // A caller assembling requests in a loop can leave a null in the list. Skipping it is not
+        // the same as refusing the batch, and the distinction is only visible at more than one row.
+        Transaction__c deal = newDeal();
+        Checklist__c checklistGroup = TestDataFactory.createChecklist(deal.Id, true);
+        Checklist_Item__c item = TestDataFactory.createChecklistItem(checklistGroup.Id, true);
+
+        Test.startTest();
+        ChecklistItemService.complete(new List<ChecklistItemService.CompletionRequest>{
+            null,
+            new ChecklistItemService.CompletionRequest(null, 'no id'),
+            new ChecklistItemService.CompletionRequest(item.Id, 'real')
+        });
+        Test.stopTest();
+
+        Checklist_Item__c saved = reload(item.Id);
+        Assert.areEqual(ChecklistItemDomain.FLAG_COMPLETED, saved.Flag__c, 'The real request landed');
+        Assert.areEqual('real', saved.Comment__c, 'With its comment');
+    }
+
+    @isTest
+    static void recordWireVerificationSkipsNullEntriesAndDuplicates() {
+        Transaction__c deal = newDeal();
+        Checklist__c checklistGroup = TestDataFactory.createChecklist(deal.Id, true);
+        Checklist_Item__c item = TestDataFactory.createChecklistItems(1, checklistGroup.Id, false)[0];
+        item.Is_Wire_Verification__c = true;
+        insert item;
+
+        Test.startTest();
+        ChecklistItemService.recordWireVerification(
+            new List<ChecklistItemService.WireVerificationRequest>{
+                null,
+                new ChecklistItemService.WireVerificationRequest(null, 'Jane Doe', '713-555-0142', null),
+                new ChecklistItemService.WireVerificationRequest(item.Id, 'Jane Doe', '713-555-0142', 'first'),
+                // Same id twice would be DUPLICATE_VALUE in one DML. First wins.
+                new ChecklistItemService.WireVerificationRequest(item.Id, 'Someone Else', '000', 'second')
+            }
+        );
+        Test.stopTest();
+
+        Checklist_Item__c saved = reload(item.Id);
+        Assert.areEqual(ChecklistItemDomain.FLAG_VERIFIED, saved.Flag__c, 'The real request landed');
+        Assert.areEqual('Jane Doe', saved.Verified_By_Name__c, 'The FIRST request wins, not the last');
+        Assert.isTrue(saved.Comment__c.contains('first'), 'And its comment');
+        Assert.isFalse(saved.Comment__c.contains('second'), 'The duplicate was dropped entirely');
+    }
+
+    @isTest
+    static void aPlatformDmlFailureIsRETHROWNUNTOUCHEDAndNotDisguisedAsARefusal() {
+        // ═══════════════════════════════════════════════════════════════════════════════════
+        // 🔴 THE OTHER HALF OF `refusalOrOriginal`. Its job is to re-type ONLY the wire-fraud
+        // prerequisite refusal; everything else must escape UNCHANGED so the controller still maps
+        // it to the fixed generic message. Without this test only the re-typing branch is covered,
+        // and a broadened matcher — `asRefusal` returning non-null for any DmlException — would go
+        // unnoticed while quietly routing raw platform text (field API names, validation-rule
+        // internals) to the user.
+        //
+        // The failure is induced with a confirmer name longer than `Verified_By_Name__c`'s
+        // Text(120): deterministic, needs no user fixture, and no sharing setup.
+        //
+        // ⚠ IT ALSO DOCUMENTS A REAL LIMIT. The service does NOT length-check that field, so an
+        // over-long name is a platform error rather than a friendly refusal. That is acceptable
+        // (the controller shows the generic message and leaks nothing) but it is a decision, not
+        // an oversight — a UI that can submit 121 characters here would want a guard.
+        Transaction__c deal = newDeal();
+        Checklist__c checklistGroup = TestDataFactory.createChecklist(deal.Id, true);
+        Checklist_Item__c item = TestDataFactory.createChecklistItems(1, checklistGroup.Id, false)[0];
+        item.Is_Wire_Verification__c = true;
+        insert item;
+
+        Boolean caughtDml = false;
+        Boolean caughtRefusal = false;
+        Test.startTest();
+        try {
+            ChecklistItemService.recordWireVerification(
+                new List<ChecklistItemService.WireVerificationRequest>{
+                    new ChecklistItemService.WireVerificationRequest(
+                        item.Id, 'N'.repeat(200), '713-555-0142', null
+                    )
+                }
+            );
+            Assert.fail('Expected the platform to reject a 200-character Verified_By_Name__c');
+        } catch (ChecklistItemPrerequisiteService.PrerequisiteNotMetException e) {
+            caughtRefusal = true;
+        } catch (DmlException e) {
+            caughtDml = true;
+        }
+        Test.stopTest();
+
+        Assert.isTrue(caughtDml, 'An ordinary platform failure must surface as a DmlException');
+        Assert.isFalse(
+            caughtRefusal,
+            'It must NOT be re-typed as a prerequisite refusal - that path is reserved for the '
+                + 'wire-fraud gate, whose message is shown to the user verbatim'
+        );
+        Assert.areEqual('None', reload(item.Id).Flag__c, 'Nothing was written');
     }
 }

@@ -9,8 +9,13 @@
  * │ MODE INVENTORY — THIS CLASS DELIBERATELY MIXES `SYSTEM_MODE` AND `USER_MODE`.              │
  * │   SYSTEM_MODE (automation paths, each justified at its own declaration):                   │
  * │     • selectByIdsWithDeal    <- ChecklistItemPrerequisiteService (BEFORE-UPDATE trigger)    │
- * │     • selectByTransactionIds <- ChecklistRollupService (AFTER-* trigger) and                │
- * │                                ChecklistFanoutService.reconcile                             │
+ * │     • selectByTransactionIds <- ChecklistRollupService (AFTER-* trigger),                   │
+ * │                                ChecklistFanoutService.reconcile, and                        │
+ * │                                ChecklistMigrationAuditService.compare — the THIRD is        │
+ * │                                OPERATOR-driven, not platform-driven, and carries its own    │
+ * │                                separate justification at the declaration. Do not merge them.│
+ * │     • selectForOutcomeByIds  <- ChecklistOutcomeService (Phase 5), reading the PARENT DEAL   │
+ * │                                after a completion has already been saved                    │
  * │   USER_MODE (a read the running user asked for):                                           │
  * │     • selectForCompletion    <- ChecklistItemService, driven by a human clicking Complete   │
  * │     • selectForDisplayByTransactionIds                                                     │
@@ -68,8 +73,12 @@ public with sharing class ChecklistItemSelector {
      *
      * @param itemIds `Checklist_Item__c` ids — the caller's candidates AND their prerequisites;
      *                null/empty-safe.
-     * @return Map of item Id -> item with Id, Checklist__c, Checklist__r.Transaction__c, Flag__c,
-     *         Subject__c, Sequence__c, Blocked_By__c and Is_Critical__c populated.
+     * @return Map of item Id -> item with Id, Checklist__c, Checklist__r.Transaction__c,
+     *         Checklist__r.Group_Letter__c, Flag__c, Subject__c, Sequence__c, Blocked_By__c and
+     *         Is_Critical__c populated. (`Group_Letter__c` was already in the SELECT and missing
+     *         from this list; a selector's @return IS its contract, and a caller that trusts an
+     *         incomplete one gets `SObject row was retrieved via SOQL without querying the
+     *         requested field` at runtime with no compile-time warning.)
      * @example
      * Map<Id, Checklist_Item__c> rows = ChecklistItemSelector.selectByIdsWithDeal(ids);
      */
@@ -90,24 +99,46 @@ public with sharing class ChecklistItemSelector {
      * Every checklist item on the supplied Transactions — the rollup's source and the reconcile's
      * "has any item in this group been worked?" evidence.
      *
-     * 🔴 `WITH SYSTEM_MODE` — AUTOMATION PATH. Two callers, both of them platform-driven:
-     * `ChecklistRollupService.recalc` (fired from `ChecklistItemTrigger`'s after contexts) and
-     * `ChecklistFanoutService.reconcile` (fired from `TransactionTrigger`'s after-update context
-     * and from the fan-out Queueable). Neither is a read the running user asked for. Same
-     * `USER_MODE`-throws-rather-than-degrades reasoning as `selectByIdsWithDeal` above, with one
-     * additional consequence specific to a rollup: a partial or thrown read here does not produce
-     * a visibly broken screen, it produces a WRONG NUMBER on the Wire Sentinel dashboard tile, and
-     * a wrong number in the safe-looking direction (zero open wire risks) is the RISK 1 failure
-     * this whole rewrite exists to eliminate.
+     * 🔴 `WITH SYSTEM_MODE` — AUTOMATION PATH. ⚠ AMENDED 2026-09-02: THIS SAID "Two callers, both of
+     * them platform-driven" AND THEN NAMED A THIRD ELSEWHERE. THERE ARE THREE, AND THE THIRD DOES
+     * NOT FIT THE FIRST TWO'S JUSTIFICATION — filing it under theirs would record a wrong reason in
+     * a header ARCHITECTURE.md §2 calls authoritative, which is worse than recording none.
+     *
+     *   1. `ChecklistRollupService.recalc` — fired from `ChecklistItemTrigger`'s after contexts.
+     *   2. `ChecklistFanoutService.reconcile` — fired from `TransactionTrigger`'s after-update
+     *      context and from the fan-out Queueable.
+     *   PLATFORM-DRIVEN, both. Neither is a read the running user asked for, so the
+     *   `USER_MODE`-throws-rather-than-degrades reasoning at `selectByIdsWithDeal` applies verbatim,
+     *   with one consequence specific to a rollup: a partial or thrown read here does not produce a
+     *   visibly broken screen, it produces a WRONG NUMBER on the Wire Sentinel dashboard tile — and
+     *   a wrong number in the safe-looking direction (zero open wire risks) is the RISK 1 failure
+     *   this whole rewrite exists to eliminate.
+     *
+     *   3. `ChecklistMigrationAuditService.compare` (added 2026-09-02) — OPERATOR-DRIVEN, from an
+     *      anonymous-Apex script. That is closer to "a read the running user asked for", so it does
+     *      NOT inherit the two justifications above. `SYSTEM_MODE` is still correct for it, for a
+     *      reason of its own: the SELECT spans ELEVEN Metadata-API-deployed custom fields, and under
+     *      `USER_MODE` a single missing FLS grant raises `System.QueryException: No such column` —
+     *      which would abort THE RECONCILIATION THAT GATES CUTOVER and read as "the two models
+     *      disagree" rather than "you lack a grant". A reconciliation that fails closed on a
+     *      permission problem while looking like a data problem is the worst possible failure for a
+     *      gate whose entire job is to be believed.
      *
      * ⚠ ORDERED BY parent group then sequence so the reconcile and the migration reconciliation
      * report can compare two runs row-for-row without re-sorting.
      *
      * @param transactionIds Parent `Transaction__c` ids; null/empty-safe.
      * @return Items on those deals with Id, Checklist__c, Checklist__r.Transaction__c,
-     *         Checklist__r.Group_Letter__c, Flag__c, Due_Date__c, Is_Critical__c,
-     *         Is_Wire_Verification__c, Verbal_Verification_Completed__c and Sequence__c populated;
-     *         an empty list when the input is null/empty or nothing matches (never null).
+     *         Checklist__r.Group_Letter__c, Sequence__c, Subject__c, Flag__c, Due_Date__c,
+     *         Is_Critical__c, Is_Wire_Verification__c, Verbal_Verification_Completed__c and
+     *         Blocked_By__c populated; an empty list when the input is null/empty or nothing
+     *         matches (never null).
+     *         ⚠ `Subject__c` AND `Blocked_By__c` WERE MISSING FROM THIS INVENTORY UNTIL 2026-09-02
+     *         EVEN THOUGH THE SELECT HAS ALWAYS RETURNED THEM, AND `Blocked_By__c` IS LOAD-BEARING:
+     *         `ChecklistMigrationDomain.viewOf` reads it to set `hasPrerequisiteLink`, which backs
+     *         the `PREREQ_UNRESOLVED` check. A future narrowing of this SELECT made in good faith
+     *         against an incomplete inventory would silently disarm that check — no compile error,
+     *         no test failure, just a migration gate that stops detecting unresolved prerequisites.
      * @example
      * List<Checklist_Item__c> items = ChecklistItemSelector.selectByTransactionIds(dealIds);
      */
@@ -145,6 +176,15 @@ public with sharing class ChecklistItemSelector {
      * provisioning gap and the fix is a permission set, per ARCHITECTURE.md §2. Do not "harden"
      * this to SYSTEM_MODE — doing so would reintroduce the workaround the model removed.
      *
+     * ⚠ `Checklist__r.Group_Letter__c` WAS ADDED IN PHASE 5 AND IT IS NOT COSMETIC. Together with
+     * `Sequence__c` it is the COORDINATE `ChecklistCaptureDefProvider` is keyed on, so the
+     * completion guard can ask "does this item have to record something before it may close?"
+     * without a second query and without ever looking at `Subject__c`. It is readable on
+     * `DPEG_Checklist_View` (verified 2026-09-02), so it costs this `USER_MODE` query nothing.
+     * 🔴 DO NOT REPLACE THIS WITH A SUBJECT TEST. The whole Phase 2/3 rewrite exists to retire one
+     * subject-substring parse; re-introducing one in the capture guard would recreate RISK 1 in a
+     * new file, where an admin retitling an item silently disables the guard with no error.
+     *
      * ⚠ `Comment__c` IS SELECTED BECAUSE `ChecklistItemService.recordWireVerification` APPENDS TO
      * IT RATHER THAN OVERWRITING IT. Reading a field that was not selected throws
      * `System.SObjectException: SObject row was retrieved via SOQL without querying the requested
@@ -158,8 +198,12 @@ public with sharing class ChecklistItemSelector {
      * doing so tells an unauthorised caller that a record exists.
      *
      * @param itemIds `Checklist_Item__c` ids the caller intends to update; null/empty-safe.
-     * @return Map of item Id -> item with the completion-relevant fields populated; an empty map
-     *         when the input is null/empty or the running user cannot see the rows.
+     * @return Map of item Id -> item with Id, Checklist__c, Checklist__r.Transaction__c,
+     *         Checklist__r.Group_Letter__c, Subject__c, Sequence__c, Flag__c, Is_Critical__c,
+     *         Is_Wire_Verification__c, Verbal_Verification_Completed__c, Blocked_By__c and
+     *         Comment__c populated; an empty map when the input is null/empty or the running user
+     *         cannot see the rows. ⚠ `Checklist__r.Group_Letter__c` is the half
+     *         `ChecklistCaptureService` needs — it plus `Sequence__c` IS the capture coordinate.
      * @example
      * Map<Id, Checklist_Item__c> rows = ChecklistItemSelector.selectForCompletion(itemIds);
      */
@@ -168,12 +212,78 @@ public with sharing class ChecklistItemSelector {
             return new Map<Id, Checklist_Item__c>();
         }
         return new Map<Id, Checklist_Item__c>([
-            SELECT Id, Checklist__c, Checklist__r.Transaction__c, Subject__c, Sequence__c,
-                   Flag__c, Is_Critical__c, Is_Wire_Verification__c,
+            SELECT Id, Checklist__c, Checklist__r.Transaction__c, Checklist__r.Group_Letter__c,
+                   Subject__c, Sequence__c, Flag__c, Is_Critical__c, Is_Wire_Verification__c,
                    Verbal_Verification_Completed__c, Blocked_By__c, Comment__c
             FROM Checklist_Item__c
             WHERE Id IN :itemIds
             WITH USER_MODE
+        ]);
+    }
+
+    /**
+     * Items with their PARENT DEAL's earnest-money and feasibility fields traversed - the single
+     * read behind `ChecklistOutcomeService`, which decides what a completed A5 / B5 must write on
+     * the `Transaction__c` and recomputes `Is_Earnest_At_Risk__c`.
+     *
+     * 🔴 `WITH SYSTEM_MODE` - AUTOMATION PATH, AND NOT THE SAME QUESTION AS `selectForCompletion`
+     * DIRECTLY ABOVE, EVEN THOUGH THE SAME CLICK TRIGGERS BOTH. `selectForCompletion` reads what
+     * the user ASKED for (the item they are completing) and is correctly `USER_MODE`. This one
+     * reads the DEAL fields the outcome is computed from, on the deal owner's behalf, AFTER the
+     * user's completion has already been saved. Three of those fields -
+     * `Feasibility_Deadline__c`, `Feasibility_Missed__c` and `Is_Earnest_At_Risk__c` - are granted
+     * on `DPEG_Transaction_View` / `_Edit` but NOT on `DPEG_Checklist_View` / `_Edit` (verified
+     * 2026-09-02). A `USER_MODE` read would therefore raise `System.QueryException: No such column`
+     * for any principal holding only the checklist sets - an FLS denial wearing a schema error -
+     * and it would do so AFTER the item was already updated, so the user would see their tick
+     * succeed and then a failure they cannot act on.
+     * ⚠ Adding those three fields to the checklist permission sets instead was considered and
+     * rejected: it would hand every checklist user read on the deal's feasibility posture in order
+     * to run a derivation they never see, which is a wider grant than the feature needs.
+     *
+     * 🔴 `Checklist__r.Transaction__r.Id` IS SELECTED, AND IT IS THE FAIL-CLOSED DISCRIMINATOR
+     * RATHER THAN A REDUNDANT COLUMN. SYSTEM_MODE lifts CRUD and FLS and NEVER sharing, and
+     * `Transaction__c` is Private OWD, so a spanning read into a deal the running user cannot see
+     * returns NULLS for every traversed field instead of throwing. That failure INVERTS the
+     * earnest-at-risk derivation rather than degrading it: a null `Feasibility_Deadline__c` reads
+     * as "feasibility has not passed", which computes at-risk = FALSE and would CLEAR a flag that
+     * should be set, on exactly the deals the KPI exists to surface. The caller must therefore skip
+     * any row whose `Checklist__r.Transaction__r.Id` is null rather than compute from the nulls.
+     * ⚠ In practice this should never fire on the completion path - `Checklist_Item__c` is
+     * `ControlledByParent` under `Checklist__c` under `Transaction__c`, and both master-detail
+     * links carry `writeRequiresMasterRead=false` (the STRICTER setting), so a user who just
+     * updated an item demonstrably holds EDIT on the deal. It exists for the paths that are not
+     * that one: a future migration batch, a Schedulable, or a backfill script running as a
+     * principal with no deal access.
+     *
+     * NOT-FOUND CONTRACT: a map read. A missing key means unresolved - never "no outcome needed".
+     *
+     * @param itemIds `Checklist_Item__c` ids whose outcome is being applied; null/empty-safe.
+     * @return Map of item Id -> item with its coordinate (`Checklist__r.Group_Letter__c`,
+     *         `Sequence__c`), its `Flag__c`, and the parent deal's `Id`, `Status__c`, `Stage__c`,
+     *         `Earnest_Money_Sent__c`, `Earnest_Money_Sent_Date__c`, `Feasibility_Deadline__c`,
+     *         `Feasibility_Missed__c` and `Is_Earnest_At_Risk__c` populated; empty map, never null.
+     * @example
+     * Map&lt;Id, Checklist_Item__c&gt; rows = ChecklistItemSelector.selectForOutcomeByIds(itemIds);
+     */
+    public static Map<Id, Checklist_Item__c> selectForOutcomeByIds(Set<Id> itemIds) {
+        if (itemIds == null || itemIds.isEmpty()) {
+            return new Map<Id, Checklist_Item__c>();
+        }
+        return new Map<Id, Checklist_Item__c>([
+            SELECT Id, Sequence__c, Flag__c,
+                   Checklist__c, Checklist__r.Group_Letter__c, Checklist__r.Transaction__c,
+                   Checklist__r.Transaction__r.Id,
+                   Checklist__r.Transaction__r.Status__c,
+                   Checklist__r.Transaction__r.Stage__c,
+                   Checklist__r.Transaction__r.Earnest_Money_Sent__c,
+                   Checklist__r.Transaction__r.Earnest_Money_Sent_Date__c,
+                   Checklist__r.Transaction__r.Feasibility_Deadline__c,
+                   Checklist__r.Transaction__r.Feasibility_Missed__c,
+                   Checklist__r.Transaction__r.Is_Earnest_At_Risk__c
+            FROM Checklist_Item__c
+            WHERE Id IN :itemIds
+            WITH SYSTEM_MODE
         ]);
     }
 

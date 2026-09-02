@@ -99,7 +99,8 @@
                         <template for:each={current.rows} for:item="r">
                             <li key={r.id} class={r.rowClass}>
                                 <input type="checkbox" class="tg-check" checked={r.done} disabled={r.disabled}
-                                    data-id={r.id} data-wire={r.wire} data-subject={r.subject}
+                                    data-id={r.id} data-wire={r.wire} data-capture={r.capture}
+                                    data-subject={r.subject}
                                     aria-label={r.subject} onchange={handleCheck} />
                                 <span class="tg-subject">{r.subject}</span>
                                 <template if:true={r.showCritical}>
@@ -207,6 +208,71 @@
                     <button class="slds-button slds-button_neutral" type="button" onclick={cancelConfirm}>Cancel</button>
                     <button class="slds-button slds-button_brand" type="button" onclick={confirmComplete}
                         disabled={confirmSaveDisabled}>Confirm</button>
+                </footer>
+            </div>
+        </section>
+        <div class="slds-backdrop slds-backdrop_open"></div>
+    </template>
+
+    <!-- Capture dialog (Phase 5) — records the item's OUTPUT before it is allowed to close.
+         Field captures bind a lightning-record-edit-form to the Loan__c / Insurance_Binder__c the
+         server provisioned, so LDS does the write and enforces FLS, restricted picklists and
+         validation rules. Document captures use lightning-file-upload, which publishes the
+         ContentVersion in the platform's own transaction — no Apex publish path exists in Phase 5,
+         which is what keeps the org's ContentPublication quota untouched. -->
+    <template if:true={showCaptureModal}>
+        <section role="dialog" tabindex="-1" aria-modal="true" aria-labelledby="tg-capture-heading"
+            class="slds-modal slds-fade-in-open tg-modal tg-modal--capture">
+            <div class="slds-modal__container">
+                <header class="slds-modal__header">
+                    <button class="slds-button slds-button_icon slds-modal__close"
+                        title="Close" type="button" onclick={cancelCapture}>
+                        <lightning-icon icon-name="utility:close" size="small" variant="inverse"></lightning-icon>
+                    </button>
+                    <h2 id="tg-capture-heading" class="slds-modal__title slds-hyphenate">Record &amp; Complete</h2>
+                    <p class="tg-modal-sub">{captureSubject}</p>
+                </header>
+                <div class="slds-modal__content slds-p-around_medium tg-capture-body">
+                    <template if:true={captureLoading}>
+                        <lightning-spinner alternative-text="Loading" size="small"></lightning-spinner>
+                    </template>
+
+                    <template if:true={hasCaptureRequirement}>
+                        <p class="tg-modal-note" role="note">{captureRequirementMessage}</p>
+                    </template>
+
+                    <template if:true={isFieldCapture}>
+                        <lightning-record-edit-form class="tg-capture-form"
+                            object-api-name={captureObjectApiName}
+                            record-id={captureTargetRecordId}
+                            onsuccess={handleCaptureSuccess}
+                            onerror={handleCaptureError}>
+                            <template for:each={captureFieldRows} for:item="f">
+                                <lightning-input-field key={f.key} field-name={f.name}></lightning-input-field>
+                            </template>
+                        </lightning-record-edit-form>
+                    </template>
+
+                    <template if:true={isDocumentCapture}>
+                        <lightning-file-upload label="Upload document"
+                            name="tgCaptureUpload"
+                            accept={captureAcceptedFormats}
+                            record-id={captureTargetRecordId}
+                            onuploadfinished={handleUploadFinished}>
+                        </lightning-file-upload>
+                        <template if:true={captureDocumentOnFile}>
+                            <p class="tg-capture-ok">
+                                <lightning-icon icon-name="utility:check" size="xx-small"
+                                    class="tg-ok-icon"></lightning-icon>
+                                A document is on file for this item.
+                            </p>
+                        </template>
+                    </template>
+                </div>
+                <footer class="slds-modal__footer">
+                    <button class="slds-button slds-button_neutral" type="button" onclick={cancelCapture}>Cancel</button>
+                    <button class="slds-button slds-button_brand" type="button" onclick={submitCapture}
+                        disabled={captureSaveDisabled}>Save &amp; Complete</button>
                 </footer>
             </div>
         </section>

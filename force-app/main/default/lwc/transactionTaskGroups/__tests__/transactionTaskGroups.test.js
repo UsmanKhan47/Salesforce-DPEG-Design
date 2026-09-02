@@ -32,6 +32,8 @@ import { getRecord, notifyRecordUpdateAvailable } from 'lightning/uiRecordApi';
 import getChecklist from '@salesforce/apex/ChecklistController.getChecklist';
 import completeItem from '@salesforce/apex/ChecklistController.completeItem';
 import recordWireVerification from '@salesforce/apex/ChecklistController.recordWireVerification';
+import getCaptureContext from '@salesforce/apex/ChecklistController.getCaptureContext';
+import linkCaptureDocuments from '@salesforce/apex/ChecklistController.linkCaptureDocuments';
 import getTaskGroups from '@salesforce/apex/TransactionTaskController.getTaskGroups';
 import completeTask from '@salesforce/apex/TransactionTaskController.completeTask';
 import completeWireVerification from '@salesforce/apex/TransactionTaskController.completeWireVerification';
@@ -59,6 +61,18 @@ jest.mock(
 );
 jest.mock(
     '@salesforce/apex/ChecklistController.recordWireVerification',
+    () => ({ default: jest.fn() }),
+    { virtual: true }
+);
+// Phase 5. Both are imperative — `getCaptureContext` performs DML (it provisions the Loan__c /
+// Insurance_Binder__c), so it is deliberately NOT a cacheable wire and is mocked as a plain fn.
+jest.mock(
+    '@salesforce/apex/ChecklistController.getCaptureContext',
+    () => ({ default: jest.fn() }),
+    { virtual: true }
+);
+jest.mock(
+    '@salesforce/apex/ChecklistController.linkCaptureDocuments',
     () => ({ default: jest.fn() }),
     { virtual: true }
 );
@@ -753,6 +767,382 @@ describe('c-transaction-task-groups', () => {
             const element = createComponent();
             getRecord.error();
             await flush();
+            await expect(element).toBeAccessible();
+        });
+    });
+
+    // ═══════════════════════════════════════════════════════════════════════════════════════
+    // Phase 5 — the capture dialog.
+    //
+    // 🔴 WHAT THIS BLOCK CAN AND CANNOT PROVE, STATED UP FRONT SO A GREEN RUN IS NOT READ AS
+    //    MORE THAN IT IS.
+    //   ✅ Can prove: which dialog a click opens; that `getCaptureContext` is called with the
+    //      item id; that the form is bound to the SERVER-SUPPLIED object and record id; that the
+    //      upload targets the DEAL; that `linkCaptureDocuments` receives the uploaded ids; that
+    //      Confirm does NOT complete the item directly on a field capture; that `onsuccess` DOES.
+    //   ❌ Cannot prove: that `lightning-record-edit-form.submit()` was called. The sfdx-lwc-jest
+    //      stub is a bare custom element with no `submit()` method, so the component guards the
+    //      call with a `typeof` check and Jest exercises the guarded branch, not the real one.
+    //      Nor can it prove anything about `lightning-file-upload`'s own behaviour — the stub
+    //      never uploads and never emits `uploadfinished` on its own, so that event is dispatched
+    //      by hand below. Both gaps are BROWSER checks, not test gaps that more mocking closes.
+    // ═══════════════════════════════════════════════════════════════════════════════════════
+
+    describe('Phase 5 capture dialog', () => {
+        /**
+         * A group whose items RECORD SOMETHING. `hasCapture` is server-derived from the item
+         * coordinate, so the fixture sets it as data rather than implying it from the subject —
+         * the same discipline as `isCritical` / `isWireVerification` above.
+         */
+        const CAPTURE_ROWS = [
+            {
+                id: 'a1Y000000000FFF',
+                letter: 'F',
+                name: 'Financing',
+                ownerLabel: 'Danish',
+                conditional: true,
+                stage: 'Due Diligence',
+                total: 3,
+                complete: 0,
+                pct: 0,
+                items: [
+                    {
+                        id: 'i-f9',
+                        subject: 'Select bank account type',
+                        ownerLabel: 'Accounting',
+                        sequence: 9,
+                        flag: 'None',
+                        done: false,
+                        isCritical: false,
+                        isWireVerification: false,
+                        verifyComplete: false,
+                        blocked: false,
+                        hasCapture: true
+                    },
+                    {
+                        id: 'i-c7',
+                        subject: 'Upload PCR to deal document folder',
+                        ownerLabel: 'Danish',
+                        sequence: 7,
+                        flag: 'None',
+                        done: false,
+                        isCritical: false,
+                        isWireVerification: false,
+                        verifyComplete: false,
+                        blocked: false,
+                        hasCapture: true
+                    },
+                    {
+                        // 🔴 THE NEGATIVE CONTROL. Same group, same shape, `hasCapture` false —
+                        // so a component that opened the capture dialog for EVERY row would fail
+                        // here rather than passing every positive assertion above it.
+                        id: 'i-plainf',
+                        subject: 'Follow up with bankers - confirm receipt of package',
+                        ownerLabel: 'Danish',
+                        sequence: 3,
+                        flag: 'None',
+                        done: false,
+                        isCritical: false,
+                        isWireVerification: false,
+                        verifyComplete: false,
+                        blocked: false,
+                        hasCapture: false
+                    }
+                ]
+            }
+        ];
+
+        const FIELD_CONTEXT = {
+            itemId: 'i-f9',
+            captureMode: 'TARGET_FIELDS',
+            objectApiName: 'Loan__c',
+            targetRecordId: 'a2L000000000LOAN',
+            captureFields: ['Bank_Account_Type__c'],
+            requiredField: 'Bank_Account_Type__c',
+            requirementMessage: 'Select the bank account type before completing this item.',
+            satisfied: false
+        };
+
+        const DOCUMENT_CONTEXT = {
+            itemId: 'i-c7',
+            captureMode: 'DOCUMENT',
+            objectApiName: null,
+            targetRecordId: RECORD_ID,
+            captureFields: [],
+            requiredField: null,
+            requirementMessage: 'Attach the Property Condition Report before completing this item.',
+            satisfied: false
+        };
+
+        function checkboxFor(element, itemId) {
+            return [...element.shadowRoot.querySelectorAll('input.tg-check')].find(
+                (box) => box.dataset.id === itemId
+            );
+        }
+
+        async function tick(element, itemId) {
+            const box = checkboxFor(element, itemId);
+            box.checked = true;
+            box.dispatchEvent(new CustomEvent('change'));
+            await flush();
+            return box;
+        }
+
+        it('opens the CAPTURE dialog for a capture item, not the confirm dialog', async () => {
+            getCaptureContext.mockResolvedValue(FIELD_CONTEXT);
+            const element = await renderChecklist(CAPTURE_ROWS);
+
+            await tick(element, 'i-f9');
+
+            expect(getCaptureContext).toHaveBeenCalledWith({ itemId: 'i-f9' });
+            expect(element.shadowRoot.querySelector('.tg-modal--capture')).not.toBeNull();
+            expect(element.shadowRoot.querySelector('.tg-modal--confirm')).toBeNull();
+        });
+
+        it('leaves an ordinary item on the confirm dialog and never asks for a context', async () => {
+            // The negative control for the test above. Without it, a component that opened the
+            // capture dialog unconditionally would pass every positive assertion in this block.
+            const element = await renderChecklist(CAPTURE_ROWS);
+
+            await tick(element, 'i-plainf');
+
+            expect(getCaptureContext).not.toHaveBeenCalled();
+            expect(element.shadowRoot.querySelector('.tg-modal--confirm')).not.toBeNull();
+            expect(element.shadowRoot.querySelector('.tg-modal--capture')).toBeNull();
+        });
+
+        it('holds the checkbox unticked until the capture is saved', async () => {
+            getCaptureContext.mockResolvedValue(FIELD_CONTEXT);
+            const element = await renderChecklist(CAPTURE_ROWS);
+
+            const box = await tick(element, 'i-f9');
+
+            expect(box.checked).toBe(false);
+            expect(completeItem).not.toHaveBeenCalled();
+        });
+
+        it('binds the form to the SERVER-SUPPLIED object and record, and its named fields', async () => {
+            // 🔴 THE RECORD ID IS THE POINT. A `lightning-record-edit-form` rendered with an
+            // undefined `record-id` silently becomes a CREATE form, which would make a second
+            // Loan__c every time the dialog opened.
+            getCaptureContext.mockResolvedValue(FIELD_CONTEXT);
+            const element = await renderChecklist(CAPTURE_ROWS);
+
+            await tick(element, 'i-f9');
+
+            const form = element.shadowRoot.querySelector('lightning-record-edit-form');
+            expect(form).not.toBeNull();
+            expect(form.objectApiName).toBe('Loan__c');
+            expect(form.recordId).toBe('a2L000000000LOAN');
+            const fields = [...element.shadowRoot.querySelectorAll('lightning-input-field')];
+            expect(fields.map((f) => f.fieldName)).toEqual(['Bank_Account_Type__c']);
+            // No file upload on a field capture, and no form on a document capture — the two modes
+            // are mutually exclusive, not both rendered and one hidden.
+            expect(element.shadowRoot.querySelector('lightning-file-upload')).toBeNull();
+        });
+
+        it('shows the server requirement text up front rather than only on refusal', async () => {
+            getCaptureContext.mockResolvedValue(FIELD_CONTEXT);
+            const element = await renderChecklist(CAPTURE_ROWS);
+
+            await tick(element, 'i-f9');
+
+            const note = element.shadowRoot.querySelector('.tg-modal--capture .tg-modal-note');
+            expect(note.textContent).toContain('Select the bank account type');
+        });
+
+        it('does not complete the item directly from Confirm on a field capture', async () => {
+            // The completion must wait for LDS to confirm the write. Completing first would tick an
+            // item whose output then failed to save.
+            getCaptureContext.mockResolvedValue(FIELD_CONTEXT);
+            const element = await renderChecklist(CAPTURE_ROWS);
+            await tick(element, 'i-f9');
+
+            element.shadowRoot
+                .querySelector('.tg-modal--capture .slds-button_brand')
+                .click();
+            await flush();
+
+            expect(completeItem).not.toHaveBeenCalled();
+        });
+
+        it('completes the item once the record-edit-form reports success', async () => {
+            getCaptureContext.mockResolvedValue(FIELD_CONTEXT);
+            completeItem.mockResolvedValue(undefined);
+            const element = await renderChecklist(CAPTURE_ROWS);
+            await tick(element, 'i-f9');
+
+            element.shadowRoot
+                .querySelector('lightning-record-edit-form')
+                .dispatchEvent(new CustomEvent('success'));
+            await flush();
+
+            expect(completeItem).toHaveBeenCalledWith({ itemId: 'i-f9', comment: null });
+            // The parent Transaction's counters and Is_Earnest_At_Risk__c were written by Apex
+            // behind LDS's back, so the Path and highlights panel need telling.
+            expect(notifyRecordUpdateAvailable).toHaveBeenCalledWith([{ recordId: RECORD_ID }]);
+        });
+
+        it('points the file upload at the DEAL, not at the checklist item', async () => {
+            // "Upload PCR to deal document folder" — the file belongs to the deal. The per-item
+            // link is added afterwards by `linkCaptureDocuments`.
+            getCaptureContext.mockResolvedValue(DOCUMENT_CONTEXT);
+            const element = await renderChecklist(CAPTURE_ROWS);
+
+            await tick(element, 'i-c7');
+
+            const upload = element.shadowRoot.querySelector('lightning-file-upload');
+            expect(upload).not.toBeNull();
+            expect(upload.recordId).toBe(RECORD_ID);
+            expect(element.shadowRoot.querySelector('lightning-record-edit-form')).toBeNull();
+        });
+
+        it('disables Confirm on a document capture until a file is on file', async () => {
+            getCaptureContext.mockResolvedValue(DOCUMENT_CONTEXT);
+            const element = await renderChecklist(CAPTURE_ROWS);
+
+            await tick(element, 'i-c7');
+
+            const confirm = element.shadowRoot.querySelector(
+                '.tg-modal--capture .slds-button_brand'
+            );
+            expect(confirm.disabled).toBe(true);
+        });
+
+        it('files uploaded documents against the item and then enables Confirm', async () => {
+            getCaptureContext.mockResolvedValue(DOCUMENT_CONTEXT);
+            linkCaptureDocuments.mockResolvedValue(1);
+            const element = await renderChecklist(CAPTURE_ROWS);
+            await tick(element, 'i-c7');
+
+            element.shadowRoot.querySelector('lightning-file-upload').dispatchEvent(
+                new CustomEvent('uploadfinished', {
+                    detail: { files: [{ documentId: '069000000000001' }] }
+                })
+            );
+            await flush();
+
+            expect(linkCaptureDocuments).toHaveBeenCalledWith({
+                itemId: 'i-c7',
+                contentDocumentIds: ['069000000000001']
+            });
+            const confirm = element.shadowRoot.querySelector(
+                '.tg-modal--capture .slds-button_brand'
+            );
+            expect(confirm.disabled).toBe(false);
+        });
+
+        it('explains a failed filing in the dialog and keeps Confirm disabled', async () => {
+            // The file IS uploaded — the platform published it against the deal before any Apex ran
+            // — but it is NOT filed against this item, so the server guard will keep refusing. An
+            // earlier version CLEARED the dialog message here, removing the only explanation at the
+            // exact moment one was needed.
+            getCaptureContext.mockResolvedValue(DOCUMENT_CONTEXT);
+            linkCaptureDocuments.mockRejectedValue({
+                body: { message: 'This checklist item is no longer available to you.' }
+            });
+            const element = await renderChecklist(CAPTURE_ROWS);
+            await tick(element, 'i-c7');
+
+            element.shadowRoot.querySelector('lightning-file-upload').dispatchEvent(
+                new CustomEvent('uploadfinished', {
+                    detail: { files: [{ documentId: '069000000000001' }] }
+                })
+            );
+            await flush();
+
+            const dialog = element.shadowRoot.querySelector('.tg-modal--capture');
+            expect(dialog.textContent).toContain('no longer available');
+            expect(
+                dialog.querySelector('.slds-button_brand').disabled
+            ).toBe(true);
+        });
+
+        it('completes a document capture directly from Confirm', async () => {
+            // No LDS write to wait for here — the file already exists.
+            getCaptureContext.mockResolvedValue({ ...DOCUMENT_CONTEXT, satisfied: true });
+            completeItem.mockResolvedValue(undefined);
+            const element = await renderChecklist(CAPTURE_ROWS);
+            await tick(element, 'i-c7');
+
+            element.shadowRoot
+                .querySelector('.tg-modal--capture .slds-button_brand')
+                .click();
+            await flush();
+
+            expect(completeItem).toHaveBeenCalledWith({ itemId: 'i-c7', comment: null });
+        });
+
+        it('falls back to the confirm dialog when the server says the item captures nothing', async () => {
+            // A definition changed under a page that was already open. An empty capture form would
+            // be a dead end with no fields and no upload.
+            getCaptureContext.mockResolvedValue(null);
+            const element = await renderChecklist(CAPTURE_ROWS);
+
+            await tick(element, 'i-f9');
+
+            expect(element.shadowRoot.querySelector('.tg-modal--capture')).toBeNull();
+            expect(element.shadowRoot.querySelector('.tg-modal--confirm')).not.toBeNull();
+        });
+
+        it('closes the dialog and surfaces the reason when the context cannot be built', async () => {
+            getCaptureContext.mockRejectedValue({
+                body: { message: 'This checklist item is no longer available to you.' }
+            });
+            const element = await renderChecklist(CAPTURE_ROWS);
+            const toast = jest.fn();
+            element.addEventListener('lightning__showtoast', toast);
+
+            await tick(element, 'i-f9');
+
+            expect(element.shadowRoot.querySelector('.tg-modal--capture')).toBeNull();
+            expect(toast).toHaveBeenCalled();
+            expect(toast.mock.calls[0][0].detail.message).toContain('no longer available');
+        });
+
+        it('keeps a server refusal in the dialog, where the fix is', async () => {
+            // A `CaptureRequiredException` can still arrive after the form saved — the user could
+            // have cleared the required field. The refusal text belongs beside the field, not only
+            // in a toast that disappears.
+            getCaptureContext.mockResolvedValue({ ...DOCUMENT_CONTEXT, satisfied: true });
+            completeItem.mockRejectedValue({
+                body: { message: 'Attach the Property Condition Report before completing this item.' }
+            });
+            const element = await renderChecklist(CAPTURE_ROWS);
+            await tick(element, 'i-c7');
+
+            element.shadowRoot
+                .querySelector('.tg-modal--capture .slds-button_brand')
+                .click();
+            await flush();
+
+            const dialog = element.shadowRoot.querySelector('.tg-modal--capture');
+            expect(dialog).not.toBeNull();
+            expect(dialog.textContent).toContain('Attach the Property Condition Report');
+        });
+
+        it('never offers a capture dialog on the LEGACY model', async () => {
+            // 🔴 `Loan__c` and `Insurance_Binder__c` hang off the CHECKLIST model. An un-migrated
+            // deal must behave exactly as it did before Phase 5 — that is the point of the
+            // dual-model window. `normalizeLegacyGroups` hard-codes `hasCapture` false, and this
+            // asserts the component does not reintroduce it from anywhere else.
+            const element = await renderLegacy();
+
+            const box = [...element.shadowRoot.querySelectorAll('input.tg-check')].find(
+                (b) => b.dataset.id === 't-plain'
+            );
+            box.checked = true;
+            box.dispatchEvent(new CustomEvent('change'));
+            await flush();
+
+            expect(getCaptureContext).not.toHaveBeenCalled();
+            expect(element.shadowRoot.querySelector('.tg-modal--capture')).toBeNull();
+        });
+
+        it('is accessible with the capture dialog open', async () => {
+            getCaptureContext.mockResolvedValue(FIELD_CONTEXT);
+            const element = await renderChecklist(CAPTURE_ROWS);
+            await tick(element, 'i-f9');
             await expect(element).toBeAccessible();
         });
     });

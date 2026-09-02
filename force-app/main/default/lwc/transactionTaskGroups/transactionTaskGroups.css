@@ -604,3 +604,22 @@
 .tg-blocked-icon {
     --slds-c-icon-color-foreground-default: var(--slds-g-color-neutral-base-30, #514f4d);
 }
+
+/* ---- Capture dialog (Phase 5) ------------------------------------------------------------
+   Records an item's OUTPUT (financing detail, coverage, an uploaded document) before it may
+   close. SLDS 2 design tokens with literal fallbacks, matching the rest of this file. */
+/* Scoped to our OWN class, not .slds-modal__content: the SLDS linter rejects overriding an
+   SLDS class directly (slds/no-slds-class-overrides), and an override would also follow every
+   future SLDS release. The spinner needs a positioned box with height to sit in. */
+.tg-capture-body {
+    position: relative;
+    min-height: 120px;
+}
+.tg-capture-ok {
+    display: flex;
+    align-items: center;
+    gap: var(--slds-g-spacing-1, 4px);
+    margin-top: var(--slds-g-spacing-2, 8px);
+    color: var(--slds-g-color-palette-green-50, #2e7d32);
+    font-size: var(--slds-g-font-scale-neg-1, 12px);
+}

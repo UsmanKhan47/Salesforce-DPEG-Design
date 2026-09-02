@@ -65,10 +65,20 @@ public with sharing class ChecklistItemDomain {
      * The `Flag__c` an item should carry when it is OPEN — `CRITICAL` for a critical item, `None`
      * otherwise.
      *
-     * Exists so the fan-out and `ChecklistItemService.reopen` cannot disagree. Reopening a critical
-     * item must restore `CRITICAL`, not leave it at `None`; because `Flag__c` conflates severity
-     * with state, that restoration can only come from `Is_Critical__c`, and doing it in two places
-     * is how the red flag quietly disappears from the closing wire after somebody reopens it.
+     * ⚠ CORRECTED 2026-09-02 — THIS SAID "Exists so the fan-out and `ChecklistItemService.reopen`
+     * cannot disagree." THERE IS NO `reopen`, AND THERE DELIBERATELY IS NOT ONE:
+     * `ChecklistItemService`'s header records that it was considered and left out rather than
+     * stranded with no caller, and that building it is not a one-line flag flip on a wire item.
+     * Citing a method that does not exist makes this helper look like it has a second caller
+     * keeping it honest when it has exactly one — the fan-out.
+     *
+     * WHAT IT IS ACTUALLY FOR, WHICH IS STILL A REAL REASON TO EXIST: the open-state flag has to be
+     * derived from `Is_Critical__c` in ONE place. `Flag__c` conflates severity with state, so an
+     * item put back into an open state must have `CRITICAL` RESTORED rather than being left at
+     * `None` — and a second site computing that is how the red flag quietly disappears from the
+     * closing wire. Today only the fan-out sets an open flag; the day anything reopens an item, it
+     * calls this and the two cannot drift. Read the `reopen()` note in `ChecklistItemService`'s
+     * header BEFORE building that caller: the wire-evidence fields are not simply carried over.
      *
      * @param isCritical The item's immutable `Is_Critical__c`; null-safe (null is treated as false).
      * @return `CRITICAL` when the item is critical, otherwise `None`.

@@ -34,8 +34,8 @@
  * Task_Owner_Label__c, Verbal_Verification_*, Verified_By__c/At__c,
  * Verification_Phone__c) rely on the deployed permsets (P3: custom-field FLS gap = 0).
  *
- * FIVE methods are `WITH SYSTEM_MODE` (FOUR until 2026-08-31). Each carries its own
- * justification at its own declaration; all five sit on an AUTOMATION PATH, where
+ * SIX methods are `WITH SYSTEM_MODE` (FOUR until 2026-08-31, FIVE until 2026-09-02). Each carries its own
+ * justification at its own declaration; all six sit on an AUTOMATION PATH, where
  * `USER_MODE` THROWS rather than degrades and so converts one missing FLS grant into a
  * broken write:
  *
@@ -59,6 +59,15 @@
  *       the brand-new `Blocked_By__c` field would abort the SAVING USER'S OWN update of a
  *       checklist item. Not an observed failure — a structurally identical one, on a field
  *       that by construction has zero FieldPermissions on the day it deploys.
+ *   Phase 4 checklist migration — QUEUEABLE CHAIN + READ-ONLY AUDIT (added 2026-09-02).
+ *     • selectForChecklistMigration        <- ChecklistMigrationService (a Queueable chunk) and
+ *       ChecklistMigrationAuditService (the M2 reconciliation, driven from a script). Reads
+ *       NINE custom Activity fields at once (plus eight standard ones) - exactly the nine that design
+ *       §8 lists as Transaction-only - so it is the widest FLS surface in this class and
+ *       the one most certain to throw under USER_MODE. PROSPECTIVE in the sense that it has no
+ *       live caller until the migration is run, but structurally identical to
+ *       selectByTransactionDealIds, whose failure WAS reproduced. 🔴 RETIRED AT M5 — remove this
+ *       entry in the same change.
  *
  * ⚠ AMENDED 2026-08-02 — the statement "There is NO guest/automation path on Task,
  * so NO `SYSTEM_MODE` appears here" was true when written and is NO LONGER TRUE.
@@ -452,6 +461,67 @@ public with sharing class TaskSelector {
             FROM Task
             WHERE Transaction_Deal__c IN :transactionDealIds
             WITH SYSTEM_MODE
+        ];
+    }
+
+    /**
+     * Every checklist Task on the supplied Transactions, with the FULL field set the Phase 4
+     * migration and its reconciliation report need. Backs `ChecklistMigrationService` and
+     * `ChecklistMigrationAuditService`.
+     *
+     * 🔴 `WITH SYSTEM_MODE` — AUTOMATION PATH, AND THE SIXTH ENTRY IN THIS CLASS'S MODE
+     * INVENTORY. The caller is a Queueable chain (and a read-only audit driven from a script),
+     * neither of which is a read a human asked for. It reads NINE custom `Activity` fields (plus eight
+     * standard ones),
+     * every one of them Metadata-API-deployed and therefore carrying FieldPermissions for
+     * whoever the permission pass granted and nobody else — so under `USER_MODE` one missing
+     * grant raises `System.QueryException: No such column`, an FLS denial wearing a schema
+     * error, and the migration chunk dies with 25 deals half-considered. This class has already
+     * paid for exactly that once: on 2026-08-05 a `USER_MODE` read of `Transaction_Deal__c`
+     * rolled back an entire 82-row Day-0 fan-out.
+     * ⚠ SYSTEM_MODE lifts CRUD/FLS and NEVER sharing. This class stays `with sharing`, so a deal
+     * the runner cannot see returns NO ROWS. That is deliberate and is why
+     * `ChecklistMigrationService` diffs the ids it ASKED for against the ids it got back and
+     * reports the difference as `NOT_VISIBLE` — a silently skipped deal is the failure mode this
+     * migration is most likely to hide, so it is surfaced rather than tolerated.
+     *
+     * 🔴 THE FIELD SET IS THE MIGRATION MAPPING AND IT IS NOT DECORATIVE. `Task_Group__c` +
+     * `Task_Sequence__c` are the COORDINATE the whole migration keys on — never the Subject,
+     * which a bare-substring match would use to wrongly flag A4 and A5. `Subject` is selected
+     * anyway because the legacy `anti-fraud` parse is one half of the reconciliation's RISK 1
+     * canary; nothing MAPS on it. Do not narrow this list without reading
+     * `ChecklistMigrationDomain.project`, which reads every column returned here.
+     *
+     * ⚠ ORDERED BY deal, then group, then sequence, so a migration chunk and an audit run walk
+     * the rows in the same order and two runs can be diffed line for line.
+     *
+     * 🔴 RETIRED AT M5 WITH THE REST OF THE TASK MODEL, and this entry must leave the inventory
+     * block above at the same time. ARCHITECTURE §2 makes that block the authoritative record of
+     * which reads escape and why; a stale one tells the next review an exemption exists that
+     * does not.
+     *
+     * NOT-FOUND CONTRACT: a list read. An empty list is MEANINGFUL — a deal that was never
+     * fanned out on the Task model has no checklist Tasks, and the migration must treat that as
+     * nothing to migrate rather than as an error.
+     *
+     * @param transactionDealIds Parent `Transaction__c` ids; null/empty-safe.
+     * @return Checklist Tasks on those deals (Task_Group__c populated), ordered; never null.
+     * @example
+     * List<Task> rows = TaskSelector.selectForChecklistMigration(dealIds);
+     */
+    public static List<Task> selectForChecklistMigration(Set<Id> transactionDealIds) {
+        if (transactionDealIds == null || transactionDealIds.isEmpty()) {
+            return new List<Task>();
+        }
+        return [
+            SELECT Id, Transaction_Deal__c, Task_Group__c, Task_Sequence__c, Task_Owner_Label__c,
+                   Subject, Status, IsClosed, ActivityDate, Description, Conditional__c,
+                   Verbal_Verification_Completed__c, Verified_By__c, Verified_At__c,
+                   Verification_Phone__c, LastModifiedDate, LastModifiedById
+            FROM Task
+            WHERE Transaction_Deal__c IN :transactionDealIds AND Task_Group__c != null
+            WITH SYSTEM_MODE
+            ORDER BY Transaction_Deal__c, Task_Group__c, Task_Sequence__c NULLS FIRST
         ];
     }
 

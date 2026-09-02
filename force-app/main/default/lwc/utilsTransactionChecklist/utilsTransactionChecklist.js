@@ -292,7 +292,16 @@ export function normalizeChecklistGroups(rows) {
                 comment: (item.comment || '').trim(),
                 completedByName: item.completedByName || '',
                 completedDateTime: item.completedDateTime || null,
-                blocked: item.blocked === true
+                blocked: item.blocked === true,
+                // PHASE 5. TRUE when this item records an output somewhere other than its own row
+                // (financing detail on Loan__c, coverage on Insurance_Binder__c, an uploaded
+                // document), so the click routes to the capture dialog rather than the plain
+                // confirm dialog. Resolved SERVER-SIDE from the coordinate
+                // (group letter + sequence) by ChecklistCaptureDefProvider — never from the
+                // subject text, and never re-derived here. `normalizeLegacyGroups` hard-codes it
+                // false: the legacy Task model has no Loan__c / Insurance_Binder__c to capture
+                // into, which is exactly the gap Phase 5 closes.
+                hasCapture: item.hasCapture === true
             };
         });
         const total = group.total != null ? group.total : items.length;
@@ -359,7 +368,15 @@ export function normalizeLegacyGroups(rows) {
                 comment: (task.notes || '').trim(),
                 completedByName: task.completedByName || '',
                 completedDateTime: task.completedDate || null,
-                blocked: false
+                blocked: false,
+                // ALWAYS FALSE ON THE LEGACY MODEL, and that is a fact rather than a shortcut:
+                // Phase 5's capture writes into Loan__c / Insurance_Binder__c, both of which hang
+                // off the CHECKLIST model. A legacy Task has no coordinate to key on
+                // (Task_Group__c + Task_Sequence__c exist, but ChecklistCaptureService resolves the
+                // capture target through Checklist__r.Transaction__c, which a Task does not have)
+                // and no capture dialog is offered. An un-migrated deal therefore behaves exactly
+                // as it did before Phase 5 — which is the point of the dual-model window.
+                hasCapture: false
             };
         });
         const total = group.total != null ? group.total : items.length;

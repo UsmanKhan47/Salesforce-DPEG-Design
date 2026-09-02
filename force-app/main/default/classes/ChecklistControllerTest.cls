@@ -338,22 +338,48 @@ private class ChecklistControllerTest {
         Transaction__c deal = dealWithTwoGroups();
 
         Test.startTest();
+        // The group read supplies the letters. This is not a convenience: see the assertion note
+        // below for why the item read deliberately cannot supply them itself.
+        List<Checklist__c> groups =
+            ChecklistSelector.selectForDisplayByTransactionIds(new Set<Id>{ deal.Id });
         List<Checklist_Item__c> items =
             ChecklistItemSelector.selectForDisplayByTransactionIds(new Set<Id>{ deal.Id });
         Test.stopTest();
 
+        Map<Id, String> letterByChecklistId = new Map<Id, String>();
+        for (Checklist__c grp : groups) {
+            letterByChecklistId.put(grp.Id, grp.Group_Letter__c);
+        }
+
         Assert.areEqual(4, items.size(), 'Every item on the deal, across both groups');
-        // ORDER BY Checklist__r.Sequence__c then Sequence__c: all of group B (seq 2) before the
-        // single item of group I (seq 9). The controller relies on this and never re-sorts.
-        Assert.areEqual('B', items[0].Checklist__r.Group_Letter__c, 'Group B first');
-        Assert.areEqual('B', items[1].Checklist__r.Group_Letter__c, 'Still group B');
-        Assert.areEqual('B', items[2].Checklist__r.Group_Letter__c, 'Still group B');
-        Assert.areEqual('I', items[3].Checklist__r.Group_Letter__c, 'Group I last');
+
+        // ═══════════════════════════════════════════════════════════════════════════════════
+        // ⚠ ASSERTED VIA THE `Checklist__c` ID FIELD, NOT VIA `Checklist__r.Group_Letter__c`.
+        // ═══════════════════════════════════════════════════════════════════════════════════
+        // The first version of this test read the spanning field, which the display selector does
+        // NOT select - a `System.SObjectException` at runtime, and the test never ran because its
+        // class had already been dropped from a deploy for an unrelated compile error.
+        //
+        // The fix is on the TEST side deliberately. Adding `Checklist__r.Group_Letter__c` to the
+        // SELECT would have made this line pass, and would have violated that selector's own
+        // stated rule: under `USER_MODE` every extra column is another FLS grant that must exist
+        // or the whole query throws and the whole screen goes dark, so a field is selected only
+        // when a consumer READS it. `ChecklistController` never dereferences this one - it takes
+        // the letter from the `ChecklistSelector` result and joins items by the `Checklist__c` Id
+        // field. Asserting the way production actually resolves the letter is both honest and a
+        // closer test of the real code path.
+        //
+        // ⚠ `ORDER BY Checklist__r.Sequence__c` is unaffected: Apex permits ordering on an
+        // unselected field. Only the READ throws.
+        Assert.areEqual('B', letterByChecklistId.get(items[0].Checklist__c), 'Group B first');
+        Assert.areEqual('B', letterByChecklistId.get(items[1].Checklist__c), 'Still group B');
+        Assert.areEqual('B', letterByChecklistId.get(items[2].Checklist__c), 'Still group B');
+        Assert.areEqual('I', letterByChecklistId.get(items[3].Checklist__c), 'Group I last');
         Assert.isTrue(
             items[0].Sequence__c < items[1].Sequence__c,
             'Within a group, ordered by item Sequence__c'
         );
-        // The spanning read the DTO depends on.
+        // The spanning read the DTO DOES depend on, and which IS selected.
         Assert.isNotNull(items[0].Checklist__r.Transaction__c, 'Grandparent deal traversed');
     }
 
@@ -543,5 +569,410 @@ private class ChecklistControllerTest {
             SELECT Verbal_Verification_Completed__c, Flag__c
             FROM Checklist_Item__c WHERE Id = :itemId
         ];
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════════════════
+    // The failure channels — every catch block in the controller
+    // ═══════════════════════════════════════════════════════════════════════════════════════
+
+    @isTest
+    static void getChecklistShowsTheGENERICReadFailureWhenTheRUNNINGUSERHasNoGrants() {
+        // ═══════════════════════════════════════════════════════════════════════════════════
+        // 🔴 THIS IS THE DOCUMENTED DEPLOY-DAY FAILURE MODE, MADE EXECUTABLE.
+        // ═══════════════════════════════════════════════════════════════════════════════════
+        // Both display selectors are `WITH USER_MODE` deliberately, and a Metadata-API-deployed
+        // custom object arrives with no object permissions and its fields with ZERO
+        // FieldPermissions rows for anybody. So before the permission pass lands, this screen
+        // errors for EVERYONE - loudly, which is correct. The class header says exactly that; this
+        // test is what makes the claim more than a comment, and it covers `getChecklist`'s generic
+        // catch, which no happy-path test reaches.
+        //
+        // ⚠ THE PERSONA IS `Minimum Access - Salesforce` WITH NO PERMISSION SETS AT ALL. That is
+        // the honest shape of "the grant has not been made yet". A `Standard User` persona would
+        // prove nothing here for a different reason than usual: for a CUSTOM object no profile
+        // grants access implicitly, so either profile denies - but Minimum Access says what is
+        // meant.
+        Transaction__c deal = dealWithTwoGroups();
+
+        User ungranted;
+        // Setup objects (User) and non-setup objects cannot be mixed in one transaction; the
+        // runAs isolation block is what separates them.
+        System.runAs(new User(Id = UserInfo.getUserId())) {
+            ungranted = buildUngrantedUser();
+            insert ungranted;
+        }
+
+        String message;
+        Test.startTest();
+        System.runAs(ungranted) {
+            try {
+                ChecklistController.getChecklist(deal.Id);
+                Assert.fail('Expected an AuraHandledException - a user with no grants cannot read '
+                    + 'Checklist__c under USER_MODE');
+            } catch (AuraHandledException e) {
+                message = e.getMessage();
+            }
+        }
+        Test.stopTest();
+
+        Assert.isTrue(
+            message.contains('could not be loaded'),
+            'The user gets the fixed generic read-failure message: ' + message
+        );
+        // 🔴 NO PLATFORM DETAIL MAY REACH THE USER. A QueryException here reads
+        // "No such column 'Flag__c' on entity 'Checklist_Item__c'" - an FLS denial wearing a
+        // schema error, which leaks field API names and tells the user nothing they can act on.
+        Assert.isFalse(
+            message.containsIgnoreCase('No such column') || message.contains('__c'),
+            'Platform detail must stay in the debug log, not the toast: ' + message
+        );
+    }
+
+    @isTest
+    static void recordWireVerificationMapsAPlatformFailureToTheGenericMessage() {
+        // Covers the generic write catch. The failure is induced with a confirmer name longer than
+        // Verified_By_Name__c's Text(120) - deterministic, no user fixture. See the twin test in
+        // ChecklistItemServiceTest for why this branch matters.
+        Transaction__c deal = newDeal();
+        Checklist__c checklistGroup = TestDataFactory.createChecklist(deal.Id, true);
+        Checklist_Item__c item = TestDataFactory.createChecklistItems(1, checklistGroup.Id, false)[0];
+        item.Is_Wire_Verification__c = true;
+        insert item;
+
+        String message;
+        Test.startTest();
+        try {
+            ChecklistController.recordWireVerification(item.Id, 'N'.repeat(200), '713-555-0142', null);
+            Assert.fail('Expected an AuraHandledException');
+        } catch (AuraHandledException e) {
+            message = e.getMessage();
+        }
+        Test.stopTest();
+
+        Assert.isTrue(
+            message.contains('could not be updated'),
+            'An unexpected platform failure gets the FIXED generic message: ' + message
+        );
+        Assert.isFalse(
+            message.containsIgnoreCase('STRING_TOO_LONG')
+                || message.contains('Verified_By_Name__c')
+                || message.containsIgnoreCase('FIELD_INTEGRITY'),
+            'Raw DmlException text leaks field API names and must never be concatenated in: '
+                + message
+        );
+    }
+
+    @isTest
+    static void recordWireVerificationSurfacesANotFoundRefusalVERBATIM() {
+        Transaction__c deal = newDeal();
+        Checklist__c checklistGroup = TestDataFactory.createChecklist(deal.Id, true);
+        Checklist_Item__c item = TestDataFactory.createChecklistItems(1, checklistGroup.Id, false)[0];
+        item.Is_Wire_Verification__c = true;
+        insert item;
+        Id goneId = item.Id;
+        delete item;
+
+        String message;
+        Test.startTest();
+        try {
+            ChecklistController.recordWireVerification(goneId, 'Jane Doe', '713-555-0142', null);
+            Assert.fail('Expected an AuraHandledException');
+        } catch (AuraHandledException e) {
+            message = e.getMessage();
+        }
+        Test.stopTest();
+
+        Assert.isTrue(
+            message.contains('no longer available'),
+            'The actionable not-found guidance reaches the user: ' + message
+        );
+    }
+
+    @isTest
+    static void recordWireVerificationSurfacesAPrerequisiteRefusalVERBATIM() {
+        // A wire-verification item can itself be gated - nothing says the anti-fraud call is always
+        // first in its group. This covers the prerequisite catch on the WIRE path, which the
+        // completion path's twin test does not reach.
+        Transaction__c deal = newDeal();
+        Checklist__c checklistGroup = TestDataFactory.createChecklist(deal.Id, true);
+        List<Checklist_Item__c> items = TestDataFactory.createChecklistItems(2, checklistGroup.Id, false);
+        items[1].Is_Wire_Verification__c = true;
+        insert items;
+        TestDataFactory.linkPrerequisite(items[1], items[0], true);
+
+        String message;
+        Test.startTest();
+        try {
+            ChecklistController.recordWireVerification(items[1].Id, 'Jane Doe', '713-555-0142', null);
+            Assert.fail('Expected an AuraHandledException from the prerequisite gate');
+        } catch (AuraHandledException e) {
+            message = e.getMessage();
+        }
+        Test.stopTest();
+
+        Assert.isTrue(String.isNotBlank(message), 'The refusal carries a message');
+        Assert.isFalse(
+            message.contains('could not be updated'),
+            'A wire-fraud prerequisite refusal must NOT be flattened into the generic message: '
+                + message
+        );
+        Assert.isFalse(
+            reload(items[1].Id).Verbal_Verification_Completed__c,
+            'And no evidence was written on a refused save'
+        );
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════════════════
+    // 🔴 PHASE 5 — the capture boundary.
+    //
+    // `getCaptureContext` PERFORMS DML (it provisions the `Loan__c` / `Insurance_Binder__c`) and
+    // carries three catch arms; `linkCaptureDocuments` carries two; `completeItem` gained two more
+    // verbatim-surfacing arms; and `ItemRow.hasCapture` is a new wire-contract member. This block
+    // covers all four, to the standard the four existing verbatim-surfacing tests above set.
+    //
+    // ⚠ CONTENT COST: 1 `ContentVersion` row in this whole block, in
+    // `linkCaptureDocumentsFilesTheDocumentAgainstTheItem`. Every insert consumes one of the org's
+    // 2,500-per-rolling-24-hours `ContentPublication` allowance and TEST ROLLBACK DOES NOT REFUND
+    // IT (`.claude/rules/content-publication-rule.md`). The idempotency, multi-file and
+    // deal-vs-item facts are proven in `ChecklistCaptureServiceTest`, which budgets 5 rows; this
+    // class only needs to prove the CONTROLLER passes the ids through, which one row does.
+    // ═══════════════════════════════════════════════════════════════════════════════════════
+
+    /** One item at an exact coordinate, under a group re-pointed to `letter`. */
+    private static Checklist_Item__c itemAtCoordinate(Id dealId, String letter, Integer sequence) {
+        Checklist__c checklistGroup = TestDataFactory.createChecklist(dealId, false);
+        checklistGroup.Group_Letter__c = letter;
+        insert checklistGroup;
+        return TestDataFactory.createChecklistItems(sequence, checklistGroup.Id, true)[sequence - 1];
+    }
+
+    @isTest
+    static void getChecklistMarksOnlyCaptureItemsWithHasCapture() {
+        // 🔴 `hasCapture` IS A WIRE-CONTRACT MEMBER. The LWC routes the click on it, so a controller
+        // that stopped populating it would send every capture item to the plain confirm dialog and
+        // the whole feature would silently disappear with no error anywhere.
+        Transaction__c deal = newDeal();
+        Checklist__c groupF = TestDataFactory.createChecklist(deal.Id, false);
+        groupF.Group_Letter__c = 'F';
+        insert groupF;
+        // F1..F9: F5, F6 and F9 capture; the other six do not. Both halves in ONE group, so a
+        // component that flagged everything and one that flagged nothing both fail.
+        TestDataFactory.createChecklistItems(9, groupF.Id, true);
+
+        Test.startTest();
+        List<ChecklistController.ChecklistRow> rows = ChecklistController.getChecklist(deal.Id);
+        Test.stopTest();
+
+        // ⚠ KEYED BY Integer, NOT Decimal. `Sequence__c` is a Number(3,0) and comes back as a
+        // Decimal whose SCALE is not guaranteed; `Map<Decimal, ...>` hashes on the decimal
+        // representation, so a key stored as `5.0` would not be found by a lookup of `5` and this
+        // test would fail against perfectly correct code. `intValue()` is the same normalisation
+        // `ChecklistCaptureDefProvider.forCoordinate` applies.
+        Map<Integer, Boolean> captureBySequence = new Map<Integer, Boolean>();
+        for (ChecklistController.ItemRow item : rows[0].items) {
+            captureBySequence.put(item.sequence.intValue(), item.hasCapture);
+        }
+        Assert.areEqual(true, captureBySequence.get(5), 'F5 selects the lender');
+        Assert.areEqual(true, captureBySequence.get(6), 'F6 records the term sheet');
+        Assert.areEqual(true, captureBySequence.get(9), 'F9 records the bank account type');
+        Assert.areEqual(false, captureBySequence.get(7),
+            'F7 forms the deal entity and has no Loan__c field behind it');
+        Assert.areEqual(false, captureBySequence.get(8),
+            'F8 opens the account; F9 records its TYPE. Flagging F8 would open an empty dialog');
+        Assert.areEqual(false, captureBySequence.get(1), 'F1 builds the loan package - no capture');
+    }
+
+    @isTest
+    static void getCaptureContextProvisionsTheTargetAndReturnsItsShape() {
+        Transaction__c deal = newDeal();
+        Checklist_Item__c f9 = itemAtCoordinate(deal.Id, 'F', 9);
+        Assert.areEqual(0, [SELECT COUNT() FROM Loan__c],
+            'Control: nothing exists until the dialog is opened');
+
+        Test.startTest();
+        ChecklistController.CaptureRow row = ChecklistController.getCaptureContext(f9.Id);
+        Test.stopTest();
+
+        Assert.isNotNull(row, 'F9 records something, so a context comes back');
+        // ⚠ THE MODE IS A STRING ON THE WIRE. An Apex enum does not marshal to JavaScript as
+        // anything the LWC can compare against, so the controller stringifies it once. The LWC
+        // compares against these exact literals.
+        Assert.areEqual('TARGET_FIELDS', row.captureMode, 'Stringified enum, not an enum');
+        Assert.areEqual('Loan__c', row.objectApiName, 'and it names the object for the form');
+        Assert.areEqual(1, [SELECT COUNT() FROM Loan__c], 'Opening the dialog PROVISIONED the loan');
+        Assert.areEqual([SELECT Id FROM Loan__c LIMIT 1].Id, row.targetRecordId,
+            'and the form binds to that record. A null here makes lightning-record-edit-form a '
+                + 'CREATE form, which would make a second Loan__c on every open');
+        Assert.areEqual(new List<String>{ 'Bank_Account_Type__c' }, row.captureFields,
+            'offering exactly the field the step is about');
+        Assert.areEqual(false, row.satisfied, 'which is blank, so the requirement is not met');
+    }
+
+    @isTest
+    static void getCaptureContextReturnsNullForAnItemThatRecordsNothing() {
+        // Null is the NORMAL answer for 64 of the 82 items, and the LWC reads it as "use the plain
+        // confirm dialog". It must not be an exception.
+        Transaction__c deal = newDeal();
+        Checklist_Item__c ordinary = itemAtCoordinate(deal.Id, 'D', 3);
+
+        Test.startTest();
+        ChecklistController.CaptureRow row = ChecklistController.getCaptureContext(ordinary.Id);
+        Test.stopTest();
+
+        Assert.isNull(row, 'An item with no capture returns null rather than an empty context');
+    }
+
+    @isTest
+    static void getCaptureContextSurfacesTheNotFoundMessageVerbatim() {
+        // The `ItemNotFoundException` arm, reached DETERMINISTICALLY: the item is created and then
+        // deleted, so `selectForCompletion` resolves nothing and the controller raises its own
+        // not-found rather than dereferencing an empty map.
+        // ⚠ NOT reached via `runAs` on purpose. An ungranted principal fails EARLIER, inside the
+        // USER_MODE query, with `QueryException: No such column` — which lands in the generic catch,
+        // not this arm. A runAs test would therefore assert on the wrong branch while looking like
+        // it asserted on this one; that case is covered separately below.
+        Transaction__c deal = newDeal();
+        Checklist_Item__c f9 = itemAtCoordinate(deal.Id, 'F', 9);
+        Id vanishedId = f9.Id;
+        delete f9;
+
+        String message;
+        Test.startTest();
+        try {
+            ChecklistController.getCaptureContext(vanishedId);
+        } catch (AuraHandledException e) {
+            message = e.getMessage();
+        }
+        Test.stopTest();
+
+        Assert.isNotNull(message, 'An item that no longer resolves must be refused, not served');
+        Assert.isTrue(message.containsIgnoreCase('refresh'),
+            'and "refresh the page" IS the fix here, so it must reach the user, was: ' + message);
+        Assert.areEqual(0, [SELECT COUNT() FROM Loan__c],
+            'and a failed context build provisions nothing');
+    }
+
+    @isTest
+    static void getCaptureContextNeverLeaksPlatformTextToAnUngrantedPrincipal() {
+        // 🔴 THE PROPERTY THAT MATTERS FOR THIS PRINCIPAL IS NON-LEAKAGE, NOT THE EXACT MESSAGE.
+        // An ungranted principal fails inside the USER_MODE query with
+        // `QueryException: No such column ...` — an FLS denial wearing a schema error — which the
+        // generic catch maps to a fixed message. Asserting a specific sentence here would be
+        // asserting on whichever branch happened to fire; asserting that no field API name, no
+        // SOQL and no exception type reaches the client is the real contract, and it is what stops
+        // a provisioning gap becoming an information disclosure.
+        Transaction__c deal = newDeal();
+        Checklist_Item__c f9 = itemAtCoordinate(deal.Id, 'F', 9);
+        User ungranted = buildUngrantedUser();
+        insert ungranted;
+
+        String message;
+        Test.startTest();
+        System.runAs(ungranted) {
+            try {
+                ChecklistController.getCaptureContext(f9.Id);
+            } catch (AuraHandledException e) {
+                message = e.getMessage();
+            }
+        }
+        Test.stopTest();
+
+        Assert.isNotNull(message, 'A principal with no grants must be refused, not served');
+        for (String leak : new List<String>{
+            'No such column', 'SELECT', 'Loan__c', 'Checklist_Item__c', 'QueryException',
+            'INSUFFICIENT_ACCESS'
+        }) {
+            Assert.isFalse(message.contains(leak),
+                'The message must not carry platform text (' + leak + '), was: ' + message);
+        }
+    }
+
+    @isTest
+    static void completeItemSurfacesACaptureRefusalVerbatim() {
+        // 🔴 THE ARM THAT MATTERS MOST. "Record the selected lender before completing this item"
+        // is actionable; the generic "refresh the page and try again" can NEVER put a lender name
+        // on a Loan__c, so mapping this to the generic message would make an ENFORCED control look
+        // like a BROKEN PAGE - the exact defect the prerequisite arm above was written to prevent.
+        Transaction__c deal = newDeal();
+        Checklist_Item__c f5 = itemAtCoordinate(deal.Id, 'F', 5);
+
+        String message;
+        Test.startTest();
+        try {
+            ChecklistController.completeItem(f5.Id, null);
+        } catch (AuraHandledException e) {
+            message = e.getMessage();
+        }
+        Test.stopTest();
+
+        Assert.isNotNull(message, 'The completion is refused');
+        Assert.isTrue(message.containsIgnoreCase('lender'),
+            'and the refusal names the missing output, was: ' + message);
+        Assert.isFalse(message.containsIgnoreCase('contact your administrator'),
+            'It must NOT be the generic write-failure message - that is advice nobody can act on');
+    }
+
+    @isTest
+    static void linkCaptureDocumentsFilesTheDocumentAgainstTheItem() {
+        // CONTENT COST: 1 ContentVersion row. See the block header.
+        Transaction__c deal = newDeal();
+        Checklist_Item__c c7 = itemAtCoordinate(deal.Id, 'C', 7);
+        ContentVersion version = new ContentVersion(
+            Title = 'PCR',
+            PathOnClient = 'PCR.pdf',
+            VersionData = Blob.valueOf('test document body')
+        );
+        insert version;
+        Id documentId =
+            [SELECT ContentDocumentId FROM ContentVersion WHERE Id = :version.Id].ContentDocumentId;
+
+        Test.startTest();
+        Integer created = ChecklistController.linkCaptureDocuments(c7.Id, new List<Id>{ documentId });
+        Test.stopTest();
+
+        Assert.areEqual(1, created, 'The controller passes the ids through to the service');
+        Assert.areEqual(1,
+            [SELECT COUNT() FROM ContentDocumentLink WHERE LinkedEntityId = :c7.Id],
+            'and the link lands on the ITEM, which is what makes the document guard mean something');
+    }
+
+    @isTest
+    static void linkCaptureDocumentsSurfacesAMissingItemVerbatim() {
+        String message;
+        Test.startTest();
+        try {
+            ChecklistController.linkCaptureDocuments(null, new List<Id>());
+        } catch (AuraHandledException e) {
+            message = e.getMessage();
+        }
+        Test.stopTest();
+
+        Assert.isNotNull(message, 'A null item id is refused rather than silently ignored');
+        Assert.isTrue(message.containsIgnoreCase('refresh'), 'with actionable advice, was: ' + message);
+    }
+
+    /**
+     * Builds (but does not insert) a `Minimum Access - Salesforce` user holding NO permission sets.
+     *
+     * For a CUSTOM object no profile grants access implicitly, so this persona genuinely cannot
+     * read `Checklist__c` / `Checklist_Item__c` - which is the state the org is in between
+     * deploying the schema and running the permission pass.
+     */
+    private static User buildUngrantedUser() {
+        Profile minimumAccess = [SELECT Id FROM Profile WHERE Name = 'Minimum Access - Salesforce' LIMIT 1];
+        String unique = 'chklst' + String.valueOf(Datetime.now().getTime())
+            + String.valueOf(Math.abs(Crypto.getRandomInteger()));
+        return new User(
+            FirstName = 'No',
+            LastName = 'Grants',
+            Alias = 'nogrant',
+            Email = 'no.grants.checklist@example.invalid',
+            Username = unique + '@example.invalid.dpeg',
+            ProfileId = minimumAccess.Id,
+            TimeZoneSidKey = 'America/Chicago',
+            LocaleSidKey = 'en_US',
+            EmailEncodingKey = 'UTF-8',
+            LanguageLocaleKey = 'en_US'
+        );
     }
 }

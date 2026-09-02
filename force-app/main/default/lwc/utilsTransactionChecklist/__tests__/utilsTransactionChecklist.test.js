@@ -381,3 +381,44 @@ describe('c-utils-transaction-checklist :: normalizeLegacyGroups (legacy Task mo
         expect(checklist.items[0].comment).toBe('filed');
     });
 });
+
+describe('c-utils-transaction-checklist :: hasCapture (Phase 5)', () => {
+    it('carries the server-derived hasCapture straight through on the new model', () => {
+        // Server-derived from the item COORDINATE (group letter + sequence) by
+        // ChecklistCaptureDefProvider. This module must not re-derive it, and must not drop it.
+        const [group] = normalizeChecklistGroups(
+            checklistGroup([
+                { id: 'i-cap', subject: 'Select bank account type', hasCapture: true },
+                { id: 'i-plain', subject: 'Follow up with bankers', hasCapture: false },
+                { id: 'i-absent', subject: 'Sign engagement letter' }
+            ])
+        );
+        expect(group.items[0].hasCapture).toBe(true);
+        expect(group.items[1].hasCapture).toBe(false);
+        // An absent key is NOT a capture. A truthy coercion here would open the capture dialog on
+        // every row served by an older controller build.
+        expect(group.items[2].hasCapture).toBe(false);
+    });
+
+    it('never reports a capture on the LEGACY model, whatever the payload says', () => {
+        // Loan__c and Insurance_Binder__c hang off the CHECKLIST model. An un-migrated deal must
+        // behave exactly as it did before Phase 5 - that is the point of the dual-model window.
+        const [group] = normalizeLegacyGroups(
+            [
+                {
+                    key: 'B. Earnest Money',
+                    letter: 'B',
+                    name: 'Earnest Money',
+                    ownerLabel: 'Danish',
+                    total: 1,
+                    complete: 0,
+                    pct: 0,
+                    tasks: [
+                        { id: 't-cap', subject: 'Select bank account type', hasCapture: true }
+                    ]
+                }
+            ]
+        );
+        expect(group.items[0].hasCapture).toBe(false);
+    });
+});

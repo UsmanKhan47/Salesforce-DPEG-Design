@@ -386,6 +386,24 @@ dedupe guard now false, and the deal is re-fanned with a brand-new checklist and
 requires deactivating or re-filtering the flow first — a deploy, not a script argument. This is a
 further reason M3 is sequenced only after M2 reads `CUTOVER: CLEAR`.
 
+🔴 **AND IT IS TOTAL ONLY BEFORE `scripts/backfill-checklist-outcomes.apex` RUNS.** That script is
+the sanctioned post-M1 step the migration's outcome suppression defers to — so **the sequence this
+document prescribes is exactly the sequence that makes rollback partial.** The sentence above
+("`Critical_Date__c`, `Wire__c`, `Loan__c` and `Insurance_Binder__c` are not touched by the
+migration and need no reversal") is true of the *migration* and false of the *sequence*. After the
+backfill, `rollback` restores the checklist and leaves this on the deal, none of which existed on
+the Task model:
+
+| Residue | Reversible? |
+|---|---|
+| `Critical_Date__c` rows | ❌ **Permanent.** Precisely the rows GATE-B3 is about. `CriticalDateService` is idempotent on (Transaction + Type) so a re-run will not duplicate them — and will not remove them either. |
+| `Earnest_Money_Sent__c = true` | ❌ Stays true. |
+| `Earnest_Money_Sent_Date__c` | ❌ Stamped with the **backfill day, not the wire day** — and 🔴 `ChecklistOutcomeService` stamps it **only when blank**, so the one residue that looks repairable by re-migrating is specifically protected against it. Manual write only. |
+| `Is_Earnest_At_Risk__c` | ❌ Flipped, and deliberately outside the suppression seam (it derives from a date), so not restored. |
+
+⇒ **If a rollback is conceivable at all, run it before the backfill.** After that point, unwinding is
+manual and per-field.
+
 **Rollback of M3** is a flow redeploy. **Rollback of M4** is re-adding one grant. Neither touches data.
 
 ---

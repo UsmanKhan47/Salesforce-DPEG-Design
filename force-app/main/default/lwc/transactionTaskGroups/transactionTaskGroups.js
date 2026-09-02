@@ -7,6 +7,10 @@ import CHECKLIST_FANNED_OUT_FIELD from '@salesforce/schema/Transaction__c.Checkl
 import getChecklist from '@salesforce/apex/ChecklistController.getChecklist';
 import completeItem from '@salesforce/apex/ChecklistController.completeItem';
 import recordWireVerification from '@salesforce/apex/ChecklistController.recordWireVerification';
+// Phase 5 capture. `getCaptureContext` PERFORMS DML (it provisions the Loan__c /
+// Insurance_Binder__c), so it is imperative and deliberately not a cacheable wire.
+import getCaptureContext from '@salesforce/apex/ChecklistController.getCaptureContext';
+import linkCaptureDocuments from '@salesforce/apex/ChecklistController.linkCaptureDocuments';
 // Legacy model (standard Task). Still live for every deal Phase 4 has not cut over.
 import getTaskGroups from '@salesforce/apex/TransactionTaskController.getTaskGroups';
 import completeTask from '@salesforce/apex/TransactionTaskController.completeTask';
@@ -98,6 +102,11 @@ export default class TransactionTaskGroups extends LightningElement {
     _confirm = {};
     _confirmSaving = false;
     _view = {};
+    // PHASE 5 capture dialog. `context` is the server-supplied CaptureRow; `loading` covers the
+    // round trip that PROVISIONS the Loan__c / Insurance_Binder__c, which is why the dialog opens
+    // in a loading state rather than opening empty and filling in.
+    _capture = {};
+    _captureSaving = false;
 
     // ---- Model discrimination -------------------------------------------------------------
 
@@ -450,6 +459,10 @@ export default class TransactionTaskGroups extends LightningElement {
                     notes: item.comment,
                     hasNotes,
                     hasDetails: item.done && (hasNotes || item.verified),
+                    // PHASE 5. Routes the click to the capture dialog instead of the plain confirm
+                    // dialog. Server-derived from the item COORDINATE; never re-derived here, and
+                    // always false on the legacy model.
+                    capture: item.hasCapture === true,
                     rowClass
                 };
             })
@@ -520,6 +533,15 @@ export default class TransactionTaskGroups extends LightningElement {
                 comments: '',
                 error: ''
             };
+            return;
+        }
+        // PHASE 5. An item that records an output elsewhere goes to the capture dialog. The wire
+        // branch above wins when both are true, which cannot happen today (no wire-verification
+        // item carries a capture def) but is ordered deliberately: the anti-fraud control is the
+        // more specific one and must never be displaced by a generic dialog.
+        if (event.target.dataset.capture === 'true' && this.isChecklistModel) {
+            event.target.checked = false; // hold unchecked until the capture is saved
+            this.openCapture(itemId, subject);
             return;
         }
         event.target.checked = false; // hold unchecked until confirmed
@@ -607,6 +629,252 @@ export default class TransactionTaskGroups extends LightningElement {
             );
         } finally {
             this._confirmSaving = false;
+        }
+    }
+
+    // ---- Capture dialog (Phase 5) ----------------------------------------------------------
+    //
+    // 🔴 THE CAPTURED VALUES ARE WRITTEN BY LIGHTNING DATA SERVICE, NOT BY APEX.
+    // ARCHITECTURE.md §5 ranks LDS first and reserves imperative Apex for what LDS cannot express.
+    // Writing `Lender_Name__c` or `Bank_Account_Type__c` on one record is the textbook
+    // `lightning-record-edit-form` case, and routing it through LDS buys three things an Apex
+    // writer would have to reimplement: field-level security enforced by the platform, restricted
+    // picklists rendered as comboboxes that can only offer real values, and the object's own
+    // validation rules. The server side of Phase 5 therefore never names a captured field in a
+    // write payload — `ChecklistCaptureService` only CREATES the row and returns its Id.
+    //
+    // 🔴 THE DOCUMENT UPLOAD IS `lightning-file-upload`, AND THAT IS A QUOTA DECISION.
+    // Every `ContentVersion` insert consumes one of the org's 2,500-per-rolling-24-hours
+    // `ContentPublication` allowance, test rollback does not refund it, and an overrun throws a
+    // `System.UnexpectedException` that escapes `catch (Exception)` and aborts the whole
+    // transaction — it caused a production outage here on 2026-08-06. `lightning-file-upload`
+    // publishes in the PLATFORM's transaction, so no Apex of ours is ever inside the one that
+    // could abort. Apex afterwards only inserts a `ContentDocumentLink`, which costs no quota.
+    // ⚠ Do not replace this with a base64 payload sent to Apex. That is the shape of the incident.
+
+    get showCaptureModal() {
+        return !!this._capture.open;
+    }
+    get captureSubject() {
+        return this._capture.subject || '';
+    }
+    get captureLoading() {
+        return this._capture.loading === true;
+    }
+    get captureContext() {
+        return this._capture.context || {};
+    }
+    get isFieldCapture() {
+        return this.captureContext.captureMode === 'TARGET_FIELDS';
+    }
+    get isDocumentCapture() {
+        return this.captureContext.captureMode === 'DOCUMENT';
+    }
+    /**
+     * `for:each` needs a keyed object per row; a bare array of strings cannot supply `key`.
+     * The `name` is the field API name handed straight to `lightning-input-field`.
+     */
+    get captureFieldRows() {
+        return (this.captureContext.captureFields || []).map((apiName) => ({
+            key: apiName,
+            name: apiName
+        }));
+    }
+    get captureObjectApiName() {
+        return this.captureContext.objectApiName;
+    }
+    get captureTargetRecordId() {
+        return this.captureContext.targetRecordId;
+    }
+    /** Deal documents are contracts, reports and binders — not an open-ended file drop. */
+    get captureAcceptedFormats() {
+        return ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.png', '.jpg', '.jpeg'];
+    }
+    /**
+     * The server-supplied explanation of what must be recorded, replaced by the server's REFUSAL
+     * text once one has been received. Both come from `ChecklistCaptureDefProvider`, so the
+     * pre-emptive hint and the eventual refusal are the same sentence and cannot drift.
+     */
+    get captureRequirementMessage() {
+        return this._capture.requirementError || this.captureContext.requirementMessage || '';
+    }
+    get hasCaptureRequirement() {
+        return !!this.captureRequirementMessage;
+    }
+    get captureDocumentOnFile() {
+        return this._capture.documentOnFile === true;
+    }
+    /**
+     * ⚠ THIS IS A CONVENIENCE, NOT A CONTROL. The document requirement is enforced by
+     * `ChecklistCaptureService.assertCaptureSatisfied` on the server; disabling the button only
+     * saves the user a round trip. The FIELD requirement is deliberately NOT mirrored here at all —
+     * the value lives inside `lightning-record-edit-form`, and reading it out to second-guess the
+     * server would be a client-side gate on data the server is about to re-check anyway.
+     */
+    get captureSaveDisabled() {
+        return (
+            this._captureSaving ||
+            this.captureLoading ||
+            (this.isDocumentCapture && !this.captureDocumentOnFile)
+        );
+    }
+
+    /**
+     * Opens the capture dialog and asks the server what this item records.
+     *
+     * ⚠ THE ROUND TRIP PROVISIONS THE TARGET RECORD, so the dialog opens in a loading state rather
+     * than opening empty and filling in — a `lightning-record-edit-form` rendered with an undefined
+     * `record-id` silently becomes a CREATE form, which would make a second Loan__c on every open.
+     */
+    async openCapture(itemId, subject) {
+        this._capture = { open: true, itemId, subject, loading: true };
+        try {
+            const context = await getCaptureContext({ itemId });
+            if (!context) {
+                // The server says this item records nothing after all — a definition changed under
+                // a page that was already open. Fall back to the ordinary confirm dialog rather
+                // than showing an empty capture form.
+                this._capture = {};
+                this._confirm = { open: true, itemId, subject, notes: '' };
+                return;
+            }
+            this._capture = {
+                open: true,
+                itemId,
+                subject,
+                loading: false,
+                context,
+                documentOnFile: context.satisfied === true
+            };
+        } catch (e) {
+            this._capture = {};
+            this.toastFailure(
+                'Item not completed',
+                e,
+                'Could not open this item. Please try again.'
+            );
+        }
+    }
+
+    cancelCapture() {
+        this._capture = {};
+    }
+
+    /**
+     * Files the just-uploaded documents against the checklist item.
+     *
+     * The `ContentVersion` already exists — `lightning-file-upload` created it against the deal in
+     * the platform's own transaction. This adds the per-item `ContentDocumentLink` that makes the
+     * server-side "has this item got its document?" guard mean something; without it the guard
+     * could only ask whether the DEAL has any file at all, which every deal does, so it would pass
+     * vacuously forever.
+     */
+    async handleUploadFinished(event) {
+        const documentIds = (event.detail.files || []).map((f) => f.documentId).filter(Boolean);
+        if (!documentIds.length) {
+            return;
+        }
+        try {
+            await linkCaptureDocuments({ itemId: this._capture.itemId, contentDocumentIds: documentIds });
+            this._capture = { ...this._capture, documentOnFile: true, requirementError: '' };
+        } catch (e) {
+            // ⚠ SET THE MESSAGE, DO NOT CLEAR IT. An earlier version assigned `requirementError:
+            // ''` here, which wiped the dialog's only visible explanation at the exact moment one
+            // was needed: the file IS uploaded (the platform already published it against the deal)
+            // but it is NOT filed against this item, so the server guard will keep refusing the
+            // completion and the dialog would say nothing about why. `documentOnFile` is
+            // deliberately left false, so Confirm stays disabled rather than offering an action
+            // that cannot succeed.
+            const raw = (e && e.body && e.body.message) || '';
+            this._capture = {
+                ...this._capture,
+                requirementError:
+                    raw ||
+                    'The file uploaded to the deal but could not be filed against this item. Upload it again.'
+            };
+            this.toastFailure(
+                'Document not filed',
+                e,
+                'The file uploaded but could not be filed against this item. Please try again.'
+            );
+        }
+    }
+
+    /**
+     * Submits the capture.
+     *
+     * For a FIELD capture this only asks the `lightning-record-edit-form` to save; the completion
+     * happens in `handleCaptureSuccess` once LDS confirms the write. Completing first and saving
+     * second would tick an item whose output then failed to save.
+     */
+    submitCapture() {
+        this._capture = { ...this._capture, requirementError: '' };
+        if (this.isFieldCapture) {
+            this._captureSaving = true;
+            // ⚠ CLASS SELECTOR, NOT AN ID. LWC rewrites static `id` attributes at render time, so
+            // `querySelector('#something')` never matches in Jest and is fragile in the browser.
+            const form = this.template.querySelector('.tg-capture-form');
+            // ⚠ THE `typeof` GUARD IS FOR JEST, NOT FOR THE BROWSER, AND IT IS NOT DEFENSIVE
+            // PADDING. The sfdx-lwc-jest stub for `lightning-record-edit-form` is a bare custom
+            // element with no `submit()`, so an unguarded call throws inside every test that opens
+            // a field capture and the suite would be testing the stub rather than this component.
+            // In the browser the method always exists. The consequence for the SUITE is stated in
+            // its Phase 5 block: Jest can prove that Confirm does NOT complete the item directly,
+            // and that `onsuccess` DOES — it cannot prove the form was actually asked to save.
+            if (form && typeof form.submit === 'function') {
+                form.submit();
+                return;
+            }
+            this._captureSaving = false;
+            return;
+        }
+        this.completeCapturedItem();
+    }
+
+    /** LDS saved the target record. Now complete the item. */
+    handleCaptureSuccess() {
+        this.completeCapturedItem();
+    }
+
+    /** LDS refused the target record write. The item is NOT completed. */
+    handleCaptureError(event) {
+        this._captureSaving = false;
+        const detail = (event && event.detail && event.detail.message) || '';
+        this.dispatchEvent(
+            new ShowToastEvent({
+                title: 'Details not saved',
+                message: detail || 'The details could not be saved. Please check the fields and try again.',
+                variant: 'error',
+                mode: 'sticky'
+            })
+        );
+    }
+
+    /**
+     * Completes the item once its output is recorded.
+     *
+     * ⚠ A `CaptureRequiredException` CAN STILL ARRIVE HERE, and it is not a bug when it does. The
+     * server re-checks; if the user cleared a required field in the form and saved it blank, the
+     * form save succeeds and the completion is refused. The refusal text is kept IN THE DIALOG
+     * rather than only toasted, because the dialog is where the fix is.
+     */
+    async completeCapturedItem() {
+        const { itemId } = this._capture;
+        this._captureSaving = true;
+        try {
+            await completeItem({ itemId, comment: null });
+            this._capture = {};
+            await this.refreshAfterWrite();
+        } catch (e) {
+            const raw = (e && e.body && e.body.message) || '';
+            this._capture = { ...this._capture, requirementError: raw };
+            this.toastFailure(
+                'Item not completed',
+                e,
+                'Could not complete the item. Please try again.'
+            );
+        } finally {
+            this._captureSaving = false;
         }
     }
 

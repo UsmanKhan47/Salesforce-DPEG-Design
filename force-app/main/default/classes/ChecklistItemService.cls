@@ -76,6 +76,13 @@
  *     ⚠ Unlike the first two, this one can also be produced by a write that never passes
  *     through this class at all (Data Loader, REST, Flow) — the gate is a trigger plus a
  *     validation rule, not a service check.
+ *   • `ChecklistCaptureService.CaptureRequiredException` — added by Phase 5. Raised by this
+ *     class's own call to `assertCaptureSatisfied`, before any DML, when an item that must
+ *     record an output (the financing detail, the coverage, an uploaded document) is asked to
+ *     close without it. Names the missing output. Same service-level ceiling as the wire check.
+ *   • `ChecklistCaptureService.CaptureUnavailableException` — the capture target could not be
+ *     resolved. Same "refresh the page" advice as `ItemNotFoundException`, and the controller
+ *     surfaces it the same way.
  *
  * ── WHY THERE IS NO `reopen()` AND NO `@InvocableMethod` ────────────────────────────────────
  * Both were considered and deliberately left out, for the reason Phase 2 gave for not building
@@ -227,6 +234,11 @@ public with sharing class ChecklistItemService {
      * @throws ItemNotFoundException when any id does not resolve for the running user. Nothing is
      *         written — the whole batch is refused rather than partially applied.
      * @throws WireVerificationException when an unverified wire item is routed through here.
+     * @throws ChecklistCaptureService.CaptureRequiredException when an item that must record an
+     *         output (F5/F6/F9/F12/G2/G5/J4 field, C7/G6 document) has not recorded it. Nothing is
+     *         written — the whole batch is refused.
+     * @throws ChecklistCaptureService.CaptureUnavailableException when a capture item has no
+     *         resolvable parent deal or target record.
      * @throws ChecklistItemPrerequisiteService.PrerequisiteNotMetException when the wire-fraud
      *         prerequisite gate refuses the save (B3 while B2 is open, I8 while I7 is open).
      * @throws System.DmlException on any other platform save failure, including an FLS/CRUD denial
@@ -281,7 +293,34 @@ public with sharing class ChecklistItemService {
             }
             payload.add(row);
         }
+
+        // ── PHASE 5 CAPTURE GATE ────────────────────────────────────────────────────────────
+        // 18 of the 82 items record an output somewhere other than their own row (the financing
+        // detail on `Loan__c`, the coverage on `Insurance_Binder__c`, an uploaded document). This
+        // refuses a completion whose output is not on file, BEFORE any DML, so the user is told
+        // what is missing instead of ticking a box that records nothing.
+        // ⚠ SERVICE-LEVEL, exactly like the wire-evidence check above it: a Data Loader, a Flow or
+        // a REST write bypasses it. That ceiling is deliberate - a trigger-level version would
+        // refuse `ChecklistMigrationService`'s historical completions wholesale, because the legacy
+        // Task model had nowhere to record these outputs in the first place. Argued in full at
+        // `ChecklistCaptureService`'s header. Costs ZERO SOQL for the 64 items that capture nothing.
+        ChecklistCaptureService.assertCaptureSatisfied(existing.values());
+
         save(payload);
+
+        // ── PHASE 5 DERIVED OUTCOMES ────────────────────────────────────────────────────────
+        // AFTER the DML, never before: A5 projects the deal's critical dates and B5 stamps
+        // `Earnest_Money_Sent__c`, and both are only true once the item is actually complete. Also
+        // refreshes `Is_Earnest_At_Risk__c` on every deal in the batch. See
+        // `ChecklistOutcomeService`.
+        //
+        // ⚠ `existing` IS PASSED AS THE PRIOR STATE, AND THAT IS WHAT ARMS THE TRANSITION GATE.
+        // It was read BEFORE the DML above, so it carries each item's `Flag__c` as it stood when
+        // this save started. Without it, re-completing an already-complete item would re-apply its
+        // outcomes - re-running `CriticalDateService` for an A5, re-entering the earnest path for a
+        // B5. Both are idempotent today, but that is luck at the outcome level rather than design
+        // at the dispatch level.
+        ChecklistOutcomeService.applyForCompletedItems(itemIds, existing);
     }
 
     /**
@@ -365,6 +404,18 @@ public with sharing class ChecklistItemService {
             payload.add(row);
         }
         save(payload);
+
+        // ⚠ NO CAPTURE GATE ON THIS PATH, AND THAT IS CORRECT RATHER THAN AN OMISSION: the only two
+        // `Is_Wire_Verification__c` items are B2 and I7, and neither carries a
+        // `ChecklistCaptureDefProvider` entry - their output IS the evidence written above.
+        // The DERIVED pass still runs, so a deal whose feasibility expired since its last checklist
+        // activity has `Is_Earnest_At_Risk__c` refreshed here too. One extra SOQL per verification,
+        // paid so that "every completion refreshes the deal's derived state" stays a single
+        // invariant rather than a rule with an exception nobody remembers.
+        // ⚠ `existing` is the pre-DML read, so the transition gate is armed on this path too - a
+        // second `recordWireVerification` on an already-verified item refreshes at-risk without
+        // re-applying anything derived.
+        ChecklistOutcomeService.applyForCompletedItems(itemIds, existing);
     }
 
     /**

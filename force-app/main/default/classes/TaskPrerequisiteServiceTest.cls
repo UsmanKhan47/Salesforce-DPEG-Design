@@ -136,10 +136,23 @@ private class TaskPrerequisiteServiceTest {
     /**
      * Ceiling on TOTAL queries across a 251-row completion. Derived:
      *   2  this feature      (1 per before-update chunk)
-     * + 2  TaskRollupService (1 per after-update chunk, via TaskSelector)
+     * + 4  TaskRollupService (2 per after-update chunk, via TaskSelector)
      * + 2  slack for unrelated automation woken by the Transaction__c rollup update
+     *
+     * 🔴 CORRECTED 2026-09-02 AND THE CEILING WAS RAISED WITH IT. The TaskRollupService term was
+     * 2, and the slack was the only thing absorbing the difference. Phase 4 M0 added the
+     * DUAL-MODEL COUNTER GUARD to `TaskRollupService.recalc`: it now reads `Transaction__c`
+     * BEFORE the Task read, to skip deals the checklist model has claimed. This fixture inserts
+     * 251 Tasks CARRYING `Transaction_Deal__c`, so `recalcDeals` is entered on both after-update
+     * chunks and each spends 2 queries, not 1.
+     * ⚠ THE OLD `<=` ASSERTION STILL PASSED AT 6, WHICH IS EXACTLY THE PROBLEM: the true total
+     * had risen to the ceiling with ZERO margin and nothing went red, so the derivation above
+     * would have quietly become fiction. Raised to 8 so the stated terms and the stated total
+     * agree again AND the declared slack still exists. Do not re-tighten it to 6 without first
+     * re-deriving the TaskRollupService term - and note it drops back to 2 at M5, when the
+     * counter guard is deleted along with the class.
      */
-    private static final Integer MAX_QUERIES_AT_BULK = 6;
+    private static final Integer MAX_QUERIES_AT_BULK = 8;
 
     /**
      * Ceiling on TOTAL DML statements across a 251-row completion. Derived:

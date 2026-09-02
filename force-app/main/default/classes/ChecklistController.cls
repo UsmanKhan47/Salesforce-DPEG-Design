@@ -154,6 +154,53 @@ public with sharing class ChecklistController {
          * earlier. Never treat a false here as permission to skip the server check.
          */
         @AuraEnabled public Boolean blocked;
+        /**
+         * PHASE 5. TRUE when this item records an output somewhere other than its own row — the
+         * financing detail on `Loan__c`, the coverage on `Insurance_Binder__c`, or an uploaded
+         * document — so the LWC routes the click to the capture dialog instead of the plain
+         * confirm dialog.
+         *
+         * ⚠ A BOOLEAN, NOT THE CONTEXT ITSELF, AND DELIBERATELY SO. Building the context
+         * PROVISIONS the `Loan__c` / `Insurance_Binder__c`; doing that for every row on every page
+         * load would create empty records on deals nobody has worked, from a `cacheable=true` read
+         * that is not even allowed to perform DML. The context is fetched by `getCaptureContext`
+         * when the dialog actually opens.
+         *
+         * ⚠ DERIVED from `ChecklistCaptureDefProvider` by coordinate, never from `Subject__c`.
+         */
+        @AuraEnabled public Boolean hasCapture;
+    }
+
+    /**
+     * PHASE 5. What the capture dialog needs to render for one item.
+     *
+     * ⚠ MEMBER NAMES ARE THE WIRE CONTRACT, exactly as for `ItemRow` above. Renaming one here
+     * compiles, deploys, and then renders `undefined`.
+     */
+    public class CaptureRow {
+        @AuraEnabled public Id itemId;
+        /**
+         * `TARGET_FIELDS` | `DOCUMENT` | `DERIVED`. A STRING on the wire because an Apex enum does
+         * not marshal to JavaScript as anything the LWC can compare against; the value is
+         * `String.valueOf` of `ChecklistCaptureDefProvider.CaptureMode`, so the two cannot drift.
+         */
+        @AuraEnabled public String captureMode;
+        /** `Loan__c` / `Insurance_Binder__c` for `TARGET_FIELDS`; null otherwise. */
+        @AuraEnabled public String objectApiName;
+        /**
+         * The record the dialog binds to: the provisioned `Loan__c` / `Insurance_Binder__c` for
+         * `TARGET_FIELDS`, or the `Transaction__c` for `DOCUMENT` (the file is filed against the
+         * deal — that is what "deal document folder" means in C7 and G6).
+         */
+        @AuraEnabled public Id targetRecordId;
+        /** Field API names for the `lightning-input-field` list, in display order. */
+        @AuraEnabled public List<String> captureFields;
+        /** The field whose absence refuses the completion; null when nothing is required. */
+        @AuraEnabled public String requiredField;
+        /** The refusal text, shown up front so the requirement is not a surprise refusal. */
+        @AuraEnabled public String requirementMessage;
+        /** Whether the requirement is already met, so Confirm can be enabled. */
+        @AuraEnabled public Boolean satisfied;
     }
 
     /**
@@ -243,6 +290,11 @@ public with sharing class ChecklistController {
                 itemRow.completedByName = item.Completed_By__r != null ? item.Completed_By__r.Name : null;
                 itemRow.completedDateTime = item.Completed_DateTime__c;
                 itemRow.blocked = item.Blocked_By__c != null && item.Is_Prerequisite_Met__c != true;
+                // PHASE 5. Resolved from the COORDINATE — the parent group letter already on `row`
+                // plus the item sequence — so this costs no extra query and no extra selected
+                // field, and it can never be a subject-text test. A pure map lookup.
+                itemRow.hasCapture =
+                    ChecklistCaptureDefProvider.forCoordinate(row.letter, item.Sequence__c) != null;
                 row.items.add(itemRow);
                 row.total++;
                 if (itemRow.done) {
@@ -287,10 +339,105 @@ public with sharing class ChecklistController {
             throw ahe(e.getMessage());
         } catch (ChecklistItemService.WireVerificationException e) {
             throw ahe(e.getMessage());
+        } catch (ChecklistCaptureService.CaptureRequiredException e) {
+            // PHASE 5. Names the missing output — "Record the selected lender before completing
+            // this item." The generic message tells the user to refresh, which can never put a
+            // lender name on a Loan__c, so this must be surfaced verbatim like the other three.
+            throw ahe(e.getMessage());
+        } catch (ChecklistCaptureService.CaptureUnavailableException e) {
+            throw ahe(e.getMessage());
         } catch (ChecklistItemService.ItemNotFoundException e) {
             throw ahe(e.getMessage());
         } catch (Exception e) {
             System.debug(LoggingLevel.ERROR, 'ChecklistController.completeItem on ' + itemId
+                + ': ' + e.getMessage() + ' | ' + e.getStackTraceString());
+            throw ahe(WRITE_FAILURE_MESSAGE);
+        }
+    }
+
+    /**
+     * PHASE 5. Resolves what one item has to record, PROVISIONING the record it records into.
+     *
+     * 🔴 NOT `cacheable`, AND IT MUST NEVER BECOME `cacheable`. It performs DML — the first time
+     * anyone opens an F or G capture dialog on a deal, the `Loan__c` / `Insurance_Binder__c` is
+     * created here. DML in a `cacheable=true` method throws at runtime.
+     *
+     * ⚠ CALLED WHEN THE DIALOG OPENS, NOT ON PAGE LOAD, which is the whole reason a deal does not
+     * accumulate empty financing records. `getChecklist` returns only `hasCapture`, a boolean.
+     *
+     * ⚠ RETURNS NULL FOR AN ITEM THAT RECORDS NOTHING, and null is not an error — 64 of the 82
+     * items have no capture. The LWC reads null as "use the ordinary confirm dialog".
+     *
+     * @param itemId the `Checklist_Item__c` whose dialog is opening.
+     * @return the capture row, or null when this item records nothing.
+     * @throws AuraHandledException — verbatim when the item or its target cannot be resolved,
+     *         generic for anything else (including a CRUD/FLS denial on creating the target, which
+     *         is a real provisioning gap and is logged).
+     */
+    @AuraEnabled
+    public static CaptureRow getCaptureContext(Id itemId) {
+        try {
+            Map<Id, Checklist_Item__c> items =
+                ChecklistItemSelector.selectForCompletion(new Set<Id>{ itemId });
+            if (items.isEmpty()) {
+                throw new ChecklistItemService.ItemNotFoundException(READ_FAILURE_MESSAGE);
+            }
+            Map<Id, ChecklistCaptureService.CaptureContext> contexts =
+                ChecklistCaptureService.contextFor(items.values());
+            ChecklistCaptureService.CaptureContext context = contexts.get(itemId);
+            if (context == null) {
+                return null;
+            }
+            CaptureRow row = new CaptureRow();
+            row.itemId = context.itemId;
+            // Stringified here, once, so the LWC compares against a stable literal and the enum
+            // stays the single definition on the Apex side.
+            row.captureMode = String.valueOf(context.captureMode);
+            row.objectApiName = context.targetObject;
+            row.targetRecordId = context.targetRecordId;
+            row.captureFields = context.captureFields;
+            row.requiredField = context.requiredField;
+            row.requirementMessage = context.requirementMessage;
+            row.satisfied = context.satisfied == true;
+            return row;
+        } catch (ChecklistCaptureService.CaptureUnavailableException e) {
+            throw ahe(e.getMessage());
+        } catch (ChecklistItemService.ItemNotFoundException e) {
+            throw ahe(e.getMessage());
+        } catch (Exception e) {
+            System.debug(LoggingLevel.ERROR, 'ChecklistController.getCaptureContext on ' + itemId
+                + ': ' + e.getMessage() + ' | ' + e.getStackTraceString());
+            throw ahe(WRITE_FAILURE_MESSAGE);
+        }
+    }
+
+    /**
+     * PHASE 5. Files documents the user just uploaded against the checklist item that produced
+     * them (C7, G6).
+     *
+     * 🔴 THE FILE ITSELF WAS ALREADY CREATED BY `lightning-file-upload`, ON THE `Transaction__c`,
+     * IN THE PLATFORM'S OWN TRANSACTION. This method inserts `ContentDocumentLink` rows and nothing
+     * else. A link is a share, not a publication, so it consumes ZERO of the org's
+     * 2,500-per-rolling-24-hours `ContentPublication` quota
+     * (`.claude/rules/content-publication-rule.md`). There is no `ContentVersion` insert anywhere
+     * in Phase 5, deliberately — read `ChecklistCaptureService`'s header before adding one.
+     *
+     * ⚠ IDEMPOTENT. The LWC can fire `uploadfinished` twice for one file on a slow connection, and
+     * re-linking the same document to the same record raises `DUPLICATE_VALUE`.
+     *
+     * @param itemId             the `Checklist_Item__c` the upload belongs to.
+     * @param contentDocumentIds `ContentDocument` ids from the upload event.
+     * @return the number of links actually created.
+     * @throws AuraHandledException — verbatim when the item cannot be resolved, generic otherwise.
+     */
+    @AuraEnabled
+    public static Integer linkCaptureDocuments(Id itemId, List<Id> contentDocumentIds) {
+        try {
+            return ChecklistCaptureService.linkDocumentsToItems(itemId, contentDocumentIds);
+        } catch (ChecklistCaptureService.CaptureUnavailableException e) {
+            throw ahe(e.getMessage());
+        } catch (Exception e) {
+            System.debug(LoggingLevel.ERROR, 'ChecklistController.linkCaptureDocuments on ' + itemId
                 + ': ' + e.getMessage() + ' | ' + e.getStackTraceString());
             throw ahe(WRITE_FAILURE_MESSAGE);
         }
