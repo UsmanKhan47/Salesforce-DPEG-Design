@@ -121,6 +121,110 @@ private class NdaSelectorTest {
         Assert.isTrue(emptyResult.isEmpty(), 'Empty input returns an empty list, not null');
     }
 
+    // ══════════════════════════════════════════════════════════════════════════════════════════
+    // selectPropertyStampTargetsByOpportunityIds — the SYSTEM_MODE read behind
+    // OpportunityReviewService.syncNdaProperty (design item A HALF 2, 2026-09-02). It is a
+    // DELIBERATE NEAR-DUPLICATE of selectByOpportunityIds above, differing in exactly two ways:
+    // it selects Property__c, and it is WITH SYSTEM_MODE. Both differences are load-bearing and
+    // the two methods must NOT be merged — selectByOpportunityIds is ensureNda's idempotency read
+    // and sits on the critical path of every Opportunity insert in the org, so putting a field
+    // granted by ONE permission set behind its USER_MODE query would stop deal creation and lead
+    // conversion for everyone else. Full argument at the method's declaration.
+    // ══════════════════════════════════════════════════════════════════════════════════════════
+
+    @isTest
+    static void selectPropertyStampTargetsByOpportunityIds_returnsIdOpportunityAndProperty() {
+        Property__c p = TestDataFactory.defaultProperty();
+        Opportunity opp = TestDataFactory.createOpportunity(null, true);
+        NDA__c auto = [SELECT Id FROM NDA__c WHERE Opportunity__c = :opp.Id LIMIT 1];
+        update new NDA__c(Id = auto.Id, Property__c = p.Id);
+
+        Test.startTest();
+        List<NDA__c> result =
+            NdaSelector.selectPropertyStampTargetsByOpportunityIds(new Set<Id>{ opp.Id });
+        Test.stopTest();
+
+        Assert.areEqual(1, result.size(), 'The deal\'s one NDA is returned');
+        Assert.areEqual(auto.Id, result[0].Id, 'Id must be populated — it is the DML target');
+        Assert.areEqual(opp.Id, result[0].Opportunity__c,
+            'Opportunity__c must be populated — it is how the caller keys the right Property back '
+            + 'onto the right NDA. Dropping it makes every stamp in a bulk chunk take the same '
+            + '(wrong) value.');
+        Assert.areEqual(p.Id, result[0].Property__c,
+            'Property__c must be IN THE SELECT LIST. It is the field the caller\'s fill-blanks-'
+            + 'only rule reads; without it every NDA looks blank and every deliberate repoint is '
+            + 'overwritten.');
+    }
+
+    /**
+     * 🔴 THE NO-WHERE-FILTER CONTRACT. This method returns NDAs that ALREADY carry a Property.
+     *
+     * It looks like a redundant assertion and it is not. The only caller writes blanks only, so
+     * the "obvious optimisation" is to push `AND Property__c = NULL` into the WHERE clause. Doing
+     * so would leave every test in this repo green — including
+     * OpportunityReviewServiceTest.syncNdaProperty_doesNotOverwriteANdaThatAlreadyHasAProperty,
+     * which would silently go VACUOUS because the row it proves is skipped would no longer be
+     * returned at all. This assertion is the one that would go red, and it is the reason the
+     * business rule lives in the service (.claude/rules/apex-layering-rule.md: selectors read,
+     * services decide).
+     */
+    @isTest
+    static void selectPropertyStampTargetsByOpportunityIds_returnsBlankAndPopulatedAlike() {
+        Property__c p = TestDataFactory.defaultProperty();
+        Opportunity opp = TestDataFactory.createOpportunity(null, true);
+        NDA__c populated = [SELECT Id FROM NDA__c WHERE Opportunity__c = :opp.Id LIMIT 1];
+        update new NDA__c(Id = populated.Id, Property__c = p.Id);
+        NDA__c blank = TestDataFactory.createNda(opp.Id, true);
+
+        Test.startTest();
+        List<NDA__c> result =
+            NdaSelector.selectPropertyStampTargetsByOpportunityIds(new Set<Id>{ opp.Id });
+        Test.stopTest();
+
+        Set<Id> returned = new Set<Id>();
+        for (NDA__c n : result) {
+            returned.add(n.Id);
+        }
+        Assert.areEqual(2, result.size(),
+            'BOTH NDAs are returned. A count of 1 means an `AND Property__c = NULL` filter was '
+            + 'added to the WHERE clause, which moves a business rule into the selector AND '
+            + 'makes the caller\'s no-overwrite test vacuous rather than failing it.');
+        Assert.isTrue(returned.contains(populated.Id),
+            'The already-populated NDA is returned — the selector does not pre-filter.');
+        Assert.isTrue(returned.contains(blank.Id), 'The blank NDA is returned too.');
+    }
+
+    @isTest
+    static void selectPropertyStampTargetsByOpportunityIds_bulk_returnsMatching() {
+        Opportunity opp = TestDataFactory.createOpportunity(null, true);
+        // ensureNda auto-creates one NDA on Opportunity insert; add 250 more for 251 exactly,
+        // matching selectByOpportunityIds_bulk_returnsMatching above.
+        TestDataFactory.createNdas(BULK_N - 1, opp.Id, true);
+
+        Test.startTest();
+        List<NDA__c> result =
+            NdaSelector.selectPropertyStampTargetsByOpportunityIds(new Set<Id>{ opp.Id });
+        Test.stopTest();
+
+        Assert.areEqual(BULK_N, result.size(),
+            'All 251 NDAs are returned in ONE query — the caller runs this once per trigger '
+            + 'chunk, so a row cap here would silently leave part of a bulk chunk unstamped.');
+    }
+
+    @isTest
+    static void selectPropertyStampTargetsByOpportunityIds_nullOrEmptyInput_returnsEmpty() {
+        Test.startTest();
+        List<NDA__c> nullResult = NdaSelector.selectPropertyStampTargetsByOpportunityIds(null);
+        List<NDA__c> emptyResult =
+            NdaSelector.selectPropertyStampTargetsByOpportunityIds(new Set<Id>());
+        Test.stopTest();
+
+        Assert.isTrue(nullResult.isEmpty(),
+            'Null input returns an empty list, not null, and COSTS NO QUERY — the caller relies '
+            + 'on that for its zero-cost path.');
+        Assert.isTrue(emptyResult.isEmpty(), 'Empty input returns an empty list, not null');
+    }
+
     // selectStageRequiredById — the fetch-for-use read added for the generic stage-advance quick
     // action (RecordStageAdvanceService.advance).
 

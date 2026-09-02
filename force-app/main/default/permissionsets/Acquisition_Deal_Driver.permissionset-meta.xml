@@ -124,6 +124,10 @@
         <enabled>true</enabled>
         <name>Acquisition_Deal_Actions</name>
     </customPermissions>
+    <flowAccesses>
+        <enabled>true</enabled>
+        <flow>Opportunity_Mark_Dead</flow>
+    </flowAccesses>
     <hasActivationRequired>false</hasActivationRequired>
     <label>Acquisition Deal Driver</label>
 </PermissionSet>

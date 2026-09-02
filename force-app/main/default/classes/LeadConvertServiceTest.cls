@@ -447,6 +447,71 @@ private class LeadConvertServiceTest {
         System.assertEquals('https://costar.com/xyz', p.CoStar_URL__c, 'CoStar URL copied from lead');
     }
 
+    /**
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * 🔴 THE END-TO-END PROOF FOR `NDA__c.Property__c`, ON THE REAL CONVERSION PATH.
+     * Design `agent-output/nda-property-and-dead-offramp.md` item A. Added 2026-09-02.
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * Every other test of this feature reproduces the SHAPE of lead conversion (insert, then a
+     * later update). This one runs `Database.convertLead` itself, and it is the only test in the
+     * repo that can fail on the ORDERING defect the feature exists to fix.
+     *
+     * ── WHAT THE ORDERING ACTUALLY IS, MEASURED RATHER THAN REASONED ──────────────────────────
+     * Traced live on `usman-dpeg` 2026-09-02 in a savepoint, from a real conversion's debug log
+     * (relative nanosecond marks):
+     *     1,209,340,790  OpportunityReviewTrigger AfterInsert -> ensureNda creates the NDA
+     *     1,565,282,540  NdaTrigger BeforeInsert              -> the NDA insert, confirming it
+     *     2,334,917,323  LeadConvertTrigger Lead AfterUpdate  -> stampConvertedOpportunities
+     *     2,538,159,277  OpportunityReviewTrigger AfterUpdate -> Property__c has now landed
+     *   final read on the pre-fix code: `opp.Property = a0O...  ndaCount = 1  nda.Property = null`
+     * `Database.convertLead` inserts the Opportunity and fires its after-insert trigger ~1.1
+     * SECONDS before `createProperties` has even CREATED the Property row. So at the moment the
+     * NDA is born there is no property to copy — not merely an unset lookup, no ROW.
+     *
+     * ⇒ A CREATION-TIME-ONLY FIX PASSES EVERY OTHER TEST AND FAILS THIS ONE. That is the entire
+     *   reason this method exists: it is the falsifier for the most plausible wrong reading of
+     *   the requirement ("populate it when the NDA is created"), which would have deployed green
+     *   and reproduced the reported symptom for every deal this org actually intakes.
+     */
+    @isTest
+    static void conversionLeavesTheNdaCarryingTheCreatedProperty() {
+        Lead l = TestDataFactory.createLead(false);
+        l.Company = 'Ordering Proof Realty';
+        l.Deal_Type__c = 'Retail';
+        l.Property_Address__c = '4400 Ordering Proof Blvd, Houston, TX';
+        insert l;
+
+        Database.LeadConvert lc = new Database.LeadConvert();
+        lc.setLeadId(l.Id);
+        lc.setConvertedStatus(convertedStatus());
+
+        Test.startTest();
+        Database.LeadConvertResult res = Database.convertLead(lc);
+        Test.stopTest();
+        Assert.isTrue(res.isSuccess(), 'Lead conversion should succeed');
+
+        Opportunity o = [
+            SELECT Id, Property__c FROM Opportunity WHERE Id = :res.getOpportunityId()
+        ];
+        Assert.isNotNull(o.Property__c,
+            'PRECONDITION: conversion created and linked a Property. If this is null the test '
+            + 'below would pass vacuously (null == null).');
+
+        List<NDA__c> ndas = [
+            SELECT Id, Property__c FROM NDA__c WHERE Opportunity__c = :o.Id
+        ];
+        Assert.areEqual(1, ndas.size(),
+            'PRECONDITION: conversion opened exactly one NDA via ensureNda');
+        Assert.areEqual(o.Property__c, ndas[0].Property__c,
+            '🔴 THE REPORTED BUG. The NDA created during lead conversion must end the '
+            + 'transaction carrying the Property that conversion created. A NULL here means only '
+            + 'the creation-time half (ensureNda) shipped: on this path the deal has no Property '
+            + 'at after-insert and the Property ROW does not exist yet, so the value can only '
+            + 'arrive through OpportunityReviewService.syncNdaProperty on the LATER after-update '
+            + 'that stampConvertedOpportunities performs. Measured ordering is in this method\'s '
+            + 'header — do not re-derive it, and do not "simplify" the two halves into one.');
+    }
+
     @isTest
     static void stampsConvertingUserAsLeadApprover() {
         // Conversion IS the approval to underwrite: no checkbox gate, and the

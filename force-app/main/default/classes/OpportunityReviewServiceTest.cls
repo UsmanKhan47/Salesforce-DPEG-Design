@@ -779,4 +779,401 @@ private class OpportunityReviewServiceTest {
         System.assertEquals(251, [SELECT COUNT() FROM NDA__c WHERE Opportunity__c IN :opps],
             'ensureNda still opens one NDA per Opportunity across the full bulk batch');
     }
+
+    // ══════════════════════════════════════════════════════════════════════════════════════════
+    // NDA__c.Property__c POPULATION (design agent-output/nda-property-and-dead-offramp.md item A,
+    // 2026-09-02). TWO HALVES, AND THE TESTS BELOW EXIST TO STOP EITHER BEING DELETED.
+    //
+    // 🔴 THE TRAP THIS SECTION GUARDS. The user's requirement — "Property must be populated once
+    // the NDA record is created" — reads as a one-line change to ensureNda. That change alone
+    // passes `ensureNda_carriesTheDealsPropertyAtCreation` below and STILL REPRODUCES THE
+    // REPORTED BUG for every lead-converted deal, because on that path the deal has no Property
+    // at after-insert and the Property__c ROW DOES NOT EXIST YET. Measured on usman-dpeg
+    // 2026-09-02 by tracing a real Database.convertLead in a savepoint; the nanosecond marks are
+    // in OpportunityReviewService.ensureNda's header. `syncNdaProperty_*` is the half that
+    // covers it, and LeadConvertServiceTest.conversionLeavesTheNdaCarryingTheCreatedProperty is
+    // the end-to-end proof on the real path.
+    //
+    // ⚠ Fixtures link a Property EXPLICITLY. TestDataFactory.createOpportunities does not set
+    // Property__c on any Opportunity it builds, so a fixture that forgets the link makes every
+    // assertion below vacuously "null == null".
+    // ══════════════════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * HALF 1, positive. A deal created WITH a Property opens an NDA already carrying it.
+     * This is the path the user's words describe literally: manual creation, API insert, seed.
+     */
+    @isTest
+    static void ensureNda_carriesTheDealsPropertyAtCreation() {
+        Property__c p = TestDataFactory.defaultProperty();
+        Opportunity o = newOpp('New');
+        o.Property__c = p.Id;
+
+        Test.startTest();
+        insert o;
+        Test.stopTest();
+
+        NDA__c created = [SELECT Property__c FROM NDA__c WHERE Opportunity__c = :o.Id LIMIT 1];
+        Assert.areEqual(p.Id, created.Property__c,
+            'HALF 1: the NDA auto-created by ensureNda must carry the deal\'s Property. Null '
+            + 'here means the Property__c assignment was dropped from the NDA__c constructor — '
+            + 'the original defect, which was that nothing in the repo had EVER written this '
+            + 'field.');
+    }
+
+    /**
+     * HALF 1, negative — and it is not a formality. `Property__c` is assigned UNCONDITIONALLY in
+     * ensureNda, including when the map lookup misses, so this pins that a deal with no Property
+     * still SAVES rather than throwing on a null lookup assignment. It also pins the state the
+     * lead-conversion path is in at the moment the NDA is born, which HALF 2 then repairs.
+     */
+    @isTest
+    static void ensureNda_dealWithNoProperty_leavesTheNdaBlankAndStillSaves() {
+        Test.startTest();
+        Opportunity o = newOpp('New'); // TestDataFactory sets no Property__c
+        insert o;
+        Test.stopTest();
+
+        Assert.areEqual(null, o.Property__c, 'FIXTURE: this deal must have no Property');
+        NDA__c created = [SELECT Property__c FROM NDA__c WHERE Opportunity__c = :o.Id LIMIT 1];
+        Assert.areEqual(null, created.Property__c,
+            'A deal with no Property opens an NDA with no Property — null into a lookup on a new '
+            + 'record is identical to leaving it unset, and the deal must still save.');
+    }
+
+    /**
+     * 🔴 HALF 2, AND THE TEST THAT ACTUALLY PROVES THE REPORTED BUG IS FIXED.
+     *
+     * It reproduces the lead-conversion SHAPE without a Lead: the NDA is created first (deal
+     * inserted with no Property), and the deal's Property is set in a LATER update — exactly
+     * what LeadConvertService.stampConvertedOpportunities does from the Lead after-update
+     * trigger, ~1.1 seconds after ensureNda has already run.
+     *
+     * Delete OpportunityReviewService.syncNdaProperty and this is the ONLY test in this class
+     * that goes red; every creation-time test stays green. That asymmetry is the point.
+     */
+    @isTest
+    static void syncNdaProperty_stampsWhenTheDealsPropertyIsSetAfterTheNdaExists() {
+        Property__c p = TestDataFactory.defaultProperty();
+        Opportunity o = newOpp('New');
+        insert o; // NDA opens here, with no Property — the lead-conversion state
+
+        NDA__c before = [SELECT Property__c FROM NDA__c WHERE Opportunity__c = :o.Id LIMIT 1];
+        Assert.areEqual(null, before.Property__c,
+            'PRECONDITION: the NDA must start blank, or this test proves nothing about HALF 2 — '
+            + 'a fixture that seeded the Property here would pass with syncNdaProperty deleted.');
+
+        Test.startTest();
+        update new Opportunity(Id = o.Id, Property__c = p.Id);
+        Test.stopTest();
+
+        NDA__c after = [SELECT Property__c FROM NDA__c WHERE Opportunity__c = :o.Id LIMIT 1];
+        Assert.areEqual(p.Id, after.Property__c,
+            'HALF 2: setting the deal\'s Property AFTER the NDA exists must push it onto the '
+            + 'NDA. This is the lead-conversion case — Database.convertLead inserts the '
+            + 'Opportunity (firing ensureNda with Property__c still null) and the Property row is '
+            + 'not even CREATED until the Lead after-update trigger runs. A creation-only fix '
+            + 'leaves this null and the user still sees a blank field.');
+        Assert.areEqual(1, OpportunityReviewService.ndaPropertySyncRows,
+            'Exactly one NDA row was written.');
+        Assert.areEqual(0, OpportunityReviewService.ndaPropertySyncFailures,
+            'No row failure was swallowed by allOrNone = false. Last error: '
+            + OpportunityReviewService.lastNdaPropertySyncError);
+    }
+
+    /**
+     * 🔴 THE NO-CLOBBER INVARIANT. An NDA that already carries a Property is NEVER overwritten by
+     * a later change to its deal's Property.
+     *
+     * `NDA__c.Property__c` is editable on DPEG_Acquisition_Edit and is on the NDA record page, so
+     * a user can deliberately repoint an NDA at a different asset (a portfolio deal whose NDA
+     * covers one building). Re-stamping would silently revert that — and INVISIBLY, because the
+     * field has trackHistory=false, so there would be no history row to explain it.
+     *
+     * ⚠ THIS TEST ALSO GUARDS THE SELECTOR. If someone "optimises"
+     * NdaSelector.selectPropertyStampTargetsByOpportunityIds by adding `AND Property__c = NULL`
+     * to its WHERE clause, this test STILL PASSES while silently becoming vacuous — the row it
+     * proves is skipped would never be returned. The selector's header says so at its
+     * declaration; this comment is the other end of that pair.
+     */
+    @isTest
+    static void syncNdaProperty_doesNotOverwriteANdaThatAlreadyHasAProperty() {
+        List<Property__c> props = TestDataFactory.createProperties(2, true);
+        Property__c keep = props[0];
+        Property__c dealProperty = props[1];
+
+        Opportunity o = newOpp('New');
+        insert o;
+        NDA__c nda = [SELECT Id FROM NDA__c WHERE Opportunity__c = :o.Id LIMIT 1];
+        update new NDA__c(Id = nda.Id, Property__c = keep.Id); // the deliberate repoint
+
+        Test.startTest();
+        update new Opportunity(Id = o.Id, Property__c = dealProperty.Id);
+        Test.stopTest();
+
+        NDA__c after = [SELECT Property__c FROM NDA__c WHERE Id = :nda.Id];
+        Assert.areEqual(keep.Id, after.Property__c,
+            'FILL BLANKS ONLY: a non-null NDA__c.Property__c must survive a later change to the '
+            + 'deal\'s Property. Seeing the deal\'s property here means the stamp became an '
+            + 'unconditional overwrite, silently reverting a user\'s deliberate edit with no '
+            + 'history row to explain it (trackHistory=false on this field).');
+        Assert.areEqual(0, OpportunityReviewService.ndaPropertySyncRows,
+            'ZERO rows were written — the already-populated NDA never entered the DML list. A '
+            + 'non-zero count means it was written and happened to be written back to the same '
+            + 'value, which is a different (and wrong) implementation.');
+        Assert.areEqual(1, OpportunityReviewService.ndaPropertySyncQueries,
+            'The query still ran — the guard is in the service, not in the WHERE clause. If this '
+            + 'reads 0, the change key stopped firing and the assertion above went vacuous.');
+    }
+
+    /**
+     * 🔴 THE GUARD-ORDERING FALSIFIER, AND THE HIGHEST-VALUE TEST IN THIS SECTION.
+     *
+     * syncNdaProperty runs on EVERY Opportunity after-update in the org. An ordinary save that
+     * does not touch Property__c must cost ZERO SOQL and ZERO DML from it. Moving the selector
+     * call above the `newPropertyByOpp.isEmpty()` return — the single most likely future
+     * "simplification" — makes this test red HERE instead of making the Day-0 fan-out breach a
+     * governor limit in production. This repo has a recorded incident where routing a new parent
+     * into a trigger cost ceil(rows/200) SOQL *and* DML at production scale.
+     *
+     * ⚠ IT ASSERTS ON COUNTERS CAPTURED INSIDE THE TRIGGER CONTEXT, NOT ON Limits.getQueries()
+     * AFTER Test.stopTest(). stopTest() RESTORES the pre-test governor counters, so the obvious
+     * assertion is silently vacuous and would pass against any implementation whatsoever.
+     */
+    @isTest
+    static void syncNdaProperty_updateThatDoesNotTouchProperty_costsNoQueryAndNoDml() {
+        Property__c p = TestDataFactory.defaultProperty();
+        Opportunity o = newOpp('New');
+        o.Property__c = p.Id;
+        insert o; // HALF 1 already stamped the NDA; nothing is left for HALF 2 to do
+
+        Test.startTest();
+        update new Opportunity(Id = o.Id, Underwriting_Notes__c = 'an ordinary edit');
+        Test.stopTest();
+
+        Assert.areEqual(0, OpportunityReviewService.ndaPropertySyncQueries,
+            'ZERO queries. An Opportunity save that does not change Property__c must return from '
+            + 'syncNdaProperty before the selector is called. A non-zero value means the query '
+            + 'moved above the change-key guard, which costs one SOQL on every Opportunity '
+            + 'update in the org.');
+        Assert.areEqual(0, OpportunityReviewService.ndaPropertySyncRows,
+            'ZERO DML rows, for the same reason.');
+    }
+
+    /**
+     * Bulk, HALF 1 (.claude/rules/bulk-test-rule.md): 251 Opportunities inserted in one DML
+     * forces a SECOND trigger batch chunk. Every one of the 251 NDAs must carry its own deal's
+     * Property — not one shared value, and not 200-of-251.
+     *
+     * ⚠ Each deal gets a DISTINCT Property on purpose. A single shared Property would pass even
+     * if the map were keyed wrongly (every NDA would get the one right answer by accident); with
+     * distinct values a mis-keyed map produces mismatches this test can see.
+     */
+    @isTest
+    static void bulk251Inserts_eachNdaCarriesItsOwnDealsProperty() {
+        List<Property__c> props = TestDataFactory.createProperties(251, true);
+        List<Opportunity> opps = TestDataFactory.createOpportunities(251, false);
+        for (Integer i = 0; i < opps.size(); i++) {
+            opps[i].Property__c = props[i].Id;
+        }
+
+        Test.startTest();
+        insert opps; // 251 in one DML
+        Test.stopTest();
+
+        Map<Id, Id> propertyByOpp = new Map<Id, Id>();
+        for (Opportunity o : opps) {
+            propertyByOpp.put(o.Id, o.Property__c);
+        }
+        List<NDA__c> ndas = [
+            SELECT Opportunity__c, Property__c FROM NDA__c WHERE Opportunity__c IN :opps
+        ];
+        Assert.areEqual(251, ndas.size(), 'One NDA per deal across the full 251-record batch');
+        Integer mismatched = 0;
+        for (NDA__c n : ndas) {
+            if (n.Property__c != propertyByOpp.get(n.Opportunity__c)) {
+                mismatched++;
+            }
+        }
+        Assert.areEqual(0, mismatched,
+            'Every NDA carries ITS OWN deal\'s Property across BOTH trigger chunks. A count near '
+            + '51 means the value was resolved for the first 200-record chunk and lost for the '
+            + 'rest; a count near 250 means the map is mis-keyed and every NDA got one shared '
+            + 'value. Mismatched: ' + mismatched);
+    }
+
+    /**
+     * 🔴 Bulk, HALF 2, AND IT IS A BUDGET TEST RATHER THAN MERELY A COUNT TEST.
+     *
+     * 251 deals each gaining a Property in ONE update runs syncNdaProperty TWICE (once per
+     * 200-record chunk). The cost must therefore be TWO queries and TWO DML statements — never
+     * 251. The counters are cumulative across the transaction precisely so this distinction is
+     * visible; a per-invocation counter would read "1" for both a correct and a per-record
+     * implementation.
+     *
+     * The bound is asserted structurally (`< 251`) as well as exactly (`2`), following
+     * bulkLoiCreate_resolvesTheQueueOncePerChunk: the exact number catches drift, and the
+     * structural one states the intent that must survive any future re-chunking by the platform.
+     */
+    @isTest
+    static void bulk251Updates_syncNdaPropertyCostsOneQueryPerChunkNotPerRecord() {
+        List<Property__c> props = TestDataFactory.createProperties(251, true);
+        List<Opportunity> opps = TestDataFactory.createOpportunities(251, false);
+        insert opps; // 251 NDAs open here, all blank — the lead-conversion state, in bulk
+
+        for (Integer i = 0; i < opps.size(); i++) {
+            opps[i].Property__c = props[i].Id;
+        }
+
+        Test.startTest();
+        update opps; // 251 in one DML => two trigger chunks
+        Test.stopTest();
+
+        Map<Id, Id> propertyByOpp = new Map<Id, Id>();
+        for (Opportunity o : opps) {
+            propertyByOpp.put(o.Id, o.Property__c);
+        }
+        List<NDA__c> ndas = [
+            SELECT Opportunity__c, Property__c FROM NDA__c WHERE Opportunity__c IN :opps
+        ];
+        Assert.areEqual(251, ndas.size(), 'One NDA per deal');
+        Integer stamped = 0;
+        for (NDA__c n : ndas) {
+            if (n.Property__c == propertyByOpp.get(n.Opportunity__c)) {
+                stamped++;
+            }
+        }
+        Assert.areEqual(251, stamped,
+            'All 251 NDAs picked up their own deal\'s Property across BOTH trigger chunks. A '
+            + 'value near 200 is the cross-chunk drift a 200-record test cannot see.');
+
+        Assert.areEqual(251, OpportunityReviewService.ndaPropertySyncRows,
+            'All 251 rows were written, summed across both chunks.');
+        Assert.areEqual(0, OpportunityReviewService.ndaPropertySyncFailures,
+            'No row failure was swallowed. Last error: '
+            + OpportunityReviewService.lastNdaPropertySyncError);
+        Assert.areEqual(2, OpportunityReviewService.ndaPropertySyncQueries,
+            'EXACTLY TWO queries for 251 records — one per 200-record trigger chunk. A value of '
+            + '251 means the selector call moved inside the build loop, which on the live path '
+            + 'is 251 queries against a 100-query limit, i.e. an uncatchable LimitException. '
+            + 'Queries: ' + OpportunityReviewService.ndaPropertySyncQueries);
+        Assert.isTrue(OpportunityReviewService.ndaPropertySyncQueries < 251,
+            'Stated structurally as well: the query count must not scale with record count.');
+    }
+
+    /**
+     * THE DOCUMENTED DEGRADE, PROVEN RATHER THAN ASSERTED IN A COMMENT.
+     *
+     * syncNdaProperty's read is `WITH SYSTEM_MODE`, which lifts CRUD/FLS and NEVER sharing.
+     * NDA__c is Private OWD and acquisition NDAs are covered by no sharing rule, so a user
+     * editing SOMEONE ELSE'S deal sees no NDA rows at all. What must happen then is: nothing.
+     * No throw, no partial write, and — critically — no second NDA, because this method creates
+     * nothing. That last property is why not escaping sharing is affordable here, and it is the
+     * difference between this read and an idempotency guard, where a sharing-filtered read
+     * inverts into a duplicate-maker.
+     *
+     * ⚠ THE PERSONA IS `createNonOwnerLoiSubmitter`, REUSED RATHER THAN INVENTED. It is built on
+     * Minimum Access - Salesforce and holds DPEG_Base_Access + DPEG_Opportunity_View, which
+     * between them contain NO objectPermissions block for NDA__c at all — no read, no
+     * viewAllRecords, no ownership, and no role (so no hierarchy grant). A `Standard User`-based
+     * fixture would prove nothing here per `denial-tests-need-minimum-access-profile`.
+     * ⚠ THE READ IS CRUD-BLIND BY DESIGN AND THAT IS NOT A CONFOUND: the selector is
+     * `WITH SYSTEM_MODE`, so the persona's ABSENT object permission is lifted and the ONLY thing
+     * that can still hide the row is SHARING — which is exactly the variable under test.
+     */
+    @isTest
+    static void syncNdaProperty_nonOwnerSeesNoNdaAndTheSaveStillSucceeds() {
+        Property__c p = TestDataFactory.defaultProperty();
+        Opportunity o = newOpp('New');
+        insert o; // NDA created and OWNED by the test-running admin
+        NDA__c nda = [SELECT Id FROM NDA__c WHERE Opportunity__c = :o.Id LIMIT 1];
+
+        User stranger = TestDataFactory.createNonOwnerLoiSubmitter('ndap');
+        // 🔴 THE FIXTURE'S OWN PRECONDITION, ASSERTED HERE BECAUSE THAT FACTORY REQUIRES IT: a
+        // plain SOQL probe inside runAs would prove nothing, since an Apex test class carries no
+        // sharing keyword and therefore runs `without sharing`. UserRecordAccess is the only
+        // honest check, and without it a future role or sharing rule would silently make this
+        // whole test vacuous by handing the stranger access.
+        // ⚠ RecordId MUST be in the SELECT list — UserRecordAccess rejects a query without it at
+        // COMPILE time ("RecordId field must be selected"), not at runtime. Same shape as
+        // BovSubmissionTriggerHandlerTest.assertReadableButNotEditable and three siblings.
+        UserRecordAccess access = [
+            SELECT RecordId, HasReadAccess, HasEditAccess
+            FROM UserRecordAccess
+            WHERE UserId = :stranger.Id AND RecordId = :nda.Id
+        ];
+        Assert.isFalse(access.HasReadAccess,
+            'FIXTURE PRECONDITION: the stranger must have NO record access to this NDA. If they '
+            + 'do, the sharing filter this test exists to observe never engages.');
+
+        Test.startTest();
+        System.runAs(stranger) {
+            // The stranger can see the NDA neither to read nor to write. The Opportunity save
+            // itself is performed by the admin below; what is under test is the sharing-filtered
+            // READ inside the trigger, driven from the stranger's context.
+            OpportunityReviewService.syncNdaProperty(
+                new List<Opportunity>{ new Opportunity(Id = o.Id, Property__c = p.Id) },
+                new Map<Id, Opportunity>{ o.Id => new Opportunity(Id = o.Id, Property__c = null) }
+            );
+        }
+        Test.stopTest();
+
+        Assert.areEqual(1, OpportunityReviewService.ndaPropertySyncQueries,
+            'The query DID run — the change key fired. If this is 0 the test is vacuous.');
+        Assert.areEqual(0, OpportunityReviewService.ndaPropertySyncRows,
+            'ZERO rows written: the sharing-filtered read returned nothing, so there was nothing '
+            + 'to update. It must DEGRADE, not throw.');
+        Assert.areEqual(1, [SELECT COUNT() FROM NDA__c WHERE Opportunity__c = :o.Id],
+            'And it must not have created anything. This method only ever UPDATES rows the query '
+            + 'returned, which is why a sharing-filtered read here cannot invert into a '
+            + 'duplicate-maker the way an idempotency guard\'s can.');
+        Assert.areEqual(null, [SELECT Property__c FROM NDA__c WHERE Id = :nda.Id].Property__c,
+            'The NDA is unchanged — the documented cost of not escaping sharing, swept by '
+            + 'scripts/backfill-nda-property.apex.');
+    }
+
+    /**
+     * FAILURE-CHANNEL POSITIVE COVERAGE. `allOrNone = false` means a row failure is SWALLOWED, so
+     * the counter and message are the only evidence it happened — and an untested diagnostic is
+     * a diagnostic that may not work on the day it is needed.
+     *
+     * The failure is REAL: the seam substitutes a DELETED Property Id, and the platform returns a
+     * genuine Database.SaveResult error. Nothing here is canned. See
+     * OpportunityReviewService.ndaPropertyFailureInjectionId's header for why no ordinary input
+     * can reach this branch (SYSTEM_MODE DML, zero validation rules on NDA__c, and the one real
+     * failure mode — sharing — is filtered out by the SELECT before the DML is reached).
+     */
+    @isTest
+    static void syncNdaProperty_rowFailureIsSwallowedCountedAndTheDealStillSaves() {
+        List<Property__c> props = TestDataFactory.createProperties(2, true);
+        Property__c live = props[0];
+        Property__c doomed = props[1];
+        Id doomedId = doomed.Id;
+        delete doomed;
+
+        Opportunity o = newOpp('New');
+        insert o;
+        NDA__c nda = [SELECT Id FROM NDA__c WHERE Opportunity__c = :o.Id LIMIT 1];
+
+        OpportunityReviewService.ndaPropertyFailureInjectionId = doomedId;
+
+        Test.startTest();
+        update new Opportunity(Id = o.Id, Property__c = live.Id);
+        Test.stopTest();
+
+        Assert.areEqual(1, OpportunityReviewService.ndaPropertySyncFailures,
+            'The row failure was COUNTED. A zero here means the diagnostic is dead and a real '
+            + 'production failure would be completely silent — which is the price this method '
+            + 'pays for allOrNone = false, and the reason the counter exists.');
+        Assert.isNotNull(OpportunityReviewService.lastNdaPropertySyncError,
+            'And the platform\'s own message was captured, not a fabricated one.');
+        Assert.areEqual(null, [SELECT Property__c FROM NDA__c WHERE Id = :nda.Id].Property__c,
+            'The stamp did not happen.');
+        Assert.areEqual(live.Id, [SELECT Property__c FROM Opportunity WHERE Id = :o.Id].Property__c,
+            '🔴 AND THE DEAL SAVE SURVIVED. This is the whole point of allOrNone = false: on the '
+            + 'lead-conversion path this trigger runs inside stampConvertedOpportunities\' own '
+            + 'all-or-none update, so a throw here would abort Database.convertLead and the user '
+            + 'would be told "There was an error converting the lead". A display-only lookup must '
+            + 'never be able to block the org\'s intake pipeline.');
+    }
 }

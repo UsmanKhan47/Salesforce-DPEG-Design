@@ -61,6 +61,20 @@
  *            🔴 Do NOT read a future third SYSTEM_MODE method as conformant because two already
  *            exist — read its own header. The two present justifications are different arguments
  *            reaching the same answer.
+ *            ⚠ RE-COUNTED AGAIN 2026-09-02 (`NDA__c.Property__c` population, design item A) —
+ *            THE NUMBERS ARE NOW **ELEVEN** METHODS, **THREE** `SYSTEM_MODE` AND **EIGHT**
+ *            `USER_MODE`. `selectPropertyStampTargetsByOpportunityIds` is the THIRD
+ *            `SYSTEM_MODE` method, and per the line immediately above it is NOT conformant by
+ *            precedent: its argument is its own and is stated at its declaration. In one
+ *            sentence — it selects `NDA__c.Property__c`, which is granted by exactly ONE
+ *            permission set in this repo, and it runs inside an Opportunity AFTER-UPDATE
+ *            trigger, so a `USER_MODE` throw would roll back the user's own deal save (and, on
+ *            the lead-conversion path, the whole conversion).
+ *            🔴 It is ALSO the first method here whose SHARING behaviour is load-bearing in a
+ *            way that is DIFFERENT from `queryExpiryAlerts`'. It deliberately stays inside the
+ *            class-level `with sharing` — see its own header for why a sharing-filtered read
+ *            here degrades to "no stamp" and CANNOT invert into a duplicate-maker, which is the
+ *            property that makes not escaping sharing affordable.
  *   SHARING  🔴 THE CLASS-LEVEL `with sharing` KEYWORD IS NO LONGER THE WHOLE ANSWER.
  *            `queryExpiryAlerts` runs in a `private without sharing` inner class,
  *            `ExpiryAlertReads`, and that is the ONE method here that escapes sharing.
@@ -272,6 +286,81 @@ public with sharing class NdaSelector {
             FROM NDA__c
             WHERE Opportunity__c IN :opportunityIds
             WITH USER_MODE
+        ];
+    }
+
+    /**
+     * NDAs related to a set of Opportunities, WITH `Property__c` in the select list — backs
+     * `OpportunityReviewService.syncNdaProperty`, the after-update half of the
+     * `NDA__c.Property__c` population (design `agent-output/nda-property-and-dead-offramp.md`
+     * item A, 2026-09-02). Bulk-safe: one query for the whole set, called once per trigger chunk.
+     *
+     * ── 🔴 WHY THIS IS A SEPARATE METHOD AND NOT A WIDENING OF `selectByOpportunityIds` ────────
+     * `selectByOpportunityIds` sits on the critical path of EVERY Opportunity insert in the org
+     * (it is `ensureNda`'s idempotency read) and is `WITH USER_MODE`. Adding `Property__c` to
+     * ITS select list would put a field granted by exactly ONE permission set behind that
+     * query — and `USER_MODE` THROWS on an inaccessible field, it does not degrade. The throw
+     * (`System.QueryException: No such column`, an FLS denial wearing a schema error) would
+     * escape an AFTER-INSERT trigger as `CANNOT_INSERT_UPDATE_ACTIVATE_ENTITY`, meaning **nobody
+     * without `DPEG_Acquisition_Edit` could create a deal or convert a Lead**. That is the exact
+     * shape of the outage `LeadConvertService.stampConvertedOpportunities` records for
+     * `Opportunity.DPEG_First__c`. Two methods, two modes, two blast radii — do not merge them.
+     *
+     * ── ▸ MODE = `WITH SYSTEM_MODE`, on AUTOMATION-PATH grounds (ARCHITECTURE.md §2) ──────────
+     * The running user asked to change a DEAL's property; they did not ask to read NDAs. This
+     * read is performed on their behalf by an Opportunity after-update trigger, which is §2's
+     * automation-path case verbatim. Concretely, `NDA__c.Property__c` is granted by
+     * `DPEG_Acquisition_Edit` and by nothing else in this repo, so under `USER_MODE` every other
+     * persona — a read-only Principal, a Disposition user who happens to edit an acquisition
+     * deal, an integration user — would throw here and roll back their own Opportunity save.
+     * ⚠ The ORG currently ALSO grants this field at PROFILE level (measured 2026-09-02:
+     * `FieldPermissions` rows exist for System Administrator, Minimum Access - Salesforce and 15
+     * other profiles — it is the ONLY `NDA__c` field with any profile-level FLS, consistent with
+     * having been created through the Setup UI rather than the Metadata API). **That does not
+     * make `USER_MODE` safe here.** `profiles/**` is `.forceignore`d, so that grant is not in
+     * source control, will not survive an org rebuild, and is exactly the kind of undeclared
+     * org state this project has been bitten by before. The mode must be correct from the repo.
+     *
+     * ── ▸ SHARING = NOT ESCAPED, AND THAT IS A SEPARATE, DELIBERATE ANSWER ────────────────────
+     * `SYSTEM_MODE` lifts CRUD/FLS and NEVER sharing. `NDA__c` is Private OWD and acquisition
+     * NDAs are covered by NO sharing rule (`sharingRules/NDA__c.sharingRules-meta.xml` — both
+     * rules are `Disposition_NDA`-scoped), so a user editing SOMEONE ELSE'S deal may see zero
+     * rows here. This method deliberately stays inside the class-level `with sharing` anyway,
+     * and the reason is a property of the CALLER rather than a preference:
+     *   - the caller only ever UPDATES rows this query returned. It creates nothing and deletes
+     *     nothing. A sharing-filtered read therefore degrades to "the stamp did not happen" —
+     *     it CANNOT invert into a duplicate-maker, which is the failure mode that justifies a
+     *     `private without sharing` inner class for an idempotency guard (cf. `ExpiryAlertReads`
+     *     in this class, whose argument is NOT transferable here);
+     *   - on the DOMINANT path the question does not arise: on lead conversion the same user
+     *     converts the Lead, owns the Opportunity and owns the NDA that `ensureNda` created
+     *     seconds earlier in the same transaction;
+     *   - the residual (user A creates the deal, user B later sets its property) is swept by
+     *     `scripts/backfill-nda-property.apex`, which is idempotent and run as an administrator.
+     * A `without sharing` inner class for a display-only lookup is not proportionate. Revisit
+     * this only if something starts READING `NDA__c.Property__c` to make a decision.
+     *
+     * ── ⚠ THE BLANK-ONLY RULE IS **NOT** IN THIS QUERY, ON PURPOSE ────────────────────────────
+     * There is no `AND Property__c = NULL` filter here, even though the only caller writes blanks
+     * only. "Do not overwrite an NDA that was deliberately repointed at a different property" is
+     * a BUSINESS rule and lives in the service layer (`.claude/rules/apex-layering-rule.md`:
+     * selectors read, services decide). Putting it here would also make the caller's own
+     * fill-blanks-only test vacuous — the row it must prove is skipped would never arrive.
+     * `Property__c` is in the select list precisely so the service can apply it.
+     *
+     * @param opportunityIds Parent Opportunity Ids; null/empty-safe.
+     * @return NDAs with Id, Opportunity__c and Property__c populated — ALL of them, blank or
+     *         not; empty when the input is null or empty.
+     */
+    public static List<NDA__c> selectPropertyStampTargetsByOpportunityIds(Set<Id> opportunityIds) {
+        if (opportunityIds == null || opportunityIds.isEmpty()) {
+            return new List<NDA__c>();
+        }
+        return [
+            SELECT Id, Opportunity__c, Property__c
+            FROM NDA__c
+            WHERE Opportunity__c IN :opportunityIds
+            WITH SYSTEM_MODE
         ];
     }
 

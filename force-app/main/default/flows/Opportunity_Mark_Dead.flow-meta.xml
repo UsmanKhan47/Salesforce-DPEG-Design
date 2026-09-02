@@ -1,0 +1,231 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Flow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!-- Dead/Pass off-ramp (agent-output/nda-property-and-dead-offramp.md item B). Backs
+         quickActions/Opportunity.Mark_Dead.quickAction-meta.xml. See that file's header for the
+         full reasoning; the short version: Opportunity.StageName has NO field-level-security grant
+         anywhere in this org (confirmed live: zero rows on FieldPermissions for
+         Opportunity.StageName), so a plain LDS-backed "Update a Record" quick action would silently
+         drop the StageName write for every user. runInMode=SystemModeWithSharing gets the same
+         FLS bypass StageAdvanceService's bare `update o;` relies on, while still enforcing sharing
+         (this is a user-initiated write, not background automation - it must not let a deal driver
+         touch a deal they cannot already see). The Has_Deal_Action_Access decision re-asks the same
+         {!$Permission.Acquisition_Deal_Actions} question the FlexiPage visibility rule and
+         OpportunityActionPermissionService.assertDealActionAccess() already ask, so the button
+         chrome and the flow's own authorization agree by construction. StageName and
+         Rejection_Reason__c are written together in ONE Update Records element so
+         Rejection_Reason_Required_On_Dead always sees a populated reason - no intermediate save
+         that could strand a reason on a live deal. Rejection Reason choices are static (matching
+         Opportunity.Rejection_Reason__c's 7 restricted picklist values) rather than a Picklist
+         Choice Set - a deliberate, minor drift-risk trade documented here so a future picklist-value
+         change is caught by comparing this list against that field, not assumed to stay in sync
+         automatically. -->
+    <apiVersion>67.0</apiVersion>
+    <choices>
+        <name>Choice_Wrong_Market</name>
+        <choiceText>Wrong Market</choiceText>
+        <dataType>String</dataType>
+        <value>
+            <stringValue>Wrong Market</stringValue>
+        </value>
+    </choices>
+    <choices>
+        <name>Choice_Price_Too_High</name>
+        <choiceText>Price Too High</choiceText>
+        <dataType>String</dataType>
+        <value>
+            <stringValue>Price Too High</stringValue>
+        </value>
+    </choices>
+    <choices>
+        <name>Choice_Bad_Anchor_Tenant</name>
+        <choiceText>Bad Anchor Tenant</choiceText>
+        <dataType>String</dataType>
+        <value>
+            <stringValue>Bad Anchor Tenant</stringValue>
+        </value>
+    </choices>
+    <choices>
+        <name>Choice_Failed_DD</name>
+        <choiceText>Failed DD</choiceText>
+        <dataType>String</dataType>
+        <value>
+            <stringValue>Failed DD</stringValue>
+        </value>
+    </choices>
+    <choices>
+        <name>Choice_Lost_to_Competitor</name>
+        <choiceText>Lost to Competitor</choiceText>
+        <dataType>String</dataType>
+        <value>
+            <stringValue>Lost to Competitor</stringValue>
+        </value>
+    </choices>
+    <choices>
+        <name>Choice_Seller_Withdrew</name>
+        <choiceText>Seller Withdrew</choiceText>
+        <dataType>String</dataType>
+        <value>
+            <stringValue>Seller Withdrew</stringValue>
+        </value>
+    </choices>
+    <choices>
+        <name>Choice_Other</name>
+        <choiceText>Other</choiceText>
+        <dataType>String</dataType>
+        <value>
+            <stringValue>Other</stringValue>
+        </value>
+    </choices>
+    <decisions>
+        <name>Has_Deal_Action_Access</name>
+        <label>Has Deal Action Access?</label>
+        <locationX>176</locationX>
+        <locationY>134</locationY>
+        <defaultConnector>
+            <targetReference>Access_Denied_Screen</targetReference>
+        </defaultConnector>
+        <defaultConnectorLabel>Not Authorized</defaultConnectorLabel>
+        <rules>
+            <name>Authorized</name>
+            <conditionLogic>and</conditionLogic>
+            <conditions>
+                <leftValueReference>$Permission.Acquisition_Deal_Actions</leftValueReference>
+                <operator>EqualTo</operator>
+                <rightValue>
+                    <booleanValue>true</booleanValue>
+                </rightValue>
+            </conditions>
+            <connector>
+                <targetReference>Enter_Rejection_Reason</targetReference>
+            </connector>
+            <label>Authorized</label>
+        </rules>
+    </decisions>
+    <interviewLabel>Mark Deal Dead/Pass {!$Flow.CurrentDateTime}</interviewLabel>
+    <isAdditionalPermissionRequiredToRun>true</isAdditionalPermissionRequiredToRun>
+    <label>Mark Deal Dead/Pass</label>
+    <processType>Flow</processType>
+    <recordUpdates>
+        <name>Update_Opportunity</name>
+        <label>Update Opportunity</label>
+        <locationX>176</locationX>
+        <locationY>380</locationY>
+        <connector>
+            <targetReference>Confirmation_Screen</targetReference>
+        </connector>
+        <faultConnector>
+            <targetReference>Save_Failed_Screen</targetReference>
+        </faultConnector>
+        <inputAssignments>
+            <field>Id</field>
+            <value>
+                <elementReference>recordId</elementReference>
+            </value>
+        </inputAssignments>
+        <inputAssignments>
+            <field>StageName</field>
+            <value>
+                <stringValue>Dead/Pass</stringValue>
+            </value>
+        </inputAssignments>
+        <inputAssignments>
+            <field>Rejection_Reason__c</field>
+            <value>
+                <elementReference>Rejection_Reason_Dropdown</elementReference>
+            </value>
+        </inputAssignments>
+        <object>Opportunity</object>
+    </recordUpdates>
+    <runInMode>SystemModeWithSharing</runInMode>
+    <screens>
+        <name>Access_Denied_Screen</name>
+        <label>Access Denied</label>
+        <locationX>440</locationX>
+        <locationY>134</locationY>
+        <allowBack>false</allowBack>
+        <allowFinish>true</allowFinish>
+        <allowPause>false</allowPause>
+        <fields>
+            <name>Access_Denied_Text</name>
+            <fieldText>&lt;p&gt;You do not have permission to mark this deal Dead/Pass.&lt;/p&gt;</fieldText>
+            <fieldType>DisplayText</fieldType>
+        </fields>
+        <showFooter>true</showFooter>
+        <showHeader>true</showHeader>
+    </screens>
+    <screens>
+        <name>Enter_Rejection_Reason</name>
+        <label>Rejection Reason</label>
+        <locationX>176</locationX>
+        <locationY>250</locationY>
+        <allowBack>true</allowBack>
+        <allowFinish>true</allowFinish>
+        <allowPause>false</allowPause>
+        <connector>
+            <targetReference>Update_Opportunity</targetReference>
+        </connector>
+        <fields>
+            <name>Rejection_Reason_Dropdown</name>
+            <choiceReferences>Choice_Wrong_Market</choiceReferences>
+            <choiceReferences>Choice_Price_Too_High</choiceReferences>
+            <choiceReferences>Choice_Bad_Anchor_Tenant</choiceReferences>
+            <choiceReferences>Choice_Failed_DD</choiceReferences>
+            <choiceReferences>Choice_Lost_to_Competitor</choiceReferences>
+            <choiceReferences>Choice_Seller_Withdrew</choiceReferences>
+            <choiceReferences>Choice_Other</choiceReferences>
+            <dataType>String</dataType>
+            <fieldText>Rejection Reason</fieldText>
+            <fieldType>DropdownBox</fieldType>
+            <isRequired>true</isRequired>
+        </fields>
+        <showFooter>true</showFooter>
+        <showHeader>true</showHeader>
+    </screens>
+    <screens>
+        <name>Confirmation_Screen</name>
+        <label>Deal Marked Dead/Pass</label>
+        <locationX>176</locationX>
+        <locationY>500</locationY>
+        <allowBack>false</allowBack>
+        <allowFinish>true</allowFinish>
+        <allowPause>false</allowPause>
+        <fields>
+            <name>Confirmation_Text</name>
+            <fieldText>&lt;p&gt;This deal has been moved to Dead/Pass.&lt;/p&gt;</fieldText>
+            <fieldType>DisplayText</fieldType>
+        </fields>
+        <showFooter>true</showFooter>
+        <showHeader>true</showHeader>
+    </screens>
+    <screens>
+        <name>Save_Failed_Screen</name>
+        <label>Could Not Save</label>
+        <locationX>440</locationX>
+        <locationY>500</locationY>
+        <allowBack>false</allowBack>
+        <allowFinish>true</allowFinish>
+        <allowPause>false</allowPause>
+        <fields>
+            <name>Save_Failed_Text</name>
+            <fieldText>&lt;p&gt;{!$Flow.FaultMessage}&lt;/p&gt;</fieldText>
+            <fieldType>DisplayText</fieldType>
+        </fields>
+        <showFooter>true</showFooter>
+        <showHeader>true</showHeader>
+    </screens>
+    <start>
+        <locationX>50</locationX>
+        <locationY>0</locationY>
+        <connector>
+            <targetReference>Has_Deal_Action_Access</targetReference>
+        </connector>
+    </start>
+    <status>Active</status>
+    <variables>
+        <name>recordId</name>
+        <dataType>String</dataType>
+        <isCollection>false</isCollection>
+        <isInput>true</isInput>
+        <isOutput>false</isOutput>
+    </variables>
+</Flow>

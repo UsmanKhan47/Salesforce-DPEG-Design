@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<QuickAction xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!-- The Dead/Pass off-ramp. Declarative Screen Flow, not the LWC-ScreenAction shape the other
+         Opportunity stage actions use (StageAdvanceController/StageAdvanceService), because
+         Opportunity.StageName carries NO field-level-security grant anywhere in this org (zero
+         permission sets, and every DPEG persona is on Minimum Access) - confirmed by a repo-wide
+         sweep. The Apex path writes it with a bare `update o;`, which does not enforce FLS; an
+         LDS-backed "Update a Record" quick action or a plain record-edit-form DOES enforce FLS and
+         would silently drop the StageName write for every user (see ".claude" memory:
+         "LDS form drops non-editable fields silently"). A Screen Flow run in System Context WITH
+         SHARING gets the same FLS bypass the Apex path relies on, without needing new Apex or a new
+         LWC bundle - `runInMode=SystemModeWithSharing` on Opportunity_Mark_Dead.flow-meta.xml.
+         Sharing is deliberately still enforced (unlike this repo's SystemModeWithoutSharing
+         background-automation flows) because this is a user-initiated write, not an automation
+         read, and it must not let a deal driver touch a deal they cannot already see.
+
+         AUTHORIZATION PARITY WITH THE OTHER EIGHT: the flow's first element is a Decision on
+         {!$Permission.Acquisition_Deal_Actions}, matching the same server-side-first ordering
+         StageAdvanceController documents ("PERMISSION (server-side, first statement in every
+         method)"). The FlexiPage visibility rule on Opportunity_Record_Page asks the identical
+         question for the button chrome, so the two halves agree by construction, the same
+         relationship the other eight actions already have between their visibility rule and
+         OpportunityActionPermissionService.assertDealActionAccess().
+
+         StageName is written as the DECODED literal 'Dead/Pass' - the %2F-encoded form only ever
+         appears in businessProcesses/recordTypes metadata, never at runtime (StageAdvanceService.cls
+         :99-101). Rejection_Reason__c and StageName are written in ONE recordUpdates element so the
+         Rejection_Reason_Required_On_Dead validation rule always sees a populated reason - there is
+         no intermediate save that could strand a reason on a live deal. -->
+    <flowDefinition>Opportunity_Mark_Dead</flowDefinition>
+    <label>Mark Dead / Pass</label>
+    <optionsCreateFeedItem>false</optionsCreateFeedItem>
+    <type>Flow</type>
+</QuickAction>

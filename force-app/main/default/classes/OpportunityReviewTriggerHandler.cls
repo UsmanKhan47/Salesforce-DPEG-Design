@@ -1,6 +1,12 @@
 /**
  * Trigger handler for Opportunity. Routes FOUR trigger contexts — before insert, before update,
- * after insert and after update — to SIX service calls in total.
+ * after insert and after update — to SEVEN service calls in total.
+ *
+ * ⚠ AMENDED 2026-09-02 — THE COUNT WAS SIX (AND FIVE AFTER-CONTEXT) UNTIL
+ * `OpportunityReviewService.syncNdaProperty` joined `route()` for the `NDA__c.Property__c`
+ * population (design `agent-output/nda-property-and-dead-offramp.md` item A). It is now SEVEN
+ * and SIX. Re-count against `route()` itself, not against this sentence — this header has
+ * already been wrong about its own count twice.
  *
  * ⚠ AMENDED 2026-08-31 — THE TWO SENTENCES THIS HEADER OPENED WITH ARE NOW BOTH WRONG, AND ARE
  * RETRACTED HERE RATHER THAN QUIETLY DELETED. It said, verbatim:
@@ -20,13 +26,19 @@
  *     It must run BEFORE the save so the value is written by the user's own DML with no second
  *     statement; see that class's header for why a Flow and an after-context update both lose.
  *
- * ── AFTER INSERT / AFTER UPDATE — FIVE CALLS ────────────────────────────────────────────────
- * Two review concerns and three STAGE-KEYED HANDOFFS to other modules:
+ * ── AFTER INSERT / AFTER UPDATE — SIX CALLS ─────────────────────────────────────────────────
+ * Three review concerns and three STAGE-KEYED HANDOFFS to other modules:
  *
  *   - OpportunityReviewService.createReviewRecords opens the matching feasibility /
  *     Contract Review / Underwriting / LOI child when the Opp enters (or flips an input
  *     flag for) the relevant stage.
- *   - OpportunityReviewService.ensureNda opens the deal's NDA on creation.
+ *   - OpportunityReviewService.ensureNda opens the deal's NDA on creation, carrying the deal's
+ *     Property__c onto it.
+ *   - OpportunityReviewService.syncNdaProperty pushes the deal's Property__c onto its existing
+ *     NDA(s) when that lookup is SET LATER — which on the lead-conversion path is always, because
+ *     the Property row is created after the Opportunity's after-insert trigger has already run.
+ *     ⚠ It is the ONLY call here keyed on a NON-STAGE field, and the only one that is
+ *     update-only. Zero SOQL and zero DML on any save that does not change Property__c.
  *   - ContractExecutionService.openTransactionsOnAboutToClose  ('About to Close')
  *   - PropertyAssetService.ensureOnClosedWon                   ('Closed Won')
  *   - DealFolderService.ensureOnClaimStageEntry                (ANY of 'Under Review',
@@ -68,6 +80,10 @@
  * alone until 2026-08-27 — accurate when this handler was extracted, and wrong ever since
  * ContractExecutionService, PropertyAssetService and DealFolderService joined `route()`. It said
  * FOUR until 2026-08-31, when OpportunityStageEntryService joined on the before contexts.)
+ * ⚠ 2026-09-02: "FIVE services" IS STILL CORRECT AND WAS DELIBERATELY NOT CHANGED WITH THE CALL
+ * COUNTS ABOVE. `syncNdaProperty` added a CALL to a service already in that list; it added no
+ * service. The two numbers in this header count different things and are meant to diverge — do
+ * not "fix" this one to seven.
  */
 public with sharing class OpportunityReviewTriggerHandler extends TriggerHandler {
 
@@ -107,9 +123,10 @@ public with sharing class OpportunityReviewTriggerHandler extends TriggerHandler
     }
 
     /**
-     * Routes one AFTER trigger context through the five service CALLS listed under "AFTER INSERT
+     * Routes one AFTER trigger context through the SIX service CALLS listed under "AFTER INSERT
      * / AFTER UPDATE" in the class header, in order. They span FOUR services —
-     * `OpportunityReviewService` is called twice. The before contexts do not come through here:
+     * `OpportunityReviewService` is called THREE times (createReviewRecords, ensureNda,
+     * syncNdaProperty). The before contexts do not come through here:
      * they route a single service directly, above, precisely because it must stay the only thing
      * running there.
      *
@@ -119,6 +136,23 @@ public with sharing class OpportunityReviewTriggerHandler extends TriggerHandler
     private void route(List<Opportunity> opps, Map<Id, Opportunity> priorById) {
         OpportunityReviewService.createReviewRecords(opps, priorById);
         OpportunityReviewService.ensureNda(opps, priorById);
+        // The deal's Property lands on its NDA. Added 2026-09-02 (design item A). It sits
+        // IMMEDIATELY BESIDE ensureNda because the two are one feature split by trigger context,
+        // not two features: ensureNda stamps the Property at CREATION (insert only), this stamps
+        // it when the deal's Property is SET LATER (update only). Each returns instantly in the
+        // other's context, so exactly one of them ever does work on any given save.
+        // 🔴 THE SECOND HALF IS NOT OPTIONAL AND IS NOT BELT-AND-BRACES. On lead conversion —
+        // this org's dominant intake — Database.convertLead inserts the Opportunity and fires
+        // THIS handler's after-insert BEFORE LeadConvertService.stampConvertedOpportunities has
+        // even CREATED the Property row, let alone linked it. Measured on usman-dpeg 2026-09-02
+        // from a real conversion's debug log; the marks are in ensureNda's header. Deleting this
+        // line restores the reported bug for every converted deal while leaving every
+        // creation-time test green.
+        // ⚠ ZERO SOQL AND ZERO DML unless a deal in the chunk actually changed Property__c —
+        // the change key is evaluated in memory before anything is queried, which is what makes
+        // a SIXTH call affordable on a trigger that already routes five. Asserted by in-context
+        // governor counters in OpportunityReviewServiceTest, not assumed.
+        OpportunityReviewService.syncNdaProperty(opps, priorById);
         // Entering 'About to Close' opens the Transaction and, through it, the Day-0 checklist.
         // It lives in ContractExecutionService rather than OpportunityReviewService because it is
         // the TRANSACTIONS HANDOFF, not a review child — that service owns the handoff concept and

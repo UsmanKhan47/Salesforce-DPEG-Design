@@ -312,6 +312,84 @@ public with sharing class OpportunityReviewService {
     @TestVisible
     private static String lastQueueLookupError;
 
+    // ══════════════════════════════════════════════════════════════════════════════════════════
+    // `syncNdaProperty` INSTRUMENTATION (2026-09-02, design item A Half 2)
+    //
+    // 🔴 THESE ARE CUMULATIVE ACROSS THE **TRANSACTION**, NOT PER INVOCATION, AND THAT IS THE
+    // POINT. `syncNdaProperty` runs once per 200-record trigger chunk, so a 251-record bulk
+    // update invokes it TWICE. A per-invocation counter would read "1 query" in both a correct
+    // implementation and a per-record one; a cumulative counter reads 2 for the correct one and
+    // 251 for the broken one. Nothing resets them — a test asserting on them must be the only
+    // thing in its transaction that moves a Property, which every test that uses them is.
+    //
+    // ⚠ THEY EXIST BECAUSE `Test.stopTest()` RESTORES THE PRE-TEST GOVERNOR COUNTERS, so the
+    // obvious `Limits.getQueries()`-after-stopTest assertion is silently vacuous. These are
+    // captured INSIDE the trigger context. Same shape and same reason as
+    // `ExtractAddressQueueable.lastRunQueryCount` and `OpportunityStageEntryService`'s
+    // in-context counters. In-transaction only — NOT a monitoring surface.
+    // ══════════════════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Selector INVOCATIONS `syncNdaProperty` has made this transaction. Expected: 0, or 1 per
+     * trigger chunk.
+     *
+     * ⚠ IT COUNTS INVOCATIONS, NOT `Limits.getQueries()`, AND THE DIFFERENCE IS DELIBERATE — it
+     * makes the counter STRICTLY MORE sensitive, not less. A non-empty invocation is exactly one
+     * query, so on every live path the two numbers are identical. They diverge only when the
+     * guard ordering is broken: move the selector call above the `isEmpty()` return and it is
+     * reached with an EMPTY set, where the selector's own null/empty guard short-circuits and
+     * spends no SOQL. A real query counter would read 0 there and the regression would ship;
+     * this one reads 1 and
+     * `syncNdaProperty_updateThatDoesNotTouchProperty_costsNoQueryAndNoDml` goes red — verified
+     * by mutation 2026-09-02.
+     */
+    @TestVisible
+    private static Integer ndaPropertySyncQueries = 0;
+
+    /**
+     * NDA rows `syncNdaProperty` has ATTEMPTED to update this transaction (the DML list size,
+     * summed). 0 proves the zero-cost path; it also proves the fill-blanks-only rule, because an
+     * NDA that already carries a property never reaches the list.
+     */
+    @TestVisible
+    private static Integer ndaPropertySyncRows = 0;
+
+    /**
+     * Row-level failures swallowed by `syncNdaProperty`'s `allOrNone = false`. This is the price
+     * of not being able to roll back a lead conversion; see that method's header. A non-zero
+     * value here in a test means the stamp silently did not happen.
+     */
+    @TestVisible
+    private static Integer ndaPropertySyncFailures = 0;
+
+    /**
+     * Message from the last swallowed `syncNdaProperty` row failure, or null. In-transaction
+     * only — it exists for tests and debugging, exactly like `lastQueueLookupError` above.
+     */
+    @TestVisible
+    private static String lastNdaPropertySyncError;
+
+    /**
+     * TEST SEAM — when non-null, `syncNdaProperty` writes THIS Property Id instead of the deal's,
+     * so a test can drive the REAL DML into a REAL platform failure. Production never sets it.
+     *
+     * ⚠ IT SUBSTITUTES A VALUE, NOT A RESULT. The test hands it a DELETED `Property__c` Id and
+     * the platform returns a genuine `Database.SaveResult` failure; nothing about the error, the
+     * counter or the message is fabricated. That distinction is the whole point — a seam that
+     * returned a canned failure would prove the assertion, not the code.
+     *
+     * WHY A SEAM IS NEEDED AT ALL: no ordinary input can reach that branch. The DML is
+     * `SYSTEM_MODE`, so CRUD and FLS cannot refuse it; `NDA__c` has zero validation rules; and
+     * the one production failure mode that IS real — sharing, on a user who cannot access
+     * someone else's NDA — is unreachable from here because the SELECT that feeds this DML is
+     * sharing-filtered too, so such a user gets an empty list and never reaches the update.
+     * (That degrade has its own test, `syncNdaProperty_nonOwnerSeesNoNdaAndTheSaveStillSucceeds`,
+     * which is why it is NOT what this seam simulates.) Same shape, same justification and same
+     * "production never sets it" contract as `simulateQueueLookupFailure` above.
+     */
+    @TestVisible
+    private static Id ndaPropertyFailureInjectionId;
+
     /**
      * Called from the Opportunity after-insert / after-update trigger.
      * @param newOpps Trigger.new
@@ -635,15 +713,42 @@ public with sharing class OpportunityReviewService {
      * is UI-only and Apex DML does not enforce it, so ... not the platform's." NDA__c.Status__c is
      * `restricted`; DML enforces the subset and a mis-pair rolls back the Opportunity save. See
      * ACQUISITION_PSA_STATUS's header.
+     *
+     * ── ▸ 2026-09-02: THE NDA NOW CARRIES THE DEAL'S `Property__c` (design item A, HALF 1) ─────
+     * The deal's Property is copied onto the NDA here. It costs NOTHING — `o.Property__c` is
+     * already on the record in `Trigger.new`, so this adds no query, no DML and no describe. It
+     * is the same "read from Trigger.new rather than re-queried" pattern the LOI block above
+     * already uses for the identical field on `LOI__c`.
+     *
+     * 🔴 THIS HALF IS NOT SUFFICIENT ON ITS OWN, AND SHIPPING IT ALONE WOULD LOOK LIKE A FIX
+     * THAT CHANGED NOTHING. On the LEAD-CONVERSION path — this org's dominant intake — the deal
+     * has NO Property when this method runs, and the `Property__c` ROW DOES NOT EXIST YET
+     * either. MEASURED on `usman-dpeg` 2026-09-02 by tracing a real `Database.convertLead` in a
+     * savepoint (debug log, relative nanosecond marks):
+     *     1,209,340,790  OpportunityReviewTrigger AfterInsert  -> ensureNda creates the NDA
+     *     1,565,282,540  NdaTrigger BeforeInsert               -> (the NDA insert, confirming it)
+     *     2,334,917,323  LeadConvertTrigger  Lead AfterUpdate  -> stampConvertedOpportunities
+     *     2,538,159,277  OpportunityReviewTrigger AfterUpdate  -> Property__c has now landed
+     *   final read: opp.Property = a0O...  ndaCount = 1  nda.Property = null
+     * i.e. `LeadConvertService.createProperties` CREATES the Property row ~1.1 SECONDS after this
+     * method has already inserted the NDA. `syncNdaProperty` below is the half that covers it.
+     * Do not delete either half believing the other subsumes it.
      */
     public static void ensureNda(List<Opportunity> newOpps, Map<Id, Opportunity> oldMap) {
         if (oldMap != null) {
             return; // only on insert
         }
         Set<Id> oppIds = new Set<Id>();
+        // Carried in the SAME loop that builds oppIds — the value is already in Trigger.new, so
+        // this map costs no query and no describe. It deliberately does NOT reuse
+        // createReviewRecords' `propertyByOpp`: that one lives in a different method, is built
+        // only for deals entering the LOI stage, and widening it would make an unrelated block
+        // pay for this one.
+        Map<Id, Id> propertyByOpp = new Map<Id, Id>();
         for (Opportunity o : newOpps) {
             if (o.Primary_NDA__c == null) {
                 oppIds.add(o.Id);
+                propertyByOpp.put(o.Id, o.Property__c);
             }
         }
         if (oppIds.isEmpty()) {
@@ -662,18 +767,177 @@ public with sharing class OpportunityReviewService {
         Id acquisitionNdaRecordTypeId = acquisitionNdaRecordTypeId();
         List<NDA__c> ndaToInsert = new List<NDA__c>();
         for (Id oppId : oppIds) {
-            NDA__c nda = new NDA__c(Opportunity__c = oppId, Status__c = 'Pending');
+            NDA__c nda = new NDA__c(
+                Opportunity__c = oppId,
+                Status__c = 'Pending',
+                // ⚠ ASSIGNED UNCONDITIONALLY, INCLUDING WHEN IT IS NULL, AND THAT IS DELIBERATE.
+                // A `Map.get` miss returns null, and null into a lookup on a NEW record is
+                // identical to leaving the field unset — so an `if (propertyId != null)` guard
+                // would add a branch with no behavioural difference and one more uncovered line.
+                // Argued in full at DispositionStageEntryService's `Broker__c` assignment; the
+                // argument transfers verbatim and is cited rather than re-derived.
+                Property__c = propertyByOpp.get(oppId)
+            );
             if (acquisitionNdaRecordTypeId != null) {
                 nda.RecordTypeId = acquisitionNdaRecordTypeId;
             }
             ndaToInsert.add(nda);
         }
-        insert ndaToInsert;
+        // 🔴 EXPLICIT SYSTEM MODE, ADDED 2026-09-02 WITH THE `Property__c` LINE ABOVE — AND IT IS
+        // NOT TIDY-UP. This was a bare `insert` for as long as the payload held only
+        // `Opportunity__c`, `Status__c` and `RecordTypeId`, all of which every acquisition
+        // persona can see. `NDA__c.Property__c` is granted by exactly ONE permission set in this
+        // repo (`DPEG_Acquisition_Edit`), so adding it to the payload puts a field that is ABSENT
+        // FROM MOST USERS' SCHEMA into the org's single most load-bearing insert.
+        //
+        // "Apex DML is system mode by default" is the belief that would leave this bare, and this
+        // project has already paid for it: `LeadConvertService.stampConvertedOpportunities`
+        // records a MEASURED, org-wide, silent-until-clicked outage of lead conversion caused by
+        // adding exactly one ungranted field to a bare DML —
+        //     System.DmlException: Operation failed due to fields being inaccessible on Sobject
+        // surfacing to the user as `CANNOT_INSERT_UPDATE_ACTIVATE_ENTITY ... There was an error
+        // converting the lead`, with 28 of 30 methods in that test class red. The default governs
+        // ENFORCEMENT on a field the running user can see; it does not put back a field that is
+        // not in their schema. Only a stated AccessLevel does.
+        //
+        // ⚠ `allOrNone` STAYS `true`, i.e. this line is behaviourally identical to the bare
+        // `insert` it replaces for every user who could already create a deal. Nothing degrades;
+        // the ONLY change is that an ungranted `Property__c` can no longer refuse the insert.
+        // ⚠ SYSTEM_MODE lifts CRUD/FLS and NOT record-type availability — the isAvailable() guard
+        // above is untouched by this and is still doing its own separate job.
+        Database.insert(ndaToInsert, true, AccessLevel.SYSTEM_MODE);
         List<Opportunity> ndaStamps = new List<Opportunity>();
         for (NDA__c nda : ndaToInsert) {
             ndaStamps.add(new Opportunity(Id = nda.Opportunity__c, Primary_NDA__c = nda.Id));
         }
         update ndaStamps;
+    }
+
+    /**
+     * HALF 2 of the `NDA__c.Property__c` population (design
+     * `agent-output/nda-property-and-dead-offramp.md` item A, 2026-09-02): when a DEAL's
+     * `Property__c` changes to a non-null value, push it onto that deal's NDA(s) that do not
+     * already carry one.
+     *
+     * ── 🔴 WHY THIS EXISTS AT ALL. `ensureNda` IS NOT ENOUGH, AND THE REASON IS ORDERING ──────
+     * The user's requirement was "Property must be populated once the NDA record is created".
+     * Taken literally that is `ensureNda`'s one-line change alone — and it would have deployed
+     * green and fixed NOTHING for the deals the user was looking at. On the lead-conversion path
+     * the deal has no Property at after-insert, and the `Property__c` ROW does not exist yet
+     * either: `LeadConvertService.stampConvertedOpportunities` runs from the LEAD after-update
+     * trigger, i.e. AFTER `Database.convertLead` has already inserted the Opportunity and fired
+     * its after-insert trigger, and it CREATES the Property (`createProperties`) before linking
+     * it. MEASURED on `usman-dpeg` 2026-09-02 by tracing a real conversion in a savepoint — the
+     * nanosecond marks are in `ensureNda`'s header above; the gap is ~1.1 SECONDS and the final
+     * read was `opp.Property = a0O...  ndaCount = 1  nda.Property = null`.
+     * ⇒ THE TWO HALVES ARE LOAD-BEARING TOGETHER. Half 1 covers manual/API/seed creation, where
+     *   the deal already carries a Property at insert. Half 2 covers lead conversion, which is
+     *   this org's dominant intake, and every later correction of a deal's property.
+     *
+     * ── 🔴 FILL BLANKS ONLY. A NON-NULL `NDA__c.Property__c` IS NEVER OVERWRITTEN ─────────────
+     * `NDA__c.Property__c` is `editable` on `DPEG_Acquisition_Edit` and IS on the NDA record
+     * page, so a user can deliberately repoint an NDA at a different property (a portfolio deal
+     * whose NDA covers one specific asset is the obvious case). Re-stamping on every parent edit
+     * would silently revert that, and the revert would be invisible — the field has
+     * `trackHistory=false`, so there would be no history row to explain it. Stamp-once is
+     * therefore the correct trade, and the cost of the other side (a stale value persists) is
+     * bounded: it is a display field that nothing in this codebase reads to make a decision.
+     * ⚠ The rule is applied HERE and not in the selector's WHERE clause, deliberately — see
+     * `NdaSelector.selectPropertyStampTargetsByOpportunityIds`'s header.
+     *
+     * ── ▸ GUARD ORDERING IS THE BUDGET, NOT A STYLE CHOICE ────────────────────────────────────
+     * This method runs on EVERY Opportunity after-update in the org. The change-key loop is pure
+     * in-memory over `Trigger.new`, and the early return sits BEFORE the query, so an ordinary
+     * save (amount, owner, close date, stage, an approval field update) costs **ZERO SOQL and
+     * ZERO DML**. When at least one deal in the chunk did change its Property it costs exactly
+     * ONE query and at most ONE DML **per trigger chunk** — never per record. Moving the selector
+     * call above the `isEmpty()` return is the change the governor assertions in
+     * `OpportunityReviewServiceTest` exist to catch. This repo has a recorded incident where
+     * routing a new parent into a trigger cost `ceil(rows/200)` SOQL *and* DML at production
+     * scale; the counters below are how that stays measured rather than assumed.
+     *
+     * ── 🔴 `allOrNone = false`, AND THE ARGUMENT IS SPECIFICALLY ABOUT LEAD CONVERSION ────────
+     * Design §3-B2 left this open. It resolves against fail-closed, decisively, because of WHERE
+     * this runs on the path it was built for: `stampConvertedOpportunities` performs its
+     * Opportunity update with `Database.update(updates, true, AccessLevel.SYSTEM_MODE)`, so a
+     * throw from this after-update trigger does not merely lose a stamp — it aborts
+     * `Database.convertLead` and the user is told "There was an error converting the lead". A
+     * DISPLAY-ONLY LOOKUP MUST NOT BE ABLE TO BLOCK THE ORG'S INTAKE PIPELINE. It must also not
+     * be able to block an ordinary deal edit for a user who cannot see someone else's NDA.
+     * ⚠ THE KNOWN COST OF THAT CHOICE IS SILENCE, AND THIS PROJECT HAS AN INCIDENT ABOUT EXACTLY
+     * THAT (`allOrNone = false` swallowing a sharing-refused parent write for every non-owner).
+     * It is mitigated rather than accepted: every row failure is counted in
+     * `ndaPropertySyncFailures` and its message kept in `lastNdaPropertySyncError`, the same
+     * in-transaction diagnostic shape as `lastQueueLookupError` above, and the failure channel
+     * has its own positive test. Sweep with `scripts/backfill-nda-property.apex`.
+     *
+     * ── ▸ RE-ENTRY COST: NEAR ZERO, AND MEASURED RATHER THAN ASSUMED ──────────────────────────
+     * An `NDA__c` update re-enters exactly three things, none of which do work here:
+     *   - `NdaTrigger` (before insert/update only) -> `NdaBuyerStampService`, CHANGE-KEYED on
+     *     `Buyer__c`; `Buyer__c` is unchanged here, so it returns after one in-memory pass with
+     *     zero queries and zero DML;
+     *   - `NDA_Signed_Status_Sync`, a RecordBeforeSave flow — in-memory, no DML;
+     *   - `NDA_Signed_Rollup`, a RecordAfterSave flow whose entry filter is
+     *     `Disposition__c IsNull = false` — an ACQUISITION NDA never enters it.
+     * There is no path back to the Opportunity from here, so no recursion is possible.
+     *
+     * @param newOpps Trigger.new
+     * @param oldMap  Trigger.oldMap on update; null on insert (this method is a no-op then —
+     *                `ensureNda` owns the insert path, and running both would double-cover it).
+     */
+    public static void syncNdaProperty(List<Opportunity> newOpps, Map<Id, Opportunity> oldMap) {
+        if (oldMap == null) {
+            return; // insert is Half 1's job
+        }
+        // Change-keyed, in memory, BEFORE any query. A deal whose Property did not change in THIS
+        // save is not a candidate: re-stamping unchanged deals is what would turn an ordinary
+        // 251-record bulk update into a query and a DML it does not need.
+        Map<Id, Id> newPropertyByOpp = new Map<Id, Id>();
+        for (Opportunity o : newOpps) {
+            if (o.Property__c == null) {
+                continue; // clearing a deal's property does not clear its NDA's
+            }
+            Opportunity prior = oldMap.get(o.Id);
+            if (prior != null && prior.Property__c == o.Property__c) {
+                continue;
+            }
+            newPropertyByOpp.put(o.Id, o.Property__c);
+        }
+        if (newPropertyByOpp.isEmpty()) {
+            return; // the zero-cost path: no query, no DML
+        }
+
+        ndaPropertySyncQueries++;
+        List<NDA__c> toUpdate = new List<NDA__c>();
+        for (NDA__c nda : NdaSelector.selectPropertyStampTargetsByOpportunityIds(
+                newPropertyByOpp.keySet())) {
+            if (nda.Property__c != null) {
+                continue; // fill blanks only — never revert a deliberate repoint
+            }
+            toUpdate.add(new NDA__c(
+                Id = nda.Id,
+                // The seam substitutes the VALUE only; the DML, the failure and the SaveResult
+                // are all real. See ndaPropertyFailureInjectionId's header for why the failure
+                // channel cannot otherwise be reached. Production never sets it, so this
+                // resolves to newPropertyByOpp.get(...) on every live save.
+                Property__c = (ndaPropertyFailureInjectionId != null)
+                    ? ndaPropertyFailureInjectionId
+                    : newPropertyByOpp.get(nda.Opportunity__c)
+            ));
+        }
+        if (toUpdate.isEmpty()) {
+            return; // every NDA already carries a property: one query, zero DML
+        }
+
+        ndaPropertySyncRows += toUpdate.size();
+        for (Database.SaveResult sr : Database.update(toUpdate, false, AccessLevel.SYSTEM_MODE)) {
+            if (!sr.isSuccess()) {
+                ndaPropertySyncFailures++;
+                lastNdaPropertySyncError = sr.getErrors().isEmpty()
+                    ? 'unknown'
+                    : sr.getErrors()[0].getMessage();
+            }
+        }
     }
 
     /**

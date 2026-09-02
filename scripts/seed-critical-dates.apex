@@ -231,14 +231,21 @@ for (Transaction__c t : txnByDeal.values()) {
 //     Phase 5. Those are DEMO DATA with a fabricated offset, which is exactly why they do not belong
 //     in the service: the service PROJECTS the deal record and never invents a deadline.
 // ⚠ RUN THIS AS AN ADMINISTRATOR, or the pinned rows are created only for the deals you can SEE.
-//   🔴 THE REASON GIVEN HERE UNTIL 2026-08-31 WAS FALSE: it said "anonymous Apex cannot use
-//   SYSTEM_MODE". It can — `Database.insert(rows, false, AccessLevel.SYSTEM_MODE)` and
-//   `Database.query(q, AccessLevel.SYSTEM_MODE)` are both legal in anonymous Apex. (What IS refused
-//   there is the STATIC-SOQL clause form, `[SELECT ... WITH SYSTEM_MODE]`, with "Cannot use
-//   SYSTEM_MODE access level in anonymous execution of Apex" — that is a narrower fact, and
-//   conflating the two would let someone "fix" a future script by reaching for a workaround it does
-//   not need.)
-//   THE ADVICE IS STILL RIGHT, FOR A DIFFERENT REASON: this script does not perform the DML itself,
+//   🔴 RETRACTED 2026-09-02 — THE "CORRECTION" WRITTEN HERE ON 2026-08-31 WAS ITSELF FALSE, AND
+//   IT CAUSED A REAL FAILURE. It claimed that "anonymous Apex cannot use SYSTEM_MODE" was wrong
+//   and that `Database.insert(rows, false, AccessLevel.SYSTEM_MODE)` / `Database.query(q,
+//   AccessLevel.SYSTEM_MODE)` are legal here, with only the static-SOQL clause form refused.
+//   THEY ARE NOT LEGAL. The original claim was right. Anonymous Apex refuses SYSTEM_MODE in the
+//   `Database.*` ACCESS-LEVEL ARGUMENT as well as in the `[SELECT ... WITH SYSTEM_MODE]` clause.
+//   MEASURED on usman-dpeg at API 67.0 on 2026-09-02, all in ONE run with a passing control:
+//       Database.query(q, AccessLevel.SYSTEM_MODE)          -> System.SecurityException
+//       Database.update(EMPTY_LIST, false, SYSTEM_MODE)     -> System.SecurityException
+//       Database.update(one real row, false, SYSTEM_MODE)   -> System.SecurityException
+//       Database.update(one real row, false)                -> OK
+//   all three reading "Cannot use SYSTEM_MODE access level in anonymous execution of Apex".
+//   Cost of the bad correction: `scripts/backfill-nda-property.apex` was written on 2026-09-02
+//   with `AccessLevel.SYSTEM_MODE` and threw on its first real run. Do not re-retract this.
+//   THE ADVICE IS ALSO RIGHT FOR A SECOND, INDEPENDENT REASON: this script does not perform the DML itself,
 //   it calls `CriticalDateService`, whose own mode is fixed inside that class and is not something
 //   the caller can raise from out here. And SYSTEM_MODE would not help anyway — it lifts CRUD/FLS
 //   and NEVER sharing, while the exposure being warned about is precisely a sharing one (a runner
