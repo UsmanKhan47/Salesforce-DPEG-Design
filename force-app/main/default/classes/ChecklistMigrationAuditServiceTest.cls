@@ -362,6 +362,33 @@ private class ChecklistMigrationAuditServiceTest {
      * writes are SYSTEM_MODE, and the one `AccessLevel.USER_MODE` update on this object
      * (`ChecklistItemService.save`) is PRIVATE and reachable only from the LWC service methods.
      *
+     * ⚠ SHARING WAS PROPOSED AS THE REAL MECHANISM AND IS REFUTED — TWICE, INDEPENDENTLY. The
+     * hypothesis: both master-detail links carry `writeRequiresMasterRead=false`, which is the
+     * STRICTER setting (read AND WRITE on the master), so editing an item needs Edit sharing on the
+     * `Transaction__c` two hops up, and `Transaction__c` is Private OWD. The inversion is real and
+     * worth knowing. It is not what fails here:
+     *   1. THAT SETTING GOVERNS CREATE, EDIT **AND DELETE** IDENTICALLY. `migratedDeal()` inserts
+     *      `Checklist__c` and `Checklist_Item__c` under this very deal, moments earlier, in the
+     *      same transaction, and asserts the result is MIGRATED. Those inserts run
+     *      `AccessLevel.SYSTEM_MODE`, which lifts CRUD/FLS and NEVER sharing. If the running
+     *      principal lacked write sharing on the deal, step 1 of the migration would have failed
+     *      first. It did not, so the principal has it.
+     *   2. THE RUNNING USER OWNS THE DEAL. `TestDataFactory.createTransactionsOnChecklistModel`
+     *      sets no `OwnerId`, so the `@TestSetup` insert leaves the running user as owner, and an
+     *      owner of a Private-OWD record has full access unconditionally.
+     * ⚠ THE PERSONA CONTRAST DOES NOT SUPPORT IT EITHER. `ChecklistItemServiceTest` (25 green) has
+     * ZERO `System.runAs` — it writes as the running user exactly as this class does. Only
+     * `ChecklistControllerTest` uses personas, in 3 of its 29 methods.
+     * ⚠ ALSO CHECKED AND ELIMINATED: a non-updateable field riding along in the payload.
+     * `Checklist_Item__c` has NO formula and NO roll-up fields, and every column `itemAt` selects
+     * is Number / Picklist / Lookup / Checkbox / Date — all writeable.
+     *
+     * ⇒ 🟢 CONFIRMED 2026-09-02, EXPERIMENT CLOSED. The cause is the PAYLOAD SHAPE of a re-saved
+     * QUERIED record. The single-variable run returned BRANCH 1: this class went 12/12 with
+     * `itemAt` STILL selecting `Checklist__r.Group_Letter__c`, so THE PARENT TRAVERSAL IS
+     * EXONERATED and the second probe is not needed - do not run it. Four candidates, three
+     * eliminated by evidence and the fourth isolated by an experiment kept deliberately to one
+     * variable. This block is now the record of a FINISHED investigation, not an open one.
      * ⚠ WHAT ACTUALLY DIFFERS, MEASURED AGAINST THE GREEN SIBLINGS: `ChecklistItemServiceTest`
      * (25 green) and `ChecklistControllerTest` (29 green) NEVER update a QUERIED
      * `Checklist_Item__c` - every mutation there is an insert of an in-memory row, and the single

@@ -168,7 +168,15 @@ private class ChecklistMigrationDomainTest {
             legacyTask(GROUP_B, 3, false, true)
         };
 
-        ChecklistMigrationDomain.Projection projection = project(tasks, defsForA(), null);
+        // 🔴 THE GROUP DEFS ARE WITHHELD FOR B, WHICH IS WHAT THE METHOD NAME DESCRIBES.
+        // Until 2026-09-02 this passed the DEFAULT group defs (A and B) and withheld only the
+        // ITEM defs, so `NO_GROUP_DEFINITION` could never fire - `groupByLetter.get(letter)` was
+        // never null - and the domain correctly reported coordinate-level `NO_DEFINITION B3`
+        // instead. The domain was right; the fixture built a different scenario from the one the
+        // name and the assertion describe. See the `project` overload for why the assertion was
+        // NOT retargeted at `NO_DEFINITION` instead.
+        ChecklistMigrationDomain.Projection projection =
+            project(tasks, groupDefsWithoutB(), defsForA(), null);
 
         Assert.isFalse(projection.isReconciled,
             'Without a group definition the checklist carries no Stage__c and its phase tab '
@@ -351,6 +359,8 @@ private class ChecklistMigrationDomainTest {
             'And must not be reported: ' + findings(projection));
     }
     /**
+     * Projects with the DEFAULT group definitions (A and B).
+     *
      * @param tasks    Legacy Tasks.
      * @param itemDefs Item definitions in scope.
      * @param stored   Stored counters, or null to skip the advisory drift check.
@@ -361,8 +371,48 @@ private class ChecklistMigrationDomainTest {
         List<Transaction_Task_Def__mdt> itemDefs,
         ChecklistMigrationDomain.Counters stored
     ) {
+        return project(tasks, groupDefs(), itemDefs, stored);
+    }
+
+    /**
+     * Projects with a CALLER-SUPPLIED group-definition list.
+     *
+     * 🔴 THIS OVERLOAD EXISTS SO A TEST CAN WITHHOLD A **GROUP** DEFINITION. Without it every
+     * caller got `groupDefs()`, which returns rows for BOTH A and B - and
+     * `ChecklistMigrationDomain` raises `NO_GROUP_DEFINITION` only when `groupByLetter.get(letter)`
+     * is null, so that branch was UNREACHABLE FROM THIS CLASS and had no coverage anywhere.
+     * `shouldRefuseDeal_WhenAGroupLetterHasNoGroupDefinition` was withholding `defsForA` - the
+     * ITEM defs - which is a different scenario, so the domain correctly reported coordinate-level
+     * `NO_DEFINITION` and the test failed against its own name.
+     * ⚠ THE OTHER "FIX" WAS TO RETARGET THE ASSERTION AT `NO_DEFINITION`. That was rejected: it
+     * would have gone green while leaving `NO_GROUP_DEFINITION` - a BLOCKING check in the gate
+     * that decides cutover - with zero coverage, and the method name would still have been a lie.
+     * Mirrors `ChecklistMigrationServiceTest`, which does the same thing through
+     * `ChecklistMigrationService.groupDefsOverride`.
+     *
+     * @param tasks        Legacy Tasks.
+     * @param groupDefsForRun Group definitions for this run; pass a subset to withhold a letter.
+     * @param itemDefs     Item definitions in scope.
+     * @param stored       Stored counters, or null to skip the advisory drift check.
+     * @return The projection.
+     */
+    private static ChecklistMigrationDomain.Projection project(
+        List<Task> tasks,
+        List<Task_Group_Def__mdt> groupDefsForRun,
+        List<Transaction_Task_Def__mdt> itemDefs,
+        ChecklistMigrationDomain.Counters stored
+    ) {
         return ChecklistMigrationDomain.project(
-            DEAL_ID, stored, tasks, groupDefs(), itemDefs, Date.today());
+            DEAL_ID, stored, tasks, groupDefsForRun, itemDefs, Date.today());
+    }
+
+    /**
+     * @return ONLY the group A definition - so a caller can prove `NO_GROUP_DEFINITION` fires for
+     *         B while A still projects normally. A truly empty list would make EVERY letter report
+     *         it, which is a blunter scenario than the method under test describes.
+     */
+    private static List<Task_Group_Def__mdt> groupDefsWithoutB() {
+        return new List<Task_Group_Def__mdt>{ groupDefs()[0] };
     }
 
     /** @return Group definitions for A and B, both non-conditional, phase Open Contract. */
