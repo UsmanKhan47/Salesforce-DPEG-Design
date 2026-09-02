@@ -148,7 +148,25 @@ private class ChecklistMigrationDomainTest {
 
     @isTest
     static void shouldRefuseDeal_WhenAGroupLetterHasNoGroupDefinition() {
-        List<Task> tasks = new List<Task>{ legacyTask(GROUP_B, 2, false, true) };
+        // 🔴 THE A1 TASK IS NOT DECORATION - IT KEEPS THE FIXTURE INTERNALLY CONSISTENT.
+        // A1 is the wire-verification definition in `defsForA`, so a fixture WITHOUT it has no
+        // wire item at all, and `compare` then adds a BLOCKING WIRE_ITEM_COUNT on top of the one
+        // finding this test is about. That is what happened on 2026-09-02: the earlier fix made A1
+        // the wire definition but left this fixture carrying only a B task, so removing the B
+        // GROUP cascaded into COORDINATE_MISSING_ITEM, two COUNTER_MISMATCHes and WIRE_ITEM_COUNT
+        // - five findings where the assertion expects one. THE RULE: the wire task and its
+        // definition travel together, in whichever group survives the scenario under test.
+        // ⚠ AND THE B TASK IS AT SEQUENCE 3, NOT 2. `legacyTask(..., wireGroup = true)` gives
+        // sequence 2 the `(anti-fraud)` subject, which would make the legacy parse see a SECOND
+        // wire row that no definition backs - a real WIRE_FLAG_MISMATCH, and noise this test is
+        // not about.
+        // ⚠ THE WIRE_ITEM_COUNT TEXT SAYS "run the CMDT loader". THAT IS A RED HERRING HERE:
+        // `ChecklistMigrationDomain` is a pure projection with the definitions passed IN, so no
+        // `Transaction_Task_Def__mdt` row can change this outcome. Fix the fixture, not the org.
+        List<Task> tasks = new List<Task>{
+            legacyTask(GROUP_A, 1, false, false),
+            legacyTask(GROUP_B, 3, false, true)
+        };
 
         ChecklistMigrationDomain.Projection projection = project(tasks, defsForA(), null);
 

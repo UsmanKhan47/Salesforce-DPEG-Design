@@ -46,7 +46,7 @@ private class ContentDocumentLinkSelectorTest {
 
     @isTest
     static void selectByLinkedEntityId_returnsLinksForEntity() {
-        Account entity = TestDataFactory.createAccount(true);
+        Account entity = linkableParent('entity');
         ContentNote note = insertNoteLinkedTo(entity.Id, 'Signage confirmed');
 
         Test.startTest();
@@ -69,7 +69,7 @@ private class ContentDocumentLinkSelectorTest {
 
     @isTest
     static void selectByLinkedEntityId_noLinks_returnsEmpty() {
-        Account entity = TestDataFactory.createAccount(true);
+        Account entity = linkableParent('entity');
 
         Test.startTest();
         List<ContentDocumentLink> links = ContentDocumentLinkSelector.selectByLinkedEntityId(entity.Id);
@@ -85,7 +85,7 @@ private class ContentDocumentLinkSelectorTest {
      */
     @isTest
     static void selectByLinkedEntityId_bulk_readsAll() {
-        Account entity = TestDataFactory.createAccount(true);
+        Account entity = linkableParent('entity');
 
         List<ContentNote> notes = new List<ContentNote>();
         for (Integer i = 0; i < BULK_ROWS; i++) {
@@ -133,8 +133,8 @@ private class ContentDocumentLinkSelectorTest {
         // item in this completion batch have a document on file?" and must answer it in ONE query
         // however many items the batch carries. A per-parent loop would still return the right
         // rows, and only the query count would notice.
-        Account first = TestDataFactory.createAccount(true);
-        Account second = TestDataFactory.createAccount(true);
+        Account first = linkableParent('first');
+        Account second = linkableParent('second');
         ContentNote shared = insertNoteLinkedTo(first.Id, 'Shared document');
         insert new ContentDocumentLink(
             ContentDocumentId = shared.Id, LinkedEntityId = second.Id,
@@ -170,8 +170,8 @@ private class ContentDocumentLinkSelectorTest {
         // 🔴 THE CONTRACT `ChecklistCaptureService.documentCountsByItem` RELIES ON. An unlinked
         // parent must be ABSENT from the result, so a missing key reads as "no document on file"
         // and the C7/G6 guard refuses. A row carrying a zero count would be a different contract.
-        Account linked = TestDataFactory.createAccount(true);
-        Account bare = TestDataFactory.createAccount(true);
+        Account linked = linkableParent('linked');
+        Account bare = linkableParent('bare');
         insertNoteLinkedTo(linked.Id, 'Only document');
 
         Test.startTest();
@@ -199,6 +199,60 @@ private class ContentDocumentLinkSelectorTest {
         Assert.areEqual(0, fromNull.size(), 'Null input returns an empty list, never null');
         Assert.areEqual(0, fromEmpty.size(), 'Empty input returns an empty list');
         Assert.areEqual(0, spent, 'and neither spends a query');
+    }
+
+    /**
+     * A linkable parent record for these tests, inserted so a DUPLICATE RULE CANNOT REFUSE IT.
+     *
+     * ═══════════════════════════════════════════════════════════════════════════════════════
+     * 🔴 WHY THIS EXISTS: `TestDataFactory.createAccount(true)` STARTED THROWING
+     *    `System.DmlException: DUPLICATES_DETECTED, Duplicate Alert: []` ON 2026-09-02.
+     * ═══════════════════════════════════════════════════════════════════════════════════════
+     * It is org DATA drift, not a code defect. This class passed with byte-identical files an hour
+     * earlier; what changed is that the inbound broker-email pipeline COMMITTED a real Account
+     * inside the same window, and duplicate rules match against committed rows — which a test
+     * rollback does not remove. A suite that goes red whenever a broker sends an email is a suite
+     * people learn to ignore, so it is hardened here rather than re-run and hoped over.
+     *
+     * TWO HARDENINGS, AND ONLY THE SECOND IS A GUARANTEE:
+     *   1. A DISTINCTIVE NAME. `createAccounts` already uniquifies (`Test Account 0-<n>`), but the
+     *      standard rule matches FUZZILY and every factory Account shares an identical billing
+     *      address (Houston / TX / USA), so uniqueness of the name alone does not prevent a match.
+     *      A name sharing no tokens with pipeline data makes a match unlikely.
+     *   2. `Database.DMLOptions.duplicateRuleHeader.allowSave = true` MAKES IT DETERMINISTIC.
+     *      🔴 THIS IS THE PART THAT MATTERS, AND THE REASON HARDENING (1) ALONE WAS REJECTED: the
+     *      org's `Standard_Account_Match_Rule_v1_0` IS NOT IN THE REPO — `matchingRules/
+     *      Account.matchingRule-meta.xml` is an empty `<MatchingRules/>` wrapper — so what it
+     *      matches on cannot be verified from source. A fix that depends on out-thinking a rule
+     *      nobody can read is a fix that breaks again silently.
+     *      ⚠ Note the duplicate rule is `actionOnInsert = Allow` with `operationsOnInsert = Alert`.
+     *      An ALERT still HARD-FAILS in Apex, because there is no UI for a user to confirm through;
+     *      `allowSave` is the documented Apex equivalent of that confirmation.
+     *
+     * ⚠ THIS DISABLES NOTHING THAT IS UNDER TEST. Every assertion in this class is about
+     * `ContentDocumentLink` reads; the Account is a `LinkedEntityId` placeholder and no method here
+     * asserts anything about duplicate detection. The rule stays fully live for every other class.
+     *
+     * ⚠ THE FIX IS AT THE CALL SITE, NOT IN THE FACTORY. `TestDataFactory` is a shared hub file
+     * owned by a concurrent session. If this pattern is ever wanted org-wide it belongs there and
+     * should be routed, not copied outward from here.
+     *
+     * @param label short, human-readable role of this parent within the test.
+     * @return the inserted Account.
+     */
+    private static Account linkableParent(String label) {
+        Account parent = TestDataFactory.createAccount(false);
+        // Shares no tokens with pipeline-created rows such as "Unknown - Via Email".
+        parent.Name = 'CDLSelectorFixture ' + label + ' '
+            + String.valueOf(Datetime.now().getTime())
+            + String.valueOf(Math.abs(Crypto.getRandomInteger()));
+        Database.DMLOptions options = new Database.DMLOptions();
+        options.duplicateRuleHeader.allowSave = true;
+        Database.SaveResult result = Database.insert(parent, options);
+        Assert.isTrue(result.isSuccess(),
+            'Fixture parent must insert; a refused fixture would leave a null LinkedEntityId and '
+                + 'every assertion below would compare emptiness against emptiness');
+        return parent;
     }
 
     /**

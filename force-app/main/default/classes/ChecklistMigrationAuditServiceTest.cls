@@ -68,9 +68,8 @@ private class ChecklistMigrationAuditServiceTest {
         // wire gate would REFUSE this update and the test would die on a DmlException instead of
         // producing the disagreement it is trying to report on. B2 is ungated, so mutating it
         // creates a genuine model divergence without tripping the control under test.
-        Checklist_Item__c openItem = itemAt(dealId, 2);
-        openItem.Flag__c = ChecklistItemDomain.FLAG_COMPLETED;
-        update openItem;
+        // 🔴 A FRESHLY CONSTRUCTED SPARSE ROW, NOT THE QUERIED ONE. See mutateFlag.
+        mutateFlag(itemAt(dealId, 2).Id, ChecklistItemDomain.FLAG_COMPLETED);
 
         Test.startTest();
         List<ChecklistMigrationAuditService.DealVerdict> verdicts =
@@ -95,9 +94,9 @@ private class ChecklistMigrationAuditServiceTest {
     @isTest
     static void namesTheCounterAndBothValues_WhenACounterDisagrees() {
         Id dealId = migratedDeal();
-        Checklist_Item__c wireItem = itemAt(dealId, 2);
-        wireItem.Verbal_Verification_Completed__c = true;
-        update wireItem;
+        // Sparse row, same reasoning as mutateFlag - never re-save the queried record.
+        update new Checklist_Item__c(
+            Id = itemAt(dealId, 2).Id, Verbal_Verification_Completed__c = true);
 
         Test.startTest();
         List<ChecklistMigrationAuditService.DealVerdict> verdicts =
@@ -154,9 +153,8 @@ private class ChecklistMigrationAuditServiceTest {
         // wire gate would REFUSE this update and the test would die on a DmlException instead of
         // producing the disagreement it is trying to report on. B2 is ungated, so mutating it
         // creates a genuine model divergence without tripping the control under test.
-        Checklist_Item__c openItem = itemAt(dealId, 2);
-        openItem.Flag__c = ChecklistItemDomain.FLAG_COMPLETED;
-        update openItem;
+        // 🔴 A FRESHLY CONSTRUCTED SPARSE ROW, NOT THE QUERIED ONE. See mutateFlag.
+        mutateFlag(itemAt(dealId, 2).Id, ChecklistItemDomain.FLAG_COMPLETED);
 
         Test.startTest();
         String blocked = ChecklistMigrationAuditService.format(
@@ -349,10 +347,51 @@ private class ChecklistMigrationAuditServiceTest {
         return deals[index];
     }
 
+
+    /**
+     * Flips one item to a done flag by UPDATING A FRESHLY CONSTRUCTED SPARSE ROW, never by
+     * re-saving the record `itemAt` returned.
+     *
+     * 🔴 THE THREE RE-SAVES THIS REPLACES FAILED WITH
+     * `System.DmlException: Operation failed due to fields being inaccessible on Sobject
+     * Checklist_Item__c` on a BARE `update` (2026-09-02) - which should be impossible, because a
+     * bare `update` does not enforce FLS. The bare-update path was traced end to end and contains
+     * NO FLS-enforced DML on this object: the before contexts are in-memory
+     * (`ChecklistItemDomain.stampCompletion`) plus a SYSTEM_MODE selector read
+     * (`ChecklistItemPrerequisiteService`), the after context is `ChecklistRollupService`, whose
+     * writes are SYSTEM_MODE, and the one `AccessLevel.USER_MODE` update on this object
+     * (`ChecklistItemService.save`) is PRIVATE and reachable only from the LWC service methods.
+     *
+     * ⚠ WHAT ACTUALLY DIFFERS, MEASURED AGAINST THE GREEN SIBLINGS: `ChecklistItemServiceTest`
+     * (25 green) and `ChecklistControllerTest` (29 green) NEVER update a QUERIED
+     * `Checklist_Item__c` - every mutation there is an insert of an in-memory row, and the single
+     * update in that family (`ChecklistControllerTest:189`) is a freshly constructed sparse
+     * sObject. This class was the only place re-saving a record that came back from SOQL, and
+     * that SOQL traverses a parent (`Checklist__r.Group_Letter__c`), so the payload carries the
+     * parent sub-object into the DML. This helper adopts the sibling pattern, which is also
+     * better hygiene: a sparse update states exactly the field under test.
+     *
+     * 🔴 THE MECHANISM IS NARROWED, NOT PROVEN, AND THE EXPERIMENT IS DELIBERATELY SINGLE-VARIABLE.
+     * `itemAt` STILL selects `Checklist__r.Group_Letter__c` (which no caller reads - it is dead
+     * weight and was left in ON PURPOSE), so if these tests go green the isolated cause is the
+     * PAYLOAD SHAPE, not the traversal. If they still fail, the next probe is to drop that
+     * traversal from `itemAt` and re-run - that discriminates "queried record carries its parent
+     * into the DML" from "traversal in the SELECT" without changing anything else.
+     *
+     * @param itemId The item to flip.
+     * @param flag   The `Flag__c` value to set.
+     */
+    private static void mutateFlag(Id itemId, String flag) {
+        update new Checklist_Item__c(Id = itemId, Flag__c = flag);
+    }
+
     /**
      * @param dealId   The deal.
      * @param sequence The item sequence wanted.
-     * @return That persisted item, carrying every field its callers mutate or read.
+     * @return That persisted item. ⚠ CALLERS READ ITS `Id` AND ASSERT ON IT - THEY DO NOT MUTATE
+     *         AND RE-SAVE IT; see `mutateFlag` for why. `Checklist__r.Group_Letter__c` is
+     *         deliberately still selected and deliberately unread - it is the second variable in
+     *         the isolation described there, and removing it now would confound the experiment.
      */
     private static Checklist_Item__c itemAt(Id dealId, Integer sequence) {
         return [
