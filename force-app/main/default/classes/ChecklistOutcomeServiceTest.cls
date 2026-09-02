@@ -683,7 +683,8 @@ private class ChecklistOutcomeServiceTest {
         Transaction__c deal = newDeal();
         Checklist__c groupB = checklistFor(deal.Id, 'B');
         List<Checklist_Item__c> items = TestDataFactory.createChecklistItems(5, groupB.Id, true);
-        Set<Id> itemIds = new Map<Id, Checklist_Item__c>(items).keySet();
+        // A COPY, NOT THE VIEW - see the FinalException note in the test below.
+        Set<Id> itemIds = new Set<Id>(new Map<Id, Checklist_Item__c>(items).keySet());
 
         Test.startTest();
         ChecklistOutcomeService.applyForCompletedItems(itemIds);
@@ -700,13 +701,27 @@ private class ChecklistOutcomeServiceTest {
     static void aPartiallyReadableBatchCountsOnlyTheShortfall() {
         // The mixed case, which neither of the two above reaches: some ids resolve and some do not.
         // A counter computed as "all or nothing" would read 0 or 6 here instead of 1.
+        //
+        // FIXED 2026-09-02 - THIS THREW `System.FinalException: Collection is read-only`.
+        // `new Map<Id, SObject>(list).keySet()` returns a READ-ONLY VIEW of the map, not a Set you
+        // own, so `.add()` on it throws at runtime. It compiles cleanly, and every sibling test got
+        // away with the same idiom purely because they only ITERATE the result. Copy it whenever
+        // the set is going to be mutated. The exact counts below are unchanged by the fix - a red
+        // test of this shape is exactly the one that gets quietly weakened into "asserts something
+        // non-zero", and that would stop it distinguishing the shortfall from an all-or-nothing bug.
         Transaction__c deal = newDeal();
         Checklist__c groupB = checklistFor(deal.Id, 'B');
         List<Checklist_Item__c> items = TestDataFactory.createChecklistItems(5, groupB.Id, true);
-        Set<Id> itemIds = new Map<Id, Checklist_Item__c>(items).keySet();
+        Set<Id> itemIds = new Set<Id>(new Map<Id, Checklist_Item__c>(items).keySet());
         Checklist_Item__c doomed = TestDataFactory.createChecklistItems(1, groupB.Id, true)[0];
         itemIds.add(doomed.Id);
         delete doomed;
+
+        // FIXTURE CONTROLS. Without these, a factory change that returned fewer rows would make
+        // the assertions below compare 0 against 0 and pass while measuring nothing.
+        Assert.areEqual(6, itemIds.size(), 'Six ids are asked for: five live plus one deleted');
+        Assert.areEqual(5, [SELECT COUNT() FROM Checklist_Item__c WHERE Id IN :itemIds],
+            'Exactly five of them still exist, so the shortfall under test is exactly one');
 
         Test.startTest();
         ChecklistOutcomeService.applyForCompletedItems(itemIds);

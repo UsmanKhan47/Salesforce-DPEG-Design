@@ -21,6 +21,13 @@ private class ChecklistMigrationDomainTest {
     private static final String GROUP_B = 'B. Earnest Money Wire';
     private static final String GROUP_H2 = 'H2. Tenant Interviews & Estoppels';
 
+    /**
+     * The A1 fixture subject. Carries the legacy (anti-fraud) marker because A1 is the
+     * wire-verification definition in defsForA - see that method for why both are required.
+     */
+    private static final String A1_WIRE_SUBJECT =
+        'Call title company to verbally verify wiring instructions (anti-fraud)';
+
     @isTest
     static void shouldProjectOneItemPerTask_WhenEveryCoordinateHasADefinition() {
         List<Task> tasks = new List<Task>{
@@ -352,10 +359,23 @@ private class ChecklistMigrationDomainTest {
         };
     }
 
-    /** @return Two definitions in group A. A2 has no Task in most fixtures, on purpose. */
+    /**
+     * @return Two definitions in group A. A2 has no Task in most fixtures, on purpose.
+     *
+     * 🔴 A1 IS THE WIRE-VERIFICATION DEFINITION, AND IT HAS TO BE. ChecklistMigrationDomain.compare
+     * emits a BLOCKING WIRE_ITEM_COUNT when NO definition in scope carries
+     * Is_Wire_Verification__c - because a deal with no wire item makes Wire_Open_Risks__c
+     * structurally zero on BOTH models, so the
+     * agreement is vacuous and the RISK 1 canary proves nothing. Four tests here failed on
+     * 2026-09-02 for exactly that reason: the fixture, not the code.
+     * ⚠ ITS SUBJECT MUST CARRY THE (anti-fraud) MARKER TOO. The reconciliation compares the
+     * legacy SUBJECT PARSE against the boolean field on the same row, so a def flagged as a wire
+     * item whose Task subject lacks the marker is a genuine WIRE_FLAG_MISMATCH - which is the
+     * canary firing correctly. The two must move together in any fixture.
+     */
     private static List<Transaction_Task_Def__mdt> defsForA() {
         return new List<Transaction_Task_Def__mdt>{
-            itemDef('A', 1, 'Open title', false, false, null, null),
+            itemDef('A', 1, A1_WIRE_SUBJECT, false, true, null, null),
             itemDef('A', 2, 'Receive critical dates from title company', false, false, null, null)
         };
     }
@@ -418,7 +438,7 @@ private class ChecklistMigrationDomainTest {
             ? 'Call title company to verbally verify wiring instructions (anti-fraud)'
             : (wireGroup
                 ? 'Send wire request to accounting with verified instructions'
-                : (sequence == 1 ? 'Open title' : 'Receive critical dates from title company'));
+                : (sequence == 1 ? A1_WIRE_SUBJECT : 'Receive critical dates from title company'));
         // 🔴 JSON.deserialize, NOT a field-assignment constructor. `IsClosed` is DERIVED from
         // `Status` and is not writeable, and `LastModifiedById` / `LastModifiedDate` are audit
         // fields that require "Set Audit Fields upon Record Creation". Assigning any of the three

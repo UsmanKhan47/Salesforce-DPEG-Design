@@ -155,6 +155,20 @@ private class TaskPrerequisiteServiceTest {
     private static final Integer MAX_QUERIES_AT_BULK = 8;
 
     /**
+     * Ceiling on TOTAL queries for the SMALL (two-Task) unblocked-update scenario. Derived:
+     *   1  this feature      (one before-update chunk)
+     * + 2  TaskRollupService (one after-update chunk, x2 since the Phase 4 counter guard)
+     * + 1  OnboardingTaskRollupService (the same statement touches both parents)
+     * + 6  slack for anything those two parent updates wake
+     *
+     * 🔴 SEPARATE FROM `MAX_QUERIES_AT_BULK`, AND THAT SEPARATION IS THE WHOLE POINT. This scenario
+     * was a bare literal `8` while the bulk one used its constant, so the 6 -> 8 correction made for
+     * the Phase 4 counter guard silently did not apply here. Two budgets that look alike are not
+     * alike; both are named now so a future change has to consider each on purpose.
+     */
+    private static final Integer MAX_QUERIES_AT_SMALL_UPDATE = 10;
+
+    /**
      * Ceiling on TOTAL DML statements across a 251-row completion. Derived:
      *   1  the caller's own update
      * + 2  TaskRollupService (1 Transaction__c update per after-update chunk)
@@ -693,15 +707,24 @@ private class TaskPrerequisiteServiceTest {
             'Completed', reloaded(checklistTasks[0].Id).Status,
             'An unblocked Transaction checklist item completes exactly as before'
         );
-        // COARSE CEILING, and deliberately so — `readCount == 0` above is the real proof, because it
+        // COARSE CEILING, and deliberately so - `readCount == 0` above is the real proof, because it
         // is the only counter this feature owns. This delta also carries TaskRollupService AND
         // OnboardingTaskRollupService (both parents are touched by the one statement) plus anything
         // their Transaction__c / Onboarding__c updates wake. It exists to catch a gross regression,
         // not to pin an exact number another module's change would break.
+        //
+        // 🔴 RAISED 8 -> 10 AND MOVED OFF A LITERAL, 2026-09-02. This site hardcoded `8` while the
+        // BULK site uses `MAX_QUERIES_AT_BULK` - so raising that constant for the Phase 4 dual-model
+        // counter guard (which added one `Transaction__c` read per `TaskRollupService.recalc`) did
+        // NOT move this one. The two look like the same budget and are not. Both are now named.
+        // ⚠ AND A GREEN RUN HERE TELLS YOU NOTHING ABOUT THE MARGIN. `queriesSpent` is interpolated
+        // ONLY into the FAILURE message, so a pass reports no number at all - the delta could be 3
+        // or 10 and this reads identically. If the headroom ever matters, assert a RANGE (a lower
+        // bound as well as this upper one) rather than trusting the green.
         Assert.isTrue(
-            queriesSpent <= 8,
-            'An update of two unblocked Tasks must stay inside the pre-existing rollup budget. Spent: '
-                + queriesSpent
+            queriesSpent <= MAX_QUERIES_AT_SMALL_UPDATE,
+            'An update of two unblocked Tasks must stay inside the pre-existing rollup budget. '
+                + 'Allowed ' + MAX_QUERIES_AT_SMALL_UPDATE + ', spent: ' + queriesSpent
         );
     }
 

@@ -107,6 +107,100 @@ private class ContentDocumentLinkSelectorTest {
         Assert.areEqual(BULK_ROWS, found.size(), 'All ' + BULK_ROWS + ' links to the entity are returned at bulk volume');
     }
 
+    // ═══════════════════════════════════════════════════════════════════════════════════════
+    // selectByLinkedEntityIds — the MANY-parent read, added 2026-09-02 for ChecklistCaptureService.
+    //
+    // 🔴 THIS METHOD HAD ZERO COVERAGE UNTIL NOW, AND THAT IS WHY IT MATTERS. The class carried
+    // tests for `selectByLinkedEntityId` (singular) only, so a payload containing the selector
+    // without this block would have sat at roughly 50% — a silent, zero-error coverage rollback,
+    // which is a shape this org has produced repeatedly.
+    //
+    // 🔴 CONTENT COST: 3 `ContentNote` rows for this whole block, spent one fact each —
+    //   2 — `spansEveryParentInOneQuery`: one document linked to TWO entities proves the read spans
+    //       parents; a second document on the second entity proves the caller can still tell them
+    //       apart. One row cannot establish either.
+    //   1 — `unlinkedParentIsAbsentNotZero`: a single linked parent beside an unlinked one.
+    //   0 — `nullAndEmptyShortCircuitWithoutQuerying`.
+    // A selector read behaves identically at 3 rows and at 251, and
+    // `.claude/rules/content-publication-rule.md` caps a read at 20 — so volume here would buy
+    // nothing against a real, shared, non-refundable cost. ⚠ Count the `insertNoteLinkedTo` calls
+    // before changing this figure; a wrong number in a QUOTA comment is the one that must not rot.
+    // ═══════════════════════════════════════════════════════════════════════════════════════
+
+    @isTest
+    static void selectByLinkedEntityIds_spansEveryParentInOneQuery() {
+        // 🔴 THE WHOLE REASON THE METHOD EXISTS. `ChecklistCaptureService` asks "does every C7/G6
+        // item in this completion batch have a document on file?" and must answer it in ONE query
+        // however many items the batch carries. A per-parent loop would still return the right
+        // rows, and only the query count would notice.
+        Account first = TestDataFactory.createAccount(true);
+        Account second = TestDataFactory.createAccount(true);
+        ContentNote shared = insertNoteLinkedTo(first.Id, 'Shared document');
+        insert new ContentDocumentLink(
+            ContentDocumentId = shared.Id, LinkedEntityId = second.Id,
+            ShareType = 'V', Visibility = 'AllUsers');
+        ContentNote secondOnly = insertNoteLinkedTo(second.Id, 'Second document');
+
+        Test.startTest();
+        Integer before = Limits.getQueries();
+        List<ContentDocumentLink> links = ContentDocumentLinkSelector.selectByLinkedEntityIds(
+            new Set<Id>{ first.Id, second.Id });
+        Integer spent = Limits.getQueries() - before;
+        Test.stopTest();
+
+        Assert.areEqual(1, spent, 'ONE query for both parents, never one per parent');
+        Assert.areEqual(3, links.size(), 'Both parents links come back in a single read');
+
+        // Grouped by parent, which is exactly what the caller does with the result.
+        Map<Id, Set<Id>> documentsByEntity = new Map<Id, Set<Id>>();
+        for (ContentDocumentLink link : links) {
+            if (!documentsByEntity.containsKey(link.LinkedEntityId)) {
+                documentsByEntity.put(link.LinkedEntityId, new Set<Id>());
+            }
+            documentsByEntity.get(link.LinkedEntityId).add(link.ContentDocumentId);
+        }
+        Assert.areEqual(new Set<Id>{ shared.Id }, documentsByEntity.get(first.Id),
+            'The first entity holds only the shared document');
+        Assert.areEqual(new Set<Id>{ shared.Id, secondOnly.Id }, documentsByEntity.get(second.Id),
+            'and the second holds both — so per-parent counts cannot cross-contaminate');
+    }
+
+    @isTest
+    static void selectByLinkedEntityIds_unlinkedParentIsAbsentNotZero() {
+        // 🔴 THE CONTRACT `ChecklistCaptureService.documentCountsByItem` RELIES ON. An unlinked
+        // parent must be ABSENT from the result, so a missing key reads as "no document on file"
+        // and the C7/G6 guard refuses. A row carrying a zero count would be a different contract.
+        Account linked = TestDataFactory.createAccount(true);
+        Account bare = TestDataFactory.createAccount(true);
+        insertNoteLinkedTo(linked.Id, 'Only document');
+
+        Test.startTest();
+        List<ContentDocumentLink> links = ContentDocumentLinkSelector.selectByLinkedEntityIds(
+            new Set<Id>{ linked.Id, bare.Id });
+        Test.stopTest();
+
+        Assert.areEqual(1, links.size(), 'Only the linked parent contributes a row');
+        Assert.areEqual(linked.Id, links[0].LinkedEntityId, 'and it is the linked one');
+    }
+
+    @isTest
+    static void selectByLinkedEntityIds_nullAndEmptyShortCircuitWithoutQuerying() {
+        // `ChecklistCaptureService` calls this on EVERY completion batch, and most batches contain
+        // no document item at all — so the empty case must not spend a query.
+        Test.startTest();
+        Integer before = Limits.getQueries();
+        List<ContentDocumentLink> fromNull =
+            ContentDocumentLinkSelector.selectByLinkedEntityIds(null);
+        List<ContentDocumentLink> fromEmpty =
+            ContentDocumentLinkSelector.selectByLinkedEntityIds(new Set<Id>());
+        Integer spent = Limits.getQueries() - before;
+        Test.stopTest();
+
+        Assert.areEqual(0, fromNull.size(), 'Null input returns an empty list, never null');
+        Assert.areEqual(0, fromEmpty.size(), 'Empty input returns an empty list');
+        Assert.areEqual(0, spent, 'and neither spends a query');
+    }
+
     /**
      * Inserts a ContentNote and links it to the supplied entity, matching
      * BrokerAssignmentController.addNote. Returns the note (its Id == its

@@ -17,6 +17,15 @@
  * ⚠ THIS IS NOW A CROSS-MODULE SELECTOR (Property Management + Transactions). Neither method may
  * be narrowed to one module's needs without checking the other.
  *
+ * 🔴 ANY PAYLOAD CARRYING THIS CLASS MUST NAME `ContentDocumentLinkSelectorTest` EXPLICITLY.
+ * Measured during the 2026-09-02 Phase 4 + Phase 5 pre-flight: the class was in the payload and its
+ * test class was NOT, because nothing in the deploy's own test list happened to reach
+ * `selectByLinkedEntityId` (singular) — only the new `selectByLinkedEntityIds` was exercised, via
+ * `ChecklistCaptureService`. That would have landed the class at roughly 50% coverage with ZERO
+ * errors reported: a silent coverage rollback, which is a shape this org has produced repeatedly.
+ * The class also cannot simply be dropped from such a payload, because `ChecklistCaptureService`
+ * calls the bulk method. ⇒ Named test class, every time, not "whatever the run happens to cover".
+ *
  * MODE — `WITH USER_MODE` (API 67). Design §3/§5 lists ContentDocumentLink as a
  * system/content selector run under USER_MODE *by intent*: the running user should
  * only see documents shared with them, so USER_MODE's sharing enforcement is the

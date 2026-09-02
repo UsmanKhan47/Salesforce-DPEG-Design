@@ -259,8 +259,15 @@ public with sharing class ChecklistMigrationService {
         Date today = Date.today();
 
         List<Checklist__c> checklistWrites = new List<Checklist__c>();
-        List<ChecklistMigrationDomain.PendingItem> pendingItems =
-            new List<ChecklistMigrationDomain.PendingItem>();
+        // 🔴 THE PENDING **CHECKLISTS**, NOT A FLAT ITEM LIST. `persist` must walk parent -> child
+        // to stamp `Checklist_Item__c.Checklist__c` after the parents are inserted, and a flattened
+        // list DESTROYS that association: `PendingItem` carries `dealId`, `letter` and `sequence`
+        // but no parent reference, so once flattened the only link to the parent is gone.
+        // ⚠ THIS IS THE DEFECT THE FIRST REAL DML RUN FOUND (2026-09-02): the flat loop compiled,
+        // three review rounds read it, and every deal would have failed
+        // `REQUIRED_FIELD_MISSING: [Checklist__c]` on a master-detail child with no parent.
+        List<ChecklistMigrationDomain.PendingChecklist> pendingGroups =
+            new List<ChecklistMigrationDomain.PendingChecklist>();
         Map<String, ChecklistMigrationDomain.PendingItem> itemByCoordinate =
             new Map<String, ChecklistMigrationDomain.PendingItem>();
         List<Transaction__c> dealWrites = new List<Transaction__c>();
@@ -311,8 +318,8 @@ public with sharing class ChecklistMigrationService {
             lastRunMigratedCount++;
             for (ChecklistMigrationDomain.PendingChecklist pending : projection.checklists) {
                 checklistWrites.add(pending.record);
+                pendingGroups.add(pending);
                 for (ChecklistMigrationDomain.PendingItem item : pending.items) {
-                    pendingItems.add(item);
                     itemByCoordinate.put(indexKey(item.dealId, item.letter, item.sequence), item);
                 }
             }
@@ -327,7 +334,7 @@ public with sharing class ChecklistMigrationService {
         }
 
         if (!checklistWrites.isEmpty()) {
-            persist(checklistWrites, pendingItems, itemByCoordinate, dealWrites);
+            persist(checklistWrites, pendingGroups, itemByCoordinate, dealWrites);
         }
         return results;
     }
@@ -337,13 +344,15 @@ public with sharing class ChecklistMigrationService {
      * across all of them.
      *
      * @param checklistWrites  Unsaved checklists.
-     * @param pendingItems     Unsaved items, each still pointing at its parent's unsaved record.
+     * @param pendingGroups    Unsaved checklists WITH their children, so the parent Id can be
+     *                         stamped onto each child after step 1. Never a flattened item list -
+     *                         see the comment at the stamping loop.
      * @param itemByCoordinate Index for resolving the prerequisite links after insert.
      * @param dealWrites       The guard flag plus the four counters, one row per migrated deal.
      */
     private static void persist(
         List<Checklist__c> checklistWrites,
-        List<ChecklistMigrationDomain.PendingItem> pendingItems,
+        List<ChecklistMigrationDomain.PendingChecklist> pendingGroups,
         Map<String, ChecklistMigrationDomain.PendingItem> itemByCoordinate,
         List<Transaction__c> dealWrites
     ) {
@@ -375,8 +384,24 @@ public with sharing class ChecklistMigrationService {
             Database.insert(checklistWrites, true, AccessLevel.SYSTEM_MODE);
 
             List<Checklist_Item__c> itemWrites = new List<Checklist_Item__c>();
-            for (ChecklistMigrationDomain.PendingItem pending : pendingItems) {
-                itemWrites.add(pending.record);
+            List<ChecklistMigrationDomain.PendingItem> pendingItems =
+                new List<ChecklistMigrationDomain.PendingItem>();
+            // 🔴 STAMP THE MASTER-DETAIL PARENT. Walk parent -> child; `Database.insert` above has
+            // populated `Id` on the very `Checklist__c` instances these groups hold, so the child
+            // link is available in memory with no re-query.
+            // ⚠ THE CLASS HEADER STATES THIS CONTRACT ("insert `Checklist__c` - items are
+            // master-detail children and need parent Ids") AND STEP 2 DID NOT HONOUR IT until
+            // 2026-09-02. `ChecklistMigrationDomain.buildItem` deliberately does NOT set
+            // `Checklist__c` - it builds an unsaved parent that has no Id yet - so the stamp MUST
+            // happen here, after step 1 and before step 2. A flattened item list cannot do it:
+            // `PendingItem` has no parent reference, and flattening is exactly where the
+            // association was being lost. Every deal failed `REQUIRED_FIELD_MISSING: [Checklist__c]`.
+            for (ChecklistMigrationDomain.PendingChecklist pendingGroup : pendingGroups) {
+                for (ChecklistMigrationDomain.PendingItem pending : pendingGroup.items) {
+                    pending.record.Checklist__c = pendingGroup.record.Id;
+                    pendingItems.add(pending);
+                    itemWrites.add(pending.record);
+                }
             }
             if (!itemWrites.isEmpty()) {
                 // STEP 2 — `Blocked_By__c` is blank on every one of these by construction:

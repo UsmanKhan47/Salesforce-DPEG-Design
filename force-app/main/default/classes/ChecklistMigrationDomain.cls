@@ -663,6 +663,15 @@ public with sharing class ChecklistMigrationDomain {
         Id dealId
     ) {
         Checklist_Item__c item = new Checklist_Item__c();
+        // 🔴 `Checklist__c` (the master-detail parent) IS DELIBERATELY NOT SET HERE, AND THE OTHER
+        // HALF OF THAT CONTRACT LIVES IN `ChecklistMigrationService.persist`. The parent is unsaved
+        // at projection time and has no Id, so the stamp can only happen AFTER step 1 inserts it -
+        // which `persist` does by walking `PendingChecklist.items`, parent to child.
+        // ⚠ DO NOT "FIX" THIS BY FLATTENING THE ITEMS ANYWHERE. `PendingItem` carries `dealId`,
+        // `letter` and `sequence` but NO parent reference; `PendingChecklist.items` is the only
+        // link. Flattening is precisely where the association was lost on 2026-09-02, and the
+        // result was `REQUIRED_FIELD_MISSING: [Checklist__c]` on every deal - caught by the first
+        // real DML run, not by three rounds of review.
         item.Subject__c = itemDef.Subject__c;
         item.Sequence__c = legacyTask.Task_Sequence__c;
         item.Owner_Label__c = String.isNotBlank(legacyTask.Task_Owner_Label__c)

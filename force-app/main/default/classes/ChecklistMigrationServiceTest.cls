@@ -101,6 +101,50 @@ private class ChecklistMigrationServiceTest {
     }
 
     /**
+     * 🔴 REGRESSION, 2026-09-02. `Checklist_Item__c.Checklist__c` is a MASTER-DETAIL parent and was
+     * never stamped: `buildItem` correctly leaves it blank (the parent is unsaved and has no Id at
+     * projection time) and `persist` flattened the pending items, discarding the only parent
+     * reference. Every deal failed `REQUIRED_FIELD_MISSING: [Checklist__c]`. It compiled, and three
+     * review rounds read past it.
+     * ⚠ The existing tests could not catch it: `migratesOneChecklistPerGroupAndOneItemPerTask`
+     * counts rows and `stampsPrerequisiteLinkOnASecondPass` reads a DIFFERENT lookup. This asserts
+     * the PARENTAGE itself, per item, and that each item hangs under the RIGHT group - a stamp that
+     * pointed every child at one parent would pass a mere not-null check.
+     */
+    @isTest
+    static void stampsTheMasterDetailParentOnEveryMigratedItem() {
+        Transaction__c deal = dealAt(0);
+        insertStandardTasks(deal.Id);
+        applyDefinitionOverrides();
+
+        Test.startTest();
+        List<ChecklistMigrationService.MigrationResult> results =
+            ChecklistMigrationService.migrate(new List<Id>{ deal.Id });
+        Test.stopTest();
+
+        Assert.areEqual('MIGRATED', results[0].outcome, discrepancyText(results[0]));
+        Map<Id, String> letterByChecklistId = new Map<Id, String>();
+        for (Checklist__c checklist : [
+            SELECT Id, Group_Letter__c FROM Checklist__c WHERE Transaction__c = :deal.Id
+        ]) {
+            letterByChecklistId.put(checklist.Id, checklist.Group_Letter__c);
+        }
+        Assert.areEqual(2, letterByChecklistId.size(), 'Two groups were present in the fixture.');
+
+        List<Checklist_Item__c> items = itemsFor(deal.Id);
+        Assert.areEqual(4, items.size(), 'All four items must have been inserted.');
+        for (Checklist_Item__c item : items) {
+            Assert.isNotNull(item.Checklist__c,
+                'Every item needs its master-detail parent. A null here is the exact defect: the '
+                + 'insert fails REQUIRED_FIELD_MISSING and M1 fails on every deal.');
+            Assert.areEqual(item.Checklist__r.Group_Letter__c,
+                letterByChecklistId.get(item.Checklist__c),
+                'And it must hang under the RIGHT group - stamping every child with one parent Id '
+                + 'would satisfy a not-null check while silently merging the whole checklist.');
+        }
+    }
+
+    /**
      * 🔴 THE WIRE-GATE PASSAGE, POSITIVE HALF. The link is written on a SECOND pass and the gate
      * ALLOWS it, because gaining a first link is not a change under
      * `ChecklistItemPrerequisiteService.linkChanged`. If branch (B) were reachable here this save

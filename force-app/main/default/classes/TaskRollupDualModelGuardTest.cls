@@ -63,16 +63,27 @@ private class TaskRollupDualModelGuardTest {
     @isTest
     static void shouldSkipDeal_WhenChecklistModelHasClaimedIt() {
         Transaction__c deal = unclaimedDeal();
-        insertClosedChecklistTask(deal.Id);
+        // 🔴 CLAIM FIRST, THEN INSERT. Reversing these two lines is why this test failed on
+        // 2026-09-02, and the failure message pointed at the GUARD rather than at the fixture.
+        // `insertClosedChecklistTask` fires TaskRollupTrigger, and on a still-unclaimed deal the
+        // guard correctly lets the rollup through and writes Tasks_Complete__c = 1. `claim` does
+        // not zero it, so the assertion below then read 1 and looked exactly like a guard that had
+        // failed to skip. The guard was never wrong. Claiming first means the ONLY save that could
+        // move the counter already sees the claim.
         claim(deal.Id);
+        insertClosedChecklistTask(deal.Id);
 
         Test.startTest();
         TaskRollupService.recalc(new Set<Id>{ deal.Id });
         Test.stopTest();
 
-        Assert.areEqual(0, reloaded(deal.Id).Tasks_Complete__c,
+        // ⚠ NULL, NOT ZERO, AND THAT IS THE POINT. The guard means the legacy rollup never wrote
+        // this deal AT ALL, and TestDataFactory does not seed the counters - so the field is still
+        // null. Asserting 0 here reads as "written, with the value 0", which is a DIFFERENT and
+        // weaker claim, and it is what produced the misleading "Expected: 0, Actual: null".
+        Assert.isNull(reloaded(deal.Id).Tasks_Complete__c,
             'A CLAIMED deal belongs to ChecklistRollupService. The legacy rollup must not write '
-            + 'its counters - that is the last-writer-wins race the tiebreak exists to stop.');
+            + 'its counters AT ALL - that is the last-writer-wins race the tiebreak exists to stop.');
         Assert.areEqual(1, TaskRollupService.lastRunSkippedDealCount,
             'The guard should have reported exactly one skipped deal.');
     }
@@ -87,8 +98,15 @@ private class TaskRollupDualModelGuardTest {
     @isTest
     static void shouldCostOneQueryAndNoDml_WhenEveryDealIsClaimed() {
         Transaction__c deal = unclaimedDeal();
-        insertClosedChecklistTask(deal.Id);
+        // 🔴 CLAIM FIRST, THEN INSERT. Reversing these two lines is why this test failed on
+        // 2026-09-02, and the failure message pointed at the GUARD rather than at the fixture.
+        // `insertClosedChecklistTask` fires TaskRollupTrigger, and on a still-unclaimed deal the
+        // guard correctly lets the rollup through and writes Tasks_Complete__c = 1. `claim` does
+        // not zero it, so the assertion below then read 1 and looked exactly like a guard that had
+        // failed to skip. The guard was never wrong. Claiming first means the ONLY save that could
+        // move the counter already sees the claim.
         claim(deal.Id);
+        insertClosedChecklistTask(deal.Id);
 
         Test.startTest();
         TaskRollupService.recalc(new Set<Id>{ deal.Id });
@@ -106,9 +124,12 @@ private class TaskRollupDualModelGuardTest {
         List<Transaction__c> deals = allDeals();
         Transaction__c legacy = deals[0];
         Transaction__c migrated = deals[1];
+        // Claim BEFORE inserting the migrated deal task - see the note in
+        // shouldSkipDeal_WhenChecklistModelHasClaimedIt. The legacy deal is deliberately NOT
+        // claimed, so its task DOES roll up, which is the control half of this pairing.
+        claim(migrated.Id);
         insertClosedChecklistTask(legacy.Id);
         insertClosedChecklistTask(migrated.Id);
-        claim(migrated.Id);
 
         Test.startTest();
         TaskRollupService.recalc(new Set<Id>{ legacy.Id, migrated.Id });
@@ -116,8 +137,9 @@ private class TaskRollupDualModelGuardTest {
 
         Assert.areEqual(1, reloaded(legacy.Id).Tasks_Complete__c,
             'The unclaimed half of a mixed set must still roll up.');
-        Assert.areEqual(0, reloaded(migrated.Id).Tasks_Complete__c,
-            'The claimed half of a mixed set must be left alone.');
+        Assert.isNull(reloaded(migrated.Id).Tasks_Complete__c,
+            'The claimed half of a mixed set must be left alone - NULL, never written, not '
+            + 'written-as-zero. See the note in shouldSkipDeal_WhenChecklistModelHasClaimedIt.');
         Assert.areEqual(1, TaskRollupService.lastRunSkippedDealCount,
             'Exactly one deal in the mixed set was claimed.');
     }
@@ -191,8 +213,10 @@ private class TaskRollupDualModelGuardTest {
             'All 251 Tasks should have been inserted.');
         Assert.areEqual(126, reloaded(legacy.Id).Tasks_Complete__c,
             'The unclaimed deal took the even indexes: 126 of 251.');
-        Assert.areEqual(0, reloaded(migrated.Id).Tasks_Complete__c,
-            'The claimed deal must be untouched however many Tasks were saved at once.');
+        Assert.isNull(reloaded(migrated.Id).Tasks_Complete__c,
+            'The claimed deal must be untouched however many Tasks were saved at once - and '
+            + 'UNTOUCHED means null, not zero. This assertion read "Expected: 0, Actual: null" '
+            + 'on 2026-09-02, which is the guard working, not failing.');
         // The guard read is once per recalc call, never once per deal or once per Task.
         Assert.areEqual(2, TaskRollupService.lastRunQueryCount,
             'Cost must be CONSTANT per trigger chunk - one guard read plus one Task read - and '

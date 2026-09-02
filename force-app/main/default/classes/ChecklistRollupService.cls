@@ -88,6 +88,14 @@
  *                                      any cascade estimate.
  * The previous "2 and 2" counted neither the guard read nor the trigger path's own mapping read.
  *
+ * 🔴 ANY PAYLOAD CARRYING THIS CLASS MUST NAME `ChecklistRollupServiceTest` EXPLICITLY. Measured
+ * during the 2026-09-02 Phase 4 + Phase 5 pre-flight: this class was in the payload and its test
+ * class was not, because the rollup is SUPPRESSED on both of the paths the payload's own tests
+ * exercise (the fan-out and the migration both set the flag and write their counters themselves).
+ * So the coverage a deploy "happens to get" for this class is close to nothing, with zero errors
+ * reported — a silent coverage rollback. Do not rely on incidental coverage for a class whose main
+ * production path is deliberately switched off during bulk operations.
+ *
  * @see force-app/main/default/classes/ChecklistItemTriggerHandler.cls
  * @see force-app/main/default/classes/ChecklistItemDomain.cls (the single definition of done)
  * @see agent-output/design-transaction-fsd-gaps.md §5.3, §8
