@@ -130,10 +130,16 @@ public with sharing class OpportunityReviewTriggerHandler extends TriggerHandler
         // Property_Asset__c is not a REVIEW child and is not part of the deal tree — it is the
         // PROPERTY MANAGEMENT HANDOFF, the same argument ContractExecutionService won above.
         // 🔴 And it lives on THIS trigger rather than in the Transaction_Complete_Close flow
-        // because StageAdvanceService.NEXT_STAGE maps BOTH 'Under Contract (PSA)' and
-        // 'About to Close' to
-        // 'Closed Won', so a deal driver can close a deal with no Transaction__c at all;
-        // building it in that flow would have missed half the closes, invisibly.
+        // because Closed Won is reachable without a Transaction ever existing.
+        // ⚠ AMENDED 2026-09-02. This comment used to read "…because StageAdvanceService.NEXT_STAGE
+        // maps BOTH 'Under Contract (PSA)' and 'About to Close' to 'Closed Won', so a deal driver
+        // can close a deal with no Transaction__c at all; building it in that flow would have
+        // missed half the closes, invisibly." THAT PAIR IS GONE — PSA was repointed to
+        // 'About to Close' when Transaction_Closed_Before_Closed_Won landed. The conclusion holds
+        // on a narrower base (API, Data Loader, list view, inline edit, the Path, and insert-at-
+        // Closed-Won all bypass both the map and the ISCHANGED-scoped rules), and the full
+        // re-argument is in PropertyAssetService's header. DO NOT MOVE THIS SERVICE on the
+        // strength of the repoint.
         PropertyAssetService.ensureOnClosedWon(opps, priorById);
         // Entering ANY CLAIM STAGE claims the deal's SharePoint folder tree — moved 2026-08-27
         // from 'Closed Won' alone to the four-stage CLAIM_STAGES set.

@@ -44,14 +44,36 @@ const RELATED_LIST_ID = 'Disposition_Offers__r';
  * label token that was dropped — so the field is not merely unrendered, it is no longer requested,
  * which also drops an FLS gate this quick action no longer needs. 🔴 THE FIELD ITSELF IS UNTOUCHED
  * and remains load-bearing on the offer layout, on `c/dispositionLogOfferModal`'s form (whose suite
- * PINS its presence) and on the approval page.
+ * PINS its presence) and on the approval page. 🔴 IT DID NOT COME BACK ON 2026-09-02 EITHER — the
+ * three fields added that day are the DEAL TERMS, not the financing type, and decision D4 stands.
+ *
+ * ── 🔴 THE THREE DEAL TERMS, ADDED 2026-09-02 (BA story 35, decision C) ─────────────────────────
+ * `Earnest_Money_Proposed__c`, `Due_Diligence_Days__c` and `Closing_Period_Days__c` join the list.
+ *
+ * 🔴 THE DEFECT THIS CLOSES IS AN INVERSION, NOT AN OMISSION, AND IT IS WORTH STATING PRECISELY.
+ * All three fields were ALREADY on `Disposition_Offer__c.Offer_Selection_Approval`'s
+ * `approvalPageFields` (measured 2026-09-02, lines 99-101 of that approval process) and already
+ * granted read in BOTH `DPEG_Disposition_View` and `DPEG_Disposition_Edit`. So the APPROVER — who
+ * is being asked to ratify a choice already made — could see the terms, while the person actually
+ * CHOOSING which offer to put forward could not. Two bids at the same price are not the same bid
+ * if one closes in 30 days and the other in 90; this screen is where that decision is taken.
+ *
+ * ✅ ZERO PERMISSION WORK. Because both sets already grant all three, adding them here does not
+ * open a new FLS gate on this quick action for either disposition persona — unlike the buyer and
+ * financing fields the T-NO-BUYER / T-NO-FINANCING pins keep out, whose absence from this list IS
+ * the gate. ⚠ That is a fact about TODAY'S grants, not a general licence: any FURTHER field added
+ * here must have its grants checked in both sets first, because `getRelatedListRecords` fails the
+ * WHOLE read for a user missing any requested field, so one ungranted field empties the picker.
  */
 const FIELDS = [
     'Disposition_Offer__c.Id',
     'Disposition_Offer__c.Name',
     'Disposition_Offer__c.Broker__r.Name',
     'Disposition_Offer__c.Offer_Amount__c',
-    'Disposition_Offer__c.Offer_Date__c'
+    'Disposition_Offer__c.Offer_Date__c',
+    'Disposition_Offer__c.Earnest_Money_Proposed__c',
+    'Disposition_Offer__c.Due_Diligence_Days__c',
+    'Disposition_Offer__c.Closing_Period_Days__c'
 ];
 
 /**
@@ -65,6 +87,35 @@ const FIELDS = [
  * opening with a bare separator.
  */
 const NO_BROKER = 'Broker not recorded';
+
+/**
+ * A whole-number day count as a cell, or an em dash when there is none.
+ *
+ * ⚠ LOCAL, NOT AN EXPORT ADDED TO `c/utils`, AND THAT IS DELIBERATE. `c/utils` already carries
+ * `formatDaysToMarket`, which renders `45d` — a suffix that would read as noise under a column
+ * already headed "DD Days", and whose byte-compatibility contract forbids changing it for the two
+ * BOV surfaces that depend on it (that module's header states the rule: divergent variants each
+ * keep their own behaviour rather than being collapsed). One caller, one behaviour, no shared
+ * function to drift.
+ *
+ * ⚠ `== null` RATHER THAN A FALSY TEST, copied from `formatDaysToMarket`'s own reasoning: a
+ * genuine `0` is meaningful here — an offer with a 0-day due-diligence period is a real, and
+ * notably aggressive, term — and a falsy test would print `—` for it and say something false about
+ * the bid on the screen that chooses between bids.
+ *
+ * ⚠ APEX/UI-API NUMBERS ARRIVE AS NUMBERS OR STRINGS depending on scale, so this returns
+ * `String(n)` rather than assuming either. Both fields are `scale = 0`, so no rounding is applied
+ * and none should be added — a fabricated decimal would be a term nobody agreed.
+ *
+ * @param {number|string|null|undefined} n Raw day count.
+ * @returns {string} e.g. `'30'`, `'0'`, or `'—'` when null/undefined/blank.
+ */
+function formatDays(n) {
+    if (n == null || n === '') {
+        return '—';
+    }
+    return String(n);
+}
 
 /** Fallback when the Apex error carries no readable body. */
 const GENERIC_ERROR = 'The offer could not be selected.';
@@ -134,6 +185,27 @@ export default class DispositionOfferSelect extends LightningElement {
                     f.Offer_Amount__c ? f.Offer_Amount__c.value : null
                 );
                 const date = formatLongDate(f.Offer_Date__c ? f.Offer_Date__c.value : null);
+                // ── THE THREE DEAL TERMS (2026-09-02, BA story 35) ────────────────────────────
+                // 🔴 EARNEST MONEY USES `formatExactCurrency`, NOT `formatMillions` AND NOT A
+                // `lightning-formatted-number`, FOR THE SAME REASON `amount` DOES ONE LINE ABOVE.
+                // It is a Currency field on the screen where DPEG picks the winning bid, and the
+                // live UAT defect this bundle exists to have fixed was two distinct amounts
+                // ($1,850,000 and $1,860,000) BOTH rendering `$1.9M`. Any abbreviation has a
+                // collision distance; an exact figure has none. It also has to be a TEXT NODE this
+                // bundle's own suite can read — a `lightning-formatted-number` renders inside a
+                // stub under sfdx-lwc-jest and every assertion about it would go vacuous.
+                // ⚠ ALL THREE RENDER AN EM DASH WHEN NULL, never the literal string "undefined"
+                // and never `0`. A missing term is a term that was not agreed, and on this screen
+                // printing `0` for it would be a false statement about the bid.
+                const earnest = formatExactCurrency(
+                    f.Earnest_Money_Proposed__c ? f.Earnest_Money_Proposed__c.value : null
+                );
+                const ddDays = formatDays(
+                    f.Due_Diligence_Days__c ? f.Due_Diligence_Days__c.value : null
+                );
+                const closingDays = formatDays(
+                    f.Closing_Period_Days__c ? f.Closing_Period_Days__c.value : null
+                );
                 // The offer's AutoNumber, falling back to the record Id. See the uniqueness
                 // argument below — the Id fallback is what keeps the invariant true even in the
                 // unreachable case where `Name` is absent, and it also means neither the Offer
@@ -145,6 +217,9 @@ export default class DispositionOfferSelect extends LightningElement {
                     amount: amount,
                     date: date,
                     offerRef: offerRef,
+                    earnest: earnest,
+                    ddDays: ddDays,
+                    closingDays: closingDays,
                     // ══════════════════════════════════════════════════════════════════════════
                     // 🔴 THE COMPOSED ONE-LINE DESCRIPTION SURVIVES THE MOVE TO A TABLE — AS THE
                     //    RADIO'S `aria-label`. IT IS NOT A LEFTOVER.
@@ -188,6 +263,25 @@ export default class DispositionOfferSelect extends LightningElement {
                     // (UAT: "No need to show financing not started"), and it did not return as a
                     // fifth COLUMN either. It never contributed to uniqueness — a picklist of ~4
                     // values across a handful of rows.
+                    //
+                    // 🔴 AND THE THREE DEAL TERMS ADDED ON 2026-09-02 ARE DELIBERATELY **NOT** IN
+                    // THIS STRING. THIS LINE IS BYTE-IDENTICAL TO WHAT IT WAS BEFORE THAT CHANGE.
+                    // The obvious move — "the table gained three columns, so the accessible name
+                    // should gain three tokens" — is wrong twice over:
+                    //   1. `aria-label` is a UNIQUENESS CONTRACT (see above), and it is already
+                    //      satisfied by the unconditional AutoNumber. Appending
+                    //      "— $50,000 · 30 · 60" adds nothing a screen-reader user can act on at
+                    //      the moment of choosing a radio, and makes an already-long announcement
+                    //      unreadable.
+                    //   2. THE TERMS ARE STILL ANNOUNCED. They are ordinary table cells with
+                    //      `<th scope="col">` headers and a `<th scope="row">` on each row, so a
+                    //      screen reader reads them WITH their column names when the user moves
+                    //      through the table — which is strictly better than a positional token
+                    //      inside a control's name. The `aria-label` exists because a radio in a
+                    //      cell would otherwise announce as an unnamed control, not because the
+                    //      table is inaccessible.
+                    // ⚠ THE SUITE PINS THIS STRING EXACTLY (T-UNIQUE, and the missing-fields
+                    // case). If you change it, you are changing a contract, not formatting.
                     ariaLabel: `${broker} — ${amount} · ${date} · ${offerRef}`
                 };
             });
@@ -222,8 +316,8 @@ export default class DispositionOfferSelect extends LightningElement {
      * screen that says "ready" with no visible choice. Binding it makes the DOM a projection of
      * `selectedOfferId`, which is also the value that reaches Apex.
      *
-     * @returns {Array<object>} `{ id, broker, amount, date, offerRef, ariaLabel, selected,
-     *   rowClass }` per offer, in the order LDS returned them.
+     * @returns {Array<object>} `{ id, broker, amount, date, offerRef, earnest, ddDays,
+     *   closingDays, ariaLabel, selected, rowClass }` per offer, in the order LDS returned them.
      */
     get offerRows() {
         return (this._offers || []).map((row) => {

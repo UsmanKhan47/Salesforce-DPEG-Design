@@ -4,6 +4,9 @@
  *   - Underwriting_Approved_Before_LOI (blocks LOI entry until UW_Approved__c)
  *   - Approved_LOI_Before_PSA          (blocks PSA entry until an approved LOI is in place)
  *   - Contract_Signed_Before_Closed_Won (blocks Closed Won entry until Contract_Signed__c)
+ *   - Transaction_Closed_Before_Closed_Won (blocks Closed Won entry unless the deal owns at least
+ *                                       one Transaction and none of them is still open — added
+ *                                       2026-09-02, FAIL-CLOSED by explicit user decision)
  *   - Completed_LOI_Before_PSA         (blocks PSA entry until the primary LOI's OWN Stage__c is
  *                                       'Signed' — added 2026-08-12; the value was 'Completed'
  *                                       until observation 5 renamed the acquisition LOI sequence
@@ -229,6 +232,9 @@ private class StageApprovalGatesTest {
         Opportunity o = newOpp('About to Close');
         insert o;
         TestDataFactory.signPrimaryNda(o); // isolate: Closed Won entry is ALSO NDA-gated
+        // isolate: and, since 2026-09-02, transaction-gated. Without this the assertion below
+        // could read a message stack containing BOTH refusals.
+        TestDataFactory.markTransactionClosed(o);
 
         Boolean blocked = false;
         try {
@@ -246,5 +252,247 @@ private class StageApprovalGatesTest {
         System.assertEquals('About to Close',
             [SELECT StageName FROM Opportunity WHERE Id = :o.Id].StageName,
             'A rejected save must leave the stage untouched');
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════════════════════
+    // Transaction_Closed_Before_Closed_Won (added 2026-09-02) — THE FAIL-CLOSED GATE
+    //
+    // 🔴 THESE THREE TESTS ARE THE ONLY PIN ON A DECISION THAT CHANGES ROUGHLY HALF OF TODAY'S
+    // CLOSES, AND THE MIDDLE ONE IS THE ONE THAT WOULD BE OMITTED.
+    // The rule fails CLOSED: a deal with NO Transaction at all cannot reach Closed Won. That was
+    // an explicit user decision taken with the consequence stated — `StageAdvanceService.cls`
+    // records that "half the closes carry no Transaction__c at all", and measured on `usman-dpeg`
+    // 2026-09-02, 3 of the 5 live Closed Won deals had none. The three states the two flags span
+    // (see DealTransactionGateService's header) need one test each, because a rule written with
+    // only the "open transaction" clause would pass the first and third and silently fail open on
+    // the second — which is exactly the population the user is worried about.
+    //
+    // ⚠ THE FIXTURES SET THE FLAGS DIRECTLY rather than creating a Transaction__c. The flags ARE
+    // the rule's inputs; how they got their values is `DealTransactionGateServiceTest`'s subject,
+    // not this class's. Creating a real Transaction here would drag in the 82-task Day-0 fan-out
+    // for no gain.
+    // ═════════════════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * The state fail-closed exists for: no Transaction at all, both flags false.
+     *
+     * 🔴 THE FIXTURE STAGE IS `'Under Contract (PSA)'` AND IT CANNOT BE `'About to Close'`. That
+     * looks like the natural choice and it silently destroys the test: inserting an Opportunity AT
+     * `'About to Close'` runs `ContractExecutionService.openTransactionsOnAboutToClose`, whose
+     * entry test is `prior == null || prior.StageName != ABOUT_TO_CLOSE` — so an INSERT at that
+     * stage counts as entering it and AUTO-CREATES a Transaction. The deal then has one, the
+     * precondition below reads true, and the "no transaction at all" case is never exercised.
+     * MEASURED: validate `0Afiw000000VCMgCAO`, 2026-09-02, where this method failed on its own
+     * precondition for exactly that reason.
+     *
+     * `'Under Contract (PSA)'` creates a Contract Review on insert but no Transaction, and rank 6
+     * to rank 8 is forward, so `No_Backward_Stage_Movement` allows the hop. It is also a real
+     * route: after the 2026-09-02 `NEXT_STAGE` repoint no BUTTON goes PSA -> Closed Won, but the
+     * API, Data Loader, a list view and the Path all still can, which is precisely the population
+     * this gate has to refuse.
+     */
+    @isTest
+    static void transactionGate_blocksClosedWonWhenTheDealHasNoTransactionAtAll() {
+        Opportunity o = newOpp('Under Contract (PSA)');
+        insert o;
+        TestDataFactory.signPrimaryNda(o); // isolate: Closed Won entry is ALSO NDA-gated
+        TestDataFactory.signContract(o);   // isolate: and contract-gated
+
+        // WITH SYSTEM_MODE, not decoration: a field with zero FieldPermissions rows is ABSENT
+        // from the running user's schema, and a plain SELECT throws "No such column" even as an
+        // administrator. Measured on validate 0Afiw000000VDSPCA4, 2026-09-02.
+        Opportunity readBack = [
+            SELECT Has_Open_Transaction__c, Has_Closed_Transaction__c
+            FROM Opportunity WHERE Id = :o.Id
+            WITH SYSTEM_MODE
+        ];
+        Assert.isFalse(readBack.Has_Open_Transaction__c,
+            'Precondition: a deal that never opened a Transaction reads false');
+        Assert.isFalse(readBack.Has_Closed_Transaction__c, 'and false');
+
+        Boolean blocked = false;
+        try {
+            o.StageName = 'Closed Won';
+            update o;
+        } catch (DmlException e) {
+            blocked = true;
+            Assert.isTrue(e.getMessage().contains('until its transaction is closed'),
+                'A deal with no Transaction must surface the TRANSACTION message specifically — a '
+                + 'generic "something threw" would also pass if one of the other four Closed Won '
+                + 'rules fired, and the other four are satisfied above precisely so they cannot. '
+                + 'Got: ' + e.getMessage());
+        }
+        Assert.isTrue(blocked,
+            '🔴 FAIL-CLOSED: a deal with NO Transaction must not reach Closed Won. If this goes '
+            + 'green-and-not-blocked the rule was written fail-OPEN, which leaves exactly the '
+            + 'population this feature exists to stop still able to close.');
+
+        Assert.areEqual('Under Contract (PSA)',
+            [SELECT StageName FROM Opportunity WHERE Id = :o.Id].StageName,
+            'A rejected save must leave the stage untouched');
+    }
+
+    /** The state everyone thinks of first: a Transaction exists and is still open. */
+    @isTest
+    static void transactionGate_blocksClosedWonWhileATransactionIsStillOpen() {
+        Opportunity o = newOpp('About to Close');
+        insert o;
+        TestDataFactory.signPrimaryNda(o);
+        TestDataFactory.signContract(o);
+        // System mode for the same reason the SELECT above needs it — a bare update throws
+        // "fields being inaccessible on Sobject Opportunity" while the flags carry no FLS.
+        Database.update(new Opportunity(
+            Id = o.Id, Has_Open_Transaction__c = true, Has_Closed_Transaction__c = false),
+            true, AccessLevel.SYSTEM_MODE);
+
+        Boolean blocked = false;
+        try {
+            o.StageName = 'Closed Won';
+            update o;
+        } catch (DmlException e) {
+            blocked = true;
+            Assert.isTrue(e.getMessage().contains('until its transaction is closed'),
+                'An open transaction must surface the transaction message, got: ' + e.getMessage());
+        }
+        Assert.isTrue(blocked, 'A deal whose transaction is still open must not close');
+    }
+
+    /**
+     * The positive control, and it is not optional: without it every assertion above would still
+     * pass if the rule refused Closed Won UNCONDITIONALLY.
+     */
+    @isTest
+    static void transactionGate_allowsClosedWonOnceEveryTransactionIsClosed() {
+        Opportunity o = newOpp('About to Close');
+        insert o;
+        TestDataFactory.signPrimaryNda(o);
+        TestDataFactory.signContract(o);
+        TestDataFactory.markTransactionClosed(o);
+
+        o.StageName = 'Closed Won';
+        update o; // must NOT throw
+
+        Assert.areEqual('Closed Won',
+            [SELECT StageName FROM Opportunity WHERE Id = :o.Id].StageName,
+            'A deal whose every Transaction is closed closes normally — the gate is a gate, not '
+            + 'a wall');
+    }
+
+    /**
+     * 🔴 THE MULTI-TRANSACTION INVARIANT: A DEAL CLOSES WHEN ITS **LAST** TRANSACTION CLOSES, AND
+     * NOT BEFORE — AND CLOSING AN EARLIER ONE IS A CLEAN, SUCCESSFUL SAVE.
+     *
+     * ═══ THIS METHOD REPLACES A REFUSAL-ERA ASSERTION. DO NOT "RESTORE" THE OLD ONE. ═══
+     * Until 2026-09-02 this method was `transactionGate_closingOneOfTwoTransactions_isRefusedAnd
+     * RollsBack`, and it asserted the OPPOSITE of what is asserted below: that closing the first
+     * of two Transactions was REFUSED and rolled the user's Transaction save back. That was an
+     * accurate description of the code at the time and it was pinned deliberately, because
+     * `flows/Transaction_Complete_Close` closed the parent whenever ANY Transaction reached
+     * `Status__c = 'Closed'` without looking at the deal's other Transactions: on a two-Transaction
+     * deal the flow attempted `Closed Won` while `Has_Open_Transaction__c` was still true, the new
+     * rule refused it, and — because the flow runs inside the Transaction's own save — the refusal
+     * came back as `CANNOT_EXECUTE_FLOW_TRIGGER` and undid the user's edit. The old method's own
+     * failure message named the successor condition: *"if this ever passes, either the flow gained
+     * an open-transaction filter (good …)"*.
+     *
+     * 🔴 IT GAINED EXACTLY THAT FILTER, ON PURPOSE, AS AN EXPLICIT USER ACCEPTANCE CRITERION.
+     * `flows/Transaction_Complete_Close` now runs `Get_Open_Sibling_Transactions` (any OTHER
+     * Transaction on the same Opportunity not yet `Closed`) into the `No_Open_Sibling_Transactions`
+     * decision, and only the "no open siblings" outcome reaches `Close_Opportunity`. On the open-
+     * sibling branch the flow ENDS without touching the Opportunity at all, so
+     * `Transaction_Closed_Before_Closed_Won` never evaluates on that save and there is nothing to
+     * roll back. ⚠ THE GUARD LIVES IN THE FLOW, NOT IN THE VALIDATION RULE AND NOT IN
+     * `DealTransactionGateService` — the rule is unchanged and still refuses `Closed Won` while a
+     * Transaction is open (`transactionGate_blocksClosedWonWhileATransactionIsStillOpen` above
+     * still pins that, and must keep passing). Deleting this method instead of inverting it would
+     * have dropped the only coverage of a user-visible behaviour that was just deliberately
+     * changed, leaving nothing to catch a silent revert of the flow.
+     *
+     * The two halves below are BOTH load-bearing and neither alone is sufficient:
+     *   - Act 1 asserts the deal is still open AND the Transaction save COMMITTED. Asserting only
+     *     the stage would pass even if the save had rolled back (the deal would be untouched
+     *     either way) — the committed `Status__c = 'Closed'` is the half that proves the
+     *     `CANNOT_EXECUTE_FLOW_TRIGGER` era is over.
+     *   - Act 2 asserts the deal DOES close on the last one. Without it, a flow that had simply
+     *     been switched off would satisfy Act 1 perfectly.
+     *
+     * 🔴 THE FIXTURE STAGE IS `'Under Contract (PSA)'` AND IT CANNOT BE `'About to Close'` — the
+     * same trap `transactionGate_blocksClosedWonWhenTheDealHasNoTransactionAtAll` documents above.
+     * Inserting AT `'About to Close'` runs `ContractExecutionService.openTransactionsOnAboutToClose`
+     * (its entry test is `prior == null || …`, so an insert counts as entering) and AUTO-CREATES a
+     * THIRD Transaction. Act 2 would then still leave one open, the deal would not close, and the
+     * failure would look like a broken sibling guard rather than a broken fixture. The
+     * `Assert.areEqual(2, …)` precondition below exists to catch that if the auto-create stage ever
+     * moves.
+     */
+    @isTest
+    static void transactionGate_twoTransactions_dealClosesOnlyWhenTheLastOneCloses() {
+        Opportunity o = newOpp('Under Contract (PSA)');
+        insert o;
+        TestDataFactory.signPrimaryNda(o); // isolate: Closed Won entry is ALSO NDA-gated
+        TestDataFactory.signContract(o);   // isolate: and contract-gated
+
+        List<Transaction__c> pair = TestDataFactory.createTransactions(2, o.Id, null, false);
+        for (Transaction__c row : pair) {
+            row.Status__c = 'Active';
+            row.Tasks_Fanned_Out__c = true; // suppress the 82-task Day-0 fan-out
+        }
+        insert pair;
+
+        Assert.areEqual(2,
+            [SELECT COUNT() FROM Transaction__c WHERE Opportunity__c = :o.Id],
+            'Precondition: EXACTLY two Transactions. A third (see the auto-create note above) '
+            + 'would make Act 2 fail for a reason that has nothing to do with the sibling guard');
+
+        // ── ACT 1 — close the FIRST of two. No try/catch: a throw here IS the failure. ──
+        update new Transaction__c(Id = pair[0].Id, Status__c = 'Closed');
+
+        Assert.areEqual('Closed',
+            [SELECT Status__c FROM Transaction__c WHERE Id = :pair[0].Id].Status__c,
+            '🔴 THE USER\'S OWN SAVE COMMITTED. This is the assertion that inverted: before the '
+            + 'sibling guard this read \'Active\', because the flow\'s refused Opportunity write '
+            + 'rolled the whole Transaction save back with it');
+        Assert.areEqual('Under Contract (PSA)',
+            [SELECT StageName FROM Opportunity WHERE Id = :o.Id].StageName,
+            'and the DEAL did NOT close while a sibling Transaction is still open — if this reads '
+            + 'Closed Won the flow stopped consulting Get_Open_Sibling_Transactions and deals are '
+            + 'closing with work still running on them');
+
+        // ── ACT 2 — close the SECOND. Nothing is open now, so the flow may close the deal. ──
+        update new Transaction__c(Id = pair[1].Id, Status__c = 'Closed');
+
+        Assert.areEqual('Closed Won',
+            [SELECT StageName FROM Opportunity WHERE Id = :o.Id].StageName,
+            '🔴 AND THE LAST TRANSACTION TO CLOSE IS THE ONE THAT CLOSES THE DEAL. Without this '
+            + 'half, a Transaction_Complete_Close that had simply been deactivated would pass Act '
+            + '1 and this test would prove only that nothing happens');
+    }
+
+    /**
+     * 🔴 THE HOLE, PINNED SO IT IS A DECISION RATHER THAN A SURPRISE. All five Closed Won rules
+     * are `ISCHANGED(StageName)`-scoped and ISCHANGED is false on insert, so a record CREATED at
+     * Closed Won crosses none of them — including this one.
+     *
+     * That was chosen, not overlooked. A Transaction cannot reference an Opportunity that does not
+     * exist yet, so the two flags cannot be true in the same DML that inserts the deal: an
+     * insert-scoped rule would make "closed deal" unreachable by ANY route and would block every
+     * data load and migration with no workaround. This test exists so that if someone later widens
+     * the rule to insert, they fail HERE, on a documented decision, instead of in a data load.
+     */
+    @isTest
+    static void transactionGate_doesNotFireOnInsert_andThatIsDeliberate() {
+        Opportunity o = newOpp('Closed Won');
+        insert o; // must NOT throw
+
+        Opportunity readBack = [
+            SELECT StageName, Has_Open_Transaction__c, Has_Closed_Transaction__c
+            FROM Opportunity WHERE Id = :o.Id
+            WITH SYSTEM_MODE
+        ];
+        Assert.areEqual('Closed Won', readBack.StageName,
+            'A deal INSERTED at Closed Won is accepted — ISCHANGED is false on insert');
+        Assert.isFalse(readBack.Has_Closed_Transaction__c,
+            'and it is accepted with NO closed transaction, which is precisely the residual this '
+            + 'method documents. Read the docstring before "fixing" it.');
     }
 }

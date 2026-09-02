@@ -59,9 +59,17 @@ private class PropertyAssetServiceTest {
 
     /**
      * Inserts `count` properties and `count` Opportunities, one Opportunity per property,
-     * already prepared to cross the two Closed Won validation gates
-     * (`NDA_Signed_Before_Deal_Progression` and `Contract_Signed_Before_Closed_Won`).
+     * already prepared to cross the THREE Closed Won validation gates
+     * (`NDA_Signed_Before_Deal_Progression`, `Contract_Signed_Before_Closed_Won` and, since
+     * 2026-09-02, `Transaction_Closed_Before_Closed_Won`).
      * The deals are left at 'New'; the caller decides when and how they close.
+     *
+     * 🔴 THE THIRD GATE IS SATISFIED BY WRITING THE PARENT FLAGS, NOT BY CREATING A
+     * `Transaction__c`, AND THAT IS DELIBERATE. `TestDataFactory.markTransactionClosed` is one
+     * field pair in one bulk DML; creating a real Transaction per deal would fan out 82 checklist
+     * Tasks each through `flows/Transaction_Task_Fanout`, which at this class's BULK_N of 251 is
+     * roughly 20,600 Task rows and simply will not run. The full argument lives at that helper's
+     * declaration — read it before "improving" this.
      *
      * @param count       How many pairs.
      * @param assetType   `Property__c.Asset_Type__c` for every property (restricted picklist).
@@ -85,10 +93,18 @@ private class PropertyAssetServiceTest {
 
         TestDataFactory.signPrimaryNda(opps);
         TestDataFactory.signContract(opps);
+        TestDataFactory.markTransactionClosed(opps);
         return opps;
     }
 
-    /** Moves already-prepared deals to Closed Won in one bulk DML. */
+    /**
+     * Moves already-prepared deals to Closed Won in one bulk DML.
+     *
+     * ⚠ It stays ONE statement on purpose — several callers wrap it in `Test.startTest()` and
+     * assert service-level budgets around it. The Closed Won gates are satisfied UPSTREAM, in
+     * `dealsReadyToClose` (or inline, for the one caller that builds its own deal); do not move
+     * gate preparation in here.
+     */
     private static void close(List<Opportunity> opps) {
         for (Opportunity o : opps) {
             o.StageName = CLOSED_WON;
@@ -499,6 +515,9 @@ private class PropertyAssetServiceTest {
         List<Opportunity> opps = TestDataFactory.createOpportunities(1, true);
         TestDataFactory.signPrimaryNda(opps);
         TestDataFactory.signContract(opps);
+        // The third Closed Won gate (2026-09-02). This deal is built inline rather than through
+        // dealsReadyToClose, so it needs the preparation of its own.
+        TestDataFactory.markTransactionClosed(opps);
         Assert.isNull(opps[0].Property__c, 'Precondition: a manually built deal has no Property');
 
         PropertyAssetService.resetRunCounters();
@@ -542,9 +561,20 @@ private class PropertyAssetServiceTest {
     /**
      * THE INSERT PATH (`oldMap == null`). A record created directly at Closed Won — a data
      * load, a migration, a fixture — counts as ENTERING the stage, the same reading
-     * `ContractExecutionService.openTransactionsOnAboutToClose` uses. Note the four Closed Won
-     * validation rules are all `ISCHANGED`-gated and so do not fire on insert, which is
-     * exactly why this path exists in the wild and must be covered.
+     * `ContractExecutionService.openTransactionsOnAboutToClose` uses. Note the FIVE Closed Won
+     * validation rules (four until 2026-09-02, when `Transaction_Closed_Before_Closed_Won` made
+     * it five) are all `ISCHANGED`-gated and so do not fire on insert, which is exactly why this
+     * path exists in the wild and must be covered.
+     *
+     * ⚠ THE INSERT HOLE IS A DECISION, NOT AN OVERSIGHT, AND THIS TEST IS THE ONE THAT DEPENDS ON
+     * IT. `Transaction_Closed_Before_Closed_Won` was scoped `ISCHANGED(StageName)` like its four
+     * siblings rather than being widened to cover insert. Closing the hole is not merely a
+     * formula edit: a Transaction cannot reference an Opportunity that does not exist yet, so the
+     * two flags CANNOT be true in the same DML that inserts a deal at Closed Won — an
+     * insert-scoped rule would make that state unreachable by any route, blocking every data load
+     * and migration, with no workaround. The residual is that the API and Data Loader can still
+     * create a closed deal with no transaction; the gate governs the TRANSITION, which is what
+     * every human route uses.
      */
     @isTest
     static void aDealInsertedDirectlyAtClosedWonAlsoGetsItsAsset() {

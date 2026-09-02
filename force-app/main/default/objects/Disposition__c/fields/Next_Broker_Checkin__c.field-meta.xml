@@ -1,6 +1,29 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        DISPOSITION GAP CLOSURE TRANCHE 5 (FINAL), ITEM 2 (agent-output/disposition-gap-closure-t5-design.md
+        G-3; Gate 1 decision, 2026-09-02). NO TYPE CHANGE, NO FORMULA, NO WRITER ADDED - this field
+        stays a bare hand-typed Date. Only inlineHelpText was added, documenting that fact.
+
+        🔴 A DAILY JOB TO MAINTAIN THIS FIELD WAS DESIGNED AND DELIBERATELY DEFERRED ON 2026-09-02.
+        The design named DispositionTractionService.evaluateAll as the intended seam - its own header
+        already states it is 2 SOQL for any number of dispositions and explicitly designs for a
+        caller exactly like this one. It was not built this tranche because a Schedulable is inert
+        until someone runs System.schedule post-deploy and fails silently with zero errors if nobody
+        does - a risk this tranche chose not to carry alongside its other, verifiable items.
+
+        ⚠ A FORMULA ALTERNATIVE WAS CONSIDERED AND REJECTED, NOT MERELY DEFERRED. The offers clause
+        and the traction clock's pause behaviour cannot be expressed in a formula field, so a formula
+        would flag listings that already have offers as still needing a check-in - a false alarm, not
+        a simplification. This is why the deferred fix is a scheduled job calling the service, not a
+        formula on this field.
+
+        Until that job exists, this field is populated only by hand (or by seed scripts) and the
+        Broker Alert Due dashboard KPI is only as current as the last manual edit. See inlineHelpText
+        below for the user-facing version of this note.
+    -->
     <fullName>Next_Broker_Checkin__c</fullName>
+    <inlineHelpText>Hand-maintained only. No formula, flow, trigger, or batch job writes this field - only a person, by editing the record. The Broker Alert Due dashboard KPI filters on this date (NEXT_N_DAYS:7) and depends entirely on someone updating it after each broker check-in; if nobody does, the KPI silently goes stale rather than erroring. A daily job to maintain it was designed and deliberately deferred - see this field's XML comment.</inlineHelpText>
     <label>Next Broker Check-in</label>
     <required>false</required>
     <trackHistory>false</trackHistory>

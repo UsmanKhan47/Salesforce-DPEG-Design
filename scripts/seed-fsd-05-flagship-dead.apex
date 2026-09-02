@@ -65,7 +65,7 @@ if ([SELECT COUNT() FROM Opportunity WHERE Name = :D2] == 0) {
     helper.signPrimaryNda(oppD2);
     update new Opportunity(Id = oppD2, StageName = 'Underwriting');
     Underwriting__c uw = [SELECT Id FROM Underwriting__c WHERE Opportunity__c = :oppD2 LIMIT 1];
-    update new Underwriting__c(Id = uw.Id, Stage__c = 'In Progress', Status__c = 'In Progress',
+    update new Underwriting__c(Id = uw.Id, Stage__c = 'In Progress',
         My_Price__c = 14900000, My_Cap_Rate__c = 7.6, Market_Cap_Rate__c = 7.4);
     update new Opportunity(Id = oppD2, StageName = 'Dead/Pass', Rejection_Reason__c = 'Failed DD');
 }
@@ -83,7 +83,7 @@ if ([SELECT COUNT() FROM Opportunity WHERE Name = :D3] == 0) {
     update new Development_Feasibility_Review__c(Id = dfr.Id, Stage__c = 'Completed', Recommendation__c = 'Conditional');
     update new Opportunity(Id = oppD3, StageName = 'Underwriting');
     Underwriting__c uw3 = [SELECT Id FROM Underwriting__c WHERE Opportunity__c = :oppD3 LIMIT 1];
-    update new Underwriting__c(Id = uw3.Id, Stage__c = 'Approved', Status__c = 'Approved by Principals',
+    update new Underwriting__c(Id = uw3.Id, Stage__c = 'Approved',
         My_Price__c = 5600000, My_Cap_Rate__c = 0, Market_Cap_Rate__c = 0);
     update new Opportunity(Id = oppD3, UW_Approved__c = true, UW_Approval_Date__c = Date.today().addDays(-8));
     update new Opportunity(Id = oppD3, StageName = 'LOI');

@@ -765,7 +765,6 @@
         <members>Underwriting__c.Principal_Price_Decision__c</members>
         <members>Underwriting__c.Projected_Loan__c</members>
         <members>Underwriting__c.Stage__c</members>
-        <members>Underwriting__c.Status__c</members>
         <members>Underwriting__c.Target_Return__c</members>
         <members>Underwriting__c.Underwriting_OneDrive_URL__c</members>
         <members>Underwriting__c.Underwritten_NOI__c</members>

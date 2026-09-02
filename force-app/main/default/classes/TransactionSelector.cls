@@ -18,6 +18,9 @@
  *     write the four Transaction__c counters unless Checklist_Fanned_Out__c is
  *     true — selectForChecklistFanout, added 2026-08-31).
  *   - CriticalDateService (selectForCriticalDates, added 2026-08-31).
+ *   - DealTransactionGateService.recalculate (the "a deal cannot close until its
+ *     transaction is closed" gate — aggregateStatusCountsByOpportunityIds, added
+ *     2026-09-02; the class's FIRST sharing escape, see MODE below).
  *
  * WHY A DYNAMIC QUERY LIVES HERE (design §6): the fan-out reads a fixed base
  * field set PLUS an arbitrary set of conditional-gating fields whose API names
@@ -42,11 +45,15 @@
  * selected fields. (The dynamic reads use the `AccessLevel` enum because the
  * `WITH USER_MODE` clause is illegal in a dynamic query — design §6.)
  *
- * TWO methods are `AccessLevel.SYSTEM_MODE`, each justified at its own
- * declaration, both on an AUTOMATION PATH where USER_MODE THROWS rather than
- * degrades and one missing FLS grant becomes a rolled-back user save:
- *   • selectForChecklistFanout  <- ChecklistFanoutService, ChecklistRollupService
- *   • selectForCriticalDates    <- CriticalDateService, from TransactionTrigger
+ * THREE methods are `AccessLevel.SYSTEM_MODE` / `WITH SYSTEM_MODE`, each justified
+ * at its own declaration, all on an AUTOMATION PATH where USER_MODE THROWS rather
+ * than degrades and one missing FLS grant becomes a rolled-back user save:
+ *   • selectForChecklistFanout              <- ChecklistFanoutService, ChecklistRollupService
+ *   • selectForCriticalDates                <- CriticalDateService, from a script AND (added
+ *                                              2026-09-02) from ChecklistOutcomeService when an
+ *                                              ordinary user completes checklist item A5
+ *   • aggregateStatusCountsByOpportunityIds <- DealTransactionGateService, from TransactionTrigger
+ *                                              (added 2026-09-02)
  *
  * ⚠ AMENDED 2026-08-31 — this block previously ended "No guest path, no
  * SYSTEM_MODE." That was true when written and is NO LONGER TRUE. ARCHITECTURE §2
@@ -56,8 +63,19 @@
  * reasoning — the mode is a property of the method, never of the class.
  *
  * ⚠ SCOPE OF THE BYPASS: SYSTEM_MODE lifts CRUD/FLS and NEVER sharing. This class
- * stays `with sharing`, so both exempt methods still return only rows the running
- * user can already see.
+ * stays `with sharing`, and TWO of the three exempt methods
+ * (selectForChecklistFanout, selectForCriticalDates) therefore still return only
+ * rows the running user can already see.
+ *
+ * 🔴 AMENDED 2026-09-02 — AND THAT SENTENCE IS NO LONGER TRUE OF ALL OF THEM. It
+ * used to read "…so both exempt methods still return only rows the running user can
+ * already see", which is exactly the kind of stale summary the paragraph above warns
+ * about. `aggregateStatusCountsByOpportunityIds` ALSO ESCAPES SHARING, through the
+ * `private without sharing` inner class `DealCloseGateReads`. That is a SEPARATE,
+ * separately-measured decision from its mode — `Transaction__c` OWD is Private on
+ * both models and a sharing-filtered count INVERTS the deal-close gate rather than
+ * degrading it. The argument is at that method's declaration; do not summarise it
+ * here and do not extend the inner class to a second query.
  *
  * @see force-app/main/default/classes/WireSelector.cls (P4 pilot template)
  * @see agent-output/p4-selector-design.md (§3 #15, §4, §5, §6)
@@ -212,19 +230,25 @@ public with sharing class TransactionSelector {
      * 🔴 `AccessLevel.SYSTEM_MODE` - AUTOMATION PATH, BUT NOT A TRIGGER PATH ANY MORE. This said
      * "Fired from `TransactionTrigger`'s after-update context" until 2026-09-01, when that arm was
      * REMOVED by user decision (see `TransactionTriggerHandler.afterUpdate` for the gates that must
-     * close before it is re-wired). `CriticalDateService.ensureFor` has ONE production caller today:
-     * `scripts/seed-critical-dates.apex`.
+     * close before it is re-wired).
+     * 🔴 AMENDED 2026-09-02 — THIS SAID "`CriticalDateService.ensureFor` has ONE production caller
+     * today: `scripts/seed-critical-dates.apex`." THERE ARE NOW TWO. Phase 5's
+     * `ChecklistOutcomeService.applyForCompletedItems` calls it when an ORDINARY USER completes
+     * checklist item A5, one deal at a time. Still not a trigger, but no longer operator-only.
      * The exemption still stands, and on stronger ground rather than weaker: the read is performed
      * ON A PRINCIPAL'S BEHALF (a bulk projection over deals the operator did not individually ask
      * for), and `USER_MODE` THROWS rather than degrades - one ungranted custom field would abort the
      * whole script mid-run rather than skipping a column. It is also the mode the arm will need
      * again the day it is re-wired, and flipping it twice would be churn.
-     * ⚠ RE-READ THIS IF THE TRIGGER ARM RETURNS: the "a throw rolls back the user's own deal save"
-     * consequence is currently DORMANT, not gone. It comes straight back with the arm.
-     * ⚠ Sharing is NOT lifted. That matters MORE on the script path than it did on the trigger path,
-     * where the saving user could by definition see their own deal: an operator running the seed
-     * script only projects dates for deals they can SEE, silently. The script's own header carries
-     * the "run as an administrator" warning for exactly this reason.
+     * ⚠ THE "A THROW ROLLS BACK THE USER'S OWN SAVE" CONSEQUENCE IS NO LONGER DORMANT. This said it
+     * was, and would return only with the trigger arm. On the A5 path it is ALREADY LIVE: this read
+     * runs inside the same transaction as the user's checklist completion, so a throw here rolls
+     * back their tick. `allOrNone = false` on the downstream insert protects against ONE BAD ROW; it
+     * does not protect against this read throwing.
+     * ⚠ Sharing is NOT lifted, and it now cuts two ways. On the SCRIPT path an operator only
+     * projects dates for deals they can SEE, silently — the script's header carries the "run as an
+     * administrator" warning for that reason. On the A5 path the saving user can by definition see
+     * their own deal, so the silent-partial risk does not arise there.
      *
      * @param transactionIds Transaction Ids to load.
      * @return Map of Transaction Id -> Transaction__c with the coherence-gate fields populated.
@@ -422,6 +446,112 @@ public with sharing class TransactionSelector {
             WHERE Opportunity__c IN :opportunityIds
             WITH USER_MODE
         ];
+    }
+
+    /**
+     * How many Transactions each supplied deal owns, split by `Status__c` — backs
+     * `DealTransactionGateService.recalculate`, which turns the answer into the two Opportunity
+     * flags the "a deal cannot close until its transaction closes" validation rule reads
+     * (added 2026-09-02).
+     *
+     * ── 🔴 MODE = `WITH SYSTEM_MODE`. AUTOMATION PATH, AND THE ONLY ONE OF THE THREE THAT IS A
+     * TRIGGER PATH ─────────────────────────────────────────────────────────────────────────────
+     * This runs from `TransactionTrigger`'s after contexts as whoever saved the Transaction. Under
+     * `WITH USER_MODE` one missing FLS grant does not degrade — it raises
+     * `System.QueryException: No such column`, which inside an after-trigger escapes as
+     * `CANNOT_INSERT_UPDATE_ACTIVATE_ENTITY` and rolls back that user's own save. Every DPEG
+     * persona is on `Minimum Access` and `Transaction__c.Status__c` / `Opportunity__c` are granted
+     * only by the two Transaction permission sets, so a persona who can create or edit a
+     * Transaction through some other route (a data load, a queue-owned record, an admin fix) but
+     * lacks one of those two grants would silently kill the gate. ARCHITECTURE.md §2's
+     * automation-path exception is exactly this case.
+     *
+     * ── 🔴 SHARING = `without sharing`, VIA THE NARROW `DealCloseGateReads` INNER CLASS BELOW.
+     * THIS IS A SEPARATE DECISION FROM THE MODE AND IT WAS MEASURED, NOT ASSUMED ────────────────
+     * `SYSTEM_MODE` lifts CRUD and FLS and NEVER sharing, and `Transaction__c`'s OWD is **Private**
+     * on both the internal and external model (measured on `usman-dpeg` via
+     * `EntityDefinition.InternalSharingModel` / `ExternalSharingModel`, 2026-09-02). A
+     * sharing-filtered count therefore returns only the Transactions the SAVER can see, and the
+     * failure INVERTS the gate rather than degrading it:
+     *
+     *   an OPEN transaction the saver cannot see  ->  `Has_Open_Transaction__c` computed FALSE
+     *                                             ->  the deal becomes closable WITH AN OPEN
+     *                                                 TRANSACTION, which is the one outcome the
+     *                                                 whole feature exists to prevent.
+     *
+     * There is a second and independent argument: these are STORED DERIVED FIELDS on the parent.
+     * A sharing-filtered recompute would make their value depend on WHICH USER happened to save a
+     * Transaction last, which is incoherent for a field a validation rule reads on everyone's
+     * behalf. Deals routinely carry Transactions owned by the Transactions queue while the deal
+     * driver owns the deal, so the two-principal case is the ORDINARY case here, not an edge one.
+     *
+     * ⚠ It widens nothing a user can observe. Nothing leaves the inner class but two booleans
+     * about record COUNTS, already implied by the validation rule's own refusal message.
+     *
+     * ── GROUP COUNT ARITHMETIC (the 2,000-row aggregate cap) ────────────────────────────────────
+     * An aggregate query returns at most 2,000 groups. The worst case here is a full 200-record
+     * trigger chunk in which every row was RE-PARENTED, contributing an old and a new deal —
+     * 400 deals — times the three `Status__c` values (`Draft` / `Active` / `Closed`) = 1,200
+     * groups. 🔴 If `Transaction__c.Status__c` ever gains a fourth value this arithmetic must be
+     * re-derived: at six values the worst case is 2,400 and this query starts truncating SILENTLY,
+     * which again inverts the gate rather than breaking it. The two-key GROUP BY is chosen over a
+     * plain row query precisely because its ceiling depends on a number this class controls (deals
+     * x status values) instead of on how many Transactions a deal happens to own.
+     *
+     * @param opportunityIds Parent Opportunity Ids to count under (bound with IN).
+     * @return One AggregateResult per (Opportunity, Status) pair, aliased `oppId` / `txnStatus` /
+     *         `txnCount`; an empty list when opportunityIds is null/empty.
+     * @example
+     * for (AggregateResult r
+     *         : TransactionSelector.aggregateStatusCountsByOpportunityIds(dealIds)) {
+     *     Id dealId = (Id) r.get('oppId');
+     *     String status = (String) r.get('txnStatus');
+     * }
+     */
+    public static List<AggregateResult> aggregateStatusCountsByOpportunityIds(
+        Set<Id> opportunityIds
+    ) {
+        if (opportunityIds == null || opportunityIds.isEmpty()) {
+            return new List<AggregateResult>();
+        }
+        return new DealCloseGateReads().statusCountsByOpportunityIds(opportunityIds);
+    }
+
+    /**
+     * 🔴 THE SHARING ESCAPE FOR THE DEAL-CLOSE GATE, AND NOTHING ELSE.
+     *
+     * `without sharing` is confined to this inner class so it applies to ONE query. The enclosing
+     * `TransactionSelector` stays `with sharing` and must: it backs the Active-Transactions
+     * dashboard's four user-facing reads, whose entire job is to respect what the running user may
+     * see. This is the `OpportunitySelector.NdaGateReads` /
+     * `InboundEmailStagingSelector.RoutingReads` shape ARCHITECTURE.md §2 prescribes.
+     *
+     * The full justification — including the 2026-09-02 OWD measurement that established it was
+     * necessary, and why the failure it prevents INVERTS rather than degrades — is at
+     * `aggregateStatusCountsByOpportunityIds`'s own declaration. Read it before touching this.
+     *
+     * ⚠ DO NOT ADD A SECOND METHOD HERE. Every query that lands in this class silently inherits an
+     * escape argued for a different one. A new read that needs the same treatment needs its OWN
+     * inner class and its OWN measurement — that is the point of keeping these narrow.
+     */
+    private without sharing class DealCloseGateReads {
+
+        /**
+         * The gate's count, read without sharing so a Transaction owned by the Transactions queue
+         * is still counted when the deal driver is the one saving.
+         *
+         * @param opportunityIds Parent deals to count under; never null/empty (the wrapper guards).
+         * @return One row per (Opportunity, Status) pair.
+         */
+        private List<AggregateResult> statusCountsByOpportunityIds(Set<Id> opportunityIds) {
+            return [
+                SELECT Opportunity__c oppId, Status__c txnStatus, COUNT(Id) txnCount
+                FROM Transaction__c
+                WHERE Opportunity__c IN :opportunityIds
+                WITH SYSTEM_MODE
+                GROUP BY Opportunity__c, Status__c
+            ];
+        }
     }
 
     /**

@@ -188,6 +188,20 @@
         <field>Opportunity.Guidance_Price_Low__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!-- ADDED 2026-09-02 - item 3 (agent-output/three-gaps-design-2026-09-02.md). Read-only:
+         system-maintained by DealTransactionGateService, never hand-edited. Mirrors the grant
+         matrix already carried by Opportunity.Underwriting_Status__c / UW_Approved__c in this
+         file. -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Opportunity.Has_Closed_Transaction__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Opportunity.Has_Open_Transaction__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
         <field>Opportunity.Hold_Period__c</field>

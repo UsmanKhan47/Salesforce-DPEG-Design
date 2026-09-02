@@ -1,5 +1,69 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Flow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT MUST STAY INSIDE THE ROOT <Flow> ELEMENT - a comment placed ABOVE <Flow>
+        breaks `sf` deploy at source conversion.
+
+        SIBLING GUARD ADDED 2026-09-02 (agent-output/three-gaps-design-2026-09-02.md, item 3
+        follow-up). Before this change this flow closed the parent Opportunity the moment ANY
+        Transaction__c on it reached Status__c = 'Closed', with no regard for siblings. That was
+        already a silent bug on any deal with more than one Transaction (closes the deal while
+        other work is still open) - item 3's new validation rule
+        (Transaction_Closed_Before_Closed_Won, keyed on Has_Open_Transaction__c /
+        Has_Closed_Transaction__c) turns that same gap into a hard failure instead: on a
+        two-Transaction deal, the FIRST Transaction to close would attempt StageName = 'Closed
+        Won' while a sibling is still open, the rule refuses it, and the refusal rolls back the
+        TRANSACTION SAVE that triggered this flow (CANNOT_EXECUTE_FLOW_TRIGGER) - a user closing
+        one Transaction would lose their save. See that rule's own header, line "including the
+        known exposure on a deal with two Transactions, which is this rule's problem to surface,
+        not this rule's problem to solve." This flow is where it is solved.
+
+        KEYED ON Status__c = 'Closed', NOT Stage__c - same field and literal this flow's own
+        trigger condition already used before this change, and the field
+        Transaction_Stage_Closed_Sets_Status:21-25/35-39 and
+        Has_Closed_Transaction__c:35-39 both name as the deliberate, explicit choice.
+        Transaction_Stage_Closed_Sets_Status keeps Status__c synced from Stage__c for every
+        writer (quick action, Path, API, data loader, seed script), so a plain Status__c = 'Closed'
+        read here is trustworthy without also checking Stage__c.
+
+        DOES NOT READ Opportunity.Has_Open_Transaction__c / Has_Closed_Transaction__c. Those
+        flags are written by DealTransactionGateService from the Transaction__c trigger in the
+        SAME transaction as this after-save flow, and after-trigger-vs-after-save-flow ordering
+        is not something to assume without proof (platform Order of Execution steps 8 vs 13 make
+        it LIKELY safe, per Transaction_Closed_Before_Closed_Won:71-78, but that note is about the
+        VALIDATION RULE reading the flags after DealTransactionGateService has run, not about this
+        flow). This element runs its own explicit Get Records against Transaction__c siblings
+        instead of trusting a derived flag it did not itself order against.
+
+        runInMode IS SystemModeWithoutSharing, EXPLICITLY, matching the identical shape already
+        used by Wire_Verification_Rollup and NDA_Signed_Rollup for the same reason:
+        Transaction__c is sharingModel Private (Transaction__c.object-meta.xml:165), and whoever
+        saves one Transaction on a multi-Transaction deal is not necessarily the owner of, or
+        shared into, its siblings. A user-mode Get Records here would silently under-count open
+        siblings for a user who cannot see them, closing the deal early - the exact bug this
+        change exists to remove, reintroduced through sharing instead of through logic. This also
+        changes the enforcement mode of the pre-existing Close_Opportunity update (previously
+        unspecified runInMode, which this repo has separately confirmed defaults to USER context)
+        - accepted, because Opportunity.sharingModel is ReadWrite
+        (Opportunity.object-meta.xml:165), so that write was never meaningfully sharing-gated, and
+        Congratulate's Apex action (GroupNotifier) declares its own `without sharing` and is
+        unaffected by flow runInMode either way.
+
+        FOUR SCENARIOS THIS GUARD IS BUILT AGAINST:
+          1. One Transaction, closes -> Get_Open_Sibling_Transactions finds nothing (no siblings
+             at all) -> deal closes. Unchanged from pre-2026-09-02 behaviour.
+          2. Two Transactions, first closes -> the second is still open and is not itself (Id
+             NotEqualTo $Record.Id) -> deal does NOT close, and because Close_Opportunity is never
+             reached, the Opportunity is never touched and Transaction_Closed_Before_Closed_Won
+             never evaluates - the Transaction save succeeds cleanly. THIS ROW IS THE WHOLE POINT.
+          3. Two Transactions, second closes -> the first is already Status__c = 'Closed' and is
+             excluded by the NotEqualTo 'Closed' filter, not by the Id exclusion -> no open
+             siblings found -> deal closes.
+          4. Transaction closes, deal already Closed Won -> Close_Opportunity re-assigns the same
+             StageName value; ISCHANGED(StageName) in Transaction_Closed_Before_Closed_Won (and in
+             every sibling Closed-Won-adjacent rule) is false, so no rule evaluates and no error
+             surfaces - a true no-op, unrelated to this guard.
+    -->
     <actionCalls>
         <name>Congratulate</name>
         <label>Congratulate</label>
@@ -35,10 +99,70 @@
         <nameSegment>GroupNotifier</nameSegment>
     </actionCalls>
     <apiVersion>67.0</apiVersion>
+    <decisions>
+        <name>No_Open_Sibling_Transactions</name>
+        <label>Any sibling Transaction still open?</label>
+        <locationX>176</locationX>
+        <locationY>210</locationY>
+        <description>Added 2026-09-02 with the sibling guard. Only the No_Open_Siblings outcome reaches Close_Opportunity; the default (an open sibling was found) ends the flow without touching the Opportunity at all, so Transaction_Closed_Before_Closed_Won never evaluates on this save.</description>
+        <defaultConnectorLabel>Open sibling exists - do not close yet</defaultConnectorLabel>
+        <rules>
+            <name>No_Open_Siblings</name>
+            <conditionLogic>and</conditionLogic>
+            <conditions>
+                <leftValueReference>Get_Open_Sibling_Transactions.Id</leftValueReference>
+                <operator>IsNull</operator>
+                <rightValue>
+                    <booleanValue>true</booleanValue>
+                </rightValue>
+            </conditions>
+            <connector>
+                <targetReference>Close_Opportunity</targetReference>
+            </connector>
+            <label>No open siblings</label>
+        </rules>
+    </decisions>
+    <description>Closes the parent Opportunity when a Transaction__c on it reaches Status__c = 'Closed' - but ONLY when no OTHER Transaction on the same Opportunity is still open (Get_Open_Sibling_Transactions / No_Open_Sibling_Transactions, added 2026-09-02). Verified scenarios: (1) one Transaction closes -&gt; deal closes; (2) two Transactions, first closes -&gt; deal stays open, Transaction save succeeds cleanly; (3) two Transactions, second closes -&gt; deal closes; (4) Transaction closes while deal is already Closed Won -&gt; harmless no-op (ISCHANGED(StageName) is false). See the XML comment in this file for the full rationale.</description>
     <environments>Default</environments>
     <interviewLabel>Transaction Complete Close {!$Flow.CurrentDateTime}</interviewLabel>
     <label>Transaction Complete Close</label>
     <processType>AutoLaunchedFlow</processType>
+    <recordLookups>
+        <name>Get_Open_Sibling_Transactions</name>
+        <label>Get Open Sibling Transactions</label>
+        <locationX>176</locationX>
+        <locationY>132</locationY>
+        <assignNullValuesIfNoRecordsFound>true</assignNullValuesIfNoRecordsFound>
+        <connector>
+            <targetReference>No_Open_Sibling_Transactions</targetReference>
+        </connector>
+        <description>Finds any OTHER Transaction__c on the same Opportunity that has not reached Status__c = 'Closed'. Excludes the current record (Id NotEqualTo $Record.Id) so the Transaction being closed can never count itself as its own open sibling. getFirstRecordOnly is sufficient - this is an existence check, not a count.</description>
+        <filterLogic>and</filterLogic>
+        <filters>
+            <field>Opportunity__c</field>
+            <operator>EqualTo</operator>
+            <value>
+                <elementReference>$Record.Opportunity__c</elementReference>
+            </value>
+        </filters>
+        <filters>
+            <field>Id</field>
+            <operator>NotEqualTo</operator>
+            <value>
+                <elementReference>$Record.Id</elementReference>
+            </value>
+        </filters>
+        <filters>
+            <field>Status__c</field>
+            <operator>NotEqualTo</operator>
+            <value>
+                <stringValue>Closed</stringValue>
+            </value>
+        </filters>
+        <getFirstRecordOnly>true</getFirstRecordOnly>
+        <object>Transaction__c</object>
+        <storeOutputAutomatically>true</storeOutputAutomatically>
+    </recordLookups>
     <recordUpdates>
         <name>Close_Opportunity</name>
         <label>Close Opportunity</label>
@@ -67,11 +191,12 @@
         </inputAssignments>
         <inputReference>$Record.Opportunity__r</inputReference>
     </recordUpdates>
+    <runInMode>SystemModeWithoutSharing</runInMode>
     <start>
         <locationX>50</locationX>
         <locationY>0</locationY>
         <connector>
-            <targetReference>Close_Opportunity</targetReference>
+            <targetReference>Get_Open_Sibling_Transactions</targetReference>
         </connector>
         <doesRequireRecordChangedToMeetCriteria>true</doesRequireRecordChangedToMeetCriteria>
         <filterLogic>and</filterLogic>

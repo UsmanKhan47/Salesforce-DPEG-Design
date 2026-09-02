@@ -151,7 +151,7 @@ public with sharing class BrokerListingController {
          * to "clean up after the removed tile" would silently un-pause this card while the alerts
          * card beside it stayed paused — one ladder, two answers.
          */
-        /** `DispositionTractionService.Band` name — NOT_LISTED / ON_TRACK / WEEK_1 / WEEK_4 / WEEK_6. */
+        /** `DispositionTractionService.Band` name — NOT_LISTED / ON_TRACK / WEEK_2 / WEEK_4 / WEEK_6. */
         @AuraEnabled public String tractionBand;
         /** Short badge text, e.g. `Week 4 — At Risk`. */
         @AuraEnabled public String tractionLabel;
@@ -160,10 +160,13 @@ public with sharing class BrokerListingController {
         /**
          * True from WEEK_4 onward, with zero offers. Drives the amber styling.
          *
-         * ⚠ NOT "from the first rung onward" — `WEEK_1` is a check-in, not a risk state. The reason
-         * the line is drawn at week 4 is on `DispositionTractionService.Band`; do not re-derive it
-         * from the band name here, which would be the second copy of the ladder this class exists
-         * to not have.
+         * ⚠ NOT "from the first rung onward" — `WEEK_2` is a check-in, not a risk state. (⚠ That
+         * member was called `WEEK_1` until 2026-09-02, when the first rung moved from day 7 to day
+         * 14 under user decision A2. Only the NAME and the THRESHOLD moved; the at-risk line is
+         * still drawn at week 4 and this class is unaffected in behaviour.) The reason the line is
+         * drawn at week 4 is on `DispositionTractionService.Band`; do not re-derive it from the
+         * band name here, which would be the second copy of the ladder this class exists to not
+         * have.
          */
         @AuraEnabled public Boolean isAtRisk;
     }

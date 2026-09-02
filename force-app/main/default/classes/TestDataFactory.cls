@@ -889,16 +889,19 @@ public with sharing class TestDataFactory {
     // ═══════════════════════════════════════════════════════════════════════════
     // OPPORTUNITY STAGE-GATE FIXTURES
     //
-    // Four helpers that put an ALREADY-INSERTED deal into the state a stage
+    // FIVE helpers that put an ALREADY-INSERTED deal into the state a stage
     // validation rule demands, so a test that legitimately needs to cross a gate
     // says so in one readable line.
     //
-    //   signPrimaryNda      -> a signed primary NDA        (Underwriting / LOI / PSA /
+    //   signPrimaryNda       -> a signed primary NDA       (Underwriting / LOI / PSA /
     //                                                       About to Close / Closed Won)
-    //   approveUnderwriting -> primary Underwriting Stage__c = 'Approved'
-    //                          + UW_Approved__c            (LOI)   ⚠ both, since 2026-08-28
-    //   placeApprovedLoi    -> Primary_LOI__c + LOI_Approved__c (PSA)
-    //   signContract        -> Contract_Signed__c          (Closed Won)
+    //   approveUnderwriting  -> primary Underwriting Stage__c = 'Approved'
+    //                           + UW_Approved__c           (LOI)   ⚠ both, since 2026-08-28
+    //   placeApprovedLoi     -> Primary_LOI__c + LOI_Approved__c (PSA)
+    //   signContract         -> Contract_Signed__c         (Closed Won)
+    //   markTransactionClosed-> Has_Open_Transaction__c = false
+    //                           + Has_Closed_Transaction__c = true (Closed Won)
+    //                                                       ⚠ added 2026-09-02, FAIL-CLOSED
     //
     // ── WHY HELPERS AND NOT NINE AD-HOC PATCH-UPS ────────────────────────────
     // The gates are one family of rules; when the family changes (a stage added to
@@ -1087,8 +1090,13 @@ public with sharing class TestDataFactory {
             List<Underwriting__c> created = new List<Underwriting__c>();
             for (Opportunity deal : withoutPrimary) {
                 // Build only — no DML in the loop.
+                // ⚠ 2026-09-02 — this also set Status__c = 'In Progress'. Underwriting__c.Status__c
+                // is retired. Note what the old pair actually said: Stage__c = 'Approved' alongside
+                // Status__c = 'In Progress' was SELF-CONTRADICTORY — an approved underwriting that
+                // its own coarse status called unfinished. Dropping it makes this fixture more
+                // truthful, not less complete. Nothing reads the removed value.
                 created.add(new Underwriting__c(
-                    Opportunity__c = deal.Id, Stage__c = 'Approved', Status__c = 'In Progress'));
+                    Opportunity__c = deal.Id, Stage__c = 'Approved'));
             }
             insert created;
             for (Integer i = 0; i < withoutPrimary.size(); i++) {
@@ -1238,6 +1246,99 @@ public with sharing class TestDataFactory {
      */
     public static Opportunity signContract(Opportunity opportunity) {
         return signContract(new List<Opportunity>{ opportunity })[0];
+    }
+
+    /**
+     * The FIFTH member of the stage-gate family (added 2026-09-02): puts each deal into the state
+     * `Transaction_Closed_Before_Closed_Won` demands — it owns at least one Transaction and none of
+     * them is still open.
+     *
+     * ═══════════════════════════════════════════════════════════════════════════════════════════
+     * 🔴 THIS HELPER WRITES THE TWO PARENT FLAGS DIRECTLY. IT MUST NEVER CREATE A `Transaction__c`,
+     * AND THAT IS NOT LAZINESS — IT IS THE REASON THE WHOLE FEATURE IS BUILT THIS WAY.
+     * ═══════════════════════════════════════════════════════════════════════════════════════════
+     * The gate could have been carried by an `Opportunity.Primary_Transaction__c` lookup instead of
+     * these two flags. It was not, and the deciding argument was THIS METHOD'S COST. Creating a
+     * real Transaction per deal here and driving it to closed would fire, per deal:
+     *
+     *     Transaction insert
+     *       -> flows/Transaction_Task_Fanout        (armed by Contract_Executed_Date__c)
+     *       -> TaskFanoutQueueable                  -> 82 checklist Task rows
+     *     Status__c = 'Closed'
+     *       -> flows/Transaction_Stage_Closed_Sets_Status  (before save)
+     *       -> flows/Transaction_Complete_Close            (after save)
+     *       -> an Opportunity update FROM INSIDE THE FIXTURE, re-entering
+     *          OpportunityReviewTrigger and PropertyAssetService
+     *
+     * `PropertyAssetServiceTest` and `DealFolderServiceTest` both call this from 251-record bulk
+     * tests. 251 x 82 is roughly 20,600 Task rows in a fixture: it does not run, and a fixture that
+     * cannot run is a gate that cannot be tested. As written this is ONE field pair per deal in ONE
+     * bulk DML — O(1) in statements, exactly like `signContract` above, so a 251-record bulk test
+     * keeps measuring the code under test rather than its own setup.
+     *
+     * 🔴 DO NOT "IMPROVE" THIS INTO CREATING A TRANSACTION. If a test genuinely needs the real
+     * end-to-end close (one exists: `DealTransactionGateServiceTest`), it should build the
+     * Transaction itself, at single-record volume, and say why in its own docstring.
+     *
+     * ⚠ IT WRITES WHAT PRODUCTION'S `DealTransactionGateService` WOULD HAVE WRITTEN, not something
+     * production cannot produce. `Has_Open_Transaction__c = false` + `Has_Closed_Transaction__c =
+     * true` is exactly the state a deal reaches when its one Transaction closes. The shortcut is in
+     * HOW the state is reached, never in WHAT it is.
+     *
+     * ⚠ IT IS NOT IDEMPOTENT AGAINST LATER TRANSACTION DML. If a test calls this and then inserts
+     * or closes a real `Transaction__c` for the same deal, the trigger recomputes the flags from
+     * the database and will overwrite whatever this wrote. That is correct behaviour and it is the
+     * one way this helper can be silently defeated — do not mix the two approaches on one deal.
+     *
+     * 🔴 THE DML IS EXPLICIT `AccessLevel.SYSTEM_MODE` AND A BARE `update` DOES NOT WORK HERE.
+     * MEASURED, NOT PRECAUTIONARY — validate `0Afiw000000VDSPCA4`, 2026-09-02: with the two flags
+     * newly deployed and carrying ZERO `FieldPermissions` rows, a bare `update` threw
+     * `System.DmlException: Operation failed due to fields being inaccessible on Sobject
+     * Opportunity` in FOUR test classes, as a System Administrator. A field nobody has been
+     * granted at all is not FLS-DENIED, it is ABSENT from the running user's schema, and "Apex is
+     * system mode by default" does not put back a field that is not there. The same run threw
+     * `System.QueryException: No such column 'Has_Open_Transaction__c'` from ordinary unqualified
+     * SELECTs for the same reason.
+     * ⚠ EVERY test-side read of these two fields therefore needs an explicit `WITH SYSTEM_MODE`
+     * too, not just this write. Do not "simplify" either away on the grounds that test code runs
+     * in system mode.
+     *
+     * 🔴 IT DELIBERATELY BREAKS THE FAMILY'S MIRRORING CONTRACT, AND IT IS THE ONLY MEMBER THAT
+     * DOES. Every other helper here MIRRORS what it wrote back onto the caller's in-memory
+     * record. This one must NOT, because these two fields carry no FLS: mirroring them puts two
+     * schema-absent fields into the caller's sObject, and the caller's very next plain
+     * `update opp;` — which every gate test does, to move the stage — then sends them in the
+     * payload and dies with `System.DmlException: Operation failed due to fields being
+     * inaccessible on Sobject Opportunity`. MEASURED, validate `0Afiw000000VCMgCAO`, 2026-09-02:
+     * three test methods failed exactly that way with the mirror in place, and the error named a
+     * field the test never mentions. A test that needs to READ the flags must re-query them
+     * `WITH SYSTEM_MODE`.
+     *
+     * @param opportunities Inserted Opportunities to prepare (required, non-empty).
+     * @return The same Opportunities. ⚠ The two flags are NOT mirrored onto them — see above.
+     */
+    public static List<Opportunity> markTransactionClosed(List<Opportunity> opportunities) {
+        List<Opportunity> deals = requireSavedOpportunities(opportunities, 'markTransactionClosed');
+        Map<Id, Opportunity> updates = new Map<Id, Opportunity>();
+        for (Opportunity deal : deals) {
+            // No mirror onto `deal` — see the 🔴 note above. Deliberate and load-bearing.
+            updates.put(deal.Id, new Opportunity(
+                Id = deal.Id,
+                Has_Open_Transaction__c = false,
+                Has_Closed_Transaction__c = true
+            ));
+        }
+        Database.update(updates.values(), true, AccessLevel.SYSTEM_MODE);
+        return deals;
+    }
+
+    /**
+     * Marks one deal as having a closed transaction and no open one.
+     * @param opportunity An inserted Opportunity.
+     * @return The same Opportunity.
+     */
+    public static Opportunity markTransactionClosed(Opportunity opportunity) {
+        return markTransactionClosed(new List<Opportunity>{ opportunity })[0];
     }
 
     /**
@@ -2015,8 +2116,13 @@ public with sharing class TestDataFactory {
         for (Integer i = 0; i < count; i++) {
             records.add(new Underwriting__c(
                 Opportunity__c = opportunityId,
+                // 2026-09-02: Status__c = 'In Progress' removed. Underwriting__c.Status__c is
+                // retired as a strict-subset duplicate of Stage__c. This was the SECOND of two
+                // sites in this file (the other is in approveUnderwriting) and it was missed by
+                // two consumer audits, because a bare `Status__c` here is indistinguishable by
+                // grep from the Onboarding__c / NDA__c / Transaction__c Status__c fields that
+                // this file also sets. Grep by OBJECT, not by field name.
                 Stage__c = 'Requested',
-                Status__c = 'In Progress',
                 My_Price__c = 1000000 + (i * 1000),
                 My_Cap_Rate__c = 6.75,
                 Market_Cap_Rate__c = 6.0,

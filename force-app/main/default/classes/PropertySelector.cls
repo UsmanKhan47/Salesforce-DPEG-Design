@@ -84,8 +84,12 @@ public with sharing class PropertySelector {
      *
      * The exposure is measured, not hypothetical. The Opportunity update that fires this is
      * reachable two ways, and BOTH run as a principal who may hold nothing on `Property__c`:
-     *   - `StageAdvanceService.NEXT_STAGE` maps `Under Contract (PSA) ⇒ Closed Won` and
-     *     `About to Close ⇒ Closed Won`, so any deal driver can drive it; and
+     *   - `StageAdvanceService.NEXT_STAGE` maps `About to Close ⇒ Closed Won`, so any deal
+     *     driver can drive it. ⚠ AMENDED 2026-09-02: this line also named
+     *     `Under Contract (PSA) ⇒ Closed Won`, which was repointed to `About to Close` when the
+     *     transaction gate landed. ONE key instead of two changes the EXPOSURE not at all — a
+     *     deal driver still reaches Closed Won through the surviving key, which is the only
+     *     thing this paragraph is claiming; and
      *   - the `Transaction_Complete_Close` flow writes `StageName = 'Closed Won'` with **no
      *     `<runInMode>` element**, i.e. DefaultMode, i.e. as the TRANSACTIONS persona who
      *     flipped the `Transaction__c` to Closed.

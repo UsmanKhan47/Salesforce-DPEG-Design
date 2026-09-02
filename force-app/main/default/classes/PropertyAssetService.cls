@@ -17,10 +17,23 @@
  * asset) with nothing to hang from.
  *
  * ── 🔴 WHY HERE AND NOT IN THE `Transaction_Complete_Close` FLOW ──
- * That flow is the obvious home and it is the WRONG one: it would miss half the closes.
- * `StageAdvanceService.NEXT_STAGE` maps **both** `Under Contract (PSA) ⇒ Closed Won` and
- * `About to Close ⇒ Closed Won`, so a deal driver clicking Advance Stage reaches Closed Won
- * with **no `Transaction__c` in the picture at all**, and the gap would be invisible.
+ * That flow is the obvious home and it is the WRONG one: it would miss closes.
+ *
+ * ⚠ AMENDED 2026-09-02 — THE ORIGINAL ARGUMENT IS HALF DEAD AND IS RECORDED HERE RATHER THAN
+ * LEFT STANDING AS IF IT STILL HELD. It ran: "`StageAdvanceService.NEXT_STAGE` maps **both**
+ * `Under Contract (PSA) ⇒ Closed Won` and `About to Close ⇒ Closed Won`, so a deal driver
+ * clicking Advance Stage reaches Closed Won with **no `Transaction__c` in the picture at all**."
+ * That PAIR NO LONGER EXISTS: PSA was repointed to `About to Close` on 2026-09-02 so the map
+ * now forces every advance-driven close through the stage that opens a Transaction, and
+ * `Transaction_Closed_Before_Closed_Won` refuses a close with no Transaction outright.
+ *
+ * 🔴 THE CONCLUSION SURVIVES ON A NARROWER BASE, AND THE SERVICE MUST NOT BE MOVED ON THE
+ * STRENGTH OF THIS NOTE. Closed Won is still reachable without ever touching a Transaction, by
+ * routes the map and the rule both miss: the API, Data Loader, a list view, inline edit and the
+ * Path all bypass `StageAdvanceService`, and all five Closed Won validation rules are
+ * `ISCHANGED`-scoped, so a record INSERTED at Closed Won crosses none of them
+ * (`PropertyAssetServiceTest.aDealInsertedDirectlyAtClosedWon…` is that case, deliberately).
+ * A flow keyed on the Transaction would still miss every one of those.
  * Keying on the OPPORTUNITY STAGE catches every route by construction. The trigger handler
  * already routes a non-review, stage-keyed concern for exactly this reason —
  * `ContractExecutionService.openTransactionsOnAboutToClose`, moved there 2026-08-05 — and

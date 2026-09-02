@@ -82,8 +82,14 @@ public with sharing class StageAdvanceService {
      * derivable predecessor, which is the entire reason `advanceTo` exists alongside `advance`:
      *   - 'Development Review'  — the Land branch off Under Review (dealSendToDevelopmentReview)
      *   - 'Construction Review' — the Retail branch off Under Review (dealSendToConstructionReview)
-     *   - 'About to Close'      — the optional 'Under Contract (PSA)' off-ramp
-     *                             (dealMoveToAboutToClose)
+     *   - 'About to Close'      — the 'Under Contract (PSA)' off-ramp (dealMoveToAboutToClose).
+     *                             ⚠ IT SAID "the OPTIONAL … off-ramp" UNTIL 2026-09-02. It is no
+     *                             longer optional: Transaction_Closed_Before_Closed_Won fails
+     *                             closed, and this stage is the only in-app route that opens the
+     *                             Transaction the gate demands. It stays in this set because it is
+     *                             ALSO now NEXT_STAGE's target for PSA, and a stage can legitimately
+     *                             be both — `advanceTo` validates the target, `advance` derives it,
+     *                             and both must be able to reach it.
      *   - 'Dead/Pass'           — pre-authorized for the deal off-ramp action (design doc D4). It is
      *                             a real stage in BOTH business processes and is reachable from any
      *                             active stage, so it can never be derived by NEXT_STAGE. Listed
@@ -132,12 +138,59 @@ public with sharing class StageAdvanceService {
     // Apex literal, a picklist value and a visibility rule's rightValue all use this
     // exact form.
     //
-    // 🔴 BOTH 'Under Contract (PSA)' AND 'About to Close' MAP TO 'Closed Won', AND THAT
-    // PAIR IS LOAD-BEARING OUTSIDE THIS CLASS. PropertyAssetService.ensureOnClosedWon
-    // lives on OpportunityReviewTrigger — rather than in the Transaction_Complete_Close
-    // flow — precisely because of it: a deal driver can reach 'Closed Won' from EITHER
-    // key, so half the closes carry no Transaction__c at all. Renaming one key without
-    // the other silently re-opens that route-vs-state defect. Both moved together here.
+    // 🔴 RETRACTED 2026-09-02 — 'Under Contract (PSA)' NO LONGER MAPS TO 'Closed Won'.
+    // This paragraph used to open: "BOTH 'Under Contract (PSA)' AND 'About to Close' MAP
+    // TO 'Closed Won', AND THAT PAIR IS LOAD-BEARING OUTSIDE THIS CLASS … a deal driver
+    // can reach 'Closed Won' from EITHER key, so half the closes carry no Transaction__c
+    // at all." The pair is gone: PSA now maps to 'About to Close', which is the only
+    // in-app route that OPENS a Transaction (ContractExecutionService
+    // .openTransactionsOnAboutToClose).
+    //
+    // WHY, so nobody repoints it back on the strength of the paragraph it replaced:
+    // Transaction_Closed_Before_Closed_Won (2026-09-02) FAILS CLOSED — a deal with no
+    // Transaction cannot reach 'Closed Won' at all. With the old mapping the Close Deal
+    // button on a PSA-stage deal would have called a hop the validation rule refuses
+    // EVERY TIME, so the user's reward for clicking it would have been a validation error
+    // rather than a closed deal. Repointing it makes the button do the thing that is now
+    // required — hand the deal to the Transactions team — instead of the thing that is
+    // now impossible. That IS a workflow change and it was made deliberately, with the
+    // consequence stated: 'About to Close' is now effectively MANDATORY.
+    //
+    // 🟢 AND THE UI COST IS ZERO, WHICH WAS MEASURED RATHER THAN HOPED. The retired entry had
+    // NO caller on the deal page: `flexipages/Opportunity_Record_Page` gates
+    // `Opportunity.Close_Deal` (the only quick action wired to `advance`, via
+    // `advanceDealStage`) on `{!Record.StageName} EQUAL 'About to Close'`, and gates
+    // `Opportunity.Move_to_About_to_Close` on `EQUAL 'Under Contract (PSA)'`. So the page
+    // ALREADY routed PSA -> About to Close -> Closed Won, and the PSA -> Closed Won entry was
+    // reachable only by calling the Apex directly. This edit makes the map agree with the page
+    // rather than changing what the page does.
+    // ⚠ Verified against the FlexiPage on 2026-09-02. If `Close_Deal`'s criterion is ever
+    // widened to include 'Under Contract (PSA)', that button starts calling this map from PSA
+    // and the "zero UI cost" claim above dies with it — re-read this note then.
+    //
+    // ⚠ THE PRE-AUTHORISATION FOR THIS EDIT IS IN lwc/dealMoveToAboutToClose. That bundle's
+    // header argued at length for leaving this key alone ("Rerouting that stage's primary
+    // target to 'About to Close' would have silently added a mandatory extra click to every
+    // deal that closes") and ended "Revisit only if About to Close becomes a required step."
+    // Fail-closed is exactly that condition. That header has been amended in place; read it
+    // and this note together before touching either.
+    //
+    // ⚠ WHAT DID **NOT** CHANGE, AND MUST NOT BE "TIDIED" ON THE STRENGTH OF THIS EDIT.
+    // PropertyAssetService.ensureOnClosedWon still lives on OpportunityReviewTrigger rather
+    // than in the Transaction_Complete_Close flow. Its justification is WEAKER now (the
+    // "half the closes have no Transaction" population that this map created is gone), but
+    // it is not zero: a deal can still reach 'Closed Won' by API, Data Loader, list view,
+    // inline edit or the Path, none of which pass through this map, and all five Closed Won
+    // validation rules are ISCHANGED-scoped so an INSERT at Closed Won crosses none of them.
+    // Moving that service is a separate decision with its own blast radius. DO NOT act on
+    // this note; it is here so the next reader knows the argument moved rather than
+    // discovering a dangling reference.
+    //
+    // ⚠ 'About to Close' => 'Closed Won' STAYS. It is the manual override for a deal whose
+    // Transaction has already closed — on the ordinary path Transaction_Complete_Close has
+    // already written 'Closed Won' by then, so the button is usually a no-op; when the
+    // Transaction is still open the validation rule refuses it, which is the intended
+    // answer.
     //
     // ⚠ DealFolderService WAS NAMED IN THIS PAIR UNTIL 2026-08-27 AND HAS BEEN REMOVED ON
     // PURPOSE. It now keys on ENTRY TO ANY OF FOUR CLAIM STAGES ('Under Review',
@@ -157,7 +210,7 @@ public with sharing class StageAdvanceService {
         'Construction Review' => 'Underwriting',
         'Underwriting' => 'LOI',
         'LOI' => 'Under Contract (PSA)',
-        'Under Contract (PSA)' => 'Closed Won',
+        'Under Contract (PSA)' => 'About to Close',
         'About to Close' => 'Closed Won'
     };
 

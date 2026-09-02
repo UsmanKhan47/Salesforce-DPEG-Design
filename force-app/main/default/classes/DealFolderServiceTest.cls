@@ -85,10 +85,17 @@ private class DealFolderServiceTest {
 
     /**
      * Inserts `count` properties and `count` Opportunities, one Opportunity per property, already
-     * prepared to cross the two Closed Won validation gates (`NDA_Signed_Before_Deal_Progression`
-     * and `Contract_Signed_Before_Closed_Won`) — the identical fixture shape
+     * prepared to cross the THREE Closed Won validation gates
+     * (`NDA_Signed_Before_Deal_Progression`, `Contract_Signed_Before_Closed_Won` and, since
+     * 2026-09-02, `Transaction_Closed_Before_Closed_Won`) — the identical fixture shape
      * `PropertyAssetServiceTest.dealsReadyToClose` uses, reproduced here rather than shared because
      * that helper is `private` to its own test class.
+     *
+     * 🔴 THE THIRD GATE IS SATISFIED BY WRITING THE PARENT FLAGS, NOT BY CREATING A
+     * `Transaction__c`. `TestDataFactory.markTransactionClosed` is one field pair in one bulk DML;
+     * a real Transaction per deal would fan out 82 checklist Tasks each and will not run at this
+     * class's volumes. The full argument is at that helper's declaration — read it before
+     * "improving" this.
      *
      * @param count      How many pairs.
      * @param properties Out-parameter: the inserted properties, index-aligned to the result.
@@ -106,6 +113,7 @@ private class DealFolderServiceTest {
 
         TestDataFactory.signPrimaryNda(opps);
         TestDataFactory.signContract(opps);
+        TestDataFactory.markTransactionClosed(opps);
         return opps;
     }
 
@@ -455,6 +463,9 @@ private class DealFolderServiceTest {
         List<Opportunity> opps = TestDataFactory.createOpportunities(3, true);
         TestDataFactory.signPrimaryNda(opps);
         TestDataFactory.signContract(opps);
+        // The third Closed Won gate (2026-09-02). These deals are built inline rather than
+        // through dealsReadyToClose, so they need the preparation of their own.
+        TestDataFactory.markTransactionClosed(opps);
         for (Opportunity o : opps) {
             Assert.isNull(o.Property__c, 'Precondition: a manually built deal has no Property');
         }
@@ -584,6 +595,9 @@ private class DealFolderServiceTest {
         Opportunity noPropertyDeal = TestDataFactory.createOpportunity(null, true);
         TestDataFactory.signPrimaryNda(new List<Opportunity>{ noPropertyDeal });
         TestDataFactory.signContract(new List<Opportunity>{ noPropertyDeal });
+        // The third Closed Won gate (2026-09-02) — the fifth deal is built inline, so it needs
+        // the preparation dealsReadyToClose gave the other four.
+        TestDataFactory.markTransactionClosed(new List<Opportunity>{ noPropertyDeal });
         opps.add(noPropertyDeal);
 
         SharePointCalloutMock mock = new SharePointCalloutMock(201,
@@ -810,6 +824,29 @@ private class DealFolderServiceTest {
         moveTo(opps, UNDER_REVIEW);    // entry 1 — the ONLY one that may do work
         moveTo(opps, UNDERWRITING);    // entry 2 — member -> member, not an entry
         moveTo(opps, ABOUT_TO_CLOSE);  // entry 3 — member -> member, not an entry
+
+        // 🔴 THIS CALL MUST SIT **HERE**, BETWEEN THE THIRD AND FOURTH HOPS, AND MOVING IT ABOVE
+        // `Test.startTest()` SILENTLY BREAKS THE TEST. MEASURED: deploy 0Afiw000000VWV3CAO,
+        // 2026-09-02, where it sat with the other two fixture calls above and this method was the
+        // ONE failure in the whole class — `FIELD_CUSTOM_VALIDATION_EXCEPTION … until its
+        // transaction is closed` at the CLOSED_WON hop, from a fixture that had already prepared
+        // the gate.
+        //
+        // Why: this walk is the only method in this class that passes THROUGH 'About to Close',
+        // and entering that stage runs `ContractExecutionService.openTransactionsOnAboutToClose`,
+        // which AUTO-CREATES a real `Transaction__c` at `Status__c = 'Active'`. Its trigger runs
+        // `DealTransactionGateService.recalculate`, which recomputes both flags FROM THE DATABASE
+        // and overwrites whatever the fixture wrote — exactly the "NOT idempotent against later
+        // Transaction DML" failure mode `TestDataFactory.markTransactionClosed`'s own header warns
+        // about. A pre-walk call is therefore dead by the time hop 4 needs it.
+        //
+        // ⚠ AND IT STILL MUST NOT CREATE OR CLOSE A REAL `Transaction__c`. Closing the auto-created
+        // one would fire `flows/Transaction_Complete_Close`, which would close the deal from INSIDE
+        // the fixture and make hop 4 a no-op re-save — destroying the four-entry walk this method
+        // exists to measure. Writing the two parent flags is the whole point of that helper; read
+        // its declaration before changing this.
+        TestDataFactory.markTransactionClosed(opps);
+
         moveTo(opps, CLOSED_WON);      // entry 4 — member -> member, not an entry
 
         // Snapshot the SYNCHRONOUS contribution before stopTest() drains the one enqueued job.
@@ -819,17 +856,31 @@ private class DealFolderServiceTest {
         Integer syncInvocations = DealFolderService.runInvocations;
         Test.stopTest();
 
-        // 🔴 FIVE, NOT FOUR — MEASURED 2026-08-27. Four stage saves, plus ONE re-entrant routing:
-        // entering 'Underwriting' makes OpportunityReviewService insert an Underwriting__c and
-        // then `update` the Opportunity to stamp Primary_Underwriting__c, re-firing the
-        // after-update trigger with the stage unchanged. The service is therefore ASKED five
-        // times and must still claim exactly once — which is the whole point of the assertions
-        // below, and is a stricter bar than the four-save story alone.
-        Assert.areEqual(5, syncInvocations,
-            'Four stage saves plus ONE re-entrant routing from the Primary_Underwriting__c '
-            + 'stamp-back. If this number changes, some OTHER automation started re-saving the '
-            + 'deal — re-read the assertions below before adjusting it, because the claim count '
-            + 'is what this test actually protects.');
+        // 🔴 SEVEN, NOT FOUR — AND IT WAS FIVE UNTIL 2026-09-02. MEASURED, validate
+        // `0Afiw000000VWlBCAW`: `Expected: 5, Actual: 7`. Four stage saves plus THREE re-entrant
+        // Opportunity updates, every one of them a real save this service is legitimately asked
+        // about:
+        //   1. entering 'Underwriting' makes OpportunityReviewService insert an Underwriting__c
+        //      and then `update` the deal to stamp Primary_Underwriting__c   (the original +1)
+        //   2. entering 'About to Close' auto-creates a Transaction__c, whose trigger runs
+        //      DealTransactionGateService.recalculate — which writes Has_Open_Transaction__c on
+        //      the deal, re-firing the after-update trigger              (+1, new on 2026-09-02)
+        //   3. the markTransactionClosed call above is itself an Opportunity update
+        //                                                               (+1, new on 2026-09-02)
+        // The stage is UNCHANGED on all three, so none of them is a fresh claim-stage entry and
+        // none may cost an enqueue, a query or a stamp — which is exactly what the four
+        // assertions below pin. The service being ASKED seven times and still claiming ONCE is a
+        // strictly stronger result than the four-save story alone.
+        //
+        // ⚠ If this number moves again, some OTHER automation started re-saving the deal. Read
+        // the assertions below before adjusting it — the claim count is what this test protects,
+        // and this number is only the context in which that count has to hold.
+        Assert.areEqual(7, syncInvocations,
+            'Four stage saves plus THREE re-entrant Opportunity updates (Primary_Underwriting__c '
+            + 'stamp-back, the transaction-gate flag recompute from the auto-created Transaction, '
+            + 'and markTransactionClosed itself). If this number changes, some OTHER automation '
+            + 'started re-saving the deal — re-read the assertions below before adjusting it, '
+            + 'because the claim count is what this test actually protects.');
         Assert.areEqual(1, syncEnqueues,
             'THE FALSIFIER: exactly ONE folder job for four claim-stage saves. Four enqueues here '
             + 'would mean the prior-stage test stopped using CLAIM_STAGES, and every deal in the '

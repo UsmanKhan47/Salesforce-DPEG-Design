@@ -9,3 +9,43 @@
 .view-all-footer a:hover {
     text-decoration: underline;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════════════════════
+   FILTER ROW (Tranche 4 item 4, 2026-09-01).
+
+   ⚠ `flex-wrap` IS LOAD-BEARING, NOT DEFENSIVE. This card lives in region2 of
+   `flexipage:appHomeTemplateHeaderTwoColumns` on `Broker_Hub` — a HALF-WIDTH column — and the
+   same bundle is `isExposed` for `lightning__HomePage`, where an admin may have dropped it into a
+   narrower region still. The search box takes the slack and the status combobox keeps a fixed
+   basis, so the two sit side by side when there is room and stack when there is not, with no media
+   query and no container query. (A `@container` rule would also make jsdom discard the whole
+   stylesheet, taking the rest of this file's assertions with it.)
+
+   SLDS 2 design tokens only — no new hardcoded colours. ⚠ THE EXISTING HARDCODED HEX IN THIS
+   BUNDLE'S JS (the status pill's `#e8f5e9` / `#43A047` / `#eef1f4` / `#94a3b8`) IS PRE-EXISTING AND
+   IS DELIBERATELY NOT TOUCHED HERE. Uplifting it is a separate
+   `.claude/skills/uplifting-components-to-slds2` pass; doing it inside a sort-and-filter change
+   would put a visual regression and a behaviour change in one diff.
+   ═══════════════════════════════════════════════════════════════════════════════════════════ */
+.bkl-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--slds-g-spacing-2, 0.5rem);
+    align-items: flex-end;
+}
+.bkl-search {
+    flex: 1 1 11rem;
+    min-width: 0;
+}
+.bkl-status-filter {
+    flex: 0 1 9rem;
+    min-width: 0;
+}
+
+/* The filtered-to-nothing state. It replaces the table rather than sitting above an empty one:
+   a datatable rendering only its header row reads as a rendering fault, not as a filter result. */
+.bkl-empty {
+    text-align: center;
+    color: var(--slds-g-color-neutral-base-60, #8a96a3);
+    font-size: var(--slds-g-font-scale-neg-1, 0.75rem);
+}

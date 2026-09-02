@@ -84,6 +84,23 @@
                         </th>
                         <th class="qa-col-broker" scope="col">Broker</th>
                         <th class="qa-col-amount" scope="col">Amount</th>
+                        <!--
+                            🔴 THE THREE DEAL-TERM COLUMNS (2026-09-02, BA story 35). They sit
+                            IMMEDIATELY AFTER Amount, before Offer Date and Offer Number, because
+                            price + earnest + DD + closing period is the comparison a principal
+                            actually makes; the date and the AutoNumber are provenance, not terms.
+                            ⚠ THE HEADERS ARE SHORT ON PURPOSE ("DD Days", not "Due Diligence
+                            Days"). This is a screen quick action, not a record page — eight
+                            columns only fit if the four numeric ones stay narrow, and the full
+                            field labels are what a screen reader gets from the row's cells anyway.
+                            ⚠ `scope="col"` on every one of them. Without it a screen reader does
+                            not associate a cell with its column, which is most of what makes this
+                            a table rather than a grid of unlabelled numbers — and the suite
+                            asserts it on ALL headers, so a new column added without it goes red.
+                        -->
+                        <th class="qa-col-earnest" scope="col">Earnest Money</th>
+                        <th class="qa-col-dd" scope="col">DD Days</th>
+                        <th class="qa-col-closing" scope="col">Closing Days</th>
                         <th class="qa-col-date" scope="col">Offer Date</th>
                         <th class="qa-col-ref" scope="col">Offer Number</th>
                     </tr>
@@ -114,6 +131,9 @@
                             </td>
                             <th class="qa-cell-broker" scope="row">{row.broker}</th>
                             <td class="qa-cell-amount">{row.amount}</td>
+                            <td class="qa-cell-earnest">{row.earnest}</td>
+                            <td class="qa-cell-dd">{row.ddDays}</td>
+                            <td class="qa-cell-closing">{row.closingDays}</td>
                             <td class="qa-cell-date">{row.date}</td>
                             <td class="qa-cell-ref">{row.offerRef}</td>
                         </tr>

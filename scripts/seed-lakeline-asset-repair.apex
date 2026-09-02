@@ -85,12 +85,38 @@
 //     projected = target * 1.08       (uplift band 1.05-1.10, above target)
 //               = 32,626,800
 // The 0.95 discount (top of the band) is chosen deliberately: `BOV_Score__c`
-// scores value as 50 * MIN(BOV_Amount / Target_Sale_Price, 1.10) / 1.10, so the
+// scores value as 40 * MIN(BOV_Amount / Target_Sale_Price, 1.10) / 1.10, so the
 // three BOVs land at ratios 1.063 / 1.091 / 1.119 — only the highest hits the
-// 1.10 cap, giving a differentiated 48.3 / 49.6 / 50.0 value term instead of two
+// 1.10 cap, giving a differentiated 38.6 / 39.7 / 40.0 value term instead of two
 // rows tying at the ceiling. Those three scores are currently BLANK (the formula
 // returns null when the asset chain is broken), so this also un-blanks the BOV
 // score column as a side effect of the fix.
+//
+// ⚠ COEFFICIENT CORRECTED 2026-09-02 (Tranche 4 code review, W4). RETRACTED, in place
+// rather than silently overwritten, because a reader carrying the old number would
+// mis-read this script's OUTPUT as a bug in the formula:
+//
+//     RETRACTED: "scores value as 50 * MIN(BOV_Amount / Target_Sale_Price, 1.10) /
+//     1.10 ... giving a differentiated 48.3 / 49.6 / 50.0 value term"
+//
+// `BOV_Score__c` was re-weighted on 2026-09-01 from Value 50 / Commission 25 /
+// Speed 25 to Value 40 / Commission 20 / Speed 20 / Buyer Ready 10 / Known
+// Performer 10 (read the field's own XML comment — it is the authority, this is a
+// copy). The Value coefficient is 40, so every value term above drops to 80% of
+// what this block used to predict. Arithmetic on the amounts actually written
+// below (32,100,000 / 32,950,000 / 33,800,000 over a 30,210,000 target):
+//     40 * 1.06256 / 1.10 = 38.6      (ratio under the cap)
+//     40 * 1.09070 / 1.10 = 39.7      (ratio under the cap)
+//     40 * 1.10    / 1.10 = 40.0      (ratio 1.119, capped)
+//
+// 🔴 THE 0.95 DISCOUNT ITSELF IS UNCHANGED AND MUST NOT BE "CORRECTED" TOO. It was
+// chosen so the three ratios STRADDLE the 1.10 cap rather than all saturating it,
+// and that argument is about the RATIOS, which the re-weighting does not touch — a
+// coefficient scales all three terms by the same factor and cannot make two of them
+// tie. The differentiation this block exists to produce survives the rescale intact;
+// only the three printed numbers moved. Nothing else in this script depends on the
+// coefficient — there is no score assertion here, which is exactly why the design's
+// "grep for score assertions" sweep did not find this text.
 //
 // ══════════════════════════════════════════════════════════════════════════════
 // FIELD SAFETY — every API name and picklist literal verified against

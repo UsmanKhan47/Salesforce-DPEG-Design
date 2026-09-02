@@ -11,38 +11,58 @@
         of workflows/Underwriting__c.workflow-meta.xml (2026-08-28) — same shape, same reasoning,
         different object.
 
-        🔴 ONE FIELD UPDATE, NO WORKFLOW RULE, NO REJECTION FIELD UPDATE. The single update below
-        is fired ONLY by the new approvalProcesses/LOI__c.LOI_Approval as its finalApprovalActions.
-        Do not add a <rules> element: an active rule writing LOI_Status__c on an ordinary edit
-        would fake an approval.
+        🔴 UPDATED 2026-09-02, item 1 of agent-output/three-gaps-design-2026-09-02.md, DECISION D-1
+        = OPTION L-A (reuse LOI_Status__c as the pending-hide flag, rather than adding a new
+        Checkbox). THREE FIELD UPDATES ADDED: LOI_Status_Pending, LOI_Status_Rejected,
+        LOI_Status_Recalled. All four field updates in this file (including the pre-existing
+        LOI_Status_Approved) are fired ONLY by approvalProcesses/LOI__c.LOI_Approval, as
+        initialSubmissionActions / finalApprovalActions / finalRejectionActions / recallActions
+        respectively. Do not add a <rules> element: an active rule writing LOI_Status__c on an
+        ordinary edit would fake an approval.
 
-        🔴 NO REJECTION FIELD UPDATE, BY DESIGN — USER DECISION D-3, QUOTED: "The LOI stage will
-        remain on Under review after rejection." There is no finalRejectionActions on the approval
-        process and nothing here mirrors one. This is the ACCEPTED, DOCUMENTED loss of the retired
-        Opportunity.LOI_Approval's Set_Stage_Underwriting rejection action, which rewound the deal
-        a full stage (LOI -> Underwriting). That rewind is structurally unreachable from an
-        approval parented by LOI__c (LOI__c.Opportunity__c is a Lookup, not Master-Detail — an
-        approval process can field-update only its own record or a Master-Detail parent), and an
-        Apex substitute was considered and deliberately NOT built — see
-        LoiApprovalStampService.cls's own header for why (it would newly have to satisfy
-        NDA_Signed_Before_Deal_Progression and No_Backward_Stage_Movement, which the old
-        approval's field update bypassed). On rejection the LOI simply stays at
-        Stage__c = 'Under Review' and only the approval history records the decision.
+        🔴 THE REJECTION FIELD UPDATE BELOW (LOI_Status_Rejected) IS A DELIBERATE, DOCUMENTED
+        REVISION OF USER DECISION D-3 FROM THE LOI APPROVAL CUTOVER DESIGN (2026-09-01), NOT AN
+        OVERSIGHT OF IT. D-3's SUBSTANCE, QUOTED THERE AS "The LOI stage will remain on Under
+        review after rejection" — i.e. NO Stage__c rewind — IS STILL TRUE AND UNCHANGED; nothing
+        here writes Stage__c. What changes is LOI_Status__c ONLY: the three-gaps design (§2.1)
+        named this a "free rejection marker" — today a rejection changes nothing anywhere and only
+        the approval history records it; item 1's four-exit rule (submit/approve/reject/recall must
+        each leave LOI_Status__c somewhere sane, because the pending-hide criterion on
+        flexipages/LOI_Record_Page.flexipage-meta.xml keys off this exact field) forces a rejection
+        write to exist, so the LOI cutover design's own §5.2 "cheap, in-scope gain" is taken here.
+        The retired Opportunity.LOI_Approval's Set_Stage_Underwriting rejection rewind (a full
+        Stage__c move, LOI -> Underwriting) is STILL not rebuilt and stays an accepted, documented
+        loss — see LoiApprovalStampService.cls's own header for why an Apex substitute was
+        rejected (it would newly have to satisfy NDA_Signed_Before_Deal_Progression and
+        No_Backward_Stage_Movement, which the old approval's field update bypassed). Only the
+        picklist value changes; the stage lock/rewind story is untouched.
+
+        🔴 RECALL WRITES 'Draft', AND THIS IS A KNOWN, ACCEPTED INFORMATION LOSS — USER DECISION,
+        three-gaps design §2.1/§7 D-1: "on recall, write Draft and accept the clobber." A
+        workflow field update writes a LITERAL; it cannot restore whatever LOI_Status__c held
+        before submission. If the LOI had been countered (CounterOfferService.cls writes
+        LOI_Status__c = 'Countered'), a recall after that counter round silently overwrites
+        'Countered' with 'Draft'. Approval history still shows the counter and the recall
+        separately; only the picklist value on the record itself loses the distinction. This was
+        shown to the user before being chosen over adding a second, lossless Checkbox field.
 
         WHY THIS RECORD'S OWN FIELD, NOT THE PARENT'S. This is the child-object half of moving the
-        approval onto LOI__c. The field update writes only this record's own field — required,
-        because LOI__c.Opportunity__c is a Lookup, so an approval process on this object cannot
-        field-update the parent Opportunity at all. The parent mirror (Opportunity.LOI_Approved__c)
-        is written separately by flows/LOI_Approval_Sync.flow-meta.xml, entry-scoped on
-        LOI_Status__c transitioning to 'Approved' (recordTriggerType = Update,
+        approval onto LOI__c. Every field update here writes only this record's own field —
+        required, because LOI__c.Opportunity__c is a Lookup, so an approval process on this object
+        cannot field-update the parent Opportunity at all. The parent mirror
+        (Opportunity.LOI_Approved__c) is written separately by flows/LOI_Approval_Sync.flow-meta.xml,
+        entry-scoped on LOI_Status__c transitioning to 'Approved' (recordTriggerType = Update,
         doesRequireRecordChangedToMeetCriteria = true — both load-bearing, see that flow's own
         header and LoiApprovalStampService.cls's "THE TRIGGERING MARKER (D-4)" section for the
         251-record bulk callers this exact pair of settings keeps immune), calling
-        LoiApprovalStampService.
+        LoiApprovalStampService. Writing 'Pending Approval' on submission and 'Rejected' /
+        'Draft' on rejection/recall does NOT fire that flow — it only fires on a transition INTO
+        'Approved' — so the parent-mirror chain is unaffected by any of the three new field
+        updates below.
 
         DEPLOY ORDER — LOAD-BEARING. This file must land in the SAME deploy as (or before)
-        approvalProcesses/LOI__c.LOI_Approval.approvalProcess-meta.xml, which references the field
-        update below BY NAME and cannot deploy otherwise — the same requirement
+        approvalProcesses/LOI__c.LOI_Approval.approvalProcess-meta.xml, which references all four
+        field updates below BY NAME and cannot deploy otherwise — the same requirement
         Underwriting__c.Underwriting_Approval's header records at its own deploy-order note.
     -->
     <fieldUpdates>
@@ -51,6 +71,39 @@
         <field>LOI_Status__c</field>
         <literalValue>Approved</literalValue>
         <name>LOI Status Approved</name>
+        <notifyAssignee>false</notifyAssignee>
+        <operation>Literal</operation>
+        <protected>false</protected>
+        <reevaluateOnChange>false</reevaluateOnChange>
+    </fieldUpdates>
+    <fieldUpdates>
+        <fullName>LOI_Status_Pending</fullName>
+        <description>Initial submission action of LOI__c.LOI_Approval. Sets LOI Status to Pending Approval. Activates LOI_Record_Page Submit for Approval's second criterion, hiding the button while true, and lights the amber badge in lwc/dealDocStatus.</description>
+        <field>LOI_Status__c</field>
+        <literalValue>Pending Approval</literalValue>
+        <name>LOI Status Pending</name>
+        <notifyAssignee>false</notifyAssignee>
+        <operation>Literal</operation>
+        <protected>false</protected>
+        <reevaluateOnChange>false</reevaluateOnChange>
+    </fieldUpdates>
+    <fieldUpdates>
+        <fullName>LOI_Status_Recalled</fullName>
+        <description>Recall action of LOI__c.LOI_Approval. Sets LOI Status back to Draft, restoring Submit for Approval visibility. Writes a literal - a prior 'Countered' value is lost. Accepted, user-decided loss; see this file's header.</description>
+        <field>LOI_Status__c</field>
+        <literalValue>Draft</literalValue>
+        <name>LOI Status Recalled</name>
+        <notifyAssignee>false</notifyAssignee>
+        <operation>Literal</operation>
+        <protected>false</protected>
+        <reevaluateOnChange>false</reevaluateOnChange>
+    </fieldUpdates>
+    <fieldUpdates>
+        <fullName>LOI_Status_Rejected</fullName>
+        <description>Final rejection action of LOI__c.LOI_Approval. Sets LOI Status to Rejected. Does NOT move Stage__c - LOI stays at Under Review, per decision D-3 in the LOI approval cutover design. Gives rejection a visible effect; see this file's header.</description>
+        <field>LOI_Status__c</field>
+        <literalValue>Rejected</literalValue>
+        <name>LOI Status Rejected</name>
         <notifyAssignee>false</notifyAssignee>
         <operation>Literal</operation>
         <protected>false</protected>

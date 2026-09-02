@@ -120,29 +120,50 @@ private class StageAdvanceControllerTest {
             'Advance to PSA moves LOI -> PSA');
     }
 
+    /**
+     * 🔴 RENAMED AND RE-SUBJECTED 2026-09-02, from `closeDealMovesPsaToClosedWon`.
+     * `NEXT_STAGE` was repointed to `'Under Contract (PSA)' => 'About to Close'` when
+     * `Transaction_Closed_Before_Closed_Won` made a closed Transaction mandatory before a close.
+     * The old name described a hop that no longer exists.
+     *
+     * ⚠ AND THE OLD NAME WAS ALREADY MISLEADING ABOUT THE UI. `flexipages/Opportunity_Record_Page`
+     * has only ever shown `Opportunity.Close_Deal` at `StageName = 'About to Close'` — at
+     * `'Under Contract (PSA)'` it shows `Move to About to Close` instead. So no human ever reached
+     * Closed Won from PSA through this controller; this method exercises the SERVICE's map from a
+     * stage the button is not offered on. Keeping it is still right (the controller is
+     * `@AuraEnabled` and callable directly, which is exactly why the map is the control and the
+     * button is not), but do not read it as UI coverage.
+     */
     @isTest
-    static void closeDealMovesPsaToClosedWon() {
+    static void advanceMovesPsaToAboutToClose() {
         Opportunity o = newOpp('Under Contract (PSA)');
-        // Closed Won is inside the signed-NDA gate's stage list and behind the signed-contract gate.
+        // About to Close is inside the signed-NDA gate's stage list; the signed contract is what
+        // gives the Transaction its Day-0 date when this hop opens one.
         TestDataFactory.signPrimaryNda(o);
         TestDataFactory.signContract(o);
         Test.startTest();
         StageAdvanceController.advance(o.Id);
         Test.stopTest();
-        System.assertEquals('Closed Won',
+        System.assertEquals('About to Close',
             [SELECT StageName FROM Opportunity WHERE Id = :o.Id].StageName,
-            'Close Deal moves PSA -> Closed Won');
+            'Advance moves PSA -> About to Close (repointed 2026-09-02)');
     }
 
     @isTest
     static void closeDealMovesAboutToCloseToClosedWon() {
         Opportunity o = newOpp('About to Close');
-        // Same two gates as the PSA -> Closed Won hop above: Closed Won is in the signed-NDA
-        // gate's stage list and behind the signed-contract gate. (This method is NOT in the design
-        // doc's Category-A list — it was found by sweeping every stage-changing UPDATE in the
-        // suite. The doc traced Closed Won only from PSA and missed the About-to-Close entry.)
+        // Same gates as the hop above: Closed Won is in the signed-NDA gate's stage list and
+        // behind the signed-contract gate. (This method is NOT in the design doc's Category-A
+        // list — it was found by sweeping every stage-changing UPDATE in the suite. The doc traced
+        // Closed Won only from PSA and missed the About-to-Close entry.)
         TestDataFactory.signPrimaryNda(o);
         TestDataFactory.signContract(o);
+        // ⚠ THE THIRD CLOSED WON GATE (2026-09-02). Without this the deal has no Transaction at
+        // all and `Transaction_Closed_Before_Closed_Won` refuses the hop — fail-closed is the
+        // whole point of that rule, so this line is the fixture catching up with the workflow,
+        // not a workaround. It writes the parent flags rather than creating a real Transaction;
+        // see `TestDataFactory.markTransactionClosed` for why.
+        TestDataFactory.markTransactionClosed(o);
         Test.startTest();
         StageAdvanceController.advance(o.Id);
         Test.stopTest();

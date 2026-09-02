@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY. A comment placed ABOVE
+        <CustomField> breaks `sf` deploy at source conversion with a misleading
+        "unable to find matching parent xml file" error.
+
+        NEW 2026-09-02. Item 1 of agent-output/three-gaps-design-2026-09-02.md ("hide Submit for
+        Approval once a record is pending"). SYSTEM-WRITTEN ONLY. Same mechanism as
+        Disposition__c.Approval_Pending__c and BOV_Submission__c.Approval_Pending__c — read that
+        field's own header for the fuller rationale; this comment states only what differs here.
+
+        =====================================================================================
+        WHY THE FIELD EXISTS AT ALL, AND WHY Stage__c COULD NOT BE REUSED
+        =====================================================================================
+        Underwriting_Record_Page's Submit_for_Approval visibility rule reads
+        {!Record.Stage__c} EQUAL 'In Progress'. That value CANNOT be used to hide the button while
+        pending: 'In Progress' IS Underwriting__c.Underwriting_Approval's own entryCriteria, and
+        Stage__c does not move again until finalApprovalActions fires — so a rule keyed on Stage__c
+        alone stays true for the entire pending window. There is also no approval-state token
+        reachable from a FlexiPage <leftValue> or a formula field on this object (no relationship
+        from Underwriting__c to ProcessInstance). The fact has to be MATERIALISED as a stored field,
+        the same move already made for Disposition__c / BOV_Submission__c and, on this object
+        family, Is_On_Market__c.
+
+        =====================================================================================
+        WHO READS IT: ONE DYNAMIC ACTION, AND NOTHING ELSE
+        =====================================================================================
+        It is NOT on any page layout and NOT on any FlexiPage fieldInstance. Its only reader is the
+        THIRD criterion on Underwriting__c.Submit_for_Approval's visibility rule on
+        flexipages/Underwriting_Record_Page.flexipage-meta.xml (booleanFilter '1 AND 2' ->
+        '1 AND 2 AND 3'): {!Record.Approval_Pending__c} EQUAL false, ANDed onto the existing
+        Acquisition_Deal_Actions + Stage__c = 'In Progress' criteria.
+
+        🔴 THIS FIELD MUST HAVE READ FLS, AND THE POLARITY MAKES THAT LOAD BEARING. A visibility
+        rule reading a field the running user cannot see evaluates FALSE with no error anywhere.
+        With the EQUAL false polarity above, a missing grant does not fail safe: it hides the
+        Submit button for EVERY user, silently and permanently — the exact symptom of the defect
+        this field exists to fix. Read is granted, read-only, in DPEG_Acquisition_View and
+        DPEG_Acquisition_Edit, mirroring the grant matrix Underwriting__c.Stage__c already carries
+        in those same two files. It stays READ ONLY (editable=false) everywhere. Recovery from a
+        stuck flag is anonymous Apex or Data Loader, not a hand edit.
+        ⚠ Opportunity_Stage_Actions_Access does NOT get a grant here, unlike the design draft's
+        first-pass citation. That set's own header (section 3, "WHY THERE ARE NO fieldPermissions
+        AT ALL") documents a deliberate, measured decision to carry zero fieldPermissions blocks of
+        any kind — adding one here would contradict that file's own stated design.
+
+        =====================================================================================
+        WHY THIS OBJECT HAS ONLY ONE Set / ONE Clear, NOT DISPOSITION'S FOUR-ACTION SHAPE
+        =====================================================================================
+        Underwriting__c.Underwriting_Approval is a single approval process with one entry stage
+        ('In Progress'), so one Set (initialSubmissionActions) and one Clear (reused identically by
+        finalApprovalActions, finalRejectionActions and recallActions) is the whole mechanism — see
+        workflows/Underwriting__c.workflow-meta.xml. There is no cross-object mirror-up case the
+        way Disposition__c.Approval_Pending__c has for the BOV branch: Underwriting__c has no child
+        object whose own approval would need to flag this record.
+
+        🔴 finalRejectionActions IS A NEW ELEMENT ON THE APPROVAL PROCESS FILE, ADDED BY THIS SAME
+        CHANGE. It exists ONLY to clear this flag — it does NOT reintroduce a Stage__c/Status__c
+        rejection action. That distinction matters: the approval process file's own header (D2)
+        still correctly states Stage__c never moves on rejection and Underwriting_Complete__c is
+        still not cleared on reject; only the pending-flag clear is new. Without it, a rejected
+        record would stay flagged pending forever with no route back to Submit — worse than the
+        defect being fixed. See that file's header for the corrected D2 note.
+
+        ⚠ NO VALIDATION RULE AND NO TRIGGER GUARD ENFORCE "DO NOT HAND EDIT". Read only FLS is the
+        control. Do not add one; it was not requested.
+
+        ⚠ DETECTION QUERY FOR A STUCK FLAG (a true with no pending approval behind it):
+            SELECT Id, Name, Stage__c FROM Underwriting__c
+            WHERE Approval_Pending__c = true
+              AND Id NOT IN (SELECT TargetObjectId FROM ProcessInstance WHERE Status = 'Pending')
+
+        DEPLOY ORDER, LOAD BEARING. This file must land BEFORE
+        workflows/Underwriting__c.workflow-meta.xml (a field update naming a field that does not
+        exist fails the deploy), which must itself land before the approval process edit.
+    -->
+    <fullName>Approval_Pending__c</fullName>
+    <defaultValue>false</defaultValue>
+    <description>SYSTEM FIELD - DO NOT HAND-EDIT. TRUE while an approval is pending on this underwriting. Set by the approval's initialSubmissionActions and cleared by its final approval, final rejection and recall actions. Read ONLY by the Submit for Approval Dynamic Action on Underwriting_Record_Page, which hides the button while it is true.</description>
+    <inlineHelpText>Ticked automatically while this underwriting has an approval awaiting a decision. It clears on approval, rejection or recall, and cannot be edited by hand.</inlineHelpText>
+    <label>Approval Pending</label>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Checkbox</type>
+</CustomField>

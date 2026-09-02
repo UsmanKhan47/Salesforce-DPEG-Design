@@ -1,15 +1,22 @@
 /**
  * @description Tests DispositionTractionService — the Active Listing traction monitor
- * (user decisions 2026-08-21: Week 1/4/6 thresholds + the first-offer clock pause; D28-Q1 offers-only
- * rule, unchanged).
+ * (user decision A2, 2026-09-02: Week 2/4/6 thresholds — the first rung moved 7 -> 14. User
+ * decisions 2026-08-21: the Week x/4/6 ladder shape + the first-offer clock pause. D28-Q1
+ * offers-only rule, unchanged throughout).
  *
- * ── 🔴 THIS SUITE IS THE PERMANENT FALSIFIER FOR THE 7/28/42 CLOCK ──────────
- * Two ladders have now drifted out of this application, and BOTH drifted because the numbers lived
- * in more than one place and no single test went red when they moved: 21/28/42 (retired 2026-08-10)
- * and 30/40/60 (retired 2026-08-21). Every boundary below is asserted on BOTH sides — 6/7, 27/28,
- * 41/42 — because an off-by-one in a threshold is the defect a "does it roughly work" test cannot
- * see, and `theLadderIsExactly7_28_42` pins the three numbers themselves so that moving one without
- * a decision fails HERE rather than in front of a client.
+ * ── 🔴 THIS SUITE IS THE PERMANENT FALSIFIER FOR THE 14/28/42 CLOCK ─────────
+ * THREE ladders have now been retired from this application, and the first two drifted because the
+ * numbers lived in more than one place and no single test went red when they moved: 21/28/42
+ * (retired 2026-08-10) and 30/40/60 (retired 2026-08-21). 7/28/42 (retired 2026-09-02) did NOT
+ * drift — it was changed by an explicit decision, which is what this suite is for. Every boundary
+ * below is asserted on BOTH sides — 13/14, 27/28, 41/42 — because an off-by-one in a threshold is
+ * the defect a "does it roughly work" test cannot see, and
+ * `theLadderIsExactly14_28_42_andTheBandFlipsAtEachOfThem` pins the three numbers themselves so
+ * that moving one without a decision fails HERE rather than in front of a client.
+ *
+ * ⚠ THE 2026-09-02 MOVE LEFT A FALSIFIER BEHIND ON PURPOSE: day 7 is now asserted to be
+ * `ON_TRACK`. It is the exact day the retired ladder escalated on, so a change that renames the
+ * enum member without moving the number goes red on that one clause and on nothing else.
  *
  * ── WHY THE BOUNDARY TESTS DRIVE `evaluate` DIRECTLY ────────────────────────
  * `evaluate(Date, Integer, Date)` takes the listing date, the offer count and the first offer date
@@ -82,20 +89,26 @@ private class DispositionTractionServiceTest {
      * `@TestVisible`-constant assertion would not.
      */
     @isTest
-    static void theLadderIsExactly7_28_42_andTheBandFlipsAtEachOfThem() {
+    static void theLadderIsExactly14_28_42_andTheBandFlipsAtEachOfThem() {
         DispositionTractionService.Traction t = atDay(0, 0);
 
         Assert.areEqual(3, t.rungs.size(), 'The ladder has exactly three rungs');
-        Assert.areEqual(7, t.rungs[0].days, 'Rung 1 is day 7 (Week 1)');
+        Assert.areEqual(14, t.rungs[0].days, 'Rung 1 is day 14 (Week 2)');
         Assert.areEqual(28, t.rungs[1].days, 'Rung 2 is day 28 (Week 4)');
         Assert.areEqual(42, t.rungs[2].days, 'Rung 3 is day 42 (Week 6)');
         Assert.areEqual(42, t.marketingPeriodDays,
             'The marketing period IS week 6 - two names for one number must never drift apart');
 
         // The flip points, read off the bands rather than the constants.
-        Assert.areEqual('ON_TRACK', atDay(6, 0).band, 'Day 6 is below the week-1 rung');
-        Assert.areEqual('WEEK_1', atDay(7, 0).band, 'Day 7 IS the week-1 rung');
-        Assert.areEqual('WEEK_1', atDay(27, 0).band, 'Day 27 is below the week-4 rung');
+        // 🔴 DAY 7 IS THE FALSIFIER FOR THE 2026-09-02 MOVE (user decision A2). Under the retired
+        // 7/28/42 ladder day 7 was the FIRST RUNG; under 14/28/42 it is ON_TRACK. A build that
+        // renamed the enum member without moving the number would pass every other clause here and
+        // fail this one.
+        Assert.areEqual('ON_TRACK', atDay(7, 0).band,
+            'Day 7 is BELOW the week-2 rung — this is the exact day the retired ladder escalated on');
+        Assert.areEqual('ON_TRACK', atDay(13, 0).band, 'Day 13 is below the week-2 rung');
+        Assert.areEqual('WEEK_2', atDay(14, 0).band, 'Day 14 IS the week-2 rung');
+        Assert.areEqual('WEEK_2', atDay(27, 0).band, 'Day 27 is below the week-4 rung');
         Assert.areEqual('WEEK_4', atDay(28, 0).band, 'Day 28 IS the week-4 rung');
         Assert.areEqual('WEEK_4', atDay(41, 0).band, 'Day 41 is below the week-6 rung');
         Assert.areEqual('WEEK_6', atDay(42, 0).band, 'Day 42 IS the week-6 rung');
@@ -103,18 +116,21 @@ private class DispositionTractionServiceTest {
 
     /**
      * 🔴 THE AT-RISK LINE IS AT WEEK 4, NOT AT THE FIRST RUNG. The retired ladder's first rung was
-     * the day-30 half-way checkpoint and WAS at-risk; week 1 is day seven, and marking a listing at
-     * risk one week after it goes to market makes the flag meaningless. If someone "restores
-     * consistency" by making every rung at-risk, this fails.
+     * the day-30 half-way checkpoint and WAS at-risk; the first rung is now day FOURTEEN, and
+     * marking a listing at risk a fortnight after it goes to market makes the flag meaningless. If
+     * someone "restores consistency" by making every rung at-risk, this fails.
+     *
+     * ⚠ RENAMED FROM `weekOneIsACheckInAndIsNotAnAtRiskState` ON 2026-09-02 (user decision A2). The
+     * assertion set is unchanged in shape; only the day the first rung fires moved, 7 -> 14.
      */
     @isTest
-    static void weekOneIsACheckInAndIsNotAnAtRiskState() {
-        Assert.isFalse(atDay(7, 0).isAtRisk, 'Week 1 is a check-in, not a risk state');
-        Assert.isFalse(atDay(27, 0).isAtRisk, 'Still a check-in on the last day of the week-1 band');
+    static void weekTwoIsACheckInAndIsNotAnAtRiskState() {
+        Assert.isFalse(atDay(14, 0).isAtRisk, 'Week 2 is a check-in, not a risk state');
+        Assert.isFalse(atDay(27, 0).isAtRisk, 'Still a check-in on the last day of the week-2 band');
         Assert.isTrue(atDay(28, 0).isAtRisk, 'Week 4 IS an at-risk state');
         Assert.isTrue(atDay(42, 0).isAtRisk, 'Week 6 IS an at-risk state');
-        Assert.areEqual('On Track', atDay(7, 0).listingStatusValue,
-            'Week 1 stores On Track - the flag and the stored value follow ONE rule, not two');
+        Assert.areEqual('On Track', atDay(14, 0).listingStatusValue,
+            'Week 2 stores On Track - the flag and the stored value follow ONE rule, not two');
     }
 
     // ═════════════════════════════════════════════════════════════════════════
@@ -203,33 +219,54 @@ private class DispositionTractionServiceTest {
         Assert.areEqual(42, t.daysRemaining, 'A 42-day period with 0 elapsed leaves 42');
     }
 
-    /** BOUNDARY 1, LOW SIDE. Day 6 is the last day before the first check-in. */
+    /** BOUNDARY 1, LOW SIDE. Day 13 is the last day before the first check-in. */
     @isTest
-    static void daySixIsStillOnTrack() {
-        DispositionTractionService.Traction t = atDay(6, 0);
+    static void dayThirteenIsStillOnTrack() {
+        DispositionTractionService.Traction t = atDay(13, 0);
 
         Assert.areEqual(DispositionTractionService.Band.ON_TRACK.name(), t.band,
-            'Day 6 is inside week one, so the check-in has not fallen due');
-        Assert.isFalse(t.isAtRisk, 'Day 6 must not be flagged');
+            'Day 13 is inside the first fortnight, so the check-in has not fallen due');
+        Assert.isFalse(t.isAtRisk, 'Day 13 must not be flagged');
         Assert.isTrue(t.detail.contains('1 day'),
             'On the eve of the rung the copy must be singular: ' + t.detail);
+        Assert.isTrue(t.detail.contains('week-2'),
+            'The countdown sentence names the rung it is counting down to: ' + t.detail);
+    }
+
+    /**
+     * 🔴 THE RETIRED RUNG'S DAY, KEPT AS A TEST OF ITS OWN (2026-09-02, user decision A2).
+     * Day 7 escalated under the 7/28/42 ladder and must NOT escalate under 14/28/42. This is the
+     * single clause that separates "the first rung moved" from "the enum member was renamed and the
+     * number was left at 7", which is otherwise indistinguishable across the whole suite.
+     */
+    @isTest
+    static void daySevenNoLongerFiresACheckIn() {
+        DispositionTractionService.Traction t = atDay(7, 0);
+
+        Assert.areEqual(DispositionTractionService.Band.ON_TRACK.name(), t.band,
+            'Day 7 is BELOW the week-2 rung. Under the retired 7/28/42 ladder this was WEEK_1.');
+        Assert.isFalse(t.isAtRisk, 'Day 7 must not be flagged');
+        Assert.isTrue(t.detail.contains('7 days'),
+            'Seven days still to run to the week-2 check-in: ' + t.detail);
     }
 
     /** BOUNDARY 1, HIGH SIDE. */
     @isTest
-    static void daySevenFiresTheWeekOneCheckIn() {
-        DispositionTractionService.Traction t = atDay(7, 0);
+    static void dayFourteenFiresTheWeekTwoCheckIn() {
+        DispositionTractionService.Traction t = atDay(14, 0);
 
-        Assert.areEqual(DispositionTractionService.Band.WEEK_1.name(), t.band,
-            'Day 7 with zero offers is the week-1 check-in');
+        Assert.areEqual(DispositionTractionService.Band.WEEK_2.name(), t.band,
+            'Day 14 with zero offers is the week-2 check-in');
         Assert.isFalse(t.isAtRisk, 'The check-in is not an at-risk state');
-        Assert.isTrue(t.label.contains('Week 1'), 'The badge must name the week: ' + t.label);
+        Assert.isTrue(t.label.contains('Week 2'), 'The badge must name the week: ' + t.label);
+        Assert.isTrue(t.detail.startsWith('Two weeks on the market'),
+            'The detail sentence must name the fortnight, not a week: ' + t.detail);
     }
 
     /** BOUNDARY 2, LOW SIDE. */
     @isTest
-    static void dayTwentySevenIsStillTheWeekOneBand() {
-        Assert.areEqual(DispositionTractionService.Band.WEEK_1.name(), atDay(27, 0).band,
+    static void dayTwentySevenIsStillTheWeekTwoBand() {
+        Assert.areEqual(DispositionTractionService.Band.WEEK_2.name(), atDay(27, 0).band,
             'Day 27 has not reached the week-4 rung');
     }
 
@@ -306,13 +343,51 @@ private class DispositionTractionServiceTest {
      * 🔴 THE ANTI-MOCK TEST. The component this feeds once shipped a hardcoded four-row table of
      * this exact ladder and it was deleted for "rendering a fixed lie". These assertions are what
      * make the rows data: the same three keys carry DIFFERENT states on different records.
+     *
+     * ═════════════════════════════════════════════════════════════════════════════════════════
+     * 🔴 RE-DERIVED 2026-09-02 FOR THE WEEK-2 RUNG (user decision A2). IT WAS THE ONE TEST IN
+     *    THIS CLASS THAT STILL ENCODED THE 7-DAY BOUNDARY, AND IT FAILED THE VALIDATE
+     *    (`0Afiw000000VWmnCAG`): *"Day 7: WEEK_2 must read Current: Expected: Current, Actual:
+     *    Ahead"*. The production change was right; this matrix had not been moved with it.
+     * ═════════════════════════════════════════════════════════════════════════════════════════
+     * ⚠ THE LAZY REPAIR WOULD HAVE BEEN TO RELABEL DAY 7 AS `Ahead` AND STOP. That passes, and it
+     * proves NOTHING about where the boundary sits — it would pass just as happily with the first
+     * rung at 20 days, or at 30. An off-by-one is the defect most likely to survive a rename, and
+     * this class is the ONLY proof this item has: there are 0 `Broker_Listing__c` rows in
+     * `usman-dpeg`, so `Listing_Date__c` is null everywhere and the rung cannot be rendered in any
+     * state. Precision here is the whole guarantee.
+     *
+     * 🔴 SO EVERY ROW IS NOW A PAIR STRADDLING A THRESHOLD — the day BEFORE and the day OF, for
+     * all three rungs. The three "before" rows look redundant against their neighbours and are
+     * not: each is the last day on which its rung must still read `Ahead`.
+     *
+     *   day  |  WEEK_2  |  WEEK_4  |  WEEK_6  |  why this row exists
+     *   -----+----------+----------+----------+-------------------------------------------------
+     *    0   | Ahead    | Ahead    | Ahead    | the clock has started and nothing is due
+     *   13   | Ahead    | Ahead    | Ahead    | LAST day below rung 1. Under 7/28/42 this read
+     *        |          |          |          | `Current` — the low side of the moved boundary
+     *   14   | Current  | Ahead    | Ahead    | rung 1 fires HERE, not on day 7
+     *   27   | Current  | Ahead    | Ahead    | last day below rung 2 — rung 1 stays Current
+     *   28   | Passed   | Current  | Ahead    | rung 2 fires; rung 1 is reached but not current
+     *   41   | Passed   | Current  | Ahead    | last day below rung 3
+     *   42   | Passed   | Passed   | Current  | rung 3 fires
+     *
+     * ⚠ DAY 7 IS DELIBERATELY ABSENT FROM THIS MATRIX AND IS **NOT** MISSING COVERAGE. It has two
+     * dedicated falsifiers of its own — `daySevenNoLongerFiresACheckIn` here and
+     * `testGetListing_dayTwelve_isBackInsideTheFirstRung` in `BrokerListingControllerTest` — which
+     * exist precisely so a change that renames the enum without moving the number goes red. Adding
+     * day 7 back here as an all-`Ahead` row would duplicate day 13 and weaken nothing, but it
+     * would also read as though this matrix were the day-7 fence, which it is not.
      */
     @isTest
     static void everyRungCarriesExactlyOneStateAndTheStatesMoveWithTheClock() {
         Map<Integer, List<String>> expectedByDay = new Map<Integer, List<String>>{
             0  => new List<String>{ 'Ahead',   'Ahead',   'Ahead' },
-            7  => new List<String>{ 'Current', 'Ahead',   'Ahead' },
+            13 => new List<String>{ 'Ahead',   'Ahead',   'Ahead' },
+            14 => new List<String>{ 'Current', 'Ahead',   'Ahead' },
+            27 => new List<String>{ 'Current', 'Ahead',   'Ahead' },
             28 => new List<String>{ 'Passed',  'Current', 'Ahead' },
+            41 => new List<String>{ 'Passed',  'Current', 'Ahead' },
             42 => new List<String>{ 'Passed',  'Passed',  'Current' }
         };
         Set<String> allowed = new Set<String>{ 'Passed', 'Current', 'Ahead' };
@@ -343,7 +418,7 @@ private class DispositionTractionServiceTest {
     /** The current rung is always the one matching the band — one derivation, not two. */
     @isTest
     static void theCurrentRungIsAlwaysTheBandsOwnRung() {
-        for (Integer day : new List<Integer>{ 7, 28, 42, 100 }) {
+        for (Integer day : new List<Integer>{ 14, 28, 42, 100 }) {
             DispositionTractionService.Traction t = atDay(day, 0);
             DispositionTractionService.Rung r = rung(t, t.band);
             Assert.isNotNull(r, 'Day ' + day + ' band ' + t.band + ' must have a matching rung');
@@ -359,7 +434,7 @@ private class DispositionTractionServiceTest {
 
         DispositionTractionService.Traction t = DispositionTractionService.evaluate(listed, 0);
 
-        Assert.areEqual(listed.addDays(7), t.rungs[0].dueDate, 'Week 1 falls 7 days after listing');
+        Assert.areEqual(listed.addDays(14), t.rungs[0].dueDate, 'Week 2 falls 14 days after listing');
         Assert.areEqual(listed.addDays(28), t.rungs[1].dueDate, 'Week 4 falls 28 days after listing');
         Assert.areEqual(listed.addDays(42), t.rungs[2].dueDate, 'Week 6 falls 42 days after listing');
         Assert.areEqual(listed, t.listingDate, 'The listing date passes through verbatim');
@@ -368,9 +443,9 @@ private class DispositionTractionServiceTest {
     /** An unreached rung counts down in days, and says "day" not "days" at one. */
     @isTest
     static void anUnreachedRungCountsDownAndIsSingularAtOne() {
-        Assert.areEqual('In 1 day.', rung(atDay(6, 0), 'WEEK_1').note,
+        Assert.areEqual('In 1 day.', rung(atDay(13, 0), 'WEEK_2').note,
             'One day short of the rung reads singular');
-        Assert.areEqual('In 2 days.', rung(atDay(5, 0), 'WEEK_1').note,
+        Assert.areEqual('In 2 days.', rung(atDay(12, 0), 'WEEK_2').note,
             'Two days short reads plural');
     }
 
@@ -420,20 +495,31 @@ private class DispositionTractionServiceTest {
         Assert.areEqual('On Track', t.listingStatusValue, 'And it stores On Track');
     }
 
-    /** While paused, no rung is Current — nothing is escalating — and the notes say why. */
+    /**
+     * While paused, no rung is Current — nothing is escalating — and the notes say why.
+     *
+     * 🔴 THE FIXTURE MOVED ON 2026-09-02 AND THE MOVE IS THE POINT, NOT AN ADJUSTMENT. It read
+     * `evaluate(dayN(60), 1, dayN(50))` — paused at day 10 — which under the retired 7/28/42 ladder
+     * put the clock PAST the first rung. Under 14/28/42 day 10 is BEFORE it, so the "Passed before
+     * the clock paused" assertion below would have gone vacuous-by-inversion: it would have failed
+     * loudly (state `Ahead`), but a lazier repair — deleting the clause, or relaxing it to
+     * `Ahead` — would have silently retired the only test that proves a rung can be BOTH reached
+     * AND not current. The fixture is re-aged to day 15 instead, one day past the new first rung,
+     * so the three-way distinction (Passed / not-Current / Ahead) is still exercised.
+     */
     @isTest
     static void whilePausedNoRungIsCurrentAndTheUnreachedOnesSayTheClockIsPaused() {
         DispositionTractionService.Traction t =
-            DispositionTractionService.evaluate(dayN(60), 1, dayN(50));
+            DispositionTractionService.evaluate(dayN(60), 1, dayN(45));
 
-        Assert.areEqual(10, t.daysOnMarket, 'Paused at day 10');
+        Assert.areEqual(15, t.daysOnMarket, 'Paused at day 15 — one day past the week-2 rung');
         for (DispositionTractionService.Rung r : t.rungs) {
             Assert.isFalse(r.isCurrent,
                 r.key + ' must not be Current while the clock is paused - nothing is escalating');
         }
-        Assert.areEqual('Passed', rung(t, 'WEEK_1').state,
-            'Week 1 was genuinely reached before the offer arrived, so it still reads Passed');
-        Assert.areEqual('Passed before the clock paused.', rung(t, 'WEEK_1').note,
+        Assert.areEqual('Passed', rung(t, 'WEEK_2').state,
+            'Week 2 was genuinely reached before the offer arrived, so it still reads Passed');
+        Assert.areEqual('Passed before the clock paused.', rung(t, 'WEEK_2').note,
             'And the note explains why it is Passed but not Current');
         Assert.areEqual('Ahead', rung(t, 'WEEK_4').state, 'Week 4 was never reached');
         Assert.areEqual('Clock paused.', rung(t, 'WEEK_4').note,
@@ -499,10 +585,18 @@ private class DispositionTractionServiceTest {
      * labelled "Hard Stop". Under D28/Q1 an offer IS traction, so it short-circuits every
      * threshold. If this test is ever "simplified" away, the feature reverts to prompting a broker
      * change on listings that are actively in negotiation.
+     *
+     * 🔴 RE-AGED 2026-09-02 (decision A2): the day list was `{ 7, 28, 42, 400 }` and the 7 became
+     * VACUOUS rather than failing, which is why the validate did not catch it and why this comment
+     * exists. Day 7 with one offer reads `ON_TRACK` whether or not the offer branch exists — under
+     * 14/28/42 it is below every rung, so the row asserted nothing about suppression at all. Day 14
+     * WOULD read `WEEK_2` without the short-circuit, so it is a real falsifier again. ⚠ THE DAYS IN
+     * THIS LIST MUST BE THE THRESHOLDS THEMSELVES; a day between rungs silently stops testing the
+     * thing the method is named for.
      */
     @isTest
     static void oneOfferSuppressesEveryRungAtEveryThreshold() {
-        for (Integer day : new List<Integer>{ 7, 28, 42, 400 }) {
+        for (Integer day : new List<Integer>{ 14, 28, 42, 400 }) {
             DispositionTractionService.Traction t = atDay(day, 1);
             Assert.areEqual(DispositionTractionService.Band.ON_TRACK.name(), t.band,
                 'Day ' + day + ' with one offer must be On Track - an offer is traction');
@@ -544,7 +638,7 @@ private class DispositionTractionServiceTest {
      * (measured in the field file). This test is what proves the mapping needs NO new picklist
      * value — which matters more after 2026-08-21, not less: the ladder now has FOUR levels against
      * three values, and the user's instruction for that change was to create or modify no field.
-     * `WEEK_1 => On Track` is the deliberate collapse. See `listingStatusValue`'s javadoc.
+     * `WEEK_2 => On Track` is the deliberate collapse. See `listingStatusValue`'s javadoc.
      */
     @isTest
     static void everyBandMapsToAnExistingListingStatusValue() {
@@ -552,7 +646,7 @@ private class DispositionTractionServiceTest {
             new Map<DispositionTractionService.Band, String>{
                 DispositionTractionService.Band.NOT_LISTED => 'On Track',
                 DispositionTractionService.Band.ON_TRACK => 'On Track',
-                DispositionTractionService.Band.WEEK_1 => 'On Track',
+                DispositionTractionService.Band.WEEK_2 => 'On Track',
                 DispositionTractionService.Band.WEEK_4 => 'At Risk',
                 DispositionTractionService.Band.WEEK_6 => 'Hard Stop'
             };
@@ -571,10 +665,16 @@ private class DispositionTractionServiceTest {
     /**
      * The stored value and the computed flag must agree on every band. Two rules would let the
      * dashboard tile and the card contradict each other the day a job starts stamping.
+     *
+     * ⚠ 13 AND 14 ADDED 2026-09-02 (decision A2). This walk asserts an INVARIANT, so it held at
+     * every day under both ladders and did not fail — but its day sample was chosen to straddle
+     * 7/28/42, and after the move it no longer touched the first rung's boundary at all. Day 7 is
+     * KEPT rather than replaced: it is still a real day, it is now `ON_TRACK`, and the invariant
+     * must hold there too.
      */
     @isTest
     static void theStoredStatusAndTheAtRiskFlagNeverDisagree() {
-        for (Integer day : new List<Integer>{ 0, 7, 27, 28, 41, 42, 400 }) {
+        for (Integer day : new List<Integer>{ 0, 7, 13, 14, 27, 28, 41, 42, 400 }) {
             DispositionTractionService.Traction t = atDay(day, 0);
             Boolean storedSaysRisk = (t.listingStatusValue != 'On Track');
             Assert.areEqual(storedSaysRisk, t.isAtRisk,

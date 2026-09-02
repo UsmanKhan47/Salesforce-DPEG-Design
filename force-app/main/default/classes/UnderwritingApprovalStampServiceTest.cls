@@ -15,6 +15,16 @@
  * when stopTest() runs, so the obvious "assert Limits.getDmlStatements() afterwards" is silently
  * vacuous. The delta is captured immediately either side of the invocation.
  *
+ * ── ⚠ 2026-09-02, WHY THREE FIXTURES SHRANK, AND WHY THAT IS NOT A LOST FALSIFIER ─────────────
+ * Three inline Underwriting__c constructors here used to also set the CHILD's Status__c to
+ * 'In Progress'. Underwriting__c.Status__c is retired (strict-subset duplicate of Stage__c) and
+ * those assignments are gone. They were fixture noise: no assertion in this class ever read the
+ * child's Status__c, and this service does not read it either — it reads Opportunity__c and writes
+ * the PARENT's Opportunity.Underwriting_Status__c, a different field on a different object that is
+ * DELIBERATELY RETAINED (it is the market-data freeze's only trigger, see above). So the removal
+ * subtracts nothing any test claimed. 🔴 Do not read the two similar names as one field: every
+ * `Underwriting_Status__c` in this file is the parent's and must stay.
+ *
  * ── BULK POSTURE (.claude/rules/bulk-test-rule.md) ────────────────────────────────────────────
  * The 251-record mandate is NOT applied here, and the reasoning is recorded in place as that rule
  * requires. This method is invoked from a record-triggered flow, so it IS a bulk path in
@@ -202,7 +212,7 @@ private class UnderwritingApprovalStampServiceTest {
         Opportunity deal = dealWithUnderwriting();
         Underwriting__c first = underwritingFor(deal.Id);
         Underwriting__c second = new Underwriting__c(
-            Opportunity__c = deal.Id, Stage__c = 'Requested', Status__c = 'In Progress');
+            Opportunity__c = deal.Id, Stage__c = 'Requested');
         insert second;
 
         Test.startTest();
@@ -225,7 +235,7 @@ private class UnderwritingApprovalStampServiceTest {
      */
     @isTest
     static void orphanUnderwritingIsSkippedNotThrown() {
-        Underwriting__c orphan = new Underwriting__c(Stage__c = 'Requested', Status__c = 'In Progress');
+        Underwriting__c orphan = new Underwriting__c(Stage__c = 'Requested');
         insert orphan;
 
         Test.startTest();
@@ -245,7 +255,7 @@ private class UnderwritingApprovalStampServiceTest {
     static void aValidRequestIsStampedEvenWhenBatchedWithAnOrphan() {
         Opportunity deal = dealWithUnderwriting();
         Underwriting__c uw = underwritingFor(deal.Id);
-        Underwriting__c orphan = new Underwriting__c(Stage__c = 'Requested', Status__c = 'In Progress');
+        Underwriting__c orphan = new Underwriting__c(Stage__c = 'Requested');
         insert orphan;
 
         Test.startTest();

@@ -41,10 +41,52 @@
  * HOW THE SCORES ARE MADE TO DIFFER, CONCRETELY. `TestDataFactory.createBovSubmissions` holds
  * `Commission_Rate__c` (2.5) and `Days_To_Market__c` (30) constant, so with a fixed
  * `ASKING_PRICE` the formula reduces to a strictly increasing function of `BOV_Amount__c`
- * (`50 * MIN(amount / askingPrice, 1.10) / 1.10`, plus two constants). Every test below therefore
- * sets `BOV_Amount__c` explicitly, with gaps far larger than the field's `scale = 2` rounding, and
- * the row with the LARGEST amount is the expected winner. A deliberate TIE is created by giving
- * two rows the IDENTICAL amount.
+ * (`40 * MIN(amount / askingPrice, 1.10) / 1.10`, plus FOUR constant terms). Every test below
+ * therefore sets `BOV_Amount__c` explicitly, with gaps far larger than the field's `scale = 2`
+ * rounding, and the row with the LARGEST amount is the expected winner. A deliberate TIE is
+ * created by giving two rows the IDENTICAL amount.
+ *
+ * ⚠ CORRECTED 2026-09-02 (Tranche 4 code review). RETRACTED, and the second half of it was NOT
+ * merely a stale digit — it was a stale COUNT of the formula's terms:
+ *
+ *     RETRACTED: "(`50 * MIN(amount / askingPrice, 1.10) / 1.10`, plus two constants)"
+ *
+ * `BOV_Score__c` was re-weighted on 2026-09-01 from Value 50 / Commission 25 / Speed 25 to
+ * Value 40 / Commission 20 / Speed 20 / Buyer Ready 10 / Known Performer 10. So the coefficient is
+ * 40, and there are now FOUR non-amount terms, not two: commission, speed, and the two new
+ * CHECKBOX terms.
+ *
+ * 🟢 THE MONOTONICITY CLAIM ITSELF SURVIVES THE RESCALE INTACT, AND FOR A REASON THAT HAD TO BE
+ * CHECKED RATHER THAN ASSUMED. `TestDataFactory.createBovSubmissions` sets NEITHER
+ * `Is_Buyer_Ready__c` NOR `Is_Known_Performer__c` (verified — they appear nowhere in that factory),
+ * and no test in this class sets either. Both Checkboxes are therefore FALSE on every fixture here,
+ * both new terms contribute 0 to every row UNIFORMLY, and the score stays a strictly increasing
+ * function of `BOV_Amount__c`. A uniform constant cannot reorder anything, and a smaller
+ * coefficient scales all rows by the same factor, so "the row with the LARGEST amount wins" holds
+ * exactly as before. Do not "correct" that sentence along with the number.
+ *
+ * 🔴 WHAT IS GENUINELY NEW, AND IT IS A TRAP THIS CLASS DID NOT HAVE BEFORE 2026-09-01: SETTING
+ * EITHER FLAG ON SOME BUT NOT ALL FIXTURES BREAKS EVERY "highest amount wins" ASSERTION BELOW.
+ * One flag is worth 10 points. The Value term moves 40/1.10 = 36.36 points per 1.0 of
+ * amount/target ratio, so 10 points buys 10 / 36.36 = **0.275 of the target sale price** — a flag
+ * on a lower-amount row outranks a flag-less row bidding up to 27.5% of target MORE. Under the old
+ * three-term formula no such lever existed and no fixture could do this. If a future test needs
+ * the flags, it must either set them identically on every row or stop asserting that the highest
+ * amount wins.
+ *
+ * ── THE TWO SCORING FLAGS AND THE CHANGE KEY (2026-09-02) ────────────────────────
+ * Five tests near `reRunningWhenAlreadyCorrect_writesNothing` cover `Is_Buyer_Ready__c` /
+ * `Is_Known_Performer__c` reaching `BovAutoSelectionService.reselect`'s change key. They exist
+ * because those two fields became scoring inputs on 2026-09-01 and were not added to that key
+ * until 2026-09-02, so for one day ticking either moved a score by 10 points and moved no
+ * appointment. Their shared fixture arithmetic is written out above the first of them and MUST BE
+ * RE-RUN if `BOV_Score__c` is re-weighted again — a flag worth less than the value gap inverts
+ * every expectation in the group.
+ * 🟢 NO PRE-EXISTING BUDGET ASSERTION IN THIS CLASS CHANGED VALUE when that key was widened, and
+ * none was loosened to accommodate it. The new terms can only add cost on a save that CHANGES a
+ * flag, and no test in this repo writes either flag. The one genuinely new cost — a flag tick on a
+ * LOCKED sale now spends ONE query before `planFor` refuses to write — has its own test rather
+ * than being folded into an existing bound.
  *
  * ── 251-RECORD BULK MANDATE APPLIES — NO EXEMPTION (`.claude/rules/bulk-test-rule.md`) ─────────
  * This is a trigger path and it loops over a collection. ⚠ 251 submissions on ONE disposition span
@@ -69,8 +111,14 @@ private class BovAutoSelectionServiceTest {
 
     /**
      * Chosen so every amount used below lands BELOW the formula's `MIN(..., 1.10)` cap — a test
-     * whose two candidates both saturate the cap would tie at 50 points on the Value term and the
+     * whose two candidates both saturate the cap would tie at 40 points on the Value term and the
      * "highest scorer wins" assertion would be decided by the tie-break instead, silently.
+     *
+     * ⚠ "50 points" until 2026-09-01, corrected 2026-09-02. 🟢 THE SATURATION ARGUMENT IS
+     * UNAFFECTED BY THE RE-WEIGHTING and must not be "fixed" along with the digit: the hazard is
+     * that two capped rows produce the SAME Value term, which is true at any coefficient — they
+     * now tie at 40 instead of 50. The cap is `MIN(..., 1.10)`, which the re-weighting did not
+     * touch, so `ASKING_PRICE` needs no adjustment either.
      */
     private static final Decimal ASKING_PRICE = 1500000;
 
@@ -1114,6 +1162,291 @@ private class BovAutoSelectionServiceTest {
             'Only this test\'s own update. A second DML means the idempotency short-circuit is '
             + 'gone and every save re-writes the same answer.');
         assertExactlyOneSelected(d.Id, winner.Id, 'and the answer is unchanged');
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════════════════
+    // THE TWO SCORING FLAGS AND THE CHANGE KEY (2026-09-02)
+    // ══════════════════════════════════════════════════════════════════════════════════════
+    // `Is_Buyer_Ready__c` and `Is_Known_Performer__c` became scoring inputs on 2026-09-01 and were
+    // added to `BovAutoSelectionService.reselect`'s change key on 2026-09-02. For the day in
+    // between, ticking either flag moved a score by 10 points and moved NO appointment. These
+    // tests are the falsifier for that.
+    //
+    // 🔴 THE TWO POSITIVES ARE DELIBERATELY NOT MERGED INTO ONE PARAMETERISED TEST. Each change-key
+    // entry must be INDEPENDENTLY falsifiable: with a single test covering only one flag, deleting
+    // the OTHER field from the `||` chain would leave the suite green.
+    //
+    // ── THE ARITHMETIC THESE FIXTURES DEPEND ON, SHOWN SO IT CAN BE RE-CHECKED ─────────────
+    // `BOV_Score__c` = 40*MIN(amount/target,1.10)/1.10 + commission(20) + speed(20) + 10 per flag.
+    // The factory holds `Commission_Rate__c` (2.5) and `Days_To_Market__c` (30) constant, so with
+    // `ASKING_PRICE` = 1,500,000 the two rows below differ ONLY in the Value term:
+    //   INCUMBENT_AMOUNT 1,200,000 -> ratio 0.8000 -> 40 * 0.8000 / 1.10 = 29.09 pts
+    //   RUNNER_UP_AMOUNT 1,000,000 -> ratio 0.6667 -> 40 * 0.6667 / 1.10 = 24.24 pts
+    //   gap = 4.85 pts, which is LESS THAN the 10 pts one flag is worth
+    // ⇒ one flag on the runner-up overtakes, by 10 - 4.85 = 5.15 pts. Both margins are wide
+    // relative to the field's `scale = 2` rounding, so neither depends on a knife-edge.
+    // ⚠ THE 4.85 GAP MUST STAY BELOW 10 AND ABOVE 0. Raising `INCUMBENT_AMOUNT` toward the
+    // 1.10 * 1,500,000 = 1,650,000 cap widens it past 10 and these tests stop flipping; equalising
+    // the two amounts collapses it to 0 and the pre-tick order stops being meaningful. Both
+    // failures are silent in the sense that the test would simply assert the wrong winner, which
+    // is why the arithmetic is written here rather than left to be re-derived.
+    // 🔴 AND IT MOVES IF THE FORMULA IS RE-WEIGHTED AGAIN. A flag worth less than the value gap
+    // inverts every expectation below. Re-run this arithmetic as part of any `BOV_Score__c` change.
+
+    private static final Decimal INCUMBENT_AMOUNT = 1200000;
+    private static final Decimal RUNNER_UP_AMOUNT = 1000000;
+
+    /**
+     * Inserts the two-row fixture above and returns [incumbent, runnerUp], with the incumbent
+     * PROVEN to hold the appointment before anything is ticked.
+     *
+     * 🔴 THAT PRECONDITION IS THE PRESENCE CONTROL FOR EVERY TEST BELOW. Without it, "the
+     * runner-up is Selected afterwards" would also pass on a fixture where nothing was ever
+     * appointed and the runner-up simply won from the start.
+     */
+    private static List<BOV_Submission__c> twoRowFixtureOn(Disposition__c d) {
+        BOV_Submission__c incumbent = bov(d.Id, INCUMBENT_AMOUNT);
+        BOV_Submission__c runnerUp = bov(d.Id, RUNNER_UP_AMOUNT);
+        insert new List<BOV_Submission__c>{ incumbent, runnerUp };
+        assertScoresAreRanked(d.Id);
+        assertExactlyOneSelected(d.Id, incumbent.Id,
+            'PRESENCE CONTROL: the higher-amount row must hold the appointment BEFORE any flag is '
+            + 'ticked. If this fails, every "the appointment moved" assertion below would be '
+            + 'measuring a fixture that never appointed the incumbent in the first place.');
+        return new List<BOV_Submission__c>{ incumbent, runnerUp };
+    }
+
+    /**
+     * 🔴 STORY 20's HEADLINE BEHAVIOUR, FOR `Is_Buyer_Ready__c`. Ticking the flag on a runner-up
+     * whose flagged score overtakes the incumbent MOVES THE APPOINTMENT.
+     *
+     * These two flags exist SOLELY to express "best overall fit" as distinct from "highest bid".
+     * A flag that changes the score but never changes the appointment means the story does not
+     * work, and it fails in the most confusing available way: the comparison matrix visibly
+     * re-orders (it renders `BOV_Score__c`, which really did move) while the Selected pill does
+     * not. A user would reasonably conclude the flag is broken.
+     *
+     * ⚠ THE SCORE ASSERTION IS A PREMISE, NOT DECORATION. It proves the tick actually changed the
+     * RANKING INPUT, so a failure of the appointment assertion below can only mean the change key
+     * did not fire — not that the fixture's arithmetic drifted. Without it, a re-weighting that
+     * made a flag worth less than the value gap would fail here with a message pointing at the
+     * change key, which is the wrong place to look.
+     */
+    @isTest
+    static void tickingBuyerReady_movesTheAppointmentToTheFlaggedRunnerUp() {
+        Disposition__c d = pricedDispositionAt('BOV Outreach');
+        List<BOV_Submission__c> rows = twoRowFixtureOn(d);
+        Id incumbentId = rows[0].Id;
+        Id runnerUpId = rows[1].Id;
+
+        Test.startTest();
+        update new BOV_Submission__c(Id = runnerUpId, Is_Buyer_Ready__c = true);
+        Test.stopTest();
+
+        Map<Id, BOV_Submission__c> after = stateOf(d.Id);
+        Assert.isTrue(after.get(runnerUpId).BOV_Score__c > after.get(incumbentId).BOV_Score__c,
+            'PREMISE: ticking Is_Buyer_Ready__c must make the runner-up the HIGHEST scorer — 10 '
+            + 'points against a 4.85-point value gap. If this fails the fixture arithmetic drifted '
+            + '(see the block above this test) and the appointment assertion below would be '
+            + 'asserting the wrong winner rather than testing the change key. runnerUp='
+            + after.get(runnerUpId).BOV_Score__c + ' incumbent=' + after.get(incumbentId).BOV_Score__c);
+        assertExactlyOneSelected(d.Id, runnerUpId,
+            '🔴 THE APPOINTMENT MUST FOLLOW THE FLAG. Is_Buyer_Ready__c is worth 10 points and is a '
+            + 'change-key entry in BovAutoSelectionService.reselect; remove it from that `||` '
+            + 'chain and the score moves, the matrix re-orders, and this row stays a Backup '
+            + 'forever — silently, with no error and no way for the user to tell why.');
+    }
+
+    /**
+     * The `Is_Known_Performer__c` twin. See the block above for why this is a SEPARATE test rather
+     * than a second assertion in the one above: each change-key entry has to be able to fail on
+     * its own, or deleting one of the two fields leaves the suite green.
+     */
+    @isTest
+    static void tickingKnownPerformer_movesTheAppointmentToTheFlaggedRunnerUp() {
+        Disposition__c d = pricedDispositionAt('BOV Outreach');
+        List<BOV_Submission__c> rows = twoRowFixtureOn(d);
+        Id incumbentId = rows[0].Id;
+        Id runnerUpId = rows[1].Id;
+
+        Test.startTest();
+        update new BOV_Submission__c(Id = runnerUpId, Is_Known_Performer__c = true);
+        Test.stopTest();
+
+        Map<Id, BOV_Submission__c> after = stateOf(d.Id);
+        Assert.isTrue(after.get(runnerUpId).BOV_Score__c > after.get(incumbentId).BOV_Score__c,
+            'PREMISE: ticking Is_Known_Performer__c must make the runner-up the HIGHEST scorer. '
+            + 'runnerUp=' + after.get(runnerUpId).BOV_Score__c
+            + ' incumbent=' + after.get(incumbentId).BOV_Score__c);
+        assertExactlyOneSelected(d.Id, runnerUpId,
+            '🔴 THE APPOINTMENT MUST FOLLOW THIS FLAG TOO. Removing Is_Known_Performer__c alone from '
+            + 'the change key is invisible to the Is_Buyer_Ready__c test, which is exactly why '
+            + 'this one exists.');
+    }
+
+    /**
+     * THE NEGATIVE: a flag tick that does NOT change the ranking order must not thrash the
+     * appointment, and must not write.
+     *
+     * The flag goes on the row that is ALREADY winning, so it extends its lead. The change key
+     * fires (the field changed) and `reselectFor` runs its ONE query, but `planFor` finds the
+     * right row already Selected and already carrying `Is_System_Selected__c`, so it returns zero
+     * writes. Exactly the shape `reRunningWhenAlreadyCorrect_writesNothing` pins for a scoring
+     * input, now proven for a flag.
+     *
+     * ⚠ `areEqual(1, dmlUsed)` — EXACT, NOT `<=`. One statement is this test's own `update`. A 2
+     * here means every flag tick re-writes the same answer, which on a 251-row load is 251
+     * pointless statements against a 150-statement limit. Loosening this to a bound would forfeit
+     * the only thing it detects.
+     */
+    @isTest
+    static void tickingAFlagThatDoesNotChangeTheOrder_writesNothing() {
+        Disposition__c d = pricedDispositionAt('BOV Outreach');
+        List<BOV_Submission__c> rows = twoRowFixtureOn(d);
+        Id incumbentId = rows[0].Id;
+        Decimal scoreBefore = stateOf(d.Id).get(incumbentId).BOV_Score__c;
+        // 🔴 HOISTED ABOVE THE WINDOW. A governor assertion that brackets its own arguments
+        // measures the helper, not the code under test — this class has been bitten twice.
+        BOV_Submission__c tick = new BOV_Submission__c(Id = incumbentId, Is_Buyer_Ready__c = true);
+
+        Test.startTest();
+        Integer dmlBefore = Limits.getDmlStatements();
+        update tick;
+        Integer dmlUsed = Limits.getDmlStatements() - dmlBefore;
+        Test.stopTest();
+
+        Assert.areEqual(1, dmlUsed,
+            'Only this test\'s own update. A second DML statement means a flag tick re-writes an '
+            + 'appointment that was already correct. DML used: ' + dmlUsed);
+        Assert.isTrue(stateOf(d.Id).get(incumbentId).BOV_Score__c > scoreBefore,
+            'PREMISE: the tick really did move this row\'s score, so the zero-write result above '
+            + 'is "the order did not change", not "nothing happened".');
+        assertExactlyOneSelected(d.Id, incumbentId,
+            'and the appointment does not move — extending the leader\'s lead changes no ranking.');
+    }
+
+    /**
+     * ⚠ THE LOCK STILL WINS. A manually-appointed broker must NOT be displaced by a flag tick.
+     *
+     * `manuallyAppointed_freezesTheAppointment` already proves the lock against an arriving
+     * CHALLENGER. This proves it against the NEW entry point, which is a different question: the
+     * change key decides only whether to LOOK, and the lock lives downstream in `planFor` where it
+     * is evaluated across ALL siblings. A new change-key entry therefore cannot route around it —
+     * but "cannot" is a claim about code that should be pinned rather than asserted in a comment.
+     *
+     * 🔴 THE SCORE ASSERTION IS WHAT STOPS THIS BEING VACUOUS. Without it the test would pass
+     * identically if the two flags had never been added to the change key at all — nothing would
+     * have happened, and "the appointment did not move" would be true for the wrong reason. The
+     * flagged runner-up demonstrably outscores the locked incumbent; the appointment stays anyway.
+     * That is the lock working, not the key failing to fire.
+     *
+     * ⚠ COST: this is the ONE budget that genuinely moved on 2026-09-02. A flag tick on a locked
+     * sale used to cost 0 queries and 0 DML; it now costs ONE query (the key fires, `planFor`
+     * refuses) and still ZERO writes. Look-then-refuse is the correct shape and is accepted.
+     */
+    @isTest
+    static void tickingAFlagOnAManuallyAppointedSale_doesNotMoveTheAppointment() {
+        Disposition__c d = pricedDispositionAt('BOV Outreach');
+        List<BOV_Submission__c> rows = twoRowFixtureOn(d);
+        Id incumbentId = rows[0].Id;
+        Id runnerUpId = rows[1].Id;
+        applyLock(new BOV_Submission__c(Id = incumbentId, Is_Manually_Appointed__c = true));
+        BOV_Submission__c tick = new BOV_Submission__c(Id = runnerUpId, Is_Buyer_Ready__c = true);
+
+        Test.startTest();
+        Integer dmlBefore = Limits.getDmlStatements();
+        update tick;
+        Integer dmlUsed = Limits.getDmlStatements() - dmlBefore;
+        Test.stopTest();
+
+        Map<Id, BOV_Submission__c> after = stateOf(d.Id);
+        Assert.isTrue(after.get(runnerUpId).BOV_Score__c > after.get(incumbentId).BOV_Score__c,
+            '🔴 ANTI-VACUITY: the flagged runner-up MUST now outscore the locked incumbent. If it '
+            + 'does not, the assertion below passes because nothing could have moved the '
+            + 'appointment anyway, and it proves nothing about the lock. runnerUp='
+            + after.get(runnerUpId).BOV_Score__c + ' incumbent=' + after.get(incumbentId).BOV_Score__c);
+        assertExactlyOneSelected(d.Id, incumbentId,
+            'A human deliberate pick must survive a flag tick that would otherwise re-rank the '
+            + 'sale. The change key decides whether to LOOK; planFor decides whether to WRITE, and '
+            + 'Is_Manually_Appointed__c on ANY sibling returns zero writes for the whole '
+            + 'disposition.');
+        Assert.areEqual(1, dmlUsed,
+            'and the refusal costs ZERO writes — only this test\'s own update. DML used: ' + dmlUsed);
+    }
+
+    /**
+     * 🔴 THE COST SIGN-OFF, ASSERTED AS AN EQUALITY BETWEEN TWO MEASUREMENTS RATHER THAN AGAINST A
+     *    LITERAL — AND THAT CHOICE IS THE POINT OF THE TEST.
+     *
+     * The claim that needed proving when the two flags joined the change key is not "a flag tick
+     * costs N queries"; it is "a flag tick costs NO MORE than a scoring input that was already on
+     * the key". An absolute literal would encode the whole trigger cascade's cost — the broker
+     * stamp, the exclusivity guard, the counter rollup — none of which this change touches, and
+     * every one of which has moved before and will move again. Such a number goes stale and then
+     * gets "corrected" by widening, which is how a budget assertion quietly stops having teeth.
+     *
+     * So: the SAME reordering is produced twice on two identical dispositions, once by ticking a
+     * flag and once by changing `Days_To_Market__c` (a long-standing key entry), and the two costs
+     * must be EQUAL. Both go down the identical path — key fires, ONE `reselectFor`, ONE selection
+     * query, ONE selection write — so equality is guaranteed by construction and is falsified the
+     * moment the flag path acquires a query or a statement the other does not have.
+     *
+     * ── WHY THE `Days_To_Market__c` CONTROL ALSO FLIPS THE APPOINTMENT ──────────────────
+     * Speed term = 20 * (60 - CLAMP(days,15,60)) / 45. The factory ships 30 days = 13.33 pts;
+     * 15 days is the clamp floor and scores the full 20 pts. That is +6.67 to the runner-up,
+     * against the same 4.85-point value gap — so it overtakes by 1.82. Both arms therefore perform
+     * a real promotion AND a real demotion, which is what makes their costs comparable at all; an
+     * arm that quietly no-opped would report a smaller cost and the equality would fail for a
+     * reason that has nothing to do with the change key.
+     * ⚠ 1.82 pts is a narrower margin than the flag arm's 5.15 and is the first thing to re-check
+     * if `BOV_Score__c` is re-weighted again. Both arms assert their own winner, so a drift shows
+     * up as a named wrong-winner failure rather than as a confusing cost mismatch.
+     */
+    @isTest
+    static void aFlagTickCostsTheSameAsAnyOtherScoringInputChange() {
+        // 🔴 EVERY FIXTURE ROW AND EVERY UPDATE PAYLOAD IS BUILT HERE, ABOVE THE WINDOW.
+        Disposition__c flagSale = pricedDispositionAt('BOV Outreach');
+        List<BOV_Submission__c> flagRows = twoRowFixtureOn(flagSale);
+        Disposition__c speedSale = pricedDispositionAt('BOV Outreach');
+        List<BOV_Submission__c> speedRows = twoRowFixtureOn(speedSale);
+
+        BOV_Submission__c flagTick =
+            new BOV_Submission__c(Id = flagRows[1].Id, Is_Buyer_Ready__c = true);
+        BOV_Submission__c speedTick =
+            new BOV_Submission__c(Id = speedRows[1].Id, Days_To_Market__c = 15);
+
+        Test.startTest();
+        Integer qBeforeFlag = Limits.getQueries();
+        Integer dBeforeFlag = Limits.getDmlStatements();
+        update flagTick;
+        Integer flagQueries = Limits.getQueries() - qBeforeFlag;
+        Integer flagDml = Limits.getDmlStatements() - dBeforeFlag;
+
+        Integer qBeforeSpeed = Limits.getQueries();
+        Integer dBeforeSpeed = Limits.getDmlStatements();
+        update speedTick;
+        Integer speedQueries = Limits.getQueries() - qBeforeSpeed;
+        Integer speedDml = Limits.getDmlStatements() - dBeforeSpeed;
+        Test.stopTest();
+
+        // Both arms must actually have re-ranked, or the comparison is between two no-ops.
+        assertExactlyOneSelected(flagSale.Id, flagRows[1].Id,
+            'ARM 1 PREMISE: the flag tick must really have moved the appointment');
+        assertExactlyOneSelected(speedSale.Id, speedRows[1].Id,
+            'ARM 2 PREMISE: the Days_To_Market__c change must really have moved the appointment — '
+            + '20 * (60-15)/45 = 20 pts against 13.33 at the factory default is +6.67, which '
+            + 'clears the 4.85-point value gap.');
+
+        Assert.areEqual(speedQueries, flagQueries,
+            '🔴 A FLAG TICK MUST COST EXACTLY WHAT A LONG-STANDING SCORING INPUT COSTS. Both take '
+            + 'the same path: the change key fires, one reselectFor, one selection query. A '
+            + 'difference means the flag path acquired a query the other does not have — most '
+            + 'likely someone widened selectSelectionContextByDispositionIds or added a second '
+            + 'read to "support" the flags, neither of which this change needs. '
+            + 'flag=' + flagQueries + ' speed=' + speedQueries);
+        Assert.areEqual(speedDml, flagDml,
+            'and exactly the same DML — one own update plus ONE selection write, per chunk, for '
+            + 'both. flag=' + flagDml + ' speed=' + speedDml);
     }
 
     /**

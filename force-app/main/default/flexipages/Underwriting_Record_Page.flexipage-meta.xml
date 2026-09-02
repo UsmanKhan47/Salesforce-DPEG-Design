@@ -48,7 +48,20 @@
                         <valueListItems>
                             <value>Underwriting__c.Submit_for_Approval</value>
                             <visibilityRule>
-                                <booleanFilter>1 AND 2</booleanFilter>
+                                <!-- 2026-09-02 - THIRD criterion added, item 1 of
+                                     agent-output/three-gaps-design-2026-09-02.md ("hide Submit for
+                                     Approval once a record is pending"). booleanFilter changed
+                                     from '1 AND 2' to '1 AND 2 AND 3'. Criterion 3 reads the new
+                                     Approval_Pending__c flag set by
+                                     approvalProcesses/Underwriting__c.Underwriting_Approval's
+                                     initialSubmissionActions and cleared by its
+                                     finalApprovalActions / finalRejectionActions / recallActions.
+                                     EQUAL false (not NE true) is the proven polarity on this org -
+                                     see objects/Underwriting__c/fields/Approval_Pending__c
+                                     .field-meta.xml's own header for why FLS on this field is
+                                     load-bearing under that polarity: a missing grant hides this
+                                     button for everyone, permanently, with no error anywhere. -->
+                                <booleanFilter>1 AND 2 AND 3</booleanFilter>
                                 <criteria>
                                     <leftValue>{!$Permission.CustomPermission.Acquisition_Deal_Actions}</leftValue>
                                     <operator>EQUAL</operator>
@@ -58,6 +71,11 @@
                                     <leftValue>{!Record.Stage__c}</leftValue>
                                     <operator>EQUAL</operator>
                                     <rightValue>In Progress</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.Approval_Pending__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>false</rightValue>
                                 </criteria>
                             </visibilityRule>
                         </valueListItems>

@@ -89,7 +89,7 @@ private class UnderwritingGateTest {
      */
     private static Underwriting__c underwritingReadyForApproval(Opportunity o) {
         Underwriting__c uw = [
-            SELECT Id, Stage__c, Status__c FROM Underwriting__c WHERE Opportunity__c = :o.Id LIMIT 1
+            SELECT Id, Stage__c FROM Underwriting__c WHERE Opportunity__c = :o.Id LIMIT 1
         ];
         uw.Stage__c = 'In Progress';
         update uw;
@@ -119,7 +119,9 @@ private class UnderwritingGateTest {
      * merely stopped checking would not notice if the old auto-advance came back.
      *
      * This drives the WHOLE new chain in one transaction, which is the point:
-     *   approve the underwriting -> finalApprovalActions write Stage__c / Status__c on the child
+     *   approve the underwriting -> finalApprovalActions write Stage__c on the child
+     *     (this read "Stage__c / Status__c" until 2026-09-02; Underwriting__c.Status__c is retired
+     *      and its UW_Status_Approved field update is gone, so ONE action writes the child now)
      *     -> flows/Underwriting_Approval_Sync -> UnderwritingApprovalStampService stamps the parent
      *       -> flows/Opportunity_UW_Approved_Notify fires on the TRANSITION
      *         -> ApprovalAuditService stamps the approver + timestamp from the CHILD's history
@@ -150,12 +152,15 @@ private class UnderwritingGateTest {
         ], 'One approval must complete the process and withdraw the second principal work item');
 
         Underwriting__c decided = [
-            SELECT Stage__c, Status__c FROM Underwriting__c WHERE Id = :uw.Id
+            SELECT Stage__c FROM Underwriting__c WHERE Id = :uw.Id
         ];
+        // ⚠ 2026-09-02 — a paired assertion here required Status__c = 'Approved by Principals'.
+        // It was DELETED, not repointed, and the test proves the SAME thing afterwards: both values
+        // were written by the same finalApprovalActions action set on the same save
+        // (UW_Stage_Approved + UW_Status_Approved), so the surviving Stage__c assertion is the same
+        // observation of the same event. UW_Status_Approved itself no longer exists.
         System.assertEquals('Approved', decided.Stage__c,
             'finalApprovalActions advance the underwriting record itself');
-        System.assertEquals('Approved by Principals', decided.Status__c,
-            'finalApprovalActions stamp the underwriting record status');
 
         o = [
             SELECT StageName, UW_Approved__c, Underwriting_Status__c,
@@ -186,8 +191,15 @@ private class UnderwritingGateTest {
      *
      * The retired Opportunity.Underwriting_Approval had a finalRejectionActions field update
      * (UW_Reopen_For_Revision) that cleared Opportunity.Underwriting_Complete__c, so a rejected
-     * deal visibly came back for rework. The replacement process has NO finalRejectionActions at
-     * all, and no new field was added to carry a rejection. Therefore, on rejection:
+     * deal visibly came back for rework. The replacement process has no equivalent.
+     * ⚠ CORRECTED IN PLACE 2026-09-02 - this sentence used to read "The replacement process has NO
+     * finalRejectionActions at all, and no new field was added to carry a rejection." The first
+     * half stopped being true when item 1 shipped: Underwriting_Approval now HAS a
+     * finalRejectionActions block. It contains exactly one action, Clear_UW_Approval_Pending, which
+     * clears the Approval_Pending__c submit-button flag and NOTHING ELSE. So the D2 regression this
+     * test pins is UNCHANGED - a rejection still writes no rejection marker, still moves no stage,
+     * and still reopens nothing. The block exists; it just does not carry a rejection. Therefore,
+     * on rejection:
      *   - the underwriting record stays exactly where it was, at Stage__c = 'In Progress'
      *     (its Stage__c never changes during the pending window - 'In Progress' IS the entry
      *     criterion), so NO record-triggered automation can even detect the rejection;
@@ -218,12 +230,17 @@ private class UnderwritingGateTest {
         ], 'A single rejection ends the approval and withdraws the second principal work item');
 
         Underwriting__c rejected = [
-            SELECT Stage__c, Status__c FROM Underwriting__c WHERE Id = :uw.Id
+            SELECT Stage__c FROM Underwriting__c WHERE Id = :uw.Id
         ];
         System.assertEquals('In Progress', rejected.Stage__c,
             'D2: rejection leaves the underwriting at In Progress - nothing moves it');
-        System.assertNotEquals('Approved by Principals', rejected.Status__c,
-            'A rejected underwriting must never carry the approved status');
+        // ⚠ 2026-09-02 - a companion assertion here was assertNotEquals('Approved by Principals',
+        // rejected.Status__c), "a rejected underwriting must never carry the approved status".
+        // Status__c is retired. The invariant it named is NOT lost and is NOT merely implied by the
+        // line above: it is pinned explicitly here so that a future edit which relaxes the exact
+        // 'In Progress' assertion cannot silently take the never-approved guarantee with it.
+        System.assertNotEquals('Approved', rejected.Stage__c,
+            'A rejected underwriting must never carry the approved stage');
 
         o = [
             SELECT StageName, UW_Approved__c, Underwriting_Complete__c, Underwriting_Status__c,

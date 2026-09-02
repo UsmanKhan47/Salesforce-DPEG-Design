@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY. A comment placed ABOVE
+        <CustomField> breaks `sf` deploy at source conversion with a misleading
+        "unable to find matching parent xml file" error.
+
+        NEW 2026-09-02. Item 3 of agent-output/three-gaps-design-2026-09-02.md ("a deal can't be
+        closed until its transaction is closed"). Declarative half only — the Apex
+        (DealTransactionGateService, TransactionTriggerHandler) was already built and validated
+        against this exact field shape; this field and its sibling Has_Closed_Transaction__c are
+        what let it compile and deploy. Read DealTransactionGateService.cls's class header for the
+        full design — this comment states only what a reader of THIS field needs.
+
+        =====================================================================================
+        WHY TWO CHECKBOXES, NOT ONE, AND NOT A COUNT — THIS IS THE SAFETY ARGUMENT
+        =====================================================================================
+        User decision, 2026-09-02: the gate FAILS CLOSED — a deal with NO Transaction at all
+        cannot reach 'Closed Won'. One Checkbox cannot express that: it cannot distinguish "no
+        Transaction exists" from "the Transaction is still open", both of which must read as
+        BLOCKED. Two Checkboxes span the three real states exactly:
+
+            Has_Open_Transaction__c | Has_Closed_Transaction__c | meaning                  | Closed Won?
+            ========================|===========================|==========================|============
+            false                   | false                     | no Transaction at all    | REFUSED
+            true                    | (either)                  | at least one still open  | REFUSED
+            false                   | true                      | every Transaction closed | ALLOWED
+
+        A Number field (e.g. Open_Transaction_Count__c) was explicitly rejected: it is BLANK, not
+        zero, on every record this automation has never touched, and in a formula
+        Count__c = 0 evaluates FALSE when the field is blank — so a count-based rule would fail
+        OPEN for every grandfathered deal and for any record a recompute missed, silently
+        inverting the fail-closed decision. A Checkbox has no null state: its default, false, IS
+        the blocked state. Do not "upgrade" these to counts for reporting value; add a separate
+        reporting field if that is ever wanted.
+
+        =====================================================================================
+        WHO WRITES IT
+        =====================================================================================
+        DealTransactionGateService.recalculate, called ONLY from TransactionTriggerHandler on
+        Transaction__c's after insert/update/delete/undelete. SYSTEM_MODE DML — this field is
+        Metadata-API-deployed and arrives with NO FLS for any profile, System Administrator
+        included, and the write runs as whoever saved the Transaction (often the Transactions
+        team, not the deal driver).
+
+        NOT A MONOTONIC LATCH. Unlike a one-way "completed" flag, this value moves in BOTH
+        directions: deleting a deal's only closed Transaction, or undeleting an open one, flips it
+        back. The recompute always reflects current database truth for the deal's Transaction__c
+        rows — it does not accumulate history.
+
+        =====================================================================================
+        WHO READS IT
+        =====================================================================================
+        The Opportunity validation rule Transaction_Closed_Before_Closed_Won, together with its
+        sibling Has_Closed_Transaction__c. Also readable in the UI/reports per the FLS grants
+        below — the Apex path itself never queries via USER_MODE for this field, so FLS is a
+        visibility concern only, not a correctness dependency for the gate itself.
+
+        FLS: read-only (editable=false) in DPEG_Acquisition_View, DPEG_Acquisition_Edit and
+        DPEG_Opportunity_View, mirroring the grant matrix already carried by
+        Opportunity.Underwriting_Status__c and Opportunity.UW_Approved__c in those same three
+        files. A PermissionSet deploy REPLACES its whole fieldPermissions collection — the grant
+        was added to the current working-tree copy of each file, never restored from an older one.
+
+        ⚠ DO NOT HAND-EDIT. No validation rule or trigger guard enforces that; read-only FLS is
+        the only control, matching Underwriting__c.Approval_Pending__c's precedent.
+
+        DEPLOY ORDER, LOAD BEARING. This field (and its sibling) must land WITH or BEFORE the
+        Apex that references them (DealTransactionGateService, TransactionTriggerHandler,
+        OpportunitySelector.selectTransactionGateFlagsByIds, TestDataFactory.markTransactionClosed)
+        — neither compiles without both fields existing. This file does not deploy alone; a
+        separate stream sequences the combined payload.
+
+        @see force-app/main/default/classes/DealTransactionGateService.cls
+        @see force-app/main/default/objects/Opportunity/validationRules/Transaction_Closed_Before_Closed_Won.validationRule-meta.xml
+        @see agent-output/three-gaps-design-2026-09-02.md (item 3)
+    -->
+    <fullName>Has_Open_Transaction__c</fullName>
+    <defaultValue>false</defaultValue>
+    <description>SYSTEM FIELD - DO NOT HAND-EDIT. TRUE when this deal has at least one Transaction__c whose Status__c is not &apos;Closed&apos;. Maintained by DealTransactionGateService.recalculate, called from TransactionTriggerHandler on Transaction__c insert/update/delete/undelete. A Checkbox, not a count, because a Number field is blank (not zero) until touched and Count__c = 0 evaluates FALSE when blank - a count-based gate would fail OPEN for every grandfathered deal, the opposite of the fail-closed decision this flag enforces. Not a monotonic latch: delete and undelete both trigger a recompute, so this can move back to false. Read together with Has_Closed_Transaction__c by Transaction_Closed_Before_Closed_Won.</description>
+    <inlineHelpText>Ticked automatically while this deal has a Transaction that has not reached Status = Closed. Maintained by automation; cannot be edited by hand.</inlineHelpText>
+    <label>Has Open Transaction</label>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Checkbox</type>
+</CustomField>

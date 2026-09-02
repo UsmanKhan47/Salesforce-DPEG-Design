@@ -11,6 +11,13 @@
             <operator>equals</operator>
             <value>Sell Now</value>
         </criteriaItems>
+        <criteriaItems>
+            <column>Property_Asset__c.Status__c</column>
+            <columnToColumn>false</columnToColumn>
+            <isUnlocked>false</isUnlocked>
+            <operator>equals</operator>
+            <value>Active</value>
+        </criteriaItems>
     </filter>
     <format>Summary</format>
     <groupingsDown>

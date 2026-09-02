@@ -20,9 +20,19 @@
  *
  * ⚠ THE FIXTURE MOVED OFF THE 30/40/60 CLOCK (user decision, 2026-08-21). It previously carried
  * `tractionBand: 'HARD_STOP'` / `'Day 71 — Hard Stop: no offers'`. The payload now carries the
- * Week 1/4/6 bands and a paused variant — computed server-side by DispositionTractionService. This
+ * Week 2/4/6 bands and a paused variant — computed server-side by DispositionTractionService. This
  * suite asserts that the card RENDERS what it is given and deliberately re-derives no threshold of
  * its own.
+ *
+ * ⚠ THE FIRST RUNG MOVED AGAIN ON 2026-09-02 (user decision A2: `WEEK_1`/day 7 -> `WEEK_2`/day 14)
+ * AND THIS SUITE'S FIXTURES DID NOT NEED TO CHANGE — they carry `WEEK_4` and `ON_TRACK` only.
+ * 🔴 THAT IS THE POINT, NOT AN OVERSIGHT: this card colours off the BOOLEAN `isAtRisk` and prints
+ * `tractionLabel` verbatim, so it has no branch on any band literal to break. If a future edit
+ * makes it switch on `tractionBand`, this paragraph stops being true and the fixtures become
+ * threshold-sensitive.
+ * ⚠ AND `DUE_SOON_DAYS = 7` IN THE COMPONENT IS UNRELATED AND DID NOT MOVE — it is
+ * `CallForOffersService.APPROACHING_DAYS`, an ACQUISITIONS constant. Its equality with the old
+ * first rung was a coincidence and is now gone; the component's own header records this.
  *
  * ── ⚠ THREE TILES, AND `offersReceived` IS GONE FROM THE FIXTURE (UAT, 2026-08-21) ──
  * The user asked for the disposition-offer count to be removed, so the fourth "Offers Received"
@@ -87,6 +97,7 @@ const LISTING = {
     tractionDetail:
         'Four weeks on the market with no offers, and 14 days of the marketing period remain.',
     daysOnMarket: 30,
+    daysWithThisBroker: 9,
     isAtRisk: true,
     listDate: '2026-03-15',
     callForOffersDate: '2026-04-10'
@@ -181,23 +192,108 @@ describe('c-broker-listing', () => {
             element.shadowRoot.querySelector('.card-sub').textContent
         ).toBe('CBRE · Jane Doe');
 
-        // ⚠ TWO TILES IN THE TOP GRID NOW. The Call For Offers Date tile MOVED below the
-        // rule into the call-for-offers section — it was not deleted — so it is asserted there
-        // rather than here. A bare count-of-2 assertion would stay green if the date had been dropped
-        // altogether, which is why the move is pinned in its own test below.
+        // ⚠ THREE TILES IN THE TOP GRID SINCE 2026-09-01 (Tranche 4 item 5). It said TWO until
+        // then, and the paragraph below is unchanged and still correct: the Call For Offers Date
+        // tile MOVED below the rule into the call-for-offers section — it was not deleted — so it
+        // is asserted there rather than here. A bare count assertion would stay green if the date
+        // had been dropped altogether, which is why the move is pinned in its own test below.
+        //
+        // 🔴 THE ORDER IS ASSERTED, NOT JUST THE COUNT, AND THE ORDER IS THE DESIGN: the two CLOCKS
+        // sit side by side on row 1 of a two-column grid, with List Date beneath them. A change
+        // that appended the broker clock after List Date would keep the count at 3 and would split
+        // the pair the user is meant to compare.
         const tiles = element.shadowRoot.querySelectorAll(
             'c-onboarding-card-child'
         );
-        expect(tiles.length).toBe(2);
-        expect(tiles[0].value).toBe('30 days'); // Days On Market
-        expect(tiles[1].value).toBe('Mar 15, 2026'); // List Date
+        expect(tiles.length).toBe(3);
+        expect(tiles[0].value).toBe('30 days'); // Days On Market — the MARKETING clock
+        expect(tiles[1].value).toBe('9 days'); //  Days with this broker — the BROKER clock
+        expect(tiles[2].value).toBe('Mar 15, 2026'); // List Date
+    });
+
+    /**
+     * 🔴 THE TWO CLOCKS ARE LABELLED AND ARE DIFFERENT NUMBERS (Tranche 4 item 5, decision D-17).
+     *
+     * The fixture deliberately carries 30 and 9. A card that rendered the same number twice, or
+     * that mislabelled either tile, is exactly the confusion this feature exists to remove — the
+     * user has to be able to see that the property has been on the market for 30 days while the
+     * current broker has had it for 9.
+     *
+     * ⚠ THE LABELS ARE ASSERTED BECAUSE THE VALUES ALONE CANNOT CARRY THE MEANING. Two tiles both
+     * reading "N days" are indistinguishable without them, and "Days with this broker" is the
+     * wording the second one has to keep: a shortened "Broker Days" would leave the reader guessing
+     * whether it counts days or brokers.
+     */
+    it('🔴 DATA BRANCH: shows the marketing clock and the broker clock as two labelled tiles', async () => {
+        const element = createComponent();
+
+        getListing.emit(LISTING);
+        await Promise.resolve();
+
+        const tiles = element.shadowRoot.querySelectorAll('c-onboarding-card-child');
+        expect(tiles[0].label).toBe('Days On Market');
+        expect(tiles[0].value).toBe('30 days');
+        expect(tiles[1].label).toBe('Days with this broker');
+        expect(tiles[1].value).toBe('9 days');
+        expect(tiles[0].value).not.toBe(tiles[1].value);
+    });
+
+    /**
+     * 🔴 THE BROKER CLOCK NEVER TURNS AMBER, AND THIS IS THE PIN FOR
+     * `Broker_Listing__c.Days_On_Market_Live__c`'s OWN PROHIBITION: "NOTHING MAY READ THIS FORMULA
+     * TO DRIVE AN ALERT OR ESCALATION."
+     *
+     * `LISTING` is `isAtRisk: true`, so the MARKETING tile is amber. If someone wires the broker
+     * tile to the same flag — or worse, derives a second at-risk rule from its own value — this
+     * assertion fails. Colour is the only channel through which a display-only number could start
+     * behaving like an escalation on this card.
+     */
+    it('🔴 DATA BRANCH: only the marketing clock carries the at-risk colour', async () => {
+        const element = createComponent();
+
+        getListing.emit(LISTING);
+        await Promise.resolve();
+
+        const tiles = element.shadowRoot.querySelectorAll('c-onboarding-card-child');
+        expect(tiles[0].iconColor).toBe('#b45309'); // amber — the band said WEEK_4
+        expect(tiles[1].iconColor).toBe('#5a6b7b'); // neutral, unconditionally
+    });
+
+    /**
+     * A null broker clock renders a dash, exactly as a null marketing clock does — and for a
+     * DIFFERENT reason, which is why it needs its own test.
+     *
+     * `daysOnMarket: null` means the PROPERTY has no listing date. `daysWithThisBroker: null` means
+     * THIS LISTING ROW has no `List_Date__c`. Collapsing either to "0 days" would resurrect the
+     * clock-that-looks-healthy-and-never-ticks defect on a second surface.
+     *
+     * ⚠ THE MARKETING CLOCK IS DELIBERATELY LEFT RUNNING HERE (30 days), so the dash below cannot
+     * have been inherited from a not-listed parent.
+     */
+    it('DATA BRANCH: a null broker clock renders a dash, never "0 days"', async () => {
+        const element = createComponent();
+
+        getListing.emit({ ...LISTING, daysWithThisBroker: null });
+        await Promise.resolve();
+
+        const tiles = element.shadowRoot.querySelectorAll('c-onboarding-card-child');
+        expect(tiles[0].value).toBe('30 days');
+        expect(tiles[1].value).toBe('—');
     });
 
     /**
      * 🔴 THE UAT REMOVAL, PINNED AS AN ASSERTION ABOUT ABSENCE. The count assertions were deleted,
-     * which leaves nothing to fail if a fourth tile comes back. `PAUSED_LISTING` is used because it
-     * is the fixture with a non-zero count in the underlying data — a re-added tile would render
-     * "2" and be caught by the text check as well as by the tile count.
+     * which leaves nothing to fail if an offer-count tile comes back. `PAUSED_LISTING` is used
+     * because it is the fixture with a non-zero count in the underlying data — a re-added tile
+     * would render "2" and be caught by the text check as well as by the tile count.
+     *
+     * ⚠ THE EXPECTED COUNT MOVED FROM 2 TO 3 ON 2026-09-01 AND THAT IS THE HAZARD THIS NOTE
+     * EXISTS FOR. An absence pin expressed as a COUNT is weakened every time a legitimate tile is
+     * added: the number now has to be re-derived rather than trusted, and a future editor bumping
+     * it to 4 to "make the suite pass" would silently readmit the very tile this test forbids. The
+     * `not.toContain('offers received')` assertion below is the half that does not decay — it names
+     * the thing that must not come back, so keep BOTH. The tile added in Tranche 4 item 5 is
+     * 'Days with this broker', and it is pinned by name in its own test above.
      */
     it('🔴 renders no offer count — the UAT removal must not come back', async () => {
         const element = createComponent();
@@ -207,7 +303,7 @@ describe('c-broker-listing', () => {
 
         expect(
             element.shadowRoot.querySelectorAll('c-onboarding-card-child').length
-        ).toBe(2);
+        ).toBe(3);
         expect(
             element.shadowRoot.textContent.toLowerCase()
         ).not.toContain('offers received');
@@ -482,7 +578,7 @@ describe('c-broker-listing', () => {
     /**
      * 🔴 THE STRUCTURE, AND THE MOVE. The Call For Offers Date tile left the top grid in this
      * change; without this test, deleting it outright would look identical to moving it — the top
-     * grid's `toBe(2)` would pass either way.
+     * grid's tile-count assertion (2 then, 3 since Tranche 4 item 5) would pass either way.
      */
     it('CFO: a rule, then a headed section of three tiles in a fixed order', async () => {
         const element = createComponent();

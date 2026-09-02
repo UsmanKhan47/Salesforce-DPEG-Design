@@ -53,7 +53,7 @@ public class FsdDeep {
         signPrimaryNda(oppId);
         update new Opportunity(Id = oppId, StageName = 'Underwriting');
         Underwriting__c uw = [SELECT Id FROM Underwriting__c WHERE Opportunity__c = :oppId LIMIT 1];
-        update new Underwriting__c(Id = uw.Id, Stage__c = 'Approved', Status__c = 'Approved by Principals',
+        update new Underwriting__c(Id = uw.Id, Stage__c = 'Approved',
             My_Price__c = uwPrice, Target_Return__c = 17, Hold_Period__c = 5,
             Equity_Required__c = uwPrice * 0.3, Projected_Loan__c = uwPrice * 0.7);
         update new Opportunity(Id = oppId, UW_Approved__c = true, UW_Approval_Date__c = Date.today().addDays(-5));

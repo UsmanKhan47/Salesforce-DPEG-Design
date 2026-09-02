@@ -18,8 +18,14 @@
  * ⚠ RETRACTED TWICE — READ BOTH, THE SECOND ONE CHANGES WHICH FIELD ANY FUTURE FIX TOUCHES.
  *   V1: "`Asking_Price__c` DOES NOT EXIST ON `Disposition__c` YET." ❌ It did exist.
  *   V2 (2026-08-25): `Asking_Price__c` is RETIRED from the disposition flow altogether. It is not
- *      deleted and it still compiles, but nothing reads it — `BOV_Score__c`'s 50-point Value term
- *      now divides by `Disposition__r.Property_Asset__r.Target_Sale_Price__c`, on the PARENT ASSET.
+ *      deleted and it still compiles, but nothing reads it — `BOV_Score__c`'s Value term now
+ *      divides by `Disposition__r.Property_Asset__r.Target_Sale_Price__c`, on the PARENT ASSET.
+ *   ⚠ V2 SAID "50-point Value term" AND THE WEIGHT MOVED TO **40** ON 2026-09-01 (Value 40 /
+ *      Commission 20 / Speed 20 / Buyer Ready 10 / Known Performer 10). Corrected 2026-09-02.
+ *      🟢 V2's POINT IS UNCHANGED — it is about WHICH FIELD the term divides by, not how many
+ *      points it is worth, and that is still the asset's `Target_Sale_Price__c`. The weight is
+ *      dropped from the sentence rather than re-stated, because nothing in this class depends on
+ *      it and a number that nothing needs is a number that goes stale again.
  * What is STILL true, and is why deferred items 1/2/3 below remain owed rather than closed: this
  * class's own `@testSetup` builds a plain `TestDataFactory` asset, which carries NO
  * `Target_Sale_Price__c` (that factory default was REMOVED on 2026-08-25 in the same change —

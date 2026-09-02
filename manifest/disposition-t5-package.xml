@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        DISPOSITION BA GAP CLOSURE - FINAL TRANCHE (Conversion 6, Week 2 rung, offer terms).
+        Built 2026-09-02 for agent-output/disposition-gap-closure-t5-design.md.
+
+        THIS TRANCHE IS SMALL BECAUSE THREE ITEMS TURNED OUT NOT TO BE GAPS.
+        Story 37 (selected offer distinguished) was already closed and refused in writing. Story 42
+        (PSA ordering) named a sequence the client retired BY HAND in Setup on 2026-08-21, and its
+        Checkbox-to-Date half is a compile break plus a delete-and-recreate rename. The Week 2 rung
+        does NOT touch the Broker Alert Due KPI, which filters a Date field with no writer. Four
+        further items were deferred by the user at Gate 1: the check-in detection job, the closing
+        statement uploader, and both halves of the CoStar/Argus deep links.
+
+        DELIBERATELY EXCLUDED, though modified in the tree:
+        - lwc/brokerListing - our only edit is a COMMENT, and that bundle carries a concurrent
+          session's in-flight Tranche 4 work whose .js and tests are ahead of its .css and .html
+          (10 red Jest tests at HEAD). Shipping it would put another stream's half-finished feature
+          into production under this tranche's name.
+        - lwc/listingAlerts - the only change is inside __tests__, which never deploys. Nothing to
+          ship.
+        - Everything from Tranches 1 to 4. All are live: 0Afiw000000UCLVCA4, 0Afiw000000UJwTCAW,
+          0Afiw000000UNYhCAO, 0Afiw000000VVPJCA4.
+        - The concurrent session's Checklist / Transaction / Underwriting / transaction* LWC work.
+
+        DO NOT REBUILD THIS FROM `git status`. A concurrent session has committed four times during
+        this programme (de60c37, 2997bed, d5d8d81 and one earlier) and once swept an entire
+        tranche's Apex into an unrelated commit. HEAD at build time: d5d8d81.
+
+        REPORT COUNT CORRECTION, MEASURED: EIGHT Property_Asset__c reports now carry
+        `Status__c equals Active`, not seven. Seven already had it at HEAD - the design's table
+        omitted Sell_Readiness_By_Type - and this tranche adds the eighth, Sell_Ready_Argus. Those
+        filters have been correct for weeks and have NEVER excluded a row, because nothing wrote
+        'Disposed'. This payload supplies the missing writer, so all eight become live at once.
+
+        WHY DispositionTriggerHandler IS HERE WITHOUT A NAMED TEST CLASS.
+        It has no DispositionTriggerHandlerTest; it is covered indirectly. The test list below is
+        deliberately wider than this tranche's own new tests so the handler clears the 75%
+        per-class production gate. If the validate reports a coverage warning on it, widen the
+        test list rather than dropping the class - the class is load-bearing, it routes the new
+        disposal service.
+
+        WHAT A GREEN DEPLOY WILL NOT PROVE. All three items are invisible in this org today.
+        - Conversion 6: both dispositions sit at Disposition Readiness, SIX stages short of
+          Sale Closes. The user-visible behaviour needs one walked to Closing and approved BY A
+          PRINCIPAL WHO DOES NOT OWN THE ASSET, then a before/after of the Sell Meter.
+        - Week 2 rung: there are ZERO Broker_Listing__c rows, so Listing_Date__c is null
+          everywhere and NO rung renders in any state.
+        - Offer terms: needs two offers logged on one disposition; the quick action currently
+          opens on its "No offers have been logged" branch. Column widths need a browser.
+    -->
+
+    <types>
+        <members>BrokerListingController</members>
+        <members>BrokerListingControllerTest</members>
+        <members>DispositionAssetDisposalService</members>
+        <members>DispositionAssetDisposalServiceTest</members>
+        <members>DispositionTractionService</members>
+        <members>DispositionTractionServiceTest</members>
+        <members>DispositionTriggerHandler</members>
+        <members>PropertyAssetSelector</members>
+        <members>PropertyAssetSelectorTest</members>
+        <name>ApexClass</name>
+    </types>
+
+    <types>
+        <members>Disposition__c.Next_Broker_Checkin__c</members>
+        <members>Property_Asset__c.Argus_Signal__c</members>
+        <name>CustomField</name>
+    </types>
+
+    <types>
+        <members>dispositionOfferSelect</members>
+        <name>LightningComponentBundle</name>
+    </types>
+
+    <types>
+        <members>Dispositions/Sell_Ready_Argus</members>
+        <name>Report</name>
+    </types>
+
+    <version>67.0</version>
+</Package>

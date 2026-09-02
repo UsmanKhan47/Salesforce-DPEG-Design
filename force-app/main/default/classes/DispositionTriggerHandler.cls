@@ -1,9 +1,10 @@
 /**
- * Trigger handler for Disposition__c. Routes four contexts to THREE services (⚠ THIS COUNT HAS NOW
- * MOVED TWICE AND BOTH MOVES ARE RECORDED RATHER THAN OVERWRITTEN: it said "THREE" until
- * 2026-08-24, became "FOUR" when the BOV re-ranking hook was added, and is THREE again as of
- * 2026-08-25 because that hook MOVED TO `Property_Asset__c` — see the ⚠ below. Re-count against
- * the methods, never against this sentence):
+ * Trigger handler for Disposition__c. Routes four contexts to FOUR services (⚠ THIS COUNT HAS NOW
+ * MOVED THREE TIMES AND EVERY MOVE IS RECORDED RATHER THAN OVERWRITTEN: it said "THREE" until
+ * 2026-08-24, became "FOUR" when the BOV re-ranking hook was added, went back to THREE on
+ * 2026-08-25 because that hook MOVED TO `Property_Asset__c` — see the ⚠ below — and is FOUR again
+ * as of 2026-09-02 with the Conversion 6 asset-disposal writer. Re-count against the methods,
+ * never against this sentence):
  *
  *   before insert / before update  -> DispositionStageEntryService.stampListingDates
  *                                        (in-memory, no DML)
@@ -11,8 +12,18 @@
  *                                        (in-memory, no DML; off-market broker lookup, 2026-08-20)
  *   after insert  / after update   -> DispositionStageEntryService.createStageEntryRecords
  *                                        (the four child auto-creates)
+ *                                  -> DispositionAssetDisposalService.markAssetsDisposed
+ *                                        (Conversion 6 / BA story 49, added 2026-09-02)
  *                                  -> DispositionApprovalAdvanceService.enqueuePendingAdvances
  *                                        (the D-1 approval semaphore, added 2026-08-19)
+ *
+ * 🔴 THE FOURTH SERVICE IS THE FIRST THING THIS HANDLER HAS EVER DONE TO A RECORD ON ANOTHER
+ * OBJECT. `markAssetsDisposed` writes `Property_Asset__c.Status__c = 'Disposed'` on the parent of
+ * every disposition entering `Sale Closes` — a Private-OWD object with SIXTEEN other objects
+ * hanging off it, shared with Property Management, and read by eight dashboard reports and both
+ * Sell Meter queries. Its own class header carries the full cross-module argument and the
+ * `without sharing` justification; nothing about that decision lives here. What lives here is the
+ * ORDER, below.
  *
  * ⚠ THE BOV RE-RANKING HOOK IS GONE FROM THIS HANDLER (2026-08-25) AND MUST NOT BE ADDED BACK.
  * `BovAutoSelectionService.reselectForRepricedDispositions` lived on `afterUpdate` here from
@@ -27,14 +38,27 @@
  * "old-map on update, null on insert" convention: the SERVICE decides what each context means, so
  * the handler stays a router with no rules of its own.
  *
- * ── 🔴 TWO SERVICES ON THE AFTER CONTEXT, AND THE ORDER IS NOT ARBITRARY ────
- * `createStageEntryRecords` runs FIRST and `enqueuePendingAdvances` SECOND. The stage-entry service
- * performs SYNCHRONOUS DML (it opens the NDA / LOI / PSA / listing children for the stage the
- * record is on NOW); the advance service only ENQUEUES, and the job it enqueues runs after this
- * whole transaction commits. So the order below cannot change what either one does — but it is
- * fixed anyway so that a future reader is not left wondering whether it can, and so an exception
- * from the child creates (which is `allOrNone = true` and WILL roll the transaction back) is not
- * preceded by an enqueue that would then be discarded silently.
+ * ── 🔴 THREE SERVICES ON THE AFTER CONTEXT, AND THE ORDER IS NOT ARBITRARY ────
+ * ⚠ THIS BLOCK SAID "TWO" UNTIL 2026-09-02 AND THE RULE IT STATES IS UNCHANGED — the new service
+ * was inserted INTO the existing order rather than appended after it, precisely so the rule stays
+ * true. `createStageEntryRecords` runs FIRST, `markAssetsDisposed` SECOND, and
+ * `enqueuePendingAdvances` LAST. The first two perform SYNCHRONOUS DML (the stage-entry service
+ * opens the NDA / LOI / PSA / listing children for the stage the record is on NOW; the disposal
+ * service writes the parent asset's status, `allOrNone = true`); the advance service only
+ * ENQUEUES, and the job it enqueues runs after this whole transaction commits.
+ *
+ * 🔴 THE ENQUEUE MUST STAY LAST, AND SINCE 2026-09-02 THAT IS LOAD-BEARING RATHER THAN MERELY
+ * TIDY. The original reason was that an exception from the child creates must not be preceded by
+ * an enqueue that would then be discarded silently. `markAssetsDisposed` is a SECOND statement
+ * that can throw on this context — it is `allOrNone = true` deliberately, so a refused asset write
+ * rolls the disposition's own save back — so appending it after the enqueue would reintroduce
+ * exactly the discarded-enqueue window the original ordering closed. Do not reorder these three.
+ *
+ * ⚠ AND THE TWO DML SERVICES CANNOT SEE EACH OTHER'S WORK, WHICH IS WHY THEIR RELATIVE ORDER
+ * CARRIES NO MEANING: `createStageEntryRecords` writes CHILDREN of this disposition,
+ * `markAssetsDisposed` writes its PARENT asset, and neither reads anything the other wrote. Said
+ * out loud so nobody spends time defending a sequence between them that means nothing — but the
+ * pair as a whole is still before the enqueue, and that part does mean something.
  *
  * ⚠ THE TWO HOOKS ANSWER DIFFERENT QUESTIONS ABOUT THE SAME SAVE. Stage entry asks "did the STAGE
  * change into a target value?"; the advance hook asks "did the SEMAPHORE go false -> true?". An
@@ -159,6 +183,11 @@ public with sharing class DispositionTriggerHandler extends TriggerHandler {
      */
     private void route(List<Disposition__c> dispositions, Map<Id, Disposition__c> priorById) {
         DispositionStageEntryService.createStageEntryRecords(dispositions, priorById);
+        // Conversion 6 (BA story 49). Costs ZERO queries and ZERO DML on any save that does not
+        // enter `Sale Closes` — which is every save this trigger sees on a normal day. See the
+        // ordering block in the class header for why this sits between the two originals rather
+        // than after them.
+        DispositionAssetDisposalService.markAssetsDisposed(dispositions, priorById);
         DispositionApprovalAdvanceService.enqueuePendingAdvances(dispositions, priorById);
     }
 }

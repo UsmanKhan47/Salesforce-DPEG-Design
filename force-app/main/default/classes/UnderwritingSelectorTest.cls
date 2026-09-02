@@ -170,9 +170,15 @@ private class UnderwritingSelectorTest {
         Test.stopTest();
 
         Assert.areEqual(record.Id, result.Id, 'Should return the Underwriting identified by Id');
-        // ⚠ Stage__c (the Path field), NOT the coarse Status__c this object also carries. The
-        // factory sets Stage__c = 'Requested' and Status__c = 'In Progress' — deliberately
-        // different values, so this assertion FAILS if the selector ever reads the wrong one.
+        // ⚠ CORRECTED 2026-09-02. This comment used to read: "Stage__c (the Path field), NOT the
+        // coarse Status__c this object also carries. The factory sets Stage__c = 'Requested' and
+        // Status__c = 'In Progress' — deliberately different values, so this assertion FAILS if the
+        // selector ever reads the wrong one." 🔴 That described a REAL falsifier whose mechanism no
+        // longer exists: Underwriting__c.Status__c is retired, so the factory sets no such value and
+        // there is no second field for the selector to read by mistake. The assertion below is NOT
+        // now vacuous — it still pins that selectStageRequiredById populates Stage__c, which is the
+        // whole contract of a FETCH-FOR-USE read whose caller writes the value straight back — but
+        // it no longer discriminates between two fields, because there is only one.
         Assert.areEqual('Requested', result.Stage__c,
             'Stage__c must be populated for the advance');
     }

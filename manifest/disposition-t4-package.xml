@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        DISPOSITION BA GAP CLOSURE - TRANCHE 4 ONLY (BOV scoring, broker selection, Brokers Console).
+        Built 2026-09-02 for agent-output/disposition-gap-closure-t4-design.md.
+
+        BUILDING THIS MANIFEST WAS NOT MECHANICAL. READ THIS BEFORE CHANGING IT.
+        A concurrent session committed twice mid-build (HEAD 5e14e2f -> de60c37 -> 2997bed) and
+        commit 2997bed, titled "Move the Underwriting and LOI approvals off the Opportunity onto
+        their own records", SWEPT TRANCHE 4's APEX INTO ITSELF. So this tranche is split across a
+        commit boundary: its Apex is committed under an unrelated message, its metadata and LWC are
+        not. Nothing was lost - git diff HEAD on those files is empty - but the file list below
+        could NOT be derived from `git status` alone, and must not be regenerated that way.
+
+        Every candidate file was checked individually with
+            git show 2997bed (path-scoped, per file)
+        filtered to NON-COMMENT changed lines, to establish whose work it carries. Results:
+          BovController              pure T4 (MATRIX_THRESHOLD, countComparableResponsesFailSoft)
+          BrokerListingController    pure T4 (daysWithThisBroker)
+          BrokerListingSelector      pure T4 (Days_On_Market_Live__c into the SELECT)
+          DispositionApprovalService comment-only -> EXCLUDED, no deploy value, and it is the
+                                     namesake of the concurrent commit
+          DispositionStageEntryService comment-only -> EXCLUDED for the same reason
+          BovSubmissionTriggerHandler carries a recalculateResponsesForRows(...) call that is NOT
+                                     Tranche 4 work -> EXCLUDED. Deploying it would ship another
+                                     stream's change under this tranche's name.
+
+        ALSO DELIBERATELY EXCLUDED, though modified in the tree:
+        - Everything from Tranches 1-3. All three are already live (0Afiw000000UCLVCA4,
+          0Afiw000000UJwTCAW, 0Afiw000000UNYhCAO). Re-shipping widens the blast radius for no gain.
+        - The Checklist / Transaction / UtilityBill / transaction* LWC / DPEG_Checklist_* work in
+          de60c37 and 2997bed. Not this tranche, not reviewed here.
+        - scripts/** - anonymous Apex, not deployable metadata.
+
+        NO PERMISSION SET IS OWED, AND THAT WAS VERIFIED RATHER THAN ASSUMED.
+        Zero new @AuraEnabled classes and zero new selector methods. BovController,
+        BrokerController and BrokerListingController are already granted on DPEG_Apex_Access.
+        Contact_Name__c was added to a WITH SYSTEM_MODE query, so it opens no FLS surface. Every
+        field write 3a touches is already editable on DPEG_Disposition_Edit. Tranche 3 shipped a
+        controller with no classAccesses grant, the deploy was GREEN, and the component was dead
+        for every non-admin - hence the check.
+
+        WHAT A GREEN DEPLOY WILL NOT PROVE.
+        - The 3,900-char COMPILED formula limit on BOV_Score__c is not computable from source.
+          It fails loud, never silently wrong.
+        - Item 5 end-to-end needs a disposition at Active Listing with a listing row and two BOV
+          submissions. The org has 2 dispositions, both at Disposition Readiness.
+        - Whether the re-weighting inverts a LIVE ranking needs a priced disposition with 2+
+          scoreable responses. DISP-0041 has 4 BOV rows and is the place to look.
+        - Sort chevrons on the custom `pill` column are browser-only. Broker Hub has ~19 real
+          broker Contacts, so item 4 IS viewable today - it is the one item that is.
+    -->
+
+    <types>
+        <members>BovAutoSelectionService</members>
+        <members>BovAutoSelectionServiceTest</members>
+        <members>BovController</members>
+        <members>BovControllerTest</members>
+        <members>BovPreferredBrokerServiceTest</members>
+        <members>BovSubmissionSelector</members>
+        <members>BovSubmissionSelectorTest</members>
+        <members>BovSubmissionService</members>
+        <members>BovSubmissionServiceTest</members>
+        <members>BrokerListingController</members>
+        <members>BrokerListingControllerTest</members>
+        <members>BrokerListingSelector</members>
+        <members>BrokerListingSelectorTest</members>
+        <name>ApexClass</name>
+    </types>
+
+    <types>
+        <members>BOV_Submission__c.BOV_Score__c</members>
+        <members>BOV_Submission__c.Is_Buyer_Ready__c</members>
+        <members>BOV_Submission__c.Is_Known_Performer__c</members>
+        <name>CustomField</name>
+    </types>
+
+    <types>
+        <members>brokerListing</members>
+        <members>brokersList</members>
+        <name>LightningComponentBundle</name>
+    </types>
+
+    <version>67.0</version>
+</Package>

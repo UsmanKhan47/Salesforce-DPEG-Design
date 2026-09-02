@@ -71,12 +71,17 @@ private class BrokerListingControllerTest {
     /**
      * ⚠ THIS TEST MOVED FROM DAY 12 TO DAY 3 ON 2026-08-21, AND THAT IS THE THRESHOLD CHANGE MADE
      * VISIBLE. Under the retired 30/40/60 ladder day 12 was "inside month one, On Track"; under
-     * 7/28/42 day 12 is past the week-1 check-in. The day-12 case now has its own test below
+     * 7/28/42 day 12 was past the week-1 check-in. The day-12 case now has its own test below
      * asserting the OPPOSITE band — deliberately, so the pair reads as a moved line rather than a
      * loosened assertion.
+     *
+     * ⚠ AND ON 2026-09-02 THE LINE MOVED AGAIN (user decision A2, 7 -> 14). Day 3 was inside the
+     * first WEEK and is now inside the first FORTNIGHT — the assertion is unchanged and is now
+     * further from the boundary, which is why this test did not need to move a second time. The
+     * day-12 test below is the one that flipped, and it flipped BACK to `ON_TRACK`.
      */
     @isTest
-    static void testGetListing_insideWeekOne_isOnTrack() {
+    static void testGetListing_insideTheFirstFortnight_isOnTrack() {
         Id dispId = listedDaysAgo(3);
         TestDataFactory.createBrokerListing(dispId, true);
 
@@ -94,13 +99,19 @@ private class BrokerListingControllerTest {
     }
 
     /**
-     * ⚠ DAY 12 IS NO LONGER THE QUIET CASE IT WAS. Under the retired 30/40/60 ladder day 12 was
-     * comfortably inside month one; under 7/28/42 the sibling test above sits at the WEEK_1 rung
-     * from day 7. It is kept at 12 on purpose so that a threshold change in either direction moves
-     * a band here.
+     * 🔴 DAY 12 HAS NOW BEEN ON BOTH SIDES OF THE FIRST RUNG AND IS KEPT AT 12 FOR EXACTLY THAT
+     * REASON. Under the retired 30/40/60 ladder it was comfortably inside month one (ON_TRACK);
+     * under 7/28/42 it was past the week-1 check-in (WEEK_1); under 14/28/42 — user decision A2,
+     * 2026-09-02 — it is ON_TRACK again. It is the most sensitive day in this file: a threshold
+     * change in EITHER direction moves a band here, which is what a boundary test is for.
+     *
+     * ⚠ IT WOULD HAVE BEEN EASIER TO MOVE THIS FIXTURE TO DAY 20 AND LEAVE THE `WEEK_2` ASSERTION
+     * STANDING. That is the repair that hides the change: the suite would stay green, both before
+     * and after the move, and nothing would record that the first rung had moved at all. The
+     * assertion is INVERTED in place instead, and the rung case is asserted separately below.
      */
     @isTest
-    static void testGetListing_pastTheWeekOneCheckIn_isWeekOneButNotAtRisk() {
+    static void testGetListing_dayTwelve_isBackInsideTheFirstRung() {
         Id dispId = listedDaysAgo(12);
         TestDataFactory.createBrokerListing(dispId, true);
 
@@ -108,10 +119,33 @@ private class BrokerListingControllerTest {
         BrokerListingController.ListingRow row = BrokerListingController.getListing(dispId);
         Test.stopTest();
 
-        Assert.areEqual('WEEK_1', row.tractionBand,
-            'Day 12 with zero offers is past the week-1 check-in');
+        Assert.areEqual('ON_TRACK', row.tractionBand,
+            'Day 12 is BELOW the week-2 rung. Under the retired 7/28/42 ladder this read WEEK_1.');
+        Assert.isFalse(row.isAtRisk, 'Day 12 is not at risk');
+    }
+
+    /**
+     * The first rung as this controller publishes it — day 20, comfortably between the week-2 rung
+     * (14) and the week-4 one (28). ⚠ ADDED 2026-09-02 with decision A2, because inverting the
+     * day-12 assertion above would otherwise have left NO test in this class covering the
+     * `tractionBand == 'WEEK_2'` / `isAtRisk == false` combination at all — the exact state the
+     * `isAtRisk` note on `BrokerListingController.ListingRow` exists to explain.
+     */
+    @isTest
+    static void testGetListing_pastTheWeekTwoCheckIn_isWeekTwoButNotAtRisk() {
+        Id dispId = listedDaysAgo(20);
+        TestDataFactory.createBrokerListing(dispId, true);
+
+        Test.startTest();
+        BrokerListingController.ListingRow row = BrokerListingController.getListing(dispId);
+        Test.stopTest();
+
+        Assert.areEqual('WEEK_2', row.tractionBand,
+            'Day 20 with zero offers is past the week-2 check-in');
         Assert.isFalse(row.isAtRisk,
-            'The week-1 check-in must NOT drive the amber styling - it is a prompt, not a risk');
+            'The week-2 check-in must NOT drive the amber styling - it is a prompt, not a risk');
+        Assert.isTrue(row.tractionLabel.contains('Week 2'),
+            'The badge must name the week: ' + row.tractionLabel);
     }
 
     @isTest
@@ -252,6 +286,89 @@ private class BrokerListingControllerTest {
             'The STORED Listing_Status__c still passes through - nothing writes it today, and the '
             + 'computed band deliberately does not read it, so a stale value cannot corrupt the '
             + 'traction verdict');
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════════════════════
+    // TRANCHE 4 ITEM 5 (2026-09-01) — `daysWithThisBroker`, THE SECOND CLOCK
+    // ═══════════════════════════════════════════════════════════════════════════════════════════
+    // The card now shows TWO elapsed-day numbers and they answer different questions:
+    //   daysOnMarket       — the MARKETING clock. Parent-derived, pausable at the first offer, and
+    //                        the traction band's only input.
+    //   daysWithThisBroker — the BROKER clock. `Broker_Listing__c.Days_On_Market_Live__c`, raw
+    //                        elapsed days from THIS row's own List_Date__c, DISPLAY ONLY.
+    //
+    // 🔴 THE TESTS BELOW DELIBERATELY MAKE THE TWO NUMBERS DIFFERENT. A fixture where the parent
+    // and the child carry the same date — which is exactly what the factory produces, and what
+    // `openBrokerListings` produces in production on a first listing — would pass whether the
+    // controller read the child formula or simply copied `daysOnMarket` into the new member. The
+    // divergence IS the assertion.
+
+    /**
+     * 🔴 THE FALSIFIER FOR "THE SECOND NUMBER IS JUST A COPY OF THE FIRST".
+     *
+     * Parent listed 65 days ago, this listing row opened 9 days ago — the shape a broker
+     * REPLACEMENT produces, where `BovSubmissionService.replaceSelectedBroker` appends a fresh
+     * `Broker_Listing__c` and never touches `Disposition__c.Listing_Date__c`. The card must read
+     * 65 and 9, not 65 and 65.
+     *
+     * ⚠ AND THE BAND MUST STILL COME FROM 65. Asserting `tractionBand` here is not decoration: it
+     * is the pin for the field's own prohibition — "NOTHING MAY READ THIS FORMULA TO DRIVE AN ALERT
+     * OR ESCALATION". A band computed from the 9-day broker clock would read ON_TRACK and this
+     * assertion is what catches it.
+     */
+    @isTest
+    static void testGetListing_brokerClockIsSeparateFromTheMarketingClock() {
+        Id dispId = listedDaysAgo(65);
+        Broker_Listing__c bl = TestDataFactory.createBrokerListing(dispId, false);
+        bl.List_Date__c = Date.today().addDays(-9);
+        insert bl;
+
+        Test.startTest();
+        BrokerListingController.ListingRow row = BrokerListingController.getListing(dispId);
+        Test.stopTest();
+
+        Assert.areEqual(65, row.daysOnMarket,
+            'The MARKETING clock is the parent Listing_Date__c and is unaffected by when this '
+            + 'listing row opened');
+        Assert.areEqual(9, row.daysWithThisBroker,
+            '🔴 THE BROKER clock is THIS row Days_On_Market_Live__c. A 65 here would mean the new '
+            + 'member is a copy of daysOnMarket rather than a second, independent fact — which is '
+            + 'the whole reason Tranche 4 added it.');
+        Assert.areEqual('WEEK_6', row.tractionBand,
+            '🔴 AND THE BAND STILL KEYS ON THE MARKETING CLOCK. Days_On_Market_Live__c is DISPLAY '
+            + 'ONLY — the field header says "NOTHING MAY READ THIS FORMULA TO DRIVE AN ALERT OR '
+            + 'ESCALATION". A band derived from the 9-day broker clock would read ON_TRACK here.');
+    }
+
+    /**
+     * A listing row with no `List_Date__c` reports null, not 0 — the formula is
+     * `IF(ISBLANK(List_Date__c), null, TODAY() - List_Date__c)`, and `c/brokerListing` renders a
+     * dash for it.
+     *
+     * ⚠ IT IS THE SAME DISTINCTION `testGetListing_blankListingDate_reportsNotListedRatherThanDayZero`
+     * makes for the marketing clock, on the other clock, and it needs its own test because the two
+     * nulls have different causes: that one is a Disposition with no listing date, this one is a
+     * listing row with no start date. The parent clock here is deliberately RUNNING (5 days), so
+     * the null cannot be inherited from a not-listed parent.
+     */
+    @isTest
+    static void testGetListing_listingWithNoStartDate_reportsANullBrokerClock() {
+        Id dispId = listedDaysAgo(5);
+        Broker_Listing__c bl = TestDataFactory.createBrokerListing(dispId, false);
+        bl.List_Date__c = null;
+        insert bl;
+
+        Test.startTest();
+        BrokerListingController.ListingRow row = BrokerListingController.getListing(dispId);
+        Test.stopTest();
+
+        Assert.areEqual(5, row.daysOnMarket,
+            'PREMISE: the MARKETING clock is running, so the null below is about this listing row '
+            + 'and cannot have been inherited from an unlisted parent');
+        Assert.isNull(row.daysWithThisBroker,
+            'A listing with no start date has no broker clock. Null, never 0 — "this broker has no '
+            + 'start date" and "this broker started today" are different facts and the card renders '
+            + 'them differently.');
     }
 
     @isTest

@@ -99,7 +99,21 @@
  * entry to `Active Listing`, so a stale name propagates into the listing record and outlives the
  * mistake. Since 2026-08-20 there is a second such state: a `BOV_Broker_Change__c` row asserting a
  * swap that did not survive its own transaction. Under one savepoint the only two reachable end
- * states are "nothing happened, and here is why" and "all four writes happened".
+ * states are "nothing happened, and here is why" and "every write for this shape of replacement
+ * happened".
+ * ⚠ THAT SENTENCE SAID "all four writes happened" UNTIL 2026-09-02 and was a COUNT, which is the
+ * form that decays — write 3a made the total four-or-five (see the writes block at the top of this
+ * header), so a fixed number here would have been wrong on every listed sale. Do not restore one.
+ *
+ * 🔴 THE THIRD ROLLBACK STATE — WRITE 3a — IS THE ONE THAT NEEDED A TEST OF ITS OWN, AND IT NOW HAS
+ * ONE (2026-09-02, code review W1). An orphaned `Broker_Listing__c` surviving a rolled-back
+ * replacement is not merely untidy the way a stranded history row is: it is the row
+ * `BrokerListingSelector.selectMostRecentByDispositionId` returns
+ * (`ORDER BY CreatedDate DESC LIMIT 1`), so the Active Listing card would follow a broker who was
+ * never appointed — arguably worse than the history-row artefact write 4's placement guards
+ * against. `lockedDisposition_refusesTheWholeReplacementAndRollsBack` CANNOT reach it: it locks a
+ * sale at `Disposition Readiness`, where no listing exists, so `saleIsListed` is false and write 3a
+ * never executes in it. `refusedReplacementRollsBackTheListingAppend` is the one that does.
  *
  * 🔴 A LOCKED DISPOSITION THEREFORE REFUSES THE WHOLE REPLACEMENT, AND THAT IS CORRECT RATHER THAN
  * UNFORTUNATE. If `Broker_Selection_Approval` is pending (off-market, stage `Broker Selection`) the
@@ -523,9 +537,23 @@ public with sharing class BovSubmissionService {
         // WHY THE POLARITY OF THIS GUARD MATTERS: a false NEGATIVE skips an append, which is
         // visible on the card and repairable by hand; a false POSITIVE creates the BOV-Outreach
         // listing above and is silent forever.
-        Boolean saleIsListed = !BrokerListingSelector
-            .selectByDispositionIds(new Set<Id>{ dispositionId })
-            .isEmpty();
+        // ⚠ THE CALL IS HOISTED TO A LOCAL, AND THAT IS NOT A STYLE CHOICE — IT IS THE ONLY FORM
+        // THAT COMPILES. This read as `!BrokerListingSelector` + a line break + `.selectBy...(...)`
+        // until 2026-09-02, when the validate failed with
+        // `Variable does not exist: BrokerListingSelector` — an error that names the CLASS and
+        // therefore reads exactly like a missing or undeployed dependency. IT IS NOT: that class is
+        // `public with sharing` and `selectByDispositionIds(Set<Id>)` is `public static`. Apex binds
+        // a bare identifier followed by a line break as a VARIABLE reference rather than a type, so
+        // the leading `!` was being applied to a Boolean named `BrokerListingSelector`.
+        // ⚠ Chained INSTANCE calls wrapped this way are fine and appear all over this repo. The
+        // quirk bites only when the token wrapped FROM is a class name starting a STATIC call.
+        // 🔴 DO NOT "TIDY" THIS BACK INTO A CHAIN, and do not reflow it onto one long line either.
+        // TWO FULL CODE-REVIEW PASSES READ THE OLD FORM AND NEITHER FLAGGED IT — there is no lint,
+        // no test and no static check in this repo that models the Apex parser, so only a compile
+        // finds it. The local also gives the polarity argument above something to name.
+        List<Broker_Listing__c> existingListings =
+            BrokerListingSelector.selectByDispositionIds(new Set<Id>{ dispositionId });
+        Boolean saleIsListed = !existingListings.isEmpty();
 
         Savepoint beforeReplacement = Database.setSavepoint();
         try {
@@ -594,6 +622,54 @@ public with sharing class BovSubmissionService {
                         // of the feature: the marketing clock keeps running from when the PROPERTY
                         // went to market, and the broker clock starts now.
                         List_Date__c = Date.today(),
+                        // ── 🔴 THE LOOKUP, ADDED 2026-09-02 (Tranche 4 code review, S1) ──
+                        // `Broker_Listing__c.Broker__c`'s own XML header says the stamp for this
+                        // field is "a separate, un-scoped follow-up item" and that Tranche 1 ships
+                        // the lookup blank on every auto-created listing. THIS STATEMENT IS THE
+                        // FIRST PLACE IN THE APPLICATION THAT CREATES A LISTING WITH A KNOWN
+                        // BROKER CONTACT ID, so leaving it blank here would not preserve that
+                        // deferral — it would EXTEND the lookup/text duality onto a second object
+                        // at the exact moment it became avoidable, and every row this feature
+                        // creates would have to be repaired by whatever stamp service eventually
+                        // lands.
+                        //
+                        // ZERO NEW COST, MEASURED AGAINST THIS METHOD'S OWN BUDGET:
+                        //   - ZERO new SOQL. `selectStatusesByDispositionId` already selects
+                        //     `Broker__c` (it has to — `buildChangeRow` puts the same value on the
+                        //     history row's `Incoming_Broker__c` a few lines below).
+                        //   - ZERO new DML. It rides this same insert.
+                        //   - ZERO new FLS exposure. This insert is `SYSTEM_MODE` (argued above),
+                        //     and nothing READS the field: `BrokerListingSelector
+                        //     .selectMostRecentByDispositionId` is `WITH USER_MODE` and its field
+                        //     list is marked "THE FIELD LIST IS A CONTRACT" — do not widen it to
+                        //     display this.
+                        //
+                        // ⚠ AND ZERO NEW REFUSAL PATHS, WHICH IS THE ONLY THING THAT COULD HAVE
+                        // MADE THIS UNSAFE. `Broker_Listing__c.Broker__c` carries an ACTIVE,
+                        // NON-OPTIONAL lookup filter on `Contact.RecordType.DeveloperName =
+                        // 'Broker'` — byte-identical to the one on the history row's
+                        // `Incoming_Broker__c` below, which is fed the SAME `challenger.Broker__c`
+                        // in the SAME transaction. A Contact that fails the filter therefore
+                        // already refused the whole replacement before this line existed; the set
+                        // of transactions that succeed is unchanged.
+                        // 🔴 WHAT DID CHANGE IS **WHICH WRITE REFUSES FIRST**: that refusal now
+                        // fires HERE, at write 3a, instead of at write 4. Same outcome for a user
+                        // (whole replacement rolled back, filter's own message surfaced verbatim),
+                        // but it matters to anyone writing a test that wants write 3a to have
+                        // EXECUTED before the transaction fails — see the refusal note further
+                        // down and `refusedReplacementRollsBackTheListingAppend` in the test
+                        // class, which deliberately does NOT use the record-type route for exactly
+                        // this reason.
+                        //
+                        // 🔴 IT ALSO MOVES `Broker_Listing__c` INTO THE "SEVERE" GROUP IN
+                        // `scripts/seed-broker-contacts.apex`. That script's header carried a
+                        // standing conditional — "THE MOMENT A STAMP SERVICE IS ADDED FOR
+                        // `Broker_Listing__c.Broker__c`, THIS DECISION INVERTS and both fields
+                        // belong in `STORED_DENORM_TEXT`" — because a SetNull cascade would now
+                        // leave `Broker_Firm__c` / `Contact_Name__c` naming a deleted broker on a
+                        // row whose lookup had gone blank. That map WAS updated in the same change
+                        // as this line. Do not revert one without the other.
+                        Broker__c = challenger.Broker__c,
                         Broker_Firm__c = challenger.Broker_Firm__c,
                         // D-16. `openBrokerListings` leaves this blank and says "A human fills it,
                         // or the future broker-change action supplies it." This is that action.
@@ -637,6 +713,21 @@ public with sharing class BovSubmissionService {
             // verbatim by the DmlException catch below. That is deliberately not worked around
             // here: silently nulling the lookup to get the insert through would discard the very
             // linkage the row exists to hold, and re-flagging the Contact is the real fix.
+            //
+            // ⚠ AMENDED 2026-09-02 (code review S1) — THE REFUSAL IS NO LONGER THIS WRITE'S ALONE,
+            // AND ON A LISTED SALE IT NO LONGER FIRES HERE FIRST. Write 3a above now stamps
+            // `Broker_Listing__c.Broker__c` from the SAME `challenger.Broker__c`, and that field
+            // carries a byte-identical active non-optional filter. So on a sale where
+            // `saleIsListed` is true, a Contact off the Broker record type is refused at WRITE 3a;
+            // this write is only the FIRST refusal point when there is no listing to append to.
+            // The user-visible outcome is identical either way (whole replacement rolled back, and
+            // the two filters even share the same `errorMessage` string, so the surfaced message
+            // cannot tell them apart). 🔴 IT IS NOT IDENTICAL TO A TEST: a test that flips a broker
+            // Contact off the record type to prove a rollback will, on a LISTED sale, now fail at
+            // write 3a — before write 3a has inserted anything — and therefore proves nothing about
+            // write 3a's own rollback. See
+            // `BovSubmissionServiceTest.refusedReplacementRollsBackTheListingAppend`, which
+            // documents the injection it uses instead and exactly why this route was rejected.
             Database.insert(
                 buildChangeRow(dispositionId, outgoing, challenger, reason, notes),
                 true,

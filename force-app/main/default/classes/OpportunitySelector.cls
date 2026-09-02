@@ -32,12 +32,15 @@
  *     aggregateDealCountsByBroker, `WITH SYSTEM_MODE`, see MODE below)
  *   - StageDelayAlertBatch (the daily stalled-deal reminder — queryStalledDeals,
  *     `WITH SYSTEM_MODE`, see MODE below)
+ *   - DealTransactionGateService.recalculate (the "a deal cannot close until its
+ *     transaction is closed" gate, from TransactionTrigger —
+ *     selectTransactionGateFlagsByIds, `WITH SYSTEM_MODE`, see MODE below)
  *
- * MODE — most queries are `WITH USER_MODE` (API 67). **SEVEN are `WITH SYSTEM_MODE`:**
+ * MODE — most queries are `WITH USER_MODE` (API 67). **EIGHT are `WITH SYSTEM_MODE`:**
  * `selectCallForOffersTargetsByIds`, `queryCallForOffersAlerts`,
  * `selectMarketSnapshotSourceByIds`, `selectNdaGateById`,
- * `aggregateDealCountsByBroker`, `queryStalledDeals` and `selectPrimaryLoiByIds`.
- * Read the METHOD, not the class.
+ * `aggregateDealCountsByBroker`, `queryStalledDeals`, `selectPrimaryLoiByIds` and
+ * `selectTransactionGateFlagsByIds`. Read the METHOD, not the class.
  *
  * ⚠ THIS PARAGRAPH SAID "the ONE `WITH SYSTEM_MODE` method" UNTIL 2026-08-14, "TWO"
  * UNTIL 2026-08-16, "THREE" UNTIL 2026-08-30, "FOUR" UNTIL 2026-08-31, "FIVE" FOR A
@@ -50,8 +53,20 @@
  * profile including the deploying administrator. The third (the market-data freeze) is
  * argued at ITS own declaration for a THIRD reason again — it runs inside an
  * APPROVAL-TRIGGERED flow, so a throw does not merely disable the feature, it rolls back
- * the approval. Do not read a future EIGHTH SYSTEM_MODE method as conformant because
- * seven already exist — read its header.
+ * the approval. Do not read a future NINTH SYSTEM_MODE method as conformant because
+ * eight already exist — read its header.
+ *
+ * 🔴 THE EIGHTH ENTRANT (`selectTransactionGateFlagsByIds`, 2026-09-02) IS THE SECOND
+ * ENTRANT'S REASON — it selects two custom fields created in that same change, which arrive
+ * with no FLS for any profile including the deploying administrator — WITH ONE AGGRAVATION
+ * THE SECOND DID NOT HAVE: it runs on a TRIGGER path (`TransactionTrigger`), so a USER_MODE
+ * throw does not disable a batch job quietly, it rolls back the saving user's own Transaction.
+ * ⚠ Its SHARING answer is the OPPOSITE of `selectNdaGateById`'s and that is deliberate and
+ * measured: Opportunity's INTERNAL OWD is `ReadWrite`, so no `without sharing` inner class is
+ * added. Its sibling read in the same recompute,
+ * `TransactionSelector.aggregateStatusCountsByOpportunityIds`, DOES escape sharing, because
+ * `Transaction__c` is Private. Two reads, one feature, two different answers — which is the
+ * D25 rule working, not an inconsistency.
  *
  * 🔴 THE SEVENTH ENTRANT (`selectPrimaryLoiByIds`, 2026-09-01) IS THE THIRD ENTRANT'S REASON
  * AGAIN — IT RUNS INSIDE AN APPROVAL-TRIGGERED FLOW — BUT IT IS THE ONLY ONE OF THE SEVEN
@@ -116,9 +131,14 @@
  * ⚠ AMENDED 2026-09-01, BOTH SIDES, as this paragraph's own last line demands: no method was
  * added or removed, `selectPrimaryLoiByIds` MOVED from one side to the other, so it is now
  * 21 public methods = **7** `WITH SYSTEM_MODE` + **14** `WITH USER_MODE`.
+ * ⚠ AMENDED AGAIN 2026-09-02, BOTH SIDES. `selectTransactionGateFlagsByIds` was ADDED (it did
+ * not move), so the SYSTEM_MODE side gains one and the USER_MODE side does not:
+ * **22 public methods = 8 `WITH SYSTEM_MODE` + 14 `WITH USER_MODE`.** RE-DERIVED BY
+ * ENUMERATION on 2026-09-02 (`grep "^    public static"` returned 21 before this addition),
+ * not by arithmetic on the previous figure.
  * 🔴 If you add a method, update BOTH sides or neither.
  *
- * The fifteen USER_MODE methods back reads a human explicitly asked for. Opportunity
+ * The fourteen USER_MODE methods back reads a human explicitly asked for. Opportunity
  * is the only standard-object selector in A1; per the P4 design §5 the standard
  * fields selected across them (Id, Name, StageName, CloseDate, CreatedDate) are
  * `permissionable=false` and therefore never subject to FLS — USER_MODE cannot
@@ -618,6 +638,64 @@ public with sharing class OpportunitySelector {
             WHERE Id = :recordId
             WITH USER_MODE
             LIMIT 1
+        ];
+    }
+
+    /**
+     * The two stored deal-close gate flags as they currently STAND — backs
+     * `DealTransactionGateService.recalculate`, which compares them with a freshly-counted truth
+     * and writes back only the deals whose flags actually moved (added 2026-09-02).
+     *
+     * ── WHY A READ EXISTS AT ALL, WHEN THE SERVICE COULD JUST WRITE ───────────────────────────
+     * The query buys a skipped DML, and the DML is the expensive half. An Opportunity update
+     * re-enters `OpportunityReviewTrigger`, and this read runs on `Transaction__c`'s trigger path,
+     * which the Day-0 chain walks several times per deal. Reading first is what lets a Transaction
+     * save whose flags did not move cost zero writes.
+     *
+     * ── 🔴 MODE = `WITH SYSTEM_MODE`. THIS IS THE CLASS'S EIGHTH, AND ITS REASON IS THE SECOND
+     * ENTRANT'S, NOT A NEW ONE ────────────────────────────────────────────────────────────────
+     * `Has_Open_Transaction__c` and `Has_Closed_Transaction__c` are custom fields created in this
+     * same change, and a Metadata-API-deployed field arrives with NO FLS for ANY profile,
+     * System Administrator included — the same fact that converted `queryStalledDeals`. Worse
+     * here, because the caller is a TRIGGER: `USER_MODE` throws
+     * `System.QueryException: No such column` rather than degrading, and inside an after-trigger
+     * that escapes as `CANNOT_INSERT_UPDATE_ACTIVATE_ENTITY` and rolls back the Transaction save
+     * of whoever happened to be closing a transaction. It also runs as the Transactions team, who
+     * are not required to hold any Opportunity FLS at all.
+     *
+     * ── 🟢 SHARING = NOT ESCAPED, AND THAT IS A MEASUREMENT RATHER THAN AN OMISSION ────────────
+     * `SYSTEM_MODE` lifts CRUD and FLS and NEVER sharing, so it is asked separately, as the D25
+     * rule at `selectNdaGateById` requires. Measured on `usman-dpeg` 2026-09-02 via
+     * `EntityDefinition`: **Opportunity's INTERNAL sharing model is `ReadWrite`** (the external
+     * model is `Private`). Every internal principal can therefore already read and write every
+     * deal, there is nothing for a `private without sharing` inner class to fix, and adding one
+     * would widen the class for no gain. This is the OPPOSITE answer from
+     * `TransactionSelector.aggregateStatusCountsByOpportunityIds`, its sibling in the same
+     * recompute, which DOES escape — because `Transaction__c` is Private and Opportunity is not.
+     * 🔴 IF OPPORTUNITY'S INTERNAL OWD IS EVER TIGHTENED, RE-OPEN THIS. A sharing-filtered read
+     * here would silently stop returning deals the saver cannot see, and
+     * `DealTransactionGateService` would then write those deals BLIND rather than skip them — safe,
+     * but it would quietly cost a DML per save. The remedy then is a narrow
+     * `private without sharing` inner class holding ONLY this query (the `NdaGateReads` shape
+     * above), never `without sharing` on this class.
+     *
+     * @param opportunityIds Deals to read; may be null/empty.
+     * @return The deals with Id and both gate flags populated; an empty list when the input is
+     *         null/empty. Deals the running user cannot see are simply ABSENT — the caller must
+     *         treat absence as "unknown", never as "unchanged".
+     * @example
+     * for (Opportunity stored
+     *         : OpportunitySelector.selectTransactionGateFlagsByIds(dealIds)) { ... }
+     */
+    public static List<Opportunity> selectTransactionGateFlagsByIds(Set<Id> opportunityIds) {
+        if (opportunityIds == null || opportunityIds.isEmpty()) {
+            return new List<Opportunity>();
+        }
+        return [
+            SELECT Id, Has_Open_Transaction__c, Has_Closed_Transaction__c
+            FROM Opportunity
+            WHERE Id IN :opportunityIds
+            WITH SYSTEM_MODE
         ];
     }
 

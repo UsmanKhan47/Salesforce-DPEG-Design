@@ -23,8 +23,9 @@
         ANSWERS live in Is_Buyer_Ready__c's comment, and they are still not copied here. One of the
         four is only PARTLY closed and is the one worth knowing about without opening that file:
         a re-weighting re-ranks READS instantly and re-ranks NOTHING that is stored, because a
-        formula deploy is not one of BovAutoSelectionService.reselect's change keys. The repair is
-        scripts/backfill-bov-reranking.apex, shipped deliberately UNRUN.
+        formula deploy is not one of BovAutoSelectionService.reselect's change keys, and neither is
+        a no-op re-save. NO BACKFILL SCRIPT EXISTS - BOV_Score__c's header carries the one
+        in-contract repair and the reason it was deliberately not shipped as a runnable file.
 
         FLS: readable in DPEG_Disposition_View; EDITABLE in DPEG_Disposition_Edit. Applied in the
         consolidated permission-set pass, not this file.

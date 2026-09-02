@@ -1,13 +1,23 @@
 /**
  * Tests for PropertyAssetSelector (P4 cleanup wave E — Disposition module).
  *
- * Both selector methods are now filtered to SELL CANDIDATES only:
- *   Property__c != null AND Peak_Sell_Date__c != null
+ * Both Sell Meter methods are filtered to SELL CANDIDATES only. Since 2026-09-02 the shared
+ * predicate has THREE terms, not two:
+ *   Property__c != null AND Peak_Sell_Date__c != null AND Status__c != 'Disposed'
  * so the Sell Meter widget shows real disposition-evaluation assets rather than
  * every Property_Asset__c row (un-parented seed junk / assets not yet on the
- * meter). These tests therefore always set BOTH Property__c and Peak_Sell_Date__c
- * on the records they expect back, and assert that records missing either are
- * excluded.
+ * meter / buildings DPEG has already sold). These tests therefore always set BOTH
+ * Property__c and Peak_Sell_Date__c on the records they expect back, and assert
+ * that records missing either are excluded.
+ *
+ * 🔴 THE THIRD TERM IS CONVERSION 6 (BA story 49) AND ITS TESTS ARE GROUPED AT THE BOTTOM OF THIS
+ * FILE. Two of them carry the whole weight of the change and neither is obvious:
+ *   - `bothMeterQueriesExcludeADisposedAssetAndAgreeWithEachOther` asserts BOTH counts in ONE
+ *     method, because two separate tests would let one go red and be "fixed" alone — which is
+ *     precisely how the summary tiles and the table below them come to disagree;
+ *   - `anAssetWithNoStatusAtAllStaysOnTheMeter` is the ONLY test in this class that can tell
+ *     `!= 'Disposed'` from `= 'Active'`. On today's data the two predicates are identical, so
+ *     every other test passes under either.
  *
  * ⚠ selectPeakSellDateById IS THE EXCEPTION TO THAT FILTER and is tested as one. It backs
  * DispositionService's sell-meter gate, which must be able to READ a null peak date —
@@ -309,6 +319,184 @@ private class PropertyAssetSelectorTest {
         Test.stopTest();
 
         Assert.areEqual(BULK_N, result.size(), 'All 251 existing assets should be returned');
+        Assert.areEqual(1, spent, 'A 251-Id read costs exactly one query, not 251');
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // 🔴 CONVERSION 6 (BA story 49, 2026-09-02) — THE `Status__c != 'Disposed'` TERM
+    //
+    // Before this date NOTHING in the application wrote `'Disposed'`, so the two Sell
+    // Meter queries and eight dashboard reports could not have told the difference. These
+    // tests are the fence that keeps the term on BOTH meter queries: if it is removed from
+    // one, the summary tiles and the list below them disagree on the SAME page, which is
+    // exactly the Home-vs-Dashboard disagreement this item exists to end.
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * 🔴 THE SHARED-PREDICATE INVARIANT, ASSERTED AS ONE TEST RATHER THAN TWO.
+     *
+     * `selectAllForMeterSummary` and `selectAllForPortfolio` must return the SAME set. Splitting
+     * this into two tests would let one go red and the other green, and someone would "fix" the
+     * red one — which is how the two queries drift apart. Asserting both counts in one method
+     * makes the disagreement itself the failure.
+     */
+    @isTest
+    static void bothMeterQueriesExcludeADisposedAssetAndAgreeWithEachOther() {
+        Property__c prop = TestDataFactory.createProperty(true);
+
+        Property_Asset__c active = TestDataFactory.createPropertyAsset(prop.Id, false);
+        active.Peak_Sell_Date__c = Date.today().addDays(20);
+        active.Status__c = 'Active';
+
+        Property_Asset__c disposed = TestDataFactory.createPropertyAsset(prop.Id, false);
+        disposed.Peak_Sell_Date__c = Date.today().addDays(20);
+        disposed.Status__c = 'Disposed';
+
+        insert new List<Property_Asset__c>{ active, disposed };
+
+        Test.startTest();
+        List<Property_Asset__c> summary = PropertyAssetSelector.selectAllForMeterSummary();
+        List<Property_Asset__c> portfolio = PropertyAssetSelector.selectAllForPortfolio();
+        Test.stopTest();
+
+        Assert.areEqual(1, portfolio.size(),
+            'The sold building must leave the Sell Meter TABLE — and with it the Initiate button');
+        Assert.areEqual(active.Id, portfolio[0].Id, 'and the survivor is the Active one');
+        Assert.areEqual(1, summary.size(),
+            '🔴 AND THE SUMMARY MUST AGREE. A 2 here with a 1 above means the term landed on only '
+            + 'one of the two queries, so the band tiles and Portfolio Upside now count a building '
+            + 'the table below them does not show.');
+        Assert.areEqual(portfolio.size(), summary.size(),
+            'The two queries share one predicate by contract — see the class header');
+    }
+
+    /**
+     * 🔴 `!= 'Disposed'` MUST INCLUDE A NULL STATUS, AND THIS IS THE ONLY TEST THAT CAN TELL THE
+     * TWO CANDIDATE PREDICATES APART.
+     *
+     * `Status__c` is `required = false`. SOQL's `!=` returns rows where the field is null;
+     * `= 'Active'` does not. On today's data the two predicates give identical answers — the
+     * factory stamps `'Active'` and the restricted picklist defaults it — so every OTHER test in
+     * this class passes under either. A status-less asset is the discriminator, and it is exactly
+     * what a data load or a partial integration write produces.
+     */
+    @isTest
+    static void anAssetWithNoStatusAtAllStaysOnTheMeter() {
+        Property__c prop = TestDataFactory.createProperty(true);
+        Property_Asset__c blank = TestDataFactory.createPropertyAsset(prop.Id, false);
+        blank.Peak_Sell_Date__c = Date.today().addDays(20);
+        blank.Status__c = null;
+        insert blank;
+
+        // Guard the guard: the platform's picklist default must NOT have filled it in, or this
+        // test is asserting the Active case a second time under a misleading name.
+        Assert.isNull([SELECT Status__c FROM Property_Asset__c WHERE Id = :blank.Id].Status__c,
+            'PRECONDITION: an explicit null survives the insert. If the restricted picklist\'s '
+            + '`Active` default has started applying to explicit nulls, this test can no longer '
+            + 'discriminate `!= Disposed` from `= Active` and must be replaced, not deleted.');
+
+        Test.startTest();
+        List<Property_Asset__c> summary = PropertyAssetSelector.selectAllForMeterSummary();
+        List<Property_Asset__c> portfolio = PropertyAssetSelector.selectAllForPortfolio();
+        Test.stopTest();
+
+        Assert.areEqual(1, portfolio.size(),
+            '🔴 A NULL STATUS IS NOT A DISPOSAL. A 0 here means the predicate was written as '
+            + '`Status__c = \'Active\'`, which silently deletes every status-less asset from the '
+            + 'Sell Meter and from the Home page.');
+        Assert.areEqual(1, summary.size(), 'and the summary agrees, as it must');
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // selectStatusByIds — Conversion 6's idempotency read (2026-09-02)
+    //
+    // ⚠ The SECOND `WITH SYSTEM_MODE` + `without sharing` read on this class, and like
+    // `selectByPropertyIds` its mode and sharing keyword cannot be falsified by a test
+    // running as an administrator. What IS falsified here is the contract:
+    // the field set, the null/empty short-circuit, and the one-query bulk cost.
+    // 🔴 THE SHARING DECISION IS PROVED ELSEWHERE, AND IT HAS TO BE:
+    // `DispositionAssetDisposalServiceTest.nonOwnerPrincipal_disposesTheAssetItCanNeither
+    // SeeNorEdit` runs the whole path under `System.runAs` as a persona with no record-level
+    // read on Property_Asset__c. Without it, removing `without sharing` from `DisposalReads`
+    // would make the read return nothing, the caller do nothing, and every test in THIS class
+    // still pass.
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    @isTest
+    static void selectStatusByIds_returnsIdAndStatusOnly() {
+        Property__c prop = TestDataFactory.createProperty(true);
+        Property_Asset__c active = TestDataFactory.createPropertyAsset(prop.Id, true);
+        Property_Asset__c disposed = TestDataFactory.createPropertyAsset(prop.Id, false);
+        disposed.Status__c = 'Disposed';
+        insert disposed;
+
+        Test.startTest();
+        Map<Id, Property_Asset__c> byId = new Map<Id, Property_Asset__c>(
+            PropertyAssetSelector.selectStatusByIds(
+                new Set<Id>{ active.Id, disposed.Id }));
+        Test.stopTest();
+
+        Assert.areEqual(2, byId.size(), 'Both assets resolve');
+        Assert.areEqual('Active', byId.get(active.Id).Status__c,
+            'Status__c must be selected — the caller keys its whole idempotency guard on it');
+        Assert.areEqual('Disposed', byId.get(disposed.Id).Status__c,
+            'and it must carry the real value, not a default');
+    }
+
+    /**
+     * An Id that resolves to nothing is simply absent, never a QueryException.
+     * ⚠ THE CALLER IS DRIVEN BY WHAT CAME BACK, NEVER BY WHAT WENT IN — a deleted asset must
+     * produce no write rather than a failed one, because a throw here rolls back the disposition's
+     * own save.
+     */
+    @isTest
+    static void selectStatusByIds_anUnresolvableIdIsAbsentRatherThanAnError() {
+        Property__c prop = TestDataFactory.createProperty(true);
+        Property_Asset__c asset = TestDataFactory.createPropertyAsset(prop.Id, true);
+        Property_Asset__c doomed = TestDataFactory.createPropertyAsset(prop.Id, true);
+        Id deletedId = doomed.Id;
+        delete doomed;
+
+        Test.startTest();
+        List<Property_Asset__c> result =
+            PropertyAssetSelector.selectStatusByIds(new Set<Id>{ asset.Id, deletedId });
+        Test.stopTest();
+
+        Assert.areEqual(1, result.size(), 'Only the surviving asset comes back');
+        Assert.areEqual(asset.Id, result[0].Id, 'and it is the right one');
+    }
+
+    @isTest
+    static void selectStatusByIds_nullOrEmpty_returnsEmptyAndCostsNoQuery() {
+        Test.startTest();
+        Integer before = Limits.getQueries();
+        List<Property_Asset__c> fromNull = PropertyAssetSelector.selectStatusByIds(null);
+        List<Property_Asset__c> fromEmpty =
+            PropertyAssetSelector.selectStatusByIds(new Set<Id>());
+        Integer spent = Limits.getQueries() - before;
+        Test.stopTest();
+
+        Assert.areEqual(0, fromNull.size(), 'A null input returns an empty list, never null');
+        Assert.areEqual(0, fromEmpty.size(), 'An empty input returns an empty list, never null');
+        Assert.areEqual(0, spent,
+            'Neither short-circuit may issue SOQL — this read sits on the path of every '
+            + 'Disposition save that enters Sale Closes');
+    }
+
+    @isTest
+    static void selectStatusByIds_bulk251_readsAllInOneQuery() {
+        Property__c prop = TestDataFactory.createProperty(true);
+        List<Property_Asset__c> assets =
+            TestDataFactory.createPropertyAssets(BULK_N, prop.Id, true);
+        Set<Id> ids = new Map<Id, Property_Asset__c>(assets).keySet();
+
+        Test.startTest();
+        Integer before = Limits.getQueries();
+        List<Property_Asset__c> result = PropertyAssetSelector.selectStatusByIds(ids);
+        Integer spent = Limits.getQueries() - before;
+        Test.stopTest();
+
+        Assert.areEqual(BULK_N, result.size(), 'All 251 assets should be returned');
         Assert.areEqual(1, spent, 'A 251-Id read costs exactly one query, not 251');
     }
 }

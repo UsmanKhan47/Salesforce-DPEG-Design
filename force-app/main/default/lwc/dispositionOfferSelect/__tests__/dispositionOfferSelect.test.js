@@ -55,6 +55,27 @@
  * `aria-label`, and it is asserted here as a RENDERED ATTRIBUTE (`getAttribute('aria-label')`),
  * never as a getter. A getter-only assertion has shipped a wrong rendered attribute in this repo
  * before.
+ *
+ * ═════════════════════════════════════════════════════════════════════════════
+ * 🔴 2026-09-02 — THREE DEAL-TERM COLUMNS (BA story 35). WHAT THAT DID TO THIS FILE.
+ * ═════════════════════════════════════════════════════════════════════════════
+ * Earnest Money / DD Days / Closing Days sit between Amount and Offer Date. The column count pin
+ * in T-NO-BUYER moved 5 -> 8 and the header-order array grew; both are DELIBERATE-ABSENCE pins, so
+ * raising either again requires naming the column added and why.
+ *
+ * 🔴 THE `aria-label` DID NOT GROW, AND `T-TERMS-ARIA` IS THE PIN FOR THAT. It is asserted on a
+ * fixture where all three terms are POPULATED — the same assertion against the null-terms fixture
+ * would pass because there is nothing to append.
+ *
+ * ⚠ TWO CLAUSES IN THIS FILE WERE MEASURED WRONG BEFORE THEY WERE WRITTEN CORRECTLY, and both are
+ * recorded at their sites rather than silently fixed:
+ *   - `expect(label).not.toContain('21')` FAILS on its own fixture — `Aug 21, 2026` contains it.
+ *     A bare day count has no safe substring; the separator COUNT is the honest assertion.
+ *   - `T-NO-PROSE`'s `not.toContain('principal approval')` HAD BEEN RED SINCE 2026-08-25,
+ *     independently of this tranche: the `<caption>` was retitled to "Select Offer for Principal
+ *     Approval" that day. The pin was too broad, not the markup, and it is NARROWED (to the
+ *     removed paragraph's own sentence) rather than deleted, with a guard-the-guard clause pinning
+ *     the caption text so the narrowing cannot become a deletion later.
  */
 import { createElement } from 'lwc';
 import DispositionOfferSelect from 'c/dispositionOfferSelect';
@@ -127,21 +148,107 @@ const brokerField = (id, name) => ({
     }
 });
 
-const offerRecord = (id, name, amount, date, brokerFieldValue) => ({
+/**
+ * The three DEAL TERMS added to this picker on 2026-09-02 (BA story 35), in the UI API's shape.
+ *
+ * ⚠ A NULL SCALAR FIELD COMES BACK AS `{ displayValue: null, value: null }`, NOT AS AN ABSENT KEY.
+ * Both shapes are exercised below and they are not the same test: the fixtures that pass `null`
+ * here prove the component handles a PRESENT-BUT-EMPTY field (the ordinary case for an offer
+ * logged before these fields were captured), while `an offer missing every optional field` emits
+ * `fields: {}` and proves it handles an absent key. A component reading `f.X__c.value` without the
+ * ternary guard passes the first and throws on the second.
+ *
+ * @param {number|null} earnest Earnest_Money_Proposed__c (Currency, scale 0).
+ * @param {number|null} dd      Due_Diligence_Days__c (Number, scale 0).
+ * @param {number|null} closing Closing_Period_Days__c (Number, scale 0).
+ */
+const termFields = (earnest, dd, closing) => ({
+    Earnest_Money_Proposed__c: { displayValue: null, value: earnest },
+    Due_Diligence_Days__c: { displayValue: null, value: dd },
+    Closing_Period_Days__c: { displayValue: null, value: closing }
+});
+
+const offerRecord = (id, name, amount, date, brokerFieldValue, terms) => ({
     id,
     fields: {
         Name: { displayValue: null, value: name },
         Broker__r: brokerFieldValue,
         Offer_Amount__c: { displayValue: null, value: amount },
-        Offer_Date__c: { displayValue: null, value: date }
+        Offer_Date__c: { displayValue: null, value: date },
+        ...(terms || termFields(null, null, null))
     }
 });
 
-/** The org's live state TODAY: two offers, neither carrying a broker. */
+/**
+ * The org's live state TODAY: two offers, neither carrying a broker AND neither carrying any of
+ * the three deal terms. ⚠ THAT SECOND HALF IS DELIBERATE AND IS THE COMMON CASE — both live
+ * offers in `usman-dpeg` predate the terms being surfaced anywhere a user could enter them from
+ * this flow, so the em-dash path is what UAT will actually see first.
+ */
 const OFFERS = {
     records: [
         offerRecord(OFFER_A, 'OFFER-0005', 1850000, '2026-08-21', NO_BROKER_FIELD),
         offerRecord(OFFER_B, 'OFFER-0006', 1860000, '2026-08-20', NO_BROKER_FIELD)
+    ]
+};
+
+/**
+ * Two offers that DO carry all three terms — the state the columns exist for.
+ *
+ * 🔴 PRICE AND TERMS ARE DELIBERATELY IN OPPOSITE ORDER. OFFER-0006 is the HIGHER bid
+ * ($1,860,000 against $1,850,000) but carries the WORSE terms on all three — a smaller deposit
+ * ($50,000 vs $75,000), a longer due-diligence window (60 days vs 21) and a slower close (90 days
+ * vs 45). A fixture where the best price also had the best terms would render a table nobody has
+ * to read; the whole reason these columns were added is that the highest bid is not automatically
+ * the one to put forward.
+ */
+const OFFERS_WITH_TERMS = {
+    records: [
+        offerRecord(
+            OFFER_A,
+            'OFFER-0005',
+            1850000,
+            '2026-08-21',
+            brokerField('003iw000000o39BAAQ', 'Derek Simmons'),
+            termFields(75000, 21, 45)
+        ),
+        offerRecord(
+            OFFER_B,
+            'OFFER-0006',
+            1860000,
+            '2026-08-20',
+            brokerField('003iw000000o39BAAQ', 'Derek Simmons'),
+            termFields(50000, 60, 90)
+        )
+    ]
+};
+
+/**
+ * One offer whose due-diligence period is a genuine ZERO, beside one whose terms are null.
+ *
+ * 🔴 THIS IS THE FALSIFIER FOR A FALSY NULL-CHECK. `0` due-diligence days is a real and notably
+ * aggressive term; `formatDays` uses `== null` precisely so a genuine zero prints as `0` and only
+ * a missing value prints an em dash. An implementation using `n ? String(n) : '—'` renders BOTH
+ * rows identically here and passes every other test in this file.
+ */
+const OFFERS_ZERO_AND_NULL_TERMS = {
+    records: [
+        offerRecord(
+            OFFER_A,
+            'OFFER-0005',
+            1850000,
+            '2026-08-21',
+            NO_BROKER_FIELD,
+            termFields(0, 0, 0)
+        ),
+        offerRecord(
+            OFFER_B,
+            'OFFER-0006',
+            1860000,
+            '2026-08-20',
+            NO_BROKER_FIELD,
+            termFields(null, null, null)
+        )
     ]
 };
 
@@ -322,7 +429,7 @@ describe('c-disposition-offer-select', () => {
         expect(ariaLabels(element)[0]).toContain(' · ');
     });
 
-    it('TABLE: five column headers, every one scoped, in the asked-for order', async () => {
+    it('TABLE: eight column headers, every one scoped, in the asked-for order', async () => {
         const element = createComponent();
 
         getRelatedListRecords.emit(OFFERS_BROKERED);
@@ -331,12 +438,18 @@ describe('c-disposition-offer-select', () => {
         const headers = Array.from(
             element.shadowRoot.querySelectorAll('thead th')
         );
-        // `toEqual` on an ordered array pins the ORDER and the COUNT together, so a sixth column
+        // `toEqual` on an ordered array pins the ORDER and the COUNT together, so a ninth column
         // or a reshuffle reds here rather than in UAT.
+        // ⚠ WAS FIVE UNTIL 2026-09-02. The three deal-term columns (BA story 35) sit between
+        // Amount and Offer Date, because price + terms is the comparison and the date and the
+        // AutoNumber are provenance. Their POSITION is pinned here, not just their presence.
         expect(headers.map((th) => th.textContent.trim())).toEqual([
             'Choose',
             'Broker',
             'Amount',
+            'Earnest Money',
+            'DD Days',
+            'Closing Days',
             'Offer Date',
             'Offer Number'
         ]);
@@ -437,6 +550,13 @@ describe('c-disposition-offer-select', () => {
         expect(row.querySelector('.qa-cell-broker').textContent).toBe('Broker not recorded');
         expect(row.querySelector('.qa-cell-amount').textContent).toBe('—');
         expect(row.querySelector('.qa-cell-date').textContent).toBe('—');
+        // ⚠ THE THREE DEAL TERMS TOO (2026-09-02). This fixture emits `fields: {}` — an ABSENT
+        // KEY, not a present-but-null one — so it is the case that throws if any reader drops its
+        // `f.X__c ? ... : null` guard. `T-TERMS` covers the present-but-null shape separately;
+        // the two are different failures and neither substitutes for the other.
+        expect(row.querySelector('.qa-cell-earnest').textContent).toBe('—');
+        expect(row.querySelector('.qa-cell-dd').textContent).toBe('—');
+        expect(row.querySelector('.qa-cell-closing').textContent).toBe('—');
         // ⚠ A ROW WITH NO `Name` IS UNREACHABLE IN PRACTICE — it is an AutoNumber
         // the platform assigns on insert. The fallback is THE RECORD ID rather
         // than a friendly constant such as 'Unnumbered offer' (which is what this
@@ -551,9 +671,12 @@ describe('c-disposition-offer-select', () => {
         ariaLabels(element).forEach((label) => {
             expect(label.toLowerCase()).not.toContain('buyer');
         });
-        // A buyer arriving as a fifth COLUMN rather than as a token is the likelier
+        // A buyer arriving as an extra COLUMN rather than as a token is the likelier
         // shape now, so the column count is pinned too.
-        expect(element.shadowRoot.querySelectorAll('thead th').length).toBe(5);
+        // ⚠ 5 -> 8 ON 2026-09-02 (BA story 35's three deal-term columns). This number is a
+        // DELIBERATE-ABSENCE pin, not a description: raising it is how a buyer column would get
+        // in, so anyone changing it must be able to name the column they added and why.
+        expect(element.shadowRoot.querySelectorAll('thead th').length).toBe(8);
 
         // 2. 🔴 THE WIRE REQUEST ITSELF. This catches the field returning to the
         //    LDS `fields` list — which re-adds an FLS gate on `Buyer_Name__c` for
@@ -612,6 +735,177 @@ describe('c-disposition-offer-select', () => {
         // on the approval page. This pin is about THIS picker only.
     });
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // 🔴 T-TERMS — THE THREE DEAL TERMS (2026-09-02, BA story 35, decision C)
+    //
+    // The defect being closed is an INVERSION, not an omission: all three fields
+    // were already on `Offer_Selection_Approval`'s approvalPageFields and already
+    // granted in both disposition permission sets, so the APPROVER could see the
+    // terms while the person CHOOSING which offer to put forward could not.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    it('🔴 T-TERMS: earnest money, DD days and closing days render in three SEPARATE cells', async () => {
+        const element = createComponent();
+
+        getRelatedListRecords.emit(OFFERS_WITH_TERMS);
+        await Promise.resolve();
+
+        const rows = bodyRows(element);
+        expect(rows.length).toBe(2);
+
+        // 🔴 `toBe`, NOT `toContain` — an implementation that ran the three terms together into
+        // one cell and left the other two blank passes a `toContain` and fails this.
+        expect(columnText(element, '.qa-cell-earnest')).toEqual(['$75,000', '$50,000']);
+        expect(columnText(element, '.qa-cell-dd')).toEqual(['21', '60']);
+        expect(columnText(element, '.qa-cell-closing')).toEqual(['45', '90']);
+
+        // 🔴 AND THE COLUMNS DISAGREE WITH THE PRICE COLUMN, WHICH IS THE WHOLE POINT. The higher
+        // bid (row 1, $1,860,000) carries the worse terms on all three. If a future change ever
+        // sorts or filters this table by amount, this clause is what proves the terms are not
+        // redundant with the price.
+        expect(columnText(element, '.qa-cell-amount')).toEqual([
+            '$1,850,000',
+            '$1,860,000'
+        ]);
+    });
+
+    /**
+     * 🔴 T-TERMS-EXACT — THE $1.9M DEFECT, RE-ARMED FOR THE NEW CURRENCY COLUMN.
+     *
+     * `Earnest_Money_Proposed__c` is the SECOND Currency field on this screen, and it arrived a
+     * fortnight after the live UAT defect where `$1,850,000` and `$1,860,000` both rendered
+     * `$1.9M` on the screen that chooses between them. `formatMillions` would render both of these
+     * deposits as `$0.1M`. The existing T-EXACT pin only reads `.qa-cell-amount`, so it would NOT
+     * have caught an abbreviated earnest-money column — this is that pin.
+     */
+    it('🔴 T-TERMS-EXACT: earnest money is EXACT currency, never abbreviated', async () => {
+        const element = createComponent();
+
+        getRelatedListRecords.emit(OFFERS_WITH_TERMS);
+        await Promise.resolve();
+
+        const earnest = columnText(element, '.qa-cell-earnest');
+        expect(earnest).toEqual(['$75,000', '$50,000']);
+        expect(new Set(earnest).size).toBe(2);
+        earnest.forEach((cell) => {
+            expect(cell).not.toMatch(/[\d.]+M\b/);
+            expect(cell).not.toMatch(/[\d.]+K\b/i);
+        });
+        // And no abbreviation anywhere on the screen, which also re-covers the Amount column.
+        expect(element.shadowRoot.textContent).not.toMatch(/\$[\d.]+M\b/);
+    });
+
+    /**
+     * 🔴 T-TERMS-ZERO — A GENUINE `0` IS NOT A MISSING VALUE.
+     *
+     * Zero due-diligence days is a real and aggressive term; zero earnest money is a real and bad
+     * one. `formatDays` and `formatExactCurrency` both use `== null` rather than a falsy test
+     * precisely so a genuine zero prints. An implementation using `n ? x : '—'` renders the two
+     * rows below IDENTICALLY and passes every other test in this file.
+     */
+    it('🔴 T-TERMS-ZERO: a real zero prints as 0/$0; only a null prints an em dash', async () => {
+        const element = createComponent();
+
+        getRelatedListRecords.emit(OFFERS_ZERO_AND_NULL_TERMS);
+        await Promise.resolve();
+
+        expect(bodyRows(element).length).toBe(2);
+        expect(columnText(element, '.qa-cell-earnest')).toEqual(['$0', '—']);
+        expect(columnText(element, '.qa-cell-dd')).toEqual(['0', '—']);
+        expect(columnText(element, '.qa-cell-closing')).toEqual(['0', '—']);
+        // The row that HAS the terms and the row that does not must not read the same.
+        expect(element.shadowRoot.textContent).not.toContain('undefined');
+    });
+
+    /**
+     * The org's live rows carry none of the three terms (both offers predate them), so the em-dash
+     * path is what UAT sees first. A blank cell would read as "no earnest money agreed" the same
+     * as a zero would — the em dash is the only rendering that says "not recorded".
+     */
+    it('🔴 T-TERMS: a null term renders an em dash, never a blank and never "undefined"', async () => {
+        const element = createComponent();
+
+        getRelatedListRecords.emit(OFFERS);
+        await Promise.resolve();
+
+        // Guard the guard: two real rows rendered.
+        expect(bodyRows(element).length).toBe(2);
+
+        expect(columnText(element, '.qa-cell-earnest')).toEqual(['—', '—']);
+        expect(columnText(element, '.qa-cell-dd')).toEqual(['—', '—']);
+        expect(columnText(element, '.qa-cell-closing')).toEqual(['—', '—']);
+        const rendered = element.shadowRoot.textContent;
+        expect(rendered).not.toContain('undefined');
+        expect(rendered).not.toContain('null');
+        expect(rendered).not.toContain('NaN');
+    });
+
+    /**
+     * 🔴 T-TERMS-ARIA — THE ACCESSIBLE NAME DID **NOT** GROW.
+     *
+     * The obvious follow-on to "the table gained three columns" is "the radio's accessible name
+     * should gain three tokens". It deliberately did not: `aria-label` is a UNIQUENESS contract
+     * already satisfied by the unconditional AutoNumber, and three more tokens would make an
+     * already-long announcement unreadable at the moment of choosing. The terms are still
+     * announced — as ordinary cells, WITH their `scope="col"` header names, which is strictly
+     * better than a positional token inside a control's name.
+     *
+     * This test is the pin that keeps the string byte-identical on a fixture where all three terms
+     * are POPULATED — an absence assertion against null terms would pass for the wrong reason.
+     */
+    it('🔴 T-TERMS-ARIA: the radio aria-label is unchanged — no term tokens are appended', async () => {
+        const element = createComponent();
+
+        getRelatedListRecords.emit(OFFERS_WITH_TERMS);
+        await Promise.resolve();
+
+        // Guard the guard: the terms genuinely rendered on this fixture.
+        expect(columnText(element, '.qa-cell-dd')).toEqual(['21', '60']);
+
+        const labels = ariaLabels(element);
+        expect(labels[0]).toBe(
+            'Derek Simmons — $1,850,000 · Aug 21, 2026 · OFFER-0005'
+        );
+        expect(labels[1]).toBe(
+            'Derek Simmons — $1,860,000 · Aug 20, 2026 · OFFER-0006'
+        );
+        // Stated structurally as well, so a token added in ANY position reds here even if it
+        // happens not to be one of the two currency strings.
+        //
+        // ⚠ THE OBVIOUS VERSION OF THIS CLAUSE IS WRONG AND WAS MEASURED WRONG ON 2026-09-02:
+        // `expect(label).not.toContain('21')` FAILS on the very fixture it is meant to protect,
+        // because the label legitimately contains `Aug 21, 2026`. A bare day count is two digits
+        // and collides with a date, an amount and an AutoNumber — there is no safe substring for
+        // it. The separator COUNT is the honest assertion: the contract is exactly four tokens,
+        // joined by one em dash and two middots, and any appended term breaks it whatever its
+        // value.
+        labels.forEach((label) => {
+            expect(label).not.toContain('$75,000');
+            expect(label).not.toContain('$50,000');
+            expect(label.split(' — ').length).toBe(2);
+            expect(label.split(' · ').length).toBe(3);
+        });
+    });
+
+    it('🔴 T-TERMS: all three fields are actually requested from LDS', async () => {
+        const element = createComponent();
+
+        getRelatedListRecords.emit(OFFERS_WITH_TERMS);
+        await Promise.resolve();
+
+        // 🔴 THE WIRE REQUEST, not just the rendered cell. A component that rendered the columns
+        // from a field it never asked for would show three em dashes in the org and pass every
+        // DOM assertion above against a hand-written fixture.
+        const config = getLastFields();
+        expect(config).toContain('Disposition_Offer__c.Earnest_Money_Proposed__c');
+        expect(config).toContain('Disposition_Offer__c.Due_Diligence_Days__c');
+        expect(config).toContain('Disposition_Offer__c.Closing_Period_Days__c');
+        // ⚠ All three are granted read in BOTH DPEG_Disposition_View and DPEG_Disposition_Edit
+        // (measured 2026-09-02), which is why adding them opens no new FLS gate on this quick
+        // action. `getRelatedListRecords` fails the WHOLE read for a user missing any requested
+        // field, so a fourth field added here without that check empties the picker entirely.
+    });
+
     it('🔴 T-BROKER-SPAN: requests `Broker__r.Name`, NOT the bare `Broker__c` lookup', async () => {
         const element = createComponent();
 
@@ -660,10 +954,27 @@ describe('c-disposition-offer-select', () => {
         // 2. 🔴 THE RENDERED WORDS. A re-added paragraph usually arrives under a
         //    new class name, so the selector assertion alone would stay green.
         //    These phrases are what a human actually reads.
+        //
+        //    🔴 THE THIRD CLAUSE WAS `expect(text).not.toContain('principal approval')` AND IT
+        //    HAD BEEN RED SINCE 2026-08-25 — NOT SINCE THIS TRANCHE. Verified against `git show
+        //    HEAD:` on 2026-09-02: the `<caption>` was retitled that day from "Offer to put
+        //    forward" to "Select Offer for Principal Approval", which put the banned two-word
+        //    phrase into `shadowRoot.textContent` permanently. The caption is CORRECT — it is the
+        //    action's business title and the only heading this screen has — so the PIN was too
+        //    broad, not the markup.
+        //    ⚠ IT IS NARROWED, NOT DELETED. The phrase now banned is the one that appeared in the
+        //    removed paragraph and appears nowhere else: "sends the offer for principal approval".
+        //    Deleting the clause would have left the paragraph's most quotable sentence unfenced;
+        //    weakening it to `.not.toContain('paragraph')` or similar would have fenced nothing.
         const text = element.shadowRoot.textContent.toLowerCase();
         expect(text).not.toContain('moves this disposition to');
         expect(text).not.toContain('does not accept the offer');
-        expect(text).not.toContain('principal approval');
+        expect(text).not.toContain('sends the offer for principal approval');
+        // The caption IS allowed to say it, and must — this is the guard-the-guard half, so the
+        // narrowing above cannot quietly become "the caption was deleted too".
+        expect(
+            element.shadowRoot.querySelector('table.qa-offer-table > caption').textContent
+        ).toBe('Select Offer for Principal Approval');
 
         // 3. 🔴 WHAT MUST SURVIVE. The behaviour the note described is now stated
         //    ONLY by the button label, so this half of the pin is what stops a
@@ -855,6 +1166,31 @@ describe('c-disposition-offer-select', () => {
         getRelatedListRecords.emit(OFFERS_BROKERED);
         await Promise.resolve();
         await chooseOffer(element, OFFER_A);
+
+        await expect(element).toBeAccessible();
+    });
+
+    /**
+     * ⚠ THE EIGHT-COLUMN TABLE IS ITS OWN a11y CASE (2026-09-02). axe checks that every data cell
+     * resolves to a header, so the three new `<th scope="col">` are what this exercises — a term
+     * column added as a bare `<th>` passes the sibling tests above (which emit a fixture whose
+     * terms are all null) and fails here only if the fixture actually populates them.
+     *
+     * 🔴 IT DOES **NOT** COVER WIDTH. jsdom computes no layout, so eight columns in a screen
+     * quick-action panel is green here whether they fit or overflow. That check is a browser and
+     * it needs a disposition with at least two offers carrying all three terms — a state
+     * `usman-dpeg` cannot reach today (both live dispositions sit at Disposition Readiness with
+     * zero offers).
+     */
+    it('is accessible with all eight columns populated', async () => {
+        const element = createComponent();
+
+        getRelatedListRecords.emit(OFFERS_WITH_TERMS);
+        await Promise.resolve();
+
+        // Guard the guard: the terms genuinely rendered, so axe is looking at eight real columns.
+        expect(element.shadowRoot.querySelectorAll('thead th').length).toBe(8);
+        expect(columnText(element, '.qa-cell-earnest')).toEqual(['$75,000', '$50,000']);
 
         await expect(element).toBeAccessible();
     });

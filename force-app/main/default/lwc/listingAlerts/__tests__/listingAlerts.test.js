@@ -15,6 +15,9 @@
  *   Week 1/4/6 and asked for the pause, so those words became TRUE statements about a real
  *   computation proven in `DispositionTractionServiceTest`.
  *
+ *   ⚠ 2026-09-02 (user decision A2): the first rung moved to **Week 2** (day 14). Nothing about
+ *   the bans changed — only the fixtures. See the fixture block below.
+ *
  *   ⚠ THIS SUITE (2026-08-21, UAT) DELETED EVERY ASSERTION ABOUT THE TRACTION MONITOR, because the
  *   monitor itself was deleted. The user asked for *"automated alerts thats' it"* and for the
  *   disposition-offer COUNT to go. Gone with it: `.band-badge`, `.band-detail`, `.clock-track` and
@@ -37,7 +40,7 @@
  * `DispositionTractionController.getTraction` actually sends.
  *
  * Every assertion below is on SERVER-COMPUTED text. This suite deliberately contains no copy of the
- * 7/28/42 ladder: the thresholds live once, in DispositionTractionService, and are proven there. A
+ * 14/28/42 ladder: the thresholds live once, in DispositionTractionService, and are proven there. A
  * Jest test that re-derived them would drift from the Apex silently, which is the exact failure the
  * single-service design exists to prevent.
  */
@@ -68,10 +71,25 @@ const rung = (key, label, dueDate, state, note) => ({
     isReached: state !== 'Ahead'
 });
 
+/**
+ * 🔴 EVERY FIXTURE BELOW WAS RE-CUT ON 2026-09-02 FOR USER DECISION A2 — THE FIRST RUNG MOVED FROM
+ * WEEK 1 (day 7) TO WEEK 2 (day 14) IN `DispositionTractionService`.
+ *
+ * These are HAND-WRITTEN payloads, so nothing here fails on its own when the server changes — the
+ * suite would have stayed green while the component rendered "Week 1" against a server that no
+ * longer emits it. The Apex change is what forced this edit; `DispositionTractionServiceTest` is
+ * what proves the numbers. All that is asserted here is that whatever the server sends is what
+ * renders. ⚠ Every due date is the listing date (`2026-07-01`) plus the rung's threshold, so
+ * rung 1 is now `2026-07-15`, not `2026-07-08`.
+ *
+ * ⚠ THE PAUSED FIXTURE MOVED FROM DAY 12 TO DAY 16 AND THAT IS NOT COSMETIC. Day 12 is now BELOW
+ * the first rung, so the fixture's own `'Passed before the clock paused.'` note would have become
+ * a state the server could not produce for it — a fixture that lies is worse than one that fails.
+ */
 const ON_TRACK = {
     band: 'ON_TRACK',
     label: 'Day 3 of 42 — On Track',
-    detail: 'The week-1 check-in is due in 4 days.',
+    detail: 'The week-2 check-in is due in 11 days.',
     daysOnMarket: 3,
     offerCount: 0,
     listingDate: '2026-07-01',
@@ -83,25 +101,25 @@ const ON_TRACK = {
     listingStatusValue: 'On Track',
     marketingPeriodDays: 42,
     rungs: [
-        rung('WEEK_1', 'Week 1', '2026-07-08', 'Ahead', 'In 4 days.'),
+        rung('WEEK_2', 'Week 2', '2026-07-15', 'Ahead', 'In 11 days.'),
         rung('WEEK_4', 'Week 4', '2026-07-29', 'Ahead', 'In 25 days.'),
         rung('WEEK_6', 'Week 6', '2026-08-12', 'Ahead', 'In 39 days.')
     ]
 };
 
-const WEEK_1 = {
+const WEEK_2 = {
     ...ON_TRACK,
-    band: 'WEEK_1',
-    label: 'Week 1 — Check-in due',
+    band: 'WEEK_2',
+    label: 'Week 2 — Check-in due',
     detail:
-        'One week on the market with no offers yet. Check in with the broker on interest and showings.',
-    daysOnMarket: 9,
-    daysRemaining: 33,
+        'Two weeks on the market with no offers yet. Check in with the broker on interest and showings.',
+    daysOnMarket: 16,
+    daysRemaining: 26,
     isAtRisk: false,
     rungs: [
-        rung('WEEK_1', 'Week 1', '2026-07-08', 'Current', 'Current — no offers.'),
-        rung('WEEK_4', 'Week 4', '2026-07-29', 'Ahead', 'In 19 days.'),
-        rung('WEEK_6', 'Week 6', '2026-08-12', 'Ahead', 'In 33 days.')
+        rung('WEEK_2', 'Week 2', '2026-07-15', 'Current', 'Current — no offers.'),
+        rung('WEEK_4', 'Week 4', '2026-07-29', 'Ahead', 'In 12 days.'),
+        rung('WEEK_6', 'Week 6', '2026-08-12', 'Ahead', 'In 26 days.')
     ]
 };
 
@@ -116,7 +134,7 @@ const WEEK_4 = {
     isAtRisk: true,
     listingStatusValue: 'At Risk',
     rungs: [
-        rung('WEEK_1', 'Week 1', '2026-07-08', 'Passed', 'Passed.'),
+        rung('WEEK_2', 'Week 2', '2026-07-15', 'Passed', 'Passed.'),
         rung('WEEK_4', 'Week 4', '2026-07-29', 'Current', 'Current — no offers.'),
         rung('WEEK_6', 'Week 6', '2026-08-12', 'Ahead', 'In 12 days.')
     ]
@@ -133,7 +151,7 @@ const WEEK_6 = {
     isAtRisk: true,
     listingStatusValue: 'Hard Stop',
     rungs: [
-        rung('WEEK_1', 'Week 1', '2026-07-08', 'Passed', 'Passed.'),
+        rung('WEEK_2', 'Week 2', '2026-07-15', 'Passed', 'Passed.'),
         rung('WEEK_4', 'Week 4', '2026-07-29', 'Passed', 'Passed.'),
         rung('WEEK_6', 'Week 6', '2026-08-12', 'Current', 'Current — no offers.')
     ]
@@ -142,17 +160,17 @@ const WEEK_6 = {
 const PAUSED = {
     ...ON_TRACK,
     band: 'ON_TRACK',
-    label: 'Day 12 — Offer received, clock paused',
+    label: 'Day 16 — Offer received, clock paused',
     detail:
-        '2 offers received, so the marketing clock stopped at day 12 and no week check-in is due.',
-    daysOnMarket: 12,
+        '2 offers received, so the marketing clock stopped at day 16 and no week check-in is due.',
+    daysOnMarket: 16,
     offerCount: 2,
-    firstOfferDate: '2026-07-13',
+    firstOfferDate: '2026-07-17',
     isPaused: true,
-    daysRemaining: 30,
+    daysRemaining: 26,
     isAtRisk: false,
     rungs: [
-        rung('WEEK_1', 'Week 1', '2026-07-08', 'Passed', 'Passed before the clock paused.'),
+        rung('WEEK_2', 'Week 2', '2026-07-15', 'Passed', 'Passed before the clock paused.'),
         rung('WEEK_4', 'Week 4', '2026-07-29', 'Ahead', 'Clock paused.'),
         rung('WEEK_6', 'Week 6', '2026-08-12', 'Ahead', 'Clock paused.')
     ]
@@ -173,7 +191,7 @@ const NOT_LISTED = {
     listingStatusValue: 'On Track',
     marketingPeriodDays: 42,
     rungs: [
-        rung('WEEK_1', 'Week 1', null, 'Ahead', 'Not started.'),
+        rung('WEEK_2', 'Week 2', null, 'Ahead', 'Not started.'),
         rung('WEEK_4', 'Week 4', null, 'Ahead', 'Not started.'),
         rung('WEEK_6', 'Week 6', null, 'Ahead', 'Not started.')
     ]
@@ -228,7 +246,7 @@ describe('c-listing-alerts', () => {
         await Promise.resolve();
 
         expect(texts(element, '.rung-label')).toEqual([
-            'Week 1',
+            'Week 2',
             'Week 4',
             'Week 6'
         ]);
@@ -238,7 +256,7 @@ describe('c-listing-alerts', () => {
             'Ahead'
         ]);
         expect(texts(element, '.rung-due')).toEqual([
-            'Jul 8, 2026',
+            'Jul 15, 2026',
             'Jul 29, 2026',
             'Aug 12, 2026'
         ]);
@@ -275,7 +293,7 @@ describe('c-listing-alerts', () => {
         ]);
         // ...and the labels did NOT change, which is what makes the states the variable.
         expect(texts(element, '.rung-label')).toEqual([
-            'Week 1',
+            'Week 2',
             'Week 4',
             'Week 6'
         ]);
@@ -298,14 +316,15 @@ describe('c-listing-alerts', () => {
     });
 
     /**
-     * 🔴 WEEK_1 IS A CHECK-IN, NOT A RISK STATE — asserted through the RUNGS now that the band pill
-     * that used to carry it is gone. The server marks the week-1 rung `Current` and leaves the two
-     * above it `Ahead`; no rung is styled as escalated.
+     * 🔴 WEEK_2 IS A CHECK-IN, NOT A RISK STATE — asserted through the RUNGS now that the band pill
+     * that used to carry it is gone. The server marks the week-2 rung `Current` and leaves the two
+     * above it `Ahead`; no rung is styled as escalated. (⚠ That band was `WEEK_1` until 2026-09-02,
+     * user decision A2. Only the name and the day moved — the at-risk line is still week 4.)
      */
-    it('DATA BRANCH: the week-1 check-in is the current rung and nothing above it has fired', async () => {
+    it('DATA BRANCH: the week-2 check-in is the current rung and nothing above it has fired', async () => {
         const element = createComponent();
 
-        getTraction.emit(WEEK_1);
+        getTraction.emit(WEEK_2);
         await Promise.resolve();
 
         expect(texts(element, '.rung-state')).toEqual([
@@ -349,7 +368,7 @@ describe('c-listing-alerts', () => {
         await Promise.resolve();
 
         expect(texts(element, '.rung-label')).toEqual([
-            'Week 1',
+            'Week 2',
             'Week 4',
             'Week 6'
         ]);
@@ -423,7 +442,7 @@ describe('c-listing-alerts', () => {
     it('never advertises a notification', async () => {
         const element = createComponent();
 
-        for (const payload of [WEEK_1, WEEK_4, WEEK_6, PAUSED, NOT_LISTED]) {
+        for (const payload of [WEEK_2, WEEK_4, WEEK_6, PAUSED, NOT_LISTED]) {
             getTraction.emit(payload);
             // eslint-disable-next-line no-await-in-loop
             await Promise.resolve();

@@ -269,21 +269,64 @@ alongside responses and selection history ✅.
 the two. So "pre-selected when Broker Selection is reached" is true in effect, but there are
 deliberately two selected rows, not one.
 
-### 19. Auto-build the comparison matrix at 3+ responses — 🟡
+### 19. Auto-build the comparison matrix at 3+ responses — ✅ (CLOSED, and the ❌ below was WRONG)
 
 `bovComparisonMatrix` exists and scores every response out of 100 ✅.
 
-❌ There is **no 3-response threshold and no "Matrix Generated ✓" status** — the matrix simply
-renders whatever responses exist, from the first one.
-🟡 The scoring inputs differ from the AC: it weighs BOV amount vs the asset's Target Sale Price,
-commission, and days-to-market. It does **not** use Buyer Ready / Known Performer (see 20).
+🔴 **CORRECTED 2026-09-01 (Tranche 4 item 2). The line below was FALSE WHEN IT WAS WRITTEN and is
+struck rather than deleted, because it sent a whole tranche off to build something that already
+existed:**
+
+> ~~❌ There is **no 3-response threshold and no "Matrix Generated ✓" status** — the matrix simply
+> renders whatever responses exist, from the first one.~~
+
+Both halves shipped before this analysis was written. `BovController.getOutreachSummary` computes
+the `>= 3` threshold, `OutreachSummary.matrixGenerated` carries it, and `bovOutreach.html` renders
+the literal `Matrix Generated ✓` badge on the BOV Outreach stage — all three pinned by Jest. The
+matrix table itself *does* render from the first response, and that is a deliberate decision
+(`bovComparisonMatrix`'s header: visible in every state including the empty ones, because its error
+banner and the Add Broker Response button are the recovery path). The AC is met by the **badge**,
+not by hiding the table.
+
+✅ **What Tranche 4 actually changed is a consistency defect nobody had named.** The badge counted
+*every* child row including the preferred broker (Tranche 1 decision D-9), while the matrix
+*excludes* the preferred broker — so `Matrix Generated ✓` could sit above a two-row table with
+nothing on screen explaining why. `matrixGenerated` now counts the non-preferred population the
+matrix actually renders. `Disposition__c.Responses_Received__c` is deliberately unchanged: it still
+answers "how many brokers came back" and still feeds the "n of m" tile.
+
+⚠ Still open, and unrelated to this: `Brokers_Contacted__c` is hand-typed, so the "n of m" tile
+beside the badge is half-automated and "3 of 0" is reachable.
+
+✅ The scoring inputs now include Buyer Ready / Known Performer — see 20.
 ✅ Manual override exists (Replace Broker) and the weights are documented in the field XML — though
 they are hard-coded in a formula, not configurable.
 
-### 20. Buyer Ready / Known Performer flags — ❌ (partly)
+### 20. Buyer Ready / Known Performer flags — ✅ (CLOSED 2026-09-01)
 
-- ❌ **`Buyer_Ready__c` and `Known_Performer__c` do not exist anywhere in the repo.** Grep returns
-  zero hits across all metadata, Apex and LWC.
+- ~~❌ **`Buyer_Ready__c` and `Known_Performer__c` do not exist anywhere in the repo.**~~ Shipped by
+  Tranche 1 as `Is_Buyer_Ready__c` / `Is_Known_Performer__c` (the `Is_` prefix follows the object's
+  three existing Boolean siblings), granted read in `DPEG_Disposition_View` and read+edit in
+  `DPEG_Disposition_Edit` — but INERT: nothing read them.
+- ✅ **Tranche 4 item 1 folded them into `BOV_Score__c`, by REBALANCING rather than adding bonus
+  points** (user decision at Gate 1): Value 40 / Commission 20 / Speed 20 / Buyer Ready 10 / Known
+  Performer 10 = 100. Bonus-on-top with a `MIN(...,100)` clamp was rejected — a clamp compresses the
+  top of the range and manufactures ties among precisely the brokers the score has to discriminate
+  between.
+- ⚠ **Every existing score changed, including on rows where neither flag is set** (a both-flags-clear
+  row now scores 80% of its old value). Two flags are worth ~a 55%-of-target swing in bid price;
+  that lever was signed off explicitly.
+- 🔴 **RESIDUAL, and it is the one thing to watch on deploy day: the re-weighting re-ranks READS
+  instantly and re-ranks NOTHING that is stored.** `Submission_Status__c` is a stored field and
+  `BovAutoSelectionService.reselect` fires on six change keys, none of which is a deploy — and a
+  no-op re-save does not qualify either. An unlocked sale can therefore show a new top scorer beside
+  a stale `Selected` pill indefinitely. A sale locked by an approval or by `Is_Manually_Appointed__c`
+  is fully protected and moves for nobody. No backfill script was written; see the Tranche 4 report.
+- ⚠ A Checkbox cannot express "not yet assessed", and no formula setting can change that: an
+  unassessed broker is penalised exactly as much as one assessed and rejected. Accepted with the
+  weighting.
+- ⚠ `Hist_Success_Rate__c` is still captured, still granted, and still unscored. After Tranche 4
+  that is a **second** deliberate omission rather than the original one.
 - ✅ Selected / Backup ranking exists, and `BovAutoSelectionService` marks the top scorer Selected
   and leaves the rest Backup, recomputed on every ranking-affecting save.
 - ✅ Manual override exists and is fully audited: `BovSubmissionService.replaceSelectedBroker`
@@ -302,6 +345,35 @@ False`) ✅. Record cannot advance until approved ✅. Any-one-of ✅ (but only 
 partially: `bovBrokerChangeHistory` shows *this deal's* broker swaps, and the Broker Hub shows
 firm-level closed volume, but there is no per-property "this broker sold us this building" surface
 on the selection screen.
+
+🔴 **DEFERRED ENTIRELY — user decision at Gate 1, Tranche 4, 2026-09-01. NOT built, and not
+scheduled.** The reason is not effort; the code is small. It is that **the honest answer is not
+reachable, and the dishonest one is indistinguishable from it.**
+
+- The join exists and every hop is real: `Disposition__c.Property_Asset__r.Property__c` →
+  `Opportunity WHERE Property__c = :that AND StageName = 'Closed Won' AND Broker__c IN :respondents`.
+- **Neither disposition permission set grants `Opportunity` at all.** Granting it is a new
+  cross-module authorisation boundary — the disposition personas would gain read on the acquisition
+  pipeline — which is an architecture decision, not an admin one.
+- 🔴 **And a grant alone would not be enough, because of record-level sharing.** The shape Tranche 1
+  used for `Property__c` / `Property_Asset__c` is `viewAllRecords = false`. On `Opportunity` that
+  means a disposition analyst sees only Opportunities shared to them, plausibly **none** — and
+  `SYSTEM_MODE` cannot fix it, because it bypasses CRUD/FLS and never sharing.
+- ⇒ The failure direction is the worst available one: the card would render **"no prior history" on
+  every broker, on every deal**, with no error anywhere. An honest-looking wrong answer on a screen
+  someone uses to choose a broker is worse than an absent feature, and no green deploy or admin
+  smoke test would reveal it — proving it needs a real non-admin persona and real Closed Won rows.
+
+⚠ Two further findings recorded so this is not re-scoped on a false premise:
+- **`Opportunity.Broker__c` is the SUBMITTING broker, explicitly not the listing broker** (its own
+  field header names a measured case where the two differ). So the data can honestly say "this
+  broker *brought* us this building", never "this broker *sold* us this building". The listing
+  broker lives in `Listing_Broker_Name__c` / `Listing_Broker_Email__c`, which are **Text and cannot
+  be joined to a Contact at all** — if that is what the BA means, the item is not buildable on this
+  data model and needs a new fuzzy-matching surface, not a query.
+- **There is no off-market selection screen to put this on.** `dispositionMain` has four stage
+  branches and `Broker Selection` is not one of them, so even if built, on-market principals would
+  see prior-deal history and off-market ones would not.
 
 ---
 
@@ -390,12 +462,58 @@ AC are the notification part, out of scope, but the *detection* job is also abse
 
 ### 31. Replace Broker button — ✅
 
-`brokerReplaceQuickAction` / `bovReplaceBrokerModal` → `BovSubmissionService.replaceSelectedBroker`
-promotes a backup to Selected, sets `Is_Manually_Appointed__c` (which locks auto-selection out), and
-writes the audit row ✅. Never automatic ✅ — `BovAutoSelectionService` explicitly yields once a human
-has taken over.
-🟡 "restarts the Active Listing clock" — the clock measures from `List_Date__c`; nothing resets it on
-replacement.
+`BovSubmissionService.replaceSelectedBroker` promotes a backup to Selected, sets
+`Is_Manually_Appointed__c` (which locks auto-selection out), and writes the audit row ✅. Never
+automatic ✅ — `BovAutoSelectionService` explicitly yields once a human has taken over.
+
+🔴 **CORRECTION 2026-09-01: the components named in the original line above were the WRONG ONES, and
+the mistake pointed at a different module.** `lwc/brokerReplaceQuickAction` is bound to
+`quickActions/Broker_Assignment__c.Replace_Broker` — the **property-management leasing** broker
+feature, a different object and a different service — and a repo-wide grep for a
+`bovReplaceBrokerModal` quick action returns nothing. **The disposition Replace Broker has no quick
+action at all.** Its only two entry points are markup tags in `dispositionMain.html`:
+`c/bovBrokerPanel` at **BOV Outreach** and `c/brokerListing` at **Active Listing**. Anyone
+implementing against the old line would have been editing the PM module.
+
+~~🟡 "restarts the Active Listing clock" — the clock measures from `List_Date__c`; nothing resets it
+on replacement.~~
+
+🔴 **The premise of that line was also wrong, and the correction changed the design.** The clock does
+**not** measure from `Broker_Listing__c.List_Date__c`; `DispositionTractionService` and
+`BrokerListingController` both measure from `Disposition__c.Listing_Date__c`, and both files argue
+that choice at length while **naming this button as the hazard** ("using the child's date would
+silently reset the clock the moment a broker was replaced — i.e. exactly when the clock matters
+most"). So "restart the clock" as literally written meant rewriting the parent field, which would
+also have silently changed `Disposition__c.Days_On_Market__c`, the `Avg_Days_on_Market` report and
+the `Broker Alert Due` KPI **with no metadata diff at all**.
+
+✅ **CLOSED 2026-09-01 (Tranche 4 item 5) by giving the BA BOTH clocks instead of moving one.**
+Days-on-Market is two facts and the AC conflated them:
+
+| | what it answers | on a broker change |
+|---|---|---|
+| **Days on Market** | how long the PROPERTY has been on the market | survives — still the escalation ladder's only input |
+| **Days with this broker** | how long THIS broker has had it | restarts |
+
+A replacement now **appends** a second `Broker_Listing__c` dated today, carrying the incoming
+broker's firm and named contact. `BrokerListingSelector.selectMostRecentByDispositionId` was already
+`ORDER BY CreatedDate DESC LIMIT 1`, so the card follows the new row with **no schema change**, and
+`Broker_Listing__c.Days_On_Market_Live__c` (shipped in Tranche 1, already queried, already granted,
+previously unread) supplies the second number.
+
+- 🔴 **The append is CONDITIONAL on a listing already existing, and that condition is the whole
+  safety mechanism.** Replace Broker also fires at BOV Outreach, and
+  `DispositionStageEntryService.openBrokerListings`' idempotency test is *simple presence* — so a
+  listing created at BOV Outreach would turn the Active Listing auto-create into a permanent silent
+  no-op for that sale.
+- ✅ It also fixes, for replacements at Active Listing, a live defect found while verifying this: the
+  listing row's `Broker_Firm__c` was stamped once at stage entry and nothing re-stamped it, so after
+  a swap the card showed the new broker in the modal and the **old** firm in the listing row.
+- ⚠ **Residual:** the superseded listing row keeps a live-looking `Listing_Status__c`.
+  `Broker_Listing__c.Listing_Status__c` is RESTRICTED to `On Track` / `At Risk` / `Hard Stop`, so
+  there is no `Superseded` value to write, and story 5's "exactly one active listing per on-market
+  sale" is still enforced by nothing. Adding that value is a restricted-picklist change and triggers
+  the standing repo-grep + org-query sweep. Out of Tranche 4 scope.
 
 ### 32. Call for Offers date + recalculating reminders — 🟡
 
@@ -611,11 +729,35 @@ until someone runs `System.schedule` post-deploy** — it fails silently with ze
 `brokerStats` renders exactly Total Broker Firms / Total Brokers / Active Listings / Offers Received,
 each with an icon ✅.
 
-### 58. Broker track record list — 🟡
+### 58. Broker track record list — ✅ (CLOSED 2026-09-01)
 
 `brokersList` columns are Broker, Firm, Active Listings, Offers, Closed Volume, Status — an exact
 match ✅.
-❌ "The list can be sorted/filtered" — no sort or filter affordance on the datatable.
+
+~~❌ "The list can be sorted/filtered" — no sort or filter affordance on the datatable.~~
+
+✅ **Tranche 4 item 4.** Every column is sortable, plus a name/firm search box and a Status combobox
+(All / Active / Inactive), all client-side over the payload that was already being returned. **Zero
+Apex, zero permission-set and zero FlexiPage change** — `ContactSelector
+.selectBrokersRankedByClosedVolume` has no `LIMIT` and already returns every raw value the sort
+needs, and both controls live inside the card body.
+
+- 🔴 **The sort runs on RAW values, before the top-5 slice.** Four of the six columns bind
+  pre-formatted strings and two of those are numbers stringified, so `sortable: true` on its own
+  would have produced `'1', '10', '2'` and put `'$10.0M'` before `'$2.0M'`, on a five-row window
+  already chosen by closed volume. Sorting the *full* list first is what makes "sort by Offers"
+  return the top five by offers rather than reordering five rows chosen by something else.
+- ⚠ **The header count now reads `Brokers (7 of 19)` while a filter is applied** (and the bare total
+  otherwise), because a header saying 19 above a filtered table contradicts the table beneath it.
+- 🔴 **This is a CROSS-MODULE change and every acquisitions user gets it identically.** `Broker_Hub`
+  is ONE FlexiPage and ONE tab, named by both `Acquisition.app-meta.xml` and
+  `Disposition.app-meta.xml` and granted by `DPEG_App_Acquisition`, `DPEG_App_Disposition` and
+  `DPEG_Admin_Access`. There is no way to scope it to the Disposition app without splitting the page
+  and the tab.
+- ⚠ **One thing Jest cannot close:** the Status column is a custom `pill` cell type marked
+  `sortable`, a combination this repo deployed once in Tranche 2 and has never watched render. The
+  datatable stub renders nothing, so the suite proves the sort function and the attribute values and
+  never that a header chevron appears or responds. That is a browser check and it is still open.
 
 ### 59. One place for every broker relationship across every sale — 🟡
 
@@ -907,3 +1049,50 @@ for story 19, and it is a consistency fix, not a feature.
 ⚠ Also: this document attributes Replace Broker to `brokerReplaceQuickAction`. That component is
 bound to **`Broker_Assignment__c`** — a Property Management feature on a different object. The
 disposition-side action is `BovSubmissionService.replaceSelectedBroker` via `bovReplaceBrokerModal`.
+
+---
+
+## 🔴 LIVE, KNOWN DIVERGENCE ON DISP-0041 — user decision 2026-09-02: LEAVE IT
+
+Tranche 4 deployed (`0Afiw000000VVPJCA4`) with the rebalanced `BOV_Score__c`
+(**40 value / 20 commission / 20 speed / 10 Buyer Ready / 10 Known Performer**). Measured on the
+live rows immediately afterwards:
+
+| Rank | Broker | Amount | Comm | Days | Ready | Known | Score | Status |
+|---|---|---|---|---|---|---|---|---|
+| 1 | Marcus Ellery | 39.5M | 2.0% | 120 | ✔ | ✔ | **70.00** | Backup |
+| 2 | Priya Raghunathan | 38.25M | 1.75% | 150 | — | ✔ | 62.50 | Backup |
+| 3 | Dana Whitfield | 40.1M | 2.25% | 95 | ✔ | — | 57.50 | Backup |
+| 4 | Tomas Berger | 37.4M | 1.5% | 180 | — | — | 55.00 | **Selected** |
+
+**The appointed broker is last of four.** Pre-deploy the order was Berger 68.75 > Raghunathan 65.63
+> Ellery 62.50 > Whitfield 59.38 — the two ends swapped outright.
+
+**This is expected behaviour, not a defect.** `Submission_Status__c` is *stored*;
+`BovAutoSelectionService.reselect` fires on six change keys and **a formula deploy is not one of
+them**. Nothing is protecting the appointment either — `Is_Manually_Appointed__c` is `false` on all
+four. The matrix, the Replace Broker picker and the `BOV_Tracker` report will show Ellery on top
+while the Selected pill names Berger, and the same divergence will arise on any disposition whose
+rows were scored before 2026-09-02.
+
+⚠ **No backfill script exists, deliberately.** The only in-contract repair is
+`BovAutoSelectionService.reselect(rows, null)`, which performs real DML and **re-appoints a broker
+on a live sale** — a business decision, not a deploy step. A no-op re-save does nothing; it is not
+one of the six change keys.
+
+### 🔴 The more important finding: 80 of the 100 points are constant on realistic data
+
+On these four rows the **Value term is SATURATED** — every bid exceeds 110% of the $34M target, so
+all four score the full 40 — and the **Speed term is FLOORED** — every row is at or beyond 60 days,
+so all four score 0. Commission and the two flags are therefore the **only** live discriminators,
+which hands two 10-point flags decisive weight over a 40-point criterion that cannot move. That is
+why the inversion was total rather than partial.
+
+**Story 20's actual wording is "weighing BOV amount against expected value" — and on this data the
+BOV amount contributes nothing at all.** The `1.10` cap and the `60`-day floor are both
+**pre-existing** and were not introduced by Tranche 4; the rebalance only made the effect visible by
+shrinking Value from 50 to 40 while adding two terms that do not saturate.
+
+⚠ **This is a question for the BA about the SCORING MODEL, not a bug report.** Anyone reaching for
+a re-rank should settle the weighting first — re-appointing under a formula that may itself be wrong
+fixes the symptom and entrenches the cause.

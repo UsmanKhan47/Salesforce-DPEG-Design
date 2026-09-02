@@ -381,4 +381,102 @@ private class TransactionSelectorTest {
             + 'gained record types and selectStageRequiredById must start selecting RecordTypeId '
             + 'in the same change (see RecordStageAdvanceService\'s class header).');
     }
+
+    // ═════════════════════════════════════════════════════════════════════════════════════════
+    // aggregateStatusCountsByOpportunityIds — the deal-close gate's read (added 2026-09-02)
+    // ═════════════════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * The shape `DealTransactionGateService` consumes: one row per (Opportunity, Status) pair,
+     * aliased `oppId` / `txnStatus` / `txnCount`.
+     *
+     * ⚠ THE ALIASES ARE THE CONTRACT, not the field names. The caller reads
+     * `row.get('oppId')`, so renaming an alias in the selector compiles cleanly, deploys cleanly
+     * and returns nulls at runtime — which would compute BOTH gate flags false for every deal and
+     * silently block every close in the org. That is the failure this method exists to catch,
+     * which is why it asserts on the alias keys and not merely on the row count.
+     *
+     * ⚠ THE TWO STATUSES ARE `Active` AND `Draft`, NOT `Active` AND `Closed`, AND THAT IS FORCED.
+     * A `Status__c = 'Closed'` row on a parented deal fires `flows/Transaction_Complete_Close` —
+     * on INSERT as well as on update, since it is `CreateAndUpdate` with
+     * `doesRequireRecordChangedToMeetCriteria = true` — which tries to close the deal and is
+     * refused by the Closed Won validation rules on an unprepared fixture (measured: validate
+     * `0Afiw000000VDSPCA4`, 2026-09-02, `CANNOT_EXECUTE_FLOW_TRIGGER`). The GROUPING mechanism is
+     * status-agnostic, so any two distinct values prove it; the `Closed` semantics belong to
+     * `DealTransactionGateServiceTest`, which prepares its deals for exactly this reason.
+     */
+    @isTest
+    static void aggregateStatusCounts_groupsByDealAndStatusUnderTheDocumentedAliases() {
+        Opportunity deal = TestDataFactory.createOpportunity(null, true);
+        List<Transaction__c> rows = TestDataFactory.createTransactions(3, deal.Id, null, false);
+        for (Transaction__c row : rows) {
+            row.Tasks_Fanned_Out__c = true;
+            row.Status__c = 'Active';
+        }
+        rows[2].Status__c = 'Draft';
+        insert rows;
+
+        Test.startTest();
+        List<AggregateResult> results =
+            TransactionSelector.aggregateStatusCountsByOpportunityIds(new Set<Id>{ deal.Id });
+        Test.stopTest();
+
+        Assert.areEqual(2, results.size(),
+            'Two Status values are represented, so TWO groups — not three rows and not one');
+        Map<String, Integer> countByStatus = new Map<String, Integer>();
+        for (AggregateResult row : results) {
+            Assert.areEqual(deal.Id, (Id) row.get('oppId'),
+                'the oppId alias must resolve — a null here means the alias was renamed and every '
+                + 'consumer is silently reading nothing');
+            countByStatus.put((String) row.get('txnStatus'), ((Integer) row.get('txnCount')));
+        }
+        Assert.areEqual(2, countByStatus.get('Active'), 'two Active');
+        Assert.areEqual(1, countByStatus.get('Draft'), 'one Draft');
+    }
+
+    /** Null and empty inputs short-circuit without querying. */
+    @isTest
+    static void aggregateStatusCounts_nullOrEmptyInput_returnsEmptyWithoutQuerying() {
+        Test.startTest();
+        Integer before = Limits.getQueries();
+        Assert.areEqual(0,
+            TransactionSelector.aggregateStatusCountsByOpportunityIds(null).size(), 'null');
+        Assert.areEqual(0,
+            TransactionSelector.aggregateStatusCountsByOpportunityIds(new Set<Id>()).size(),
+            'empty');
+        Assert.areEqual(before, Limits.getQueries(),
+            'and neither spent a query — measured INSIDE startTest/stopTest, because stopTest '
+            + 'restores the pre-test counters and the same assertion after it would be vacuous');
+        Test.stopTest();
+    }
+
+    /**
+     * A 251-deal read is still ONE query, and its group count stays inside the 2,000-row
+     * aggregate ceiling the selector's header derives: 251 deals x 1 Status value = 251 groups.
+     */
+    @isTest
+    static void aggregateStatusCounts_bulk251Deals_isOneQueryAnd251Groups() {
+        List<Opportunity> dealList = TestDataFactory.createOpportunities(BULK_N, true);
+        List<Transaction__c> rows = TestDataFactory.createTransactions(BULK_N, null, null, false);
+        for (Integer i = 0; i < BULK_N; i++) {
+            rows[i].Opportunity__c = dealList[i].Id;
+            rows[i].Tasks_Fanned_Out__c = true;
+            rows[i].Status__c = 'Active';
+        }
+        insert rows;
+
+        Test.startTest();
+        Integer before = Limits.getQueries();
+        List<AggregateResult> results = TransactionSelector.aggregateStatusCountsByOpportunityIds(
+            new Map<Id, Opportunity>(dealList).keySet());
+        Integer used = Limits.getQueries() - before;
+        Test.stopTest();
+
+        Assert.areEqual(BULK_N, results.size(),
+            '251 deals, one Status value each, so 251 groups — well inside the 2,000-group '
+            + 'aggregate ceiling. A number BELOW 251 means the aggregate truncated, which would '
+            + 'compute both gate flags false for the missing deals and block their closes with '
+            + 'no error anywhere');
+        Assert.areEqual(1, used, 'and it is ONE query however many deals are asked about');
+    }
 }

@@ -126,7 +126,7 @@ if ([SELECT COUNT() FROM Opportunity WHERE Name = :N5] == 0) {
     update new Opportunity(Id = opp5, StageName = 'Underwriting');
     Underwriting__c uw = [SELECT Id FROM Underwriting__c WHERE Opportunity__c = :opp5 LIMIT 1];
     update new Underwriting__c(
-        Id = uw.Id, Stage__c = 'In Progress', Status__c = 'In Progress',
+        Id = uw.Id, Stage__c = 'In Progress',
         My_Price__c = 23800000, My_Cap_Rate__c = 6.6, Market_Cap_Rate__c = 6.5,
         Underwritten_NOI__c = 1570800, Target_Return__c = 16.5, Hold_Period__c = 7,
         Equity_Required__c = 7140000, Projected_Loan__c = 16660000
@@ -146,7 +146,7 @@ if ([SELECT COUNT() FROM Opportunity WHERE Name = :N6] == 0) {
     update new Development_Feasibility_Review__c(Id = dfr6.Id, Stage__c = 'Completed', Recommendation__c = 'Go');
     update new Opportunity(Id = opp6, StageName = 'Underwriting');
     Underwriting__c uw6 = [SELECT Id FROM Underwriting__c WHERE Opportunity__c = :opp6 LIMIT 1];
-    update new Underwriting__c(Id = uw6.Id, Stage__c = 'Approved', Status__c = 'Approved by Principals',
+    update new Underwriting__c(Id = uw6.Id, Stage__c = 'Approved',
         My_Price__c = 10400000, My_Cap_Rate__c = 0, Market_Cap_Rate__c = 0,
         Target_Return__c = 19, Hold_Period__c = 4, Equity_Required__c = 3120000, Projected_Loan__c = 7280000);
     update new Opportunity(Id = opp6, UW_Approved__c = true, UW_Approval_Date__c = Date.today().addDays(-2));

@@ -136,7 +136,8 @@ public with sharing class UnderwritingSelector {
      * governing convention for this class, but its factual claim ("backs ApprovalAuditService")
      * is now FALSE: ApprovalAuditService's block that advanced each related Underwriting to
      * Approved was deleted when the principal approval moved onto the Underwriting record
-     * (the approval's own finalApprovalActions now writes Stage__c / Status__c directly), and
+     * (the approval's own finalApprovalActions now writes Stage__c directly — this said
+     * "Stage__c / Status__c" until 2026-09-02, when Underwriting__c.Status__c was retired), and
      * its replacement read needs Opportunity__c as well as Id, so it uses
      * {@link ApprovalAutomationReads.selectByOpportunityIds} instead.
      *
@@ -182,10 +183,16 @@ public with sharing class UnderwritingSelector {
      * is an error. Single-row SOQL assignment -> native System.QueryException, matching
      * OpportunitySelector.selectStageRequiredById.
      *
-     * ⚠ `Stage__c` (the Path field), NOT the coarse `Status__c` this object also carries. Both
-     * exist, both hold near-identical words ('Complete' vs 'Completed'), and
-     * ApprovalAuditService writes BOTH on principal sign-off. Selecting the wrong one here would
-     * make the quick action advance a reporting field while the Path never moved.
+     * ⚠ RETIRED HAZARD, KEPT AS A RECORD 2026-09-02. This paragraph used to warn: "`Stage__c` (the
+     * Path field), NOT the coarse `Status__c` this object also carries. Both exist, both hold
+     * near-identical words ('Complete' vs 'Completed'), and ApprovalAuditService writes BOTH on
+     * principal sign-off. Selecting the wrong one here would make the quick action advance a
+     * reporting field while the Path never moved." 🟢 That hazard is GONE, not merely unlikely:
+     * `Underwriting__c.Status__c` has been DELETED, so the wrong field can no longer be named at
+     * all — a mis-select is now a compile error rather than a silent behavioural bug. (The warning
+     * had also already decayed on its own terms: ApprovalAuditService stopped writing either field
+     * on 2026-08-28; see the ⚠ DELETED block in that class.) Do not re-add a coarse status field
+     * to this object without re-reading this note first.
      *
      * Field list is deliberately MINIMAL (Id + Stage__c) — see the per-caller note in the class
      * header.

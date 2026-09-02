@@ -13,6 +13,17 @@
  * over however many submissions the disposition has — tested at 3, which is enough to exercise
  * the exclusivity swap (one incumbent demoted, one challenger promoted, one bystander untouched).
  *
+ * ⚠ RE-ARGUED FROM SCRATCH ON 2026-09-01, NOT INHERITED, BECAUSE THE METHOD'S SHAPE CHANGED.
+ * Tranche 4 item 5 put a FOURTH object in this transaction (`Broker_Listing__c`, write 3a) and a
+ * SECOND query in it. An exemption that is silently carried across a change to its own subject is
+ * how one stops being true — `.claude/rules/bulk-test-rule.md`'s own narrowing note records a case
+ * where exactly that happened, and three of four classes lost the exemption when a caller started
+ * looping. THE EXEMPTION HOLDS HERE, and on the same ground rather than on precedent: the property
+ * the 251 rule tests for is per-RECORD cost, and write 3a adds at most ONE row per click regardless
+ * of how many submissions the disposition has. It multiplies the DML count by a constant, not by
+ * the record count, and there is still no loop and no trigger driving this method. A 251-record
+ * test would exercise no additional path and would burn DML statements proving nothing.
+ *
  * ─────────────────────────────────────────────────────────────────────────────────────
  * 2026-08-20 — THE HISTORY ROW (Tranche 2 Workstream B, design D4.3)
  * ─────────────────────────────────────────────────────────────────────────────────────
@@ -20,7 +31,13 @@
  * `BOV_Broker_Change__c`. Three of the tests below exist ONLY for that write, and the most
  * important of them is not any of the happy-path ones — it is
  * `lockedDisposition_refusesTheWholeReplacementAndRollsBack`, which now also asserts that NO
- * history row survives a refused replacement. A history row that outlives its own rolled-back
+ * history row survives a refused replacement.
+ * ⚠ AMENDED 2026-09-02 (code review W1) — THAT TEST HAS A BLIND SPOT AND IT IS NOT FIXABLE IN
+ * PLACE. It locks a disposition at `Disposition Readiness`, where no `Broker_Listing__c` exists, so
+ * `saleIsListed` is FALSE and write 3a never executes inside it. Everything the paragraph above
+ * claims for the history row is still true; nothing it claims extends to the listing append.
+ * `refusedReplacementRollsBackTheListingAppend` is the test that covers that, on a fixture that IS
+ * listed, and it explains at length why it does not use the record-type refusal route. A history row that outlives its own rolled-back
  * transaction is a durable, reportable claim that a broker changed when none did; that assertion is
  * the falsifier for "the insert is inside the savepoint", and it fails if anyone moves the insert
  * out of the try block or commits it separately.
@@ -43,6 +60,27 @@
  *   - `Initial Appointment` reaches `Reason__c` and is proven to exist in the restricted picklist;
  *   - `Initial Appointment` is REFUSED, before any write, when an incumbent actually exists;
  *   - the converse is deliberately NOT refused, and that trade is pinned by its own test.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────
+ * 2026-09-02 — WRITE 3a's ROLLBACK, AND THE LOOKUP STAMP (code review W1 + S1)
+ * ─────────────────────────────────────────────────────────────────────────────────────
+ * Two additions, and the first one is the interesting one:
+ *
+ *   - `refusedReplacementRollsBackTheListingAppend` — a refused replacement on a LISTED sale must
+ *     leave ZERO new `Broker_Listing__c` rows, with a presence control on the same fixture proving
+ *     one WOULD have been appended. It refuses by passing a `Reason__c` value outside that field's
+ *     restricted value set, and its javadoc carries the full argument for why the record-type
+ *     route the service header documents would be VACUOUS here — since S1, write 3a carries a
+ *     Contact lookup with the same filter, so a flipped Contact refuses BEFORE write 3a inserts.
+ *
+ *   - `replaceAtActiveListing_appendsTheIncomingBrokersOwnListing` gained three assertions for the
+ *     new `Broker_Listing__c.Broker__c` stamp, including a NEGATIVE one pinning that the
+ *     auto-created row's lookup is still blank. That negative is a residual being recorded, not a
+ *     behaviour being endorsed — read it before "fixing" it.
+ *
+ * ⚠ NO NEW FIXTURE HELPERS AND NO NEW FACTORY METHODS. `onMarketAt` / `brokerPair` / `listingsOn`
+ * are reused verbatim; `listingsOn` gained `Broker__c` in its SELECT, which is a plain test query
+ * (not `WITH USER_MODE`), so widening it cannot take any other test down on FLS.
  *
 
  * @see force-app/main/default/classes/BovSubmissionService.cls
@@ -724,6 +762,520 @@ private class BovSubmissionServiceTest {
             + 'try, or committed separately, leaves behind a durable, reportable, append-only claim '
             + 'that this disposition changed brokers — next to a disposition that did not. That is '
             + 'strictly worse than no history at all.');
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════════════════════
+    // TRANCHE 4 ITEM 5 (2026-09-01) — WRITE 3a: THE INCOMING BROKER'S OWN LISTING
+    // ═══════════════════════════════════════════════════════════════════════════════════════════
+    // The feature is an APPEND, never a reset. `Disposition__c.Listing_Date__c` — the MARKETING
+    // clock, which feeds `Disposition__c.Days_On_Market__c`, the `Avg_Days_on_Market` report and
+    // the `Broker Alert Due` KPI — is not written by this service at all, and
+    // `parentsMarketingClockIsNeverRewrittenByAReplacement` is the pin for that.
+    //
+    // 🔴 THE FIRST TEST BELOW IS THE MOST IMPORTANT ONE IN THIS BLOCK AND IT IS A **NEGATIVE**.
+    // A negative that silently stops holding is invisible for months, which is exactly the shape
+    // of the defect it guards: Replace Broker is ALSO reachable at BOV Outreach
+    // (`dispositionMain.html:42`, `c/bovBrokerPanel`), where no listing exists, and
+    // `DispositionStageEntryService.openBrokerListings` idempotency test is SIMPLE PRESENCE —
+    // "this disposition already has a broker listing", any listing. So a listing appended at BOV
+    // Outreach makes the Active Listing auto-create a PERMANENT NO-OP for that sale.
+    //
+    // ⚠ EVERY FIXTURE HERE SETS `Listing_Date__c` TO A DATE THAT IS **NOT TODAY**, DELIBERATELY.
+    // `TestDataFactory.createDispositions` seeds `Listing_Date__c = Date.today()` on every row, and
+    // `openBrokerListings` COPIES the parent's date onto the child. With the factory default, an
+    // auto-created listing and an appended one would both read `Date.today()` and every assertion
+    // in this block would be unable to tell them apart — the tests would pass whether or not the
+    // append happened in the right place. The 40-day-old date is what makes them discriminate.
+
+    /** The marketing clock every fixture in this block starts on: old enough to differ from today. */
+    private static final Date MARKETING_START = Date.today().addDays(-40);
+
+    private static List<Broker_Listing__c> listingsOn(Id dispositionId) {
+        return [
+            SELECT Id, List_Date__c, Broker__c, Broker_Firm__c, Contact_Name__c, Listing_Status__c,
+                   Days_On_Market_Live__c
+            FROM Broker_Listing__c
+            WHERE Disposition__c = :dispositionId
+            ORDER BY CreatedDate DESC, Id DESC
+        ];
+    }
+
+    /**
+     * An on-market disposition INSERTED straight at the given stage with a 40-day-old marketing
+     * clock.
+     *
+     * ⚠ INSERT, NOT AN UPDATE INTO THE STAGE, AND THAT IS WHAT KEEPS THESE FIXTURES SHORT.
+     * `All_NDAs_Signed_Before_Progression` blocks an on-market disposition from MOVING into Active
+     * Listing without a signed buyer NDA, but the rule is `ISCHANGED`-only and deliberately exempts
+     * an insert straight at a gated stage (`DispositionStageEntryServiceTest` states this in
+     * terms). The one test below that genuinely needs the TRANSITION signs an NDA first.
+     *
+     * ⚠ `Listing_Date__c` IS PRE-SET, SO `stampListingDates` LEAVES IT ALONE — that stamp is
+     * fill-if-blank, which `preexistingListingDateIsNotOverwritten` pins in the stage-entry
+     * service's own test class. At `Active Listing` the after-insert `openBrokerListings` then
+     * opens ONE listing carrying this same date.
+     */
+    private static Disposition__c onMarketAt(String stage) {
+        Disposition__c d = TestDataFactory.createDisposition(
+            assetId(), TestDataFactory.DISPOSITION_RT_ON_MARKET, false);
+        d.Disposition_Stage__c = stage;
+        d.Listing_Date__c = MARKETING_START;
+        insert d;
+        return d;
+    }
+
+    /**
+     * Two broker Contacts with DISTINCT last names and distinct firms, inserted together.
+     *
+     * 🔴 `TestDataFactory.createBrokerContactWithFirm` CANNOT BE USED FOR A PAIR HERE. Its index
+     * resets to 0 on every call, so two calls produce two Contacts BOTH named 'Test Contact 0' —
+     * identical `Name`, and therefore identical `Contact_Name__c` on the submissions that point at
+     * them, because `BovSubmissionBrokerStampService` stamps `Contact_Name__c` from `Broker__c.Name`
+     * on every save and overwrites anything hand-typed. The assertions below need to tell the
+     * outgoing broker's contact name from the incoming one's; with two identical names they would
+     * pass no matter which row the listing was stamped from.
+     *
+     * ⚠ `insertAllowingDuplicates`, not a plain insert: the org's active
+     * `Standard_Contact_Duplicate_Rule` is Alert/Allow, which Apex DML degrades into a hard
+     * DUPLICATES_DETECTED on same-shaped test rows. See `TestDataFactory.createContacts`.
+     */
+    private static List<Contact> brokerPair(String firmA, String firmB) {
+        List<Contact> pair = TestDataFactory.createBrokerContacts(2, null, false);
+        pair[0].LastName = 'Outgoing Broker';
+        pair[0].Broker_Firm__c = firmA;
+        pair[1].LastName = 'Incoming Broker';
+        pair[1].Broker_Firm__c = firmB;
+        TestDataFactory.insertAllowingDuplicates(pair);
+        return pair;
+    }
+
+    /**
+     * 🔴 THE NEGATIVE, AND THE SINGLE MOST IMPORTANT TEST IN TRANCHE 4 (design decision D-10).
+     *
+     * A replacement performed at BOV OUTREACH must append NOTHING. The marketing period has not
+     * started, so there is no broker clock to open — and far worse, a listing created here would
+     * satisfy `openBrokerListings` presence-based idempotency guard forever, leaving the sale to
+     * reach Active Listing with NO listing of its own: silent, months later, and unrecoverable
+     * without hand repair.
+     *
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * ⚠ THIS TEST DOES NOT STOP AT COUNTING ZERO ROWS, AND THE SECOND HALF IS THE POINT.
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * `Assert.areEqual(0, listingsOn(...).size())` alone would ALSO pass if the service had refused
+     * the whole replacement for an unrelated reason — a permission gate, a validation rule, a typo
+     * in the challenger Id. Two controls close that:
+     *   1. a PRESENCE CONTROL on the operation itself — the challenger really was promoted, so the
+     *      zero above is "the append did not happen", not "nothing happened";
+     *   2. the CONSEQUENCE, which is the thing the defect would actually destroy — the sale is then
+     *      moved to Active Listing and the auto-create is proved to STILL FIRE.
+     *
+     * 🔴 AND THE DATE IS WHAT MAKES CONTROL 2 DISCRIMINATE. If write 3a HAD fired at BOV Outreach,
+     * the count after the stage move would still be 1 (the auto-create would simply no-op), so a
+     * bare count proves nothing. The poisoned row would carry `List_Date__c = Date.today()`; the
+     * legitimate stage-entry row copies the PARENT's 40-day-old clock. Asserting the date is what
+     * tells the two apart.
+     */
+    @isTest
+    static void replaceAtBovOutreach_appendsNoListingAndLeavesTheAutoCreateIntact() {
+        Disposition__c d = onMarketAt('BOV Outreach');
+        List<Contact> brokers = brokerPair('CBRE - Old Incumbent', 'JLL - New Challenger');
+        BOV_Submission__c incumbent = TestDataFactory.createBovSubmission(d.Id, false);
+        incumbent.Broker__c = brokers[0].Id;
+        incumbent.Submission_Status__c = 'Selected';
+        BOV_Submission__c challenger = TestDataFactory.createBovSubmission(d.Id, false);
+        challenger.Broker__c = brokers[1].Id;
+        challenger.Submission_Status__c = 'Backup';
+        insert new List<BOV_Submission__c>{ incumbent, challenger };
+        Assert.areEqual(0, listingsOn(d.Id).size(),
+            'FIXTURE GUARD: a sale at BOV Outreach has no listing yet, or the assertion below is '
+            + 'asserting the fixture rather than the code');
+
+        Test.startTest();
+        BovSubmissionService.replaceSelectedBroker(d.Id, challenger.Id, REASON, null);
+
+        // ── THE NEGATIVE ──
+        Assert.areEqual(0, listingsOn(d.Id).size(),
+            '🔴 A REPLACEMENT AT BOV OUTREACH MUST APPEND NO LISTING. Replace Broker is rendered on '
+            + 'this stage too (dispositionMain.html:42), and openBrokerListings idempotency test '
+            + 'is SIMPLE PRESENCE — any listing satisfies it — so a row created here turns the '
+            + 'Active Listing auto-create into a PERMANENT no-op for this sale.');
+
+        // ── CONTROL 1: the replacement itself really happened, so the zero above is meaningful ──
+        Assert.areEqual('Selected',
+            [SELECT Submission_Status__c FROM BOV_Submission__c WHERE Id = :challenger.Id]
+                .Submission_Status__c,
+            'PRESENCE CONTROL: the swap must have succeeded. Without this, the assertion above '
+            + 'would pass on a service that refused the whole operation for an unrelated reason.');
+
+        // ── CONTROL 2: the consequence the defect would destroy ──
+        TestDataFactory.signBuyerNdaOn(d.Id);
+        update new Disposition__c(Id = d.Id, Disposition_Stage__c = 'Active Listing');
+        Test.stopTest();
+
+        List<Broker_Listing__c> afterListing = listingsOn(d.Id);
+        Assert.areEqual(1, afterListing.size(),
+            'Entering Active Listing must still open exactly one listing');
+        Assert.areEqual(MARKETING_START, afterListing[0].List_Date__c,
+            '🔴 THE DISCRIMINATOR. This row must carry the PARENT marketing clock, which is what '
+            + 'openBrokerListings copies. A listing wrongly appended at BOV Outreach would carry '
+            + 'Date.today() instead — and because the auto-create would then no-op, the COUNT '
+            + 'above would still read 1. Only the date tells the two apart.');
+        Assert.areEqual('JLL - New Challenger', afterListing[0].Broker_Firm__c,
+            'and it is stamped from the parent Selected_Broker__c, i.e. the broker who actually '
+            + 'holds the sale by the time it is listed');
+    }
+
+    /**
+     * 🔴 THE POSITIVE: at Active Listing a replacement APPENDS a second listing opening the
+     * incoming broker's own clock, and LEAVES THE SUPERSEDED ROW ALONE (decisions D-9, D-16).
+     *
+     * ⚠ THE SUPERSEDED ROW IS ASSERTED TO SURVIVE UNCHANGED, WHICH IS NOT AN OVERSIGHT BEING
+     * PINNED — IT IS A RESIDUAL BEING PINNED. `Broker_Listing__c.Listing_Status__c` is RESTRICTED
+     * to `On Track` / `At Risk` / `Hard Stop`, so there is no `Superseded` value to write, and
+     * story 5's "exactly one active listing per on-market sale" is enforced by nothing. The old row
+     * therefore stays in the related list looking live. That is the accepted state of the world as
+     * of Tranche 4, and this assertion is what makes a future change to it deliberate: if someone
+     * adds a `Superseded` value and starts closing the old row, THIS TEST is where they find out
+     * they also owe the restricted-picklist sweep.
+     *
+     * ⚠ `c/brokerListing` NEEDS NO CHANGE TO FOLLOW THE NEW ROW.
+     * `BrokerListingSelector.selectMostRecentByDispositionId` is already
+     * `ORDER BY CreatedDate DESC LIMIT 1`, which is why this test orders its own read the same way.
+     */
+    @isTest
+    static void replaceAtActiveListing_appendsTheIncomingBrokersOwnListing() {
+        Disposition__c d = onMarketAt('Active Listing');
+        List<Broker_Listing__c> opening = listingsOn(d.Id);
+        Assert.areEqual(1, opening.size(),
+            'FIXTURE GUARD: entering Active Listing must have auto-created exactly one listing');
+        Id supersededId = opening[0].Id;
+
+        List<Contact> brokers = brokerPair('CBRE - Old Incumbent', 'JLL - New Challenger');
+        BOV_Submission__c incumbent = TestDataFactory.createBovSubmission(d.Id, false);
+        incumbent.Broker__c = brokers[0].Id;
+        incumbent.Submission_Status__c = 'Selected';
+        BOV_Submission__c challenger = TestDataFactory.createBovSubmission(d.Id, false);
+        challenger.Broker__c = brokers[1].Id;
+        challenger.Submission_Status__c = 'Backup';
+        insert new List<BOV_Submission__c>{ incumbent, challenger };
+        // Re-read the STAMPED values rather than asserting hand-typed literals:
+        // BovSubmissionBrokerStampService overwrites Broker_Firm__c and Contact_Name__c from
+        // Broker__c on every save, so a literal here would be asserting a value the platform has
+        // already replaced. See TestDataFactory.createBrokerContactWithFirm's header.
+        BOV_Submission__c challengerAfter = [
+            SELECT Broker_Firm__c, Contact_Name__c FROM BOV_Submission__c WHERE Id = :challenger.Id];
+        BOV_Submission__c incumbentAfter = [
+            SELECT Contact_Name__c FROM BOV_Submission__c WHERE Id = :incumbent.Id];
+
+        Test.startTest();
+        BovSubmissionService.replaceSelectedBroker(d.Id, challenger.Id, REASON, 'Swapped.');
+        Test.stopTest();
+
+        List<Broker_Listing__c> after = listingsOn(d.Id);
+        Assert.areEqual(2, after.size(),
+            '🔴 THE APPEND: a replacement on a LISTED sale opens a second Broker_Listing__c. It '
+            + 'does not overwrite the first, and it does not reset the parent marketing clock.');
+
+        Broker_Listing__c appended = after[0]; // newest first — the order the card itself uses
+        Assert.areNotEqual(supersededId, appended.Id,
+            'PREMISE: the newest row must be the new one, not the original');
+        Assert.areEqual(Date.today(), appended.List_Date__c,
+            '🔴 THE BROKER CLOCK STARTS TODAY. This is the ONE date in the feature that is '
+            + 'Date.today() rather than a copy of the parent — it is what "restart the clock" '
+            + 'honestly means, and it is why the marketing clock does not have to move.');
+        Assert.areEqual(challengerAfter.Broker_Firm__c, appended.Broker_Firm__c,
+            'The appended row names the INCOMING broker firm');
+        Assert.areEqual(challengerAfter.Contact_Name__c, appended.Contact_Name__c,
+            '🔴 AND ITS NAMED CONTACT — openBrokerListings leaves Contact_Name__c blank precisely '
+            + 'because "a human fills it, or the future broker-change action supplies it". This is '
+            + 'that action.');
+        Assert.areNotEqual(incumbentAfter.Contact_Name__c, appended.Contact_Name__c,
+            'FALSIFIER: stamped from the CHALLENGER, not from the row being demoted. Two brokers '
+            + 'with the same contact name would make the assertion above pass either way, which is '
+            + 'why brokerPair() gives them distinct last names.');
+        Assert.areEqual('On Track', appended.Listing_Status__c,
+            'A fresh broker starts On Track');
+        Assert.areEqual(0, appended.Days_On_Market_Live__c,
+            'and Days_On_Market_Live__c — the BROKER clock the card now shows beside the marketing '
+            + 'one — reads 0 on its first day');
+        Assert.areEqual(brokers[1].Id, appended.Broker__c,
+            '🔴 THE LOOKUP, NOT JUST THE TEXT (code review S1, 2026-09-02). Write 3a is the FIRST '
+            + 'place in the application that creates a Broker_Listing__c with a known broker '
+            + 'Contact Id — DispositionStageEntryService.openBrokerListings has only the parent\'s '
+            + 'Selected_Broker__c TEXT to work from and leaves this blank. Asserted against the '
+            + 'CONTACT the challenger points at, not against challengerAfter.Broker__c, so the '
+            + 'assertion cannot pass by comparing the service\'s input to itself.');
+        Assert.areNotEqual(brokers[0].Id, appended.Broker__c,
+            'FALSIFIER for the line above: the INCOMING broker, not the one being demoted. The two '
+            + 'Contacts are distinct rows from brokerPair(), so this cannot tie.');
+
+        Broker_Listing__c superseded = after[1];
+        Assert.areEqual(supersededId, superseded.Id, 'PREMISE: the older row is the original');
+        Assert.areEqual(null, superseded.Broker__c,
+            '⚠ AND THE SUPERSEDED (AUTO-CREATED) ROW STILL HAS A BLANK LOOKUP, WHICH IS A RESIDUAL '
+            + 'BEING PINNED, NOT AN ENDORSEMENT. S1 stamps the lookup only where a Contact Id is '
+            + 'actually known — on a broker CHANGE. openBrokerListings still has no stamp, so the '
+            + 'lookup/text duality survives on auto-created listings. If someone adds a stamp '
+            + 'there, THIS assertion is where they find out, and they also owe '
+            + 'scripts/seed-broker-contacts.apex a re-read (its STORED_DENORM_TEXT entry for this '
+            + 'object is scoped by the fact that only appended rows carry the lookup).');
+        Assert.areEqual(MARKETING_START, superseded.List_Date__c,
+            'The superseded row is LEFT ALONE — its own dates are history and are not rewritten');
+        Assert.areEqual('On Track', superseded.Listing_Status__c,
+            '⚠ AND IT KEEPS A LIVE-LOOKING STATUS, WHICH IS A KNOWN RESIDUAL RATHER THAN AN '
+            + 'ASSERTION THAT THIS IS DESIRABLE. Listing_Status__c is RESTRICTED to On Track / At '
+            + 'Risk / Hard Stop, so there is no Superseded value to write, and nothing enforces '
+            + '"exactly one active listing". Adding that value is a restricted-picklist change '
+            + 'and triggers the standing repo-grep + org-query sweep.');
+    }
+
+    /**
+     * A `Reason__c` value that is NOT in that field's RESTRICTED value set. Verified against the
+     * describe inside the test rather than trusted, so that adding it to the picklist one day
+     * fails HERE with an explanation instead of quietly disarming the whole test.
+     */
+    private static final String REASON_NOT_IN_VALUE_SET = 'ZZ Not A Real Reason ZZ';
+
+    /**
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * 🔴 THE ROLLBACK OF WRITE 3a. Code review W1, 2026-09-02.
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * A refused replacement on a LISTED sale must leave ZERO new `Broker_Listing__c` rows behind.
+     *
+     * 🔴 WHY THIS IS NOT AN ORDINARY COVERAGE GAP, AND WHY IT IS ARGUABLY WORSE THAN THE ARTEFACT
+     * WRITE 4's PLACEMENT GUARDS AGAINST. `BrokerListingSelector.selectMostRecentByDispositionId`
+     * is `ORDER BY CreatedDate DESC LIMIT 1`, so an orphaned listing surviving a rolled-back
+     * replacement becomes THE row `c/brokerListing` renders: the Active Listing card would name,
+     * and start a broker clock for, a broker who was never appointed — while the submissions and
+     * `Disposition__c.Selected_Broker__c` all correctly still name the incumbent. Nothing on the
+     * page disagrees with itself loudly enough for anyone to notice.
+     *
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * 🔴 `lockedDisposition_refusesTheWholeReplacementAndRollsBack` CANNOT REACH WRITE 3a AND IS
+     *    NOT A SUBSTITUTE FOR THIS TEST. That is the finding W1 records.
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * It locks a disposition at `Disposition Readiness`, where NO LISTING EXISTS — so `saleIsListed`
+     * is false and write 3a never executes in it at all. Its "no history row survives" assertion is
+     * real and stays; it simply says nothing about the listing append. Do not delete this test on
+     * the grounds that "the savepoint is already covered": the savepoint is covered, the CONTENTS
+     * of the savepoint on a listed sale were not.
+     *
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * 🔴 WHY THE INJECTION IS AN INVALID `Reason__c` AND **NOT** THE RECORD-TYPE ROUTE THE
+     *    SERVICE HEADER DOCUMENTS. THIS IS THE LOAD-BEARING DESIGN DECISION IN THIS TEST.
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * The obvious fixture — and the one the service's own refusal note at the history insert
+     * describes — is to move a broker Contact off the `Contact.Broker` record type so the
+     * non-optional lookup filter refuses the write. IT WAS REJECTED HERE, for two independent
+     * reasons, EITHER of which alone would make this test silently vacuous:
+     *
+     *   1. 🔴 SINCE CODE-REVIEW S1 (SAME CHANGE AS THIS TEST) WRITE 3a ITSELF CARRIES A CONTACT
+     *      LOOKUP. `Broker_Listing__c.Broker__c` is stamped from the same `challenger.Broker__c`
+     *      and carries a BYTE-IDENTICAL active non-optional filter on
+     *      `Contact.RecordType.DeveloperName = 'Broker'`. A flipped Contact therefore refuses AT
+     *      WRITE 3a — before it has inserted anything — so the "zero new listings" assertion below
+     *      would be measuring a write that never ran. The exact defect this test exists to close.
+     *   2. BOTH broker Contacts are also on the `BOV_Submission__c` rows that WRITE 1 updates, and
+     *      `BOV_Submission__c.Broker__c` carries the same filter with the SAME `errorMessage`
+     *      string. Whether the platform re-evaluates a lookup filter on an update that does not
+     *      include the lookup field is not something this repo has measured, and the surfaced
+     *      message is identical either way — so nothing in the test could tell a write-1 refusal
+     *      from a write-4 one.
+     *
+     * `BOV_Broker_Change__c.Reason__c` has neither problem: it exists on EXACTLY ONE object in this
+     * whole transaction (grep — `Reason__c` on any other object in this repo belongs to Lead,
+     * Opportunity, Meter__c or Sync_Run__c, none of which this method touches). A restricted-picklist
+     * refusal on it can therefore only come from write 4, which means writes 1, 2 AND 3a all
+     * SUCCEEDED and were rolled back — which is precisely the proposition.
+     *
+     * ⚠ IT IS A REAL PATH, NOT A MOCK AND NOT A WEAKENING. `BovController.replaceSelectedBroker`
+     * passes `reason` STRAIGHT THROUGH ("deliberately not validated here" — its own javadoc), and
+     * this service validates only `String.isBlank(reason)`. Any Aura/LWC caller can send an
+     * arbitrary string, and the platform's restricted-picklist enforcement is what refuses it.
+     * Restricted picklists ARE DML-enforced on this project — `seed-lakeline-asset-repair.apex`
+     * states it in terms after it was measured.
+     *
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * ⚠ THE PRESENCE CONTROL IS THE SECOND HALF AND WITHOUT IT THE ZERO MEANS NOTHING.
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * `Assert.areEqual(1, listingsOn(...).size())` after a refusal also passes on a service that
+     * never appends on this fixture at all. So the SAME disposition, the SAME challenger and the
+     * SAME listing state are then replayed with a VALID reason, and the append is proved to happen.
+     * The re-run is free of side effects precisely because the first call rolled back: the
+     * challenger is still `Backup`, so the `ALREADY_SELECTED` guard does not fire.
+     */
+    @isTest
+    static void refusedReplacementRollsBackTheListingAppend() {
+        // ── FIXTURE GUARD ON THE INJECTION ITSELF ──
+        Boolean injectionIsInvalid = true;
+        for (Schema.PicklistEntry entry
+                : BOV_Broker_Change__c.Reason__c.getDescribe().getPicklistValues()) {
+            if (REASON_NOT_IN_VALUE_SET.equalsIgnoreCase(entry.getValue())) {
+                injectionIsInvalid = false;
+            }
+        }
+        Assert.isTrue(injectionIsInvalid,
+            'FIXTURE: "' + REASON_NOT_IN_VALUE_SET + '" must NOT be a value of the RESTRICTED picklist '
+            + 'BOV_Broker_Change__c.Reason__c. If someone has added it, write 4 would succeed, the '
+            + 'replacement would go through, and every rollback assertion below would be asserting '
+            + 'nothing. Pick another absent value rather than deleting this guard.');
+
+        Disposition__c d = onMarketAt('Active Listing');
+        List<Broker_Listing__c> opening = listingsOn(d.Id);
+        Assert.areEqual(1, opening.size(),
+            'FIXTURE GUARD: entering Active Listing must have auto-created exactly one listing, or '
+            + 'saleIsListed is false and write 3a never runs — the same blind spot that makes '
+            + 'lockedDisposition_refusesTheWholeReplacementAndRollsBack unable to cover this.');
+        Id supersededId = opening[0].Id;
+
+        List<Contact> brokers = brokerPair('CBRE - Old Incumbent', 'JLL - New Challenger');
+        BOV_Submission__c incumbent = TestDataFactory.createBovSubmission(d.Id, false);
+        incumbent.Broker__c = brokers[0].Id;
+        incumbent.Submission_Status__c = 'Selected';
+        BOV_Submission__c challenger = TestDataFactory.createBovSubmission(d.Id, false);
+        challenger.Broker__c = brokers[1].Id;
+        challenger.Submission_Status__c = 'Backup';
+        insert new List<BOV_Submission__c>{ incumbent, challenger };
+        BOV_Submission__c challengerAfter = [
+            SELECT Broker_Firm__c FROM BOV_Submission__c WHERE Id = :challenger.Id];
+
+        Test.startTest();
+
+        // ══ THE REFUSAL ══════════════════════════════════════════════════════════════════════
+        Boolean refused = false;
+        String surfaced = 'no exception was thrown';
+        try {
+            BovSubmissionService.replaceSelectedBroker(
+                d.Id, challenger.Id, REASON_NOT_IN_VALUE_SET, 'Rolled back.');
+            Assert.fail('A Reason__c value outside the restricted value set must refuse the whole '
+                + 'replacement at write 4. It did not, so nothing below is measuring a rollback.');
+        } catch (BovSubmissionService.BovSubmissionException e) {
+            refused = true;
+            surfaced = e.getMessage();
+        }
+        Assert.isTrue(refused,
+            'The refusal must arrive as the service\'s own BovSubmissionException, not as a raw '
+            + 'DmlException escaping the catch.');
+
+        // ── THE FAILURE MUST HAVE COME FROM WRITE 4, NOT FROM AN EARLIER WRITE ──
+        Assert.isTrue(
+            surfaced.contains(REASON_NOT_IN_VALUE_SET) || surfaced.containsIgnoreCase('reason'),
+            '🔴 THE DISCRIMINATOR, AND IT IS WHAT MAKES THE NEXT ASSERTION MEAN ANYTHING. The '
+            + 'refusal must name Reason__c — a field that exists on BOV_Broker_Change__c and on '
+            + 'NOTHING ELSE in this transaction — proving writes 1, 2 and 3a all completed and '
+            + 'were rolled back. A refusal from write 1 (a lookup filter: "Only Broker Contacts '
+            + 'can be selected here.") or write 2 (a lock: "This record is locked") would leave '
+            + 'write 3a un-executed and the zero below vacuous. OBSERVED: ' + surfaced);
+
+        // ── 🔴 THE ASSERTION W1 EXISTS FOR ──
+        List<Broker_Listing__c> afterRefusal = listingsOn(d.Id);
+        Assert.areEqual(1, afterRefusal.size(),
+            '🔴 ZERO NEW Broker_Listing__c ROWS MAY SURVIVE A REFUSED REPLACEMENT. Write 3a sits '
+            + 'inside the savepoint between writes 3 and 4; move it outside the try, commit it '
+            + 'separately, or take a second savepoint around it, and this reads 2. The surviving '
+            + 'orphan would then be the row selectMostRecentByDispositionId returns (CreatedDate '
+            + 'DESC LIMIT 1), so the Active Listing card would follow a broker who was never '
+            + 'appointed — silently, and with every other field on the page still correct.');
+        Assert.areEqual(supersededId, afterRefusal[0].Id,
+            'and the one row present is the ORIGINAL auto-created listing, not a replacement for '
+            + 'it — write 3a appends, it never overwrites.');
+
+        // ── THE ROLLBACK ACROSS THE OTHER TWO WRITES, SO ALL THREE ARE PROVEN AT ONCE ──
+        Map<Id, BOV_Submission__c> submissionsAfter = submissionsById(d.Id);
+        Assert.areEqual('Selected', submissionsAfter.get(incumbent.Id).Submission_Status__c,
+            '🔴 WRITE 1 ROLLED BACK — the incumbent must still be the appointed broker. A '
+            + 'half-applied replacement that demoted the incumbent while refusing the history row '
+            + 'would leave the sale with NO Selected broker at all.');
+        Assert.areEqual('Backup', submissionsAfter.get(challenger.Id).Submission_Status__c,
+            'and the challenger must not have been promoted.');
+        Assert.areEqual(0, historyFor(d.Id).size(),
+            'and no history row — the write that refused must not have partially landed.');
+
+        // ══ THE PRESENCE CONTROL ═════════════════════════════════════════════════════════════
+        // Same disposition, same challenger, same listing state — only the reason is now valid.
+        // Free of side effects from the call above precisely because that call rolled back.
+        BovSubmissionService.replaceSelectedBroker(d.Id, challenger.Id, REASON, 'Went through.');
+        Test.stopTest();
+
+        List<Broker_Listing__c> afterSuccess = listingsOn(d.Id);
+        Assert.areEqual(2, afterSuccess.size(),
+            '🔴 THE PRESENCE CONTROL. This fixture DOES append a listing when the transaction is '
+            + 'allowed to commit, so the 1 asserted above is "the append was rolled back", not '
+            + '"this fixture never appends". Without this half, deleting write 3a entirely would '
+            + 'leave every assertion above green.');
+        // ⚠ THE APPENDED ROW IS FOUND BY ELIMINATION, NOT BY `[0]`. Both listings are created in
+        // the SAME test transaction, so `ORDER BY CreatedDate DESC, Id DESC` can tie on its first
+        // key and this test must not depend on the tie-break to identify which row is which. (The
+        // positive test above deliberately DOES read `[0]`, because the order the card itself uses
+        // is part of what IT asserts. Here the order is irrelevant and would only add a way to
+        // fail for the wrong reason.)
+        Broker_Listing__c appendedByControl;
+        for (Broker_Listing__c listing : afterSuccess) {
+            if (listing.Id != supersededId) {
+                appendedByControl = listing;
+            }
+        }
+        Assert.isNotNull(appendedByControl,
+            'PREMISE: one of the two rows must be a NEW listing, not the original.');
+        Assert.areEqual(challengerAfter.Broker_Firm__c, appendedByControl.Broker_Firm__c,
+            'and it names the INCOMING broker firm, so the control is measuring write 3a rather '
+            + 'than some unrelated listing that appeared.');
+        Assert.areEqual(brokers[1].Id, appendedByControl.Broker__c,
+            'stamped with the incoming broker Contact (code review S1) — the same value write 4 '
+            + 'puts on Incoming_Broker__c in the same transaction.');
+        Assert.areEqual('Selected',
+            submissionsById(d.Id).get(challenger.Id).Submission_Status__c,
+            'and the swap itself completed on the second call, so the control is a genuine '
+            + 'success and not a second, quieter refusal.');
+    }
+
+    /**
+     * 🔴 THE GATE 1 DECISION, PINNED (design D-9). `Disposition__c.Listing_Date__c` is NEVER
+     * rewritten by a replacement.
+     *
+     * Two class headers refuse the reset in terms and both name this button as the hazard:
+     *   DispositionTractionService:166-172 — "Using the child's date would silently reset the clock
+     *   the moment a broker was replaced — i.e. exactly when the clock matters most."
+     *   BrokerListingController:164-168 — "...which, now that this card carries a Replace Broker
+     *   button, is one click away rather than hypothetical."
+     *
+     * ⚠ THE BLAST RADIUS IS WHY THIS IS A TEST AND NOT A COMMENT. `Listing_Date__c` feeds
+     * `Disposition__c.Days_On_Market__c` (a formula), the `Dispositions/Avg_Days_on_Market` report
+     * and the `Broker Alert Due` dashboard KPI. A reset would change all three WITH NO METADATA
+     * DIFF AT ALL — nothing in a code review would show it. This assertion is the only thing that
+     * would.
+     *
+     * ⚠ 40 DAYS OLD, NOT TODAY. Against the factory's `Listing_Date__c = Date.today()` default this
+     * test would pass on a service that DID reset the clock, because the reset value and the
+     * original would be the same date.
+     */
+    @isTest
+    static void parentsMarketingClockIsNeverRewrittenByAReplacement() {
+        Disposition__c d = onMarketAt('Active Listing');
+        List<Contact> brokers = brokerPair('CBRE - Old Incumbent', 'JLL - New Challenger');
+        BOV_Submission__c incumbent = TestDataFactory.createBovSubmission(d.Id, false);
+        incumbent.Broker__c = brokers[0].Id;
+        incumbent.Submission_Status__c = 'Selected';
+        BOV_Submission__c challenger = TestDataFactory.createBovSubmission(d.Id, false);
+        challenger.Broker__c = brokers[1].Id;
+        challenger.Submission_Status__c = 'Backup';
+        insert new List<BOV_Submission__c>{ incumbent, challenger };
+
+        Test.startTest();
+        BovSubmissionService.replaceSelectedBroker(d.Id, challenger.Id, REASON, null);
+        Test.stopTest();
+
+        Disposition__c after =
+            [SELECT Listing_Date__c, Selected_Broker__c FROM Disposition__c WHERE Id = :d.Id];
+        Assert.areEqual(MARKETING_START, after.Listing_Date__c,
+            '🔴 THE MARKETING CLOCK MUST NOT MOVE. It records when the PROPERTY went to market, '
+            + 'which survives a broker change; the BROKER clock restarts on the appended '
+            + 'Broker_Listing__c instead. Resetting this field would silently change '
+            + 'Days_On_Market__c, the Avg_Days_on_Market report and the Broker Alert Due KPI with '
+            + 'no metadata diff at all.');
+        Assert.areEqual('JLL - New Challenger', after.Selected_Broker__c,
+            'PRESENCE CONTROL: the replacement really happened. Without it, the date assertion '
+            + 'above would pass on a service that did nothing.');
     }
 
     /**

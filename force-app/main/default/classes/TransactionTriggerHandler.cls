@@ -20,7 +20,22 @@
  *       actually changed. A rollup write (counters only) collects zero ids and the service is never
  *       called - so a fan-out chunk's Transaction update costs 0 SOQL here, which is what keeps the
  *       fan-out's budget (see that class's header) valid.
+ *   afterInsert/afterUpdate/afterDelete/afterUndelete -> `DealTransactionGateService` (added
+ *       2026-09-02): maintains `Opportunity.Has_Open_Transaction__c` /
+ *       `Has_Closed_Transaction__c`, the two flags the "a deal cannot be Closed Won until its
+ *       transaction is closed" validation rule reads. 🔴 ITS UPDATE ARM IS GATED THE SAME WAY THE
+ *       reconcile ARM IS, AND FOR THE SAME REASON: it collects a parent id ONLY when
+ *       `Opportunity__c` moved or the row crossed the closed/not-closed boundary. A counter write
+ *       from `TaskRollupService` or `ChecklistRollupService` changes NEITHER, so it still collects
+ *       zero ids, still calls nothing, and this handler's zero-cost promise above survives intact.
+ *       ⚠ The INSERT arm is NOT gated and cannot be — a new row always moves its parent's counts.
+ *       That costs one recompute per trigger chunk on the Day-0 handoff, i.e. `ceil(rows/200)`
+ *       x (2 SOQL + 1 DML). At `ContractExecutionServiceTest`'s 251-deal volume that is 4 SOQL and
+ *       2 DML added to a cascade that class documents as sitting near a governor cliff; the
+ *       arithmetic is re-derived in `DealTransactionGateService`'s header and pinned by in-context
+ *       counters in `DealTransactionGateServiceTest`.
  *
+
  * 🔴 `CriticalDateService` IS NOT WIRED TO THIS TRIGGER AT ALL - NEITHER CONTEXT. The after-insert
  * arm was never added, and the after-update arm was REMOVED by user decision on 2026-09-01. The full
  * conditions for wiring it are recorded AT THE REMOVAL SITE in `afterUpdate` below, not here, so
@@ -30,12 +45,16 @@
  * date exists, its Transaction can never be deleted, which at insert would make `DELETE_FAILED` the
  * default for every deal in the org and break `scripts/seed-transactions.apex` and every scratch
  * rebuild. GATE-B3 also remains open; see `CriticalDateService`'s header.
- * ⚠ This handler therefore routes to ONE service per context, not two. Do not "restore symmetry"
- * by re-adding the call without the gates above.
+ * ⚠ RETRACTED 2026-09-02 — this header used to end "This handler therefore routes to ONE service
+ * per context, not two." `afterUpdate` NOW ROUTES TWO (`ChecklistFanoutService.reconcile` and
+ * `DealTransactionGateService`), so that sentence is gone rather than left standing. What it was
+ * really protecting survives and is restated: do not "restore symmetry" by re-adding the
+ * `CriticalDateService` call without the gates above.
  *
  * @see force-app/main/default/triggers/TransactionTrigger.trigger
  * @see force-app/main/default/classes/TransactionStageEntryService.cls
  * @see force-app/main/default/classes/ChecklistFanoutService.cls (reconcile)
+ * @see force-app/main/default/classes/DealTransactionGateService.cls
  * @see force-app/main/default/classes/CriticalDateService.cls (deliberately NOT wired here)
  */
 public with sharing class TransactionTriggerHandler extends TriggerHandler {
@@ -49,9 +68,39 @@ public with sharing class TransactionTriggerHandler extends TriggerHandler {
             (List<Transaction__c>) newList, (Map<Id, Transaction__c>) oldMap);
     }
 
+    /**
+     * Newly-created Transactions always move their parent's gate flags, so this arm has no
+     * change-gate to apply — it hands the whole chunk straight to the service, which does the one
+     * aggregate + one read + one bulk update for all of them.
+     */
+    protected override void afterInsert() {
+        DealTransactionGateService.refreshForSavedTransactions((List<Transaction__c>) newList, null);
+    }
+
+    /**
+     * A deleted Transaction must not leave its deal permanently blocked (its closed transaction
+     * vanished) or permanently unblocked (its open transaction vanished). `after delete` rather
+     * than `before delete` is required: the recompute counts rows in the database and the row is
+     * only gone by the after context.
+     */
+    protected override void afterDelete() {
+        DealTransactionGateService.refreshForRemovedTransactions((List<Transaction__c>) oldList);
+    }
+
+    /** Restoring a Transaction from the Recycle Bin restores its parent's flags with it. */
+    protected override void afterUndelete() {
+        DealTransactionGateService.refreshForSavedTransactions((List<Transaction__c>) newList, null);
+    }
+
     protected override void afterUpdate() {
         List<Transaction__c> deals = (List<Transaction__c>) newList;
         Map<Id, Transaction__c> priorByAd = (Map<Id, Transaction__c>) oldMap;
+
+        // The deal-close gate. Its own change-gate lives in the service (a parent id is collected
+        // only when Opportunity__c moved or the row crossed the closed/not-closed boundary), so a
+        // counter-only write from the Day-0 chain leaves it having spent nothing — the same
+        // property the reconcile gate below has, and for the same budget reason.
+        DealTransactionGateService.refreshForSavedTransactions(deals, priorByAd);
 
         // ═══════════════════════════════════════════════════════════════════════════════════════
         // 🔴 NO `CriticalDateService` ARM. WITHHELD ON PURPOSE — THIS IS NOT AN OVERSIGHT.
@@ -73,9 +122,20 @@ public with sharing class TransactionTriggerHandler extends TriggerHandler {
         //     critical date exists, its Transaction can never be deleted.
         //
         // THE SERVICE, ITS SELECTOR AND ITS TESTS ARE INTACT AND STAY THAT WAY. `CriticalDateService`
-        // is still called directly by `scripts/seed-critical-dates.apex`, which is the only
-        // production caller today, and `CriticalDateServiceTest` exercises it directly. Nothing about
-        // this removal makes the service dead code.
+        // is called directly by `scripts/seed-critical-dates.apex`, and `CriticalDateServiceTest`
+        // exercises it directly. Nothing about this removal makes the service dead code.
+        //
+        // 🔴 AMENDED 2026-09-02 — THIS SAID THE SCRIPT WAS "THE ONLY PRODUCTION CALLER TODAY".
+        // IT IS NOT ANY MORE. Phase 5 added `ChecklistOutcomeService.applyForCompletedItems`, which
+        // calls `ensureFor` when an ordinary user completes checklist item A5 ("Log critical dates
+        // into Salesforce deal record"). THAT IS NOT A RE-WIRING OF THIS ARM AND MUST NOT BE READ
+        // AS ONE: it is opt-in per deal by the person whose step it is, not every deal in the org
+        // on its next stage move, which is what this removal was protecting against. The gates
+        // above are unchanged and this arm stays out.
+        // ⚠ IT DOES, HOWEVER, MEAN THE `deleteConstraint=Restrict` BLAST RADIUS IS OPEN. A deal
+        // becomes permanently undeletable the moment somebody ticks A5 on it, with no script and no
+        // administrator involved. GATE-B3 is therefore a live question, not a deferred one — see
+        // `CriticalDateService`'s header, which is the authoritative caller inventory.
         //
         // ⚠ RE-WIRING IT IS NOT JUST RESTORING THE CALL. The field-change gate went with it: it
         // collected on `Stage__c`, `Target_Close_Date__c`, `Feasibility_Deadline__c`,

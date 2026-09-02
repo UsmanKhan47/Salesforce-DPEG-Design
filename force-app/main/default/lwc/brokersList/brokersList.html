@@ -1,18 +1,79 @@
 <template>
     <lightning-card icon-name="standard:contact">
-        <span slot="title">Brokers ({count})</span>
+        <span slot="title">Brokers ({countLabel})</span>
 
         <template lwc:if={hasError}>
             <div class="bkl-error slds-text-color_error slds-p-horizontal_small slds-p-vertical_x-small">Brokers could not be loaded: {errorMessage}</div>
         </template>
         <template lwc:else>
-            <c-list-datatable
-                key-field="id"
-                data={rows}
-                columns={columns}
-                column-widths-mode="auto"
-                hide-checkbox-column>
-            </c-list-datatable>
+            <!-- ═══════════════════════════════════════════════════════════════════════════
+                 THE FILTER ROW LIVES INSIDE THE CARD BODY, NOT ON THE FLEXIPAGE (design D-8).
+
+                 🔴 `Broker_Hub` IS A **SHARED** PAGE AND A **SHARED** TAB. It is named by
+                 applications/Acquisition.app-meta.xml AND applications/Disposition.app-meta.xml,
+                 and `brokersList` sits in region2 of `flexipage:appHomeTemplateHeaderTwoColumns`
+                 — a HALF-WIDTH column already carrying six columns. Putting these controls in
+                 the card keeps the FlexiPage, the tab and all three permission sets untouched,
+                 which also avoids the measured 2026-08-25 App Builder clobber (a page deploy
+                 replaces the org copy and there is no version history).
+
+                 ⚠ EVERY ACQUISITIONS USER GETS THIS CHANGE IDENTICALLY. There is no way to scope
+                 it to the Disposition app without splitting the page and the tab.
+
+                 ⚠ THE CONTROLS ARE LABELLED, WITH THE LABEL HIDDEN. `variant="label-hidden"`
+                 keeps the accessible name for a screen reader while spending no vertical space in
+                 a half-width column — a `placeholder` alone is NOT an accessible name.
+                 ═══════════════════════════════════════════════════════════════════════════ -->
+            <div class="bkl-filters slds-p-horizontal_small slds-p-bottom_x-small">
+                <lightning-input
+                    class="bkl-search"
+                    type="search"
+                    label="Search brokers by name or firm"
+                    variant="label-hidden"
+                    placeholder="Search name or firm..."
+                    value={searchTerm}
+                    onchange={handleSearch}>
+                </lightning-input>
+                <lightning-combobox
+                    class="bkl-status-filter"
+                    label="Filter by broker status"
+                    variant="label-hidden"
+                    value={statusFilter}
+                    options={statusOptions}
+                    onchange={handleStatusFilter}>
+                </lightning-combobox>
+            </div>
+
+            <!-- ═══════════════════════════════════════════════════════════════════════════
+                 SORTING. `c-list-datatable` extends LightningDatatable, so `sorted-by` /
+                 `sorted-direction` / `onsort` are INHERITED — there is nothing to add to that
+                 subclass and nothing was.
+
+                 🔴 THE COLUMNS SORT ON RAW VALUES, NOT ON WHAT THEY DISPLAY. Four of the six
+                 bind pre-formatted strings, two of which are numbers stringified. The `SORT_KEY`
+                 map in the JS is what redirects each one; read its header before touching a
+                 column definition.
+
+                 ⚠ JEST CANNOT SEE ANY OF THIS. The datatable stub renders nothing, so the suite
+                 proves the sort FUNCTION and the attribute values, never that a sortable header
+                 appears or responds to a click — and on the custom `pill` column that is still an
+                 open browser check inherited from Tranche 2.
+                 ═══════════════════════════════════════════════════════════════════════════ -->
+            <template lwc:if={hasNoMatches}>
+                <div class="bkl-empty slds-p-horizontal_small slds-p-vertical_small" role="status">No brokers match this search.</div>
+            </template>
+            <template lwc:else>
+                <c-list-datatable
+                    key-field="id"
+                    data={rows}
+                    columns={columns}
+                    column-widths-mode="auto"
+                    sorted-by={sortedBy}
+                    sorted-direction={sortedDirection}
+                    onsort={handleSort}
+                    hide-checkbox-column>
+                </c-list-datatable>
+            </template>
         </template>
 
         <div slot="footer" class="view-all-footer">

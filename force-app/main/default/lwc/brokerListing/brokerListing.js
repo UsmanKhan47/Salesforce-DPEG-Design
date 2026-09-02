@@ -135,10 +135,23 @@ const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov
  * measures on the disposition side. Copying it means the two modules cannot disagree about when an
  * offer deadline starts being urgent.
  *
- * ⚠ IT ALSO EQUALS `DispositionTractionService.WEEK_1_DAYS` (7), so it does not contradict the
- * traction pill sitting a few pixels away either. That is a COINCIDENCE OF VALUE, not a derivation:
- * do not "unify" the two by reading one from the other, and if acquisition changes
- * `APPROACHING_DAYS` this constant follows THAT, not the week ladder.
+ * 🔴 IT USED TO EQUAL THE TRACTION LADDER'S FIRST RUNG AND NO LONGER DOES — AND THE VALUE HERE
+ * DELIBERATELY DID NOT MOVE. This block read: *"⚠ IT ALSO EQUALS
+ * `DispositionTractionService.WEEK_1_DAYS` (7), so it does not contradict the traction pill sitting
+ * a few pixels away either. That is a COINCIDENCE OF VALUE, not a derivation: do not 'unify' the
+ * two by reading one from the other, and if acquisition changes `APPROACHING_DAYS` this constant
+ * follows THAT, not the week ladder."*
+ *
+ * On 2026-09-02 the disposition ladder's first rung moved from 7 days to 14 (`WEEK_2_DAYS`, user
+ * decision A2). The coincidence is therefore GONE, and this constant stayed at 7 because it never
+ * derived from that ladder in the first place — it derives from `CallForOffersService
+ * .APPROACHING_DAYS`, an ACQUISITIONS constant that decision A2 did not touch. The instruction
+ * above is unchanged and is now easier to follow: the two numbers are visibly different, so there
+ * is nothing left to be tempted to "unify".
+ *
+ * ⚠ THE PILL AND THE TILE NOW USE DIFFERENT WINDOWS AND THAT IS CORRECT. They measure different
+ * things — this one counts down to a call-for-offers DEADLINE, the pill counts up from a LISTING
+ * DATE. Do not "re-align" them in either direction.
  */
 const DUE_SOON_DAYS = 7;
 
@@ -402,8 +415,36 @@ export default class BrokerListing extends LightningElement {
         // Broker_Listing__c.Days_On_Market__c, so "no listing date" and "listed today" are finally
         // distinguishable. Render the honest dash instead of collapsing back to 0.
         const domValue = l.daysOnMarket == null ? '—' : `${l.daysOnMarket} days`;
+        // ══════════════════════════════════════════════════════════════════════════════════════
+        // 🔴 THE SECOND CLOCK (Tranche 4 item 5, 2026-09-01, decision D-17). TWO NUMBERS, TWO
+        //    QUESTIONS, AND ONLY THE FIRST ONE DRIVES ANYTHING.
+        // ══════════════════════════════════════════════════════════════════════════════════════
+        //   'Days On Market'        how long the PROPERTY has been on the market. Parent-derived,
+        //                           pauses at the first offer, and is the traction band's ONLY
+        //                           input — which is why THIS tile is the one that turns amber.
+        //   'Days with this broker' how long THIS broker has had it. Restarts when Replace Broker
+        //                           appends a new Broker_Listing__c; the marketing clock does not.
+        //
+        // 🔴 ITS COLOUR IS DELIBERATELY NOT TIED TO `isAtRisk`. `daysWithThisBroker` maps
+        // `Broker_Listing__c.Days_On_Market_Live__c`, whose own field header says NOTHING MAY READ
+        // IT TO DRIVE AN ALERT OR ESCALATION. Amber-ing this tile off `isAtRisk` would be
+        // borderline (the flag is still the marketing clock's), but amber-ing it off its OWN value
+        // would be a second escalation ladder on the same card — the exact defect
+        // `BrokerListingController`'s header says was the original one. Neutral, always.
+        //
+        // ⚠ THE DASH IS NOT A ZERO. Null means "this listing row has no start date", which is a
+        // different fact from "this broker started today" — and different again from the dash on
+        // the tile above it, which means "the property has no listing date".
+        //
+        // ⚠ THE TWO CLOCKS SIT SIDE BY SIDE ON ROW 1 OF A **TWO**-COLUMN GRID, which is why they
+        // are ordered before 'List Date' rather than appended after it. `.cards-grid` is left at
+        // `repeat(2, 1fr)` unchanged: widening it to three would re-flow a card that has shipped,
+        // to gain nothing this ordering does not already give.
+        const brokerDaysValue =
+            l.daysWithThisBroker == null ? '—' : `${l.daysWithThisBroker} days`;
         return [
             { key: 'dom',    label: 'Days On Market',       value: domValue,                      iconName: 'utility:clock', iconColor: l.isAtRisk ? '#b45309' : '#5a6b7b' },
+            { key: 'broker', label: 'Days with this broker', value: brokerDaysValue,              iconName: 'utility:user',  iconColor: '#5a6b7b' },
             { key: 'list',   label: 'List Date',            value: this.listDateLabel,            iconName: 'utility:event', iconColor: '#1565c0' }
         ];
     }

@@ -15,17 +15,32 @@
           D1 Approvers UNCHANGED - nikhil.dhanani@usmandpeg.uat + aftab.ali.dpeg.usman@
              avanzasolutions.com, whenMultipleApprovers = FirstResponse, allowDelegate false,
              allowRecall true.
-          D2 REJECT HANDLING IS DROPPED. finalRejectionActions is intentionally ABSENT below -
-             not an oversight. Stage__c never changes on rejection (entry criterion is
-             Stage__c = 'In Progress' and nothing moves it during the pending window, so a
-             Stage__c-keyed automation could not see a rejection even if one were added). On
-             rejection the record simply stays at Stage__c = 'In Progress' / Status__c =
-             'In Progress' and ONLY the approval history records the decision.
+          D2 STAGE/STATUS REJECT HANDLING IS DROPPED - UNCHANGED, BUT SEE THE 2026-09-02 NOTE
+             BELOW. Stage__c never changes on rejection (entry criterion is Stage__c =
+             'In Progress' and nothing moves it during the pending window, so a Stage__c-keyed
+             automation could not see a rejection even if one were added). On rejection the
+             record simply stays at Stage__c = 'In Progress' and ONLY the approval history
+             records the decision.
              🔴 ACCEPTED, DOCUMENTED REGRESSION: Opportunity.Underwriting_Complete__c is no
              longer cleared on reject the way today's (now-inert) UW_Reopen_For_Revision field
              update did. Nothing on this object replaces that behaviour. If the analyst needs
              to rework a rejected underwriting, they edit the record directly (it unlocks on
              rejection under recordEditability = AdminOnly) - there is no automated re-open.
+
+          🔴 UPDATED 2026-09-02, item 1 + item 2 of agent-output/three-gaps-design-2026-09-02.md,
+             ONE COMBINED EDIT to this file:
+               ITEM 1 adds initialSubmissionActions, finalRejectionActions and recallActions -
+               all three fire ONLY Clear_UW_Approval_Pending / Set_UW_Approval_Pending, the new
+               pending-hide UI flag (objects/Underwriting__c/fields/Approval_Pending__c). D2's
+               SUBSTANCE above is UNCHANGED: finalRejectionActions still does NOT move Stage__c
+               or Status__c, and Underwriting_Complete__c is still not cleared on reject. Without
+               a finalRejectionActions entry here, a rejected record would stay flagged pending
+               forever with Submit permanently hidden - worse than the defect item 1 fixes.
+               ITEM 2 (option (a)) REMOVES the UW_Status_Approved action from finalApprovalActions
+               below, replacing it with Clear_UW_Approval_Pending as the second action.
+               Underwriting__c.Status__c is a strict-subset duplicate of Stage__c (see that
+               field's own header before it is deleted); the field deletion itself is a LATER,
+               separate wave gated on Apex classes that reference it compiling clean without it.
           D3 recordEditability = AdminOnly - the Underwriting record LOCKS while pending.
           D4 Opportunity.UW_Approved__c / Underwriting_Status__c / Underwriting_Complete__c
              mirror fields are KEPT and must keep working - done by
@@ -124,7 +139,7 @@
         <label>Principal approves underwriting</label>
         <name>Principal_Review_Step</name>
     </approvalStep>
-    <description>Principal decision to approve this deal underwriting. Entry: Stage equals In Progress. Approval sets Stage to Approved and Status to Approved by Principals; a flow mirrors approval onto the Opportunity. Rejection returns to In Progress for rework.</description>
+    <description>Principal decision to approve this deal underwriting. Entry: Stage equals In Progress. Approval sets Stage to Approved; a flow mirrors approval onto the Opportunity. Rejection returns to In Progress for rework. Submission/approval/rejection/recall each set or clear Approval_Pending__c, which hides Submit for Approval while a decision is outstanding.</description>
     <enableMobileDeviceAccess>false</enableMobileDeviceAccess>
     <entryCriteria>
         <criteriaItems>
@@ -139,14 +154,32 @@
             <type>FieldUpdate</type>
         </action>
         <action>
-            <name>UW_Status_Approved</name>
+            <name>Clear_UW_Approval_Pending</name>
             <type>FieldUpdate</type>
         </action>
     </finalApprovalActions>
     <finalApprovalRecordLock>false</finalApprovalRecordLock>
+    <finalRejectionActions>
+        <action>
+            <name>Clear_UW_Approval_Pending</name>
+            <type>FieldUpdate</type>
+        </action>
+    </finalRejectionActions>
     <finalRejectionRecordLock>false</finalRejectionRecordLock>
+    <initialSubmissionActions>
+        <action>
+            <name>Set_UW_Approval_Pending</name>
+            <type>FieldUpdate</type>
+        </action>
+    </initialSubmissionActions>
     <label>Underwriting Approval</label>
     <processOrder>1</processOrder>
+    <recallActions>
+        <action>
+            <name>Clear_UW_Approval_Pending</name>
+            <type>FieldUpdate</type>
+        </action>
+    </recallActions>
     <recordEditability>AdminOnly</recordEditability>
     <showApprovalHistory>true</showApprovalHistory>
 </ApprovalProcess>

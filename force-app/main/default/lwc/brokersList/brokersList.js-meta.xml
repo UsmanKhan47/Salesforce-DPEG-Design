@@ -3,7 +3,7 @@
     <apiVersion>67.0</apiVersion>
     <isExposed>true</isExposed>
     <masterLabel>Brokers List</masterLabel>
-    <description>Broker Hub list of broker contacts with firm, specialty, listings, offers, volume and status.</description>
+    <description>Broker Hub list of broker contacts with firm, listings, offers, closed volume and status. Sortable on every column and filterable by name, firm or status; the top five of the filtered, sorted list are shown and View All opens the rest.</description>
     <targets>
         <target>lightning__AppPage</target>
         <target>lightning__HomePage</target>

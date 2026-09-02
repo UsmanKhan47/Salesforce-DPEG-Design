@@ -53,10 +53,17 @@
          `Submission_Status__c` is STORED, and `BovAutoSelectionService.reselect` re-ranks a parent
          only on insert / delete / undelete, on one of its six change keys, or on a
          `Property_Asset__c.Target_Sale_Price__c` edit. A FORMULA DEPLOY IS NONE OF THOSE, and
-         neither is a no-op re-save of a BOV row. So an unlocked sale can sit with a new top scorer
-         beside a stale "Selected" pill indefinitely. The one-off repair is
-         `scripts/backfill-bov-reranking.apex`, which is SHIPPED DELIBERATELY UNRUN — read its
-         banner before executing it, because it re-appoints brokers on live records.
+         neither is a no-op re-save of a BOV row — which is worth stating explicitly, because
+         "just touch the records" is the first thing anyone tries and it does nothing at all here.
+         So an unlocked sale can sit with a new top scorer beside a stale "Selected" pill
+         indefinitely.
+         ⚠ NO BACKFILL SCRIPT HAS BEEN WRITTEN, AND ITS ABSENCE IS DELIBERATE AS OF 2026-09-01.
+         The only in-contract repair is a one-off call to the PUBLIC
+         `BovAutoSelectionService.reselect(rows, null)` — a null `priorById` means "always
+         re-rank", per that method's own ApexDoc — chunked by disposition. That is a REAL DML
+         operation on live records that re-appoints brokers, so it is an authorised business step,
+         not a deploy step, and it was left for the user to commission rather than shipped as a
+         file somebody could run by accident. Do not add one without saying so first.
          ✅ A sale locked by an approval (pending, approved OR rejected) or by
          `Is_Manually_Appointed__c` moves for nobody, including that script: the lock is evaluated
          across ALL siblings of the disposition, so a manually-appointed broker is fully protected

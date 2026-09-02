@@ -58,7 +58,7 @@ if ([SELECT COUNT() FROM Opportunity WHERE Name = :N9] == 0) {
 
     update new Opportunity(Id = opp9, StageName = 'Underwriting');
     Underwriting__c uw = [SELECT Id FROM Underwriting__c WHERE Opportunity__c = :opp9 LIMIT 1];
-    update new Underwriting__c(Id = uw.Id, Stage__c = 'Approved', Status__c = 'Approved by Principals',
+    update new Underwriting__c(Id = uw.Id, Stage__c = 'Approved',
         My_Price__c = 30500000, My_Cap_Rate__c = 6.4, Market_Cap_Rate__c = 6.1,
         Underwritten_NOI__c = 1952000, Target_Return__c = 18.2, Hold_Period__c = 6,
         Equity_Required__c = 9150000, Projected_Loan__c = 21350000);

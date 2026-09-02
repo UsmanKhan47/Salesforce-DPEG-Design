@@ -207,13 +207,24 @@
  * service's `reselectForDeleted`, and the new preferred row is ALREADY COMMITTED by then, so the
  * re-rank fills the preferred slot with the right row and there is never an interim winner.
  *
- * 🔴 THE PARENT HOOK IS NOT A NICETY, IT IS THE PRIMARY PATH. The score's 50-point Value term is
- * `BOV_Amount__c / Disposition__r.Property_Asset__r.Target_Sale_Price__c`, so the real sequence on
- * a live sale is: an analyst logs three BOV responses (all score null, nothing is selectable), then
- * LATER a target sale price is typed ON THE PROPERTY ASSET — at which point all three scores
+ * 🔴 THE PARENT HOOK IS NOT A NICETY, IT IS THE PRIMARY PATH. The score's Value term DIVIDES
+ * `BOV_Amount__c` BY `Disposition__r.Property_Asset__r.Target_Sale_Price__c`, so the real sequence
+ * on a live sale is: an analyst logs three BOV responses (all score null, nothing is selectable),
+ * then LATER a target sale price is typed ON THE PROPERTY ASSET — at which point all three scores
  * materialise with ZERO CHILD DML. Without the parent hook no broker is ever auto-selected on such
  * a sale, there may be no further reason to edit a BOV again, and the feature looks broken with no
  * error anywhere.
+ * ⚠ THIS SAID "The score's 50-POINT Value term" UNTIL 2026-09-02. `BOV_Score__c` was re-weighted
+ * on 2026-09-01 (Value 50 / Commission 25 / Speed 25 → Value 40 / Commission 20 / Speed 20 /
+ * Buyer Ready 10 / Known Performer 10), so the weight is 40. 🟢 THE ARGUMENT ABOVE IS UNAFFECTED
+ * AND MUST NOT BE REOPENED ON THE STRENGTH OF THE NEW NUMBER: what makes the parent hook the
+ * primary path is that the term DIVIDES by a field on the GRANDPARENT ASSET, so the score is null
+ * until that field is populated — a property of the divisor and the formula's guard clause,
+ * neither of which has a weight in it. The weight is dropped from the sentence rather than
+ * re-stated, for the reason `reselectForRepricedDispositions` gives at its own copy of this note.
+ * ⚠ The two new 10-point CHECKBOX terms do NOT rescue an unpriced sale — the guard returns null
+ * for the WHOLE formula, and `BOV_Score__c`'s own description says "the two flags cannot make an
+ * unpriced response scoreable". Nothing about "all score null" softened.
  *
  * 🔴 THE HOOK MOVED FROM `Disposition__c` TO `Property_Asset__c` ON 2026-08-25, AND THE OLD FORM
  * MUST NOT COME BACK. It keyed on `Disposition__c.Asking_Price__c` ("Expected Value") until that
@@ -239,6 +250,10 @@
  * whole chunk, never one per asset.
  * 🔴 ZERO-QUERY FAST PATH: a chunk in which no ranking input, status, preferred flag, parent or
  * `Approval_Pending__c` changed returns BEFORE the query, which is what keeps this service
+ * — ⚠ AND "RANKING INPUT" IS A LIST, NOT AN ADJECTIVE: it is the `||` chain in `reselect`, which
+ * gained `Is_Buyer_Ready__c` and `Is_Known_Performer__c` on 2026-09-02 when it turned out they had
+ * been scoring inputs since 2026-09-01 without being on it. That block carries the standing
+ * obligation for anyone re-weighting `BOV_Score__c`; read it before adding a term —
  * invisible to every unrelated feature's 251-record bulk test — the same "an ordinary save costs
  * nothing" contract `BovSubmissionBrokerStampService` and `BovSubmissionSelectionGuardService`
  * already carry on these very contexts.
@@ -402,9 +417,52 @@ public with sharing class BovAutoSelectionService {
             if (submission.Disposition__c == null) {
                 continue; // no parent, no siblings, no invariant
             }
+            // ═════════════════════════════════════════════════════════════════════════════════
+            // 🔴 THE CHANGE KEY. **EVERY INPUT TO `BOV_Score__c` MUST APPEAR HERE.** THAT IS A
+            //    STANDING OBLIGATION ON ANYONE WHO CHANGES THE FORMULA, NOT A ONE-OFF LIST.
+            // ═════════════════════════════════════════════════════════════════════════════════
+            // A field that moves the SCORE but is absent from this list changes the ranking and
+            // triggers NO re-rank. The appointment then sits on a row that is no longer the top
+            // scorer, the comparison matrix visibly re-orders while the Selected pill does not
+            // move, and the only thing that eventually fixes it is an unrelated edit to some
+            // sibling. There is no error, and the user's reasonable conclusion is that the field
+            // they just set is broken.
+            //
+            // 🔴 `Is_Buyer_Ready__c` / `Is_Known_Performer__c` ADDED 2026-09-02, AND THEY ARE THE
+            // PROOF THAT THIS OBLIGATION IS REAL RATHER THAN DECORATIVE. They became scoring
+            // inputs on 2026-09-01 when `BOV_Score__c` was re-weighted (Value 50 / Commission 25 /
+            // Speed 25 -> Value 40 / Commission 20 / Speed 20 / Buyer Ready 10 / Known Performer
+            // 10) and were not added here, so for one day ticking either flag moved a score by 10
+            // points and moved no appointment. That defeats story 20's headline behaviour
+            // ("the broker with the best overall fit is marked Status = Selected") in the most
+            // confusing available way, because those two flags exist SOLELY to express "best fit"
+            // as distinct from "highest bid" — the one thing they were added to do was the one
+            // thing that did not happen.
+            //
+            // ⚠ THE LIST IS NOT MAINTAINED BY NEGLECT AND THAT IS WHY THE MISS IS INSTRUCTIVE:
+            // `Is_Preferred_Broker__c` and `Approval_Pending__c` were each added deliberately when
+            // they started mattering. The 2026-09-01 re-weighting simply did not look here. If you
+            // are adding, removing or re-weighting a term in `BOV_Score__c`, THIS LIST IS PART OF
+            // THAT CHANGE.
+            //
+            // ⚠ ALL SIX SCORING/STATE FIELDS ARE SAFE TO COMPARE WITH `!=`. The two new ones are
+            // Checkboxes with `defaultValue false`, so they are never null on a saved row; the
+            // others were already being compared this way. And this runs in TRIGGER CONTEXT, where
+            // every field is loaded — so no selector needed widening for this, and
+            // `selectSelectionContextByDispositionIds` must NOT be widened to "support" it. The
+            // ranking downstream reads `BOV_Score__c`, a FORMULA that already incorporates both
+            // flags, so there is no new FLS surface anywhere in this change.
+            //
+            // 🔴 THIS KEY DECIDES ONLY WHETHER TO **LOOK**, NEVER WHETHER TO **WRITE**. It cannot
+            // route around the appointment lock: `planFor` re-checks `Approval_Pending__c`,
+            // `Approval_Status__c` and `Is_Manually_Appointed__c` across ALL siblings and returns
+            // zero writes if any leg is set. Adding a field here can therefore cost a QUERY on a
+            // locked sale, never a WRITE. `tickingAFlagOnAManuallyAppointedSale_...` pins it.
             if (prior.BOV_Amount__c != submission.BOV_Amount__c
                 || prior.Commission_Rate__c != submission.Commission_Rate__c
                 || prior.Days_To_Market__c != submission.Days_To_Market__c
+                || prior.Is_Buyer_Ready__c != submission.Is_Buyer_Ready__c
+                || prior.Is_Known_Performer__c != submission.Is_Known_Performer__c
                 || prior.Submission_Status__c != submission.Submission_Status__c
                 || prior.Is_Preferred_Broker__c != submission.Is_Preferred_Broker__c
                 || prior.Approval_Pending__c != submission.Approval_Pending__c) {
@@ -422,13 +480,79 @@ public with sharing class BovAutoSelectionService {
      * 🔴 IT WAS THE `Disposition__c` HOOK UNTIL 2026-08-25, KEYED ON `Asking_Price__c`.
      *    THE NAME IS UNCHANGED ON PURPOSE; THE OBJECT IT WATCHES IS NOT.
      * ══════════════════════════════════════════════════════════════════════════════════════════
-     * `BOV_Score__c`'s 50-point Value term divides by
+     * `BOV_Score__c`'s 40-point Value term divides by
      * `Disposition__r.Property_Asset__r.Target_Sale_Price__c` as of that date — `Asking_Price__c`
      * ("Expected Value") is retired from the disposition flow. A hook watching the retired field
      * would still COMPILE (the field was not deleted — additive retirement) and would still be
      * green in every test that pokes it, while never firing on the event that actually moves a
      * score. That is worse than having no hook at all, so the whole hook moved rather than being
      * duplicated.
+     *
+     * ⚠ "50-point Value term" UNTIL 2026-09-02 — THIS IS THE ANCHOR COPY OF THAT RETRACTION AND
+     * THE CLASS HEADER POINTS AT IT. `BOV_Score__c` was re-weighted on 2026-09-01: Value 50 /
+     * Commission 25 / Speed 25 became Value 40 / Commission 20 / Speed 20 / Buyer Ready 10 /
+     * Known Performer 10, so the Value term is worth 40. EVERY existing score changed, including
+     * on rows where neither flag is set — the field XML says so and is the authority.
+     * 🟢 THE HOOK'S ARGUMENT SURVIVES THE RESCALE COMPLETELY, AND IT IS WORTH SAYING SO BECAUSE
+     * THIS PARAGRAPH IS WHERE SOMEONE WOULD COME TO RE-DERIVE IT: everything above turns on WHICH
+     * FIELD the Value term divides by (the asset's `Target_Sale_Price__c`, not the disposition's
+     * retired `Asking_Price__c`), and a coefficient is not a divisor. The re-weighting did not
+     * move the basis, did not touch the `MIN(..., 1.10)` cap, and did not change which save event
+     * moves a score. 🔴 DO NOT re-point this hook, re-scope it, or add a second one on the
+     * strength of the new weighting — nothing about it changed.
+     * ⚠ The two NEW terms are Checkboxes ON THE SUBMISSION, not on the asset, so they add no new
+     * PARENT-side event and this hook needs no change.
+     *
+     * 🔴 THE **CHILD** HOOK HAD A GAP THE RE-WEIGHTING OPENED. FOUND 2026-09-02 while correcting
+     * the coefficient above, and CLOSED THE SAME DAY with sign-off — the description below is kept
+     * in the past tense rather than deleted, because it is the worked example behind the standing
+     * obligation now recorded at the change key itself.
+     * `reselect`'s change-key (in this class, the `prior.X != submission.X` chain) lists exactly:
+     * `BOV_Amount__c`, `Commission_Rate__c`, `Days_To_Market__c`, `Submission_Status__c`,
+     * `Is_Preferred_Broker__c`, `Approval_Pending__c`. `Is_Buyer_Ready__c` and
+     * `Is_Known_Performer__c` ARE NOT IN IT — they were added to the SCORE on 2026-09-01 and not
+     * to this list.
+     * ⇒ Ticking either flag moved that submission's `BOV_Score__c` by 10 points and triggered NO
+     * re-rank. A runner-up promoted to top scorer by a flag stayed a Backup until some OTHER field
+     * on some sibling happened to change. Silent, and it looked like the flag "did nothing".
+     * ⚠ The list is not stale through neglect — `Is_Preferred_Broker__c` and `Approval_Pending__c`
+     * were both added to it deliberately when they started mattering. These two were simply missed
+     * by the re-weighting, which is why this is worth a paragraph rather than a shrug.
+     * ✅ THE FIX WAS APPENDING THE TWO FIELDS TO THE CHANGE KEY, and one thing that LOOKED like a
+     * blocker was not one: `selectSelectionContextByDispositionIds` does NOT select either flag
+     * (checked — it selects `Is_Manually_Appointed__c`, `Is_Preferred_Broker__c`,
+     * `Is_System_Selected__c`), and it does not need to. The change key runs on TRIGGER CONTEXT,
+     * where every field is loaded, and the ranking downstream reads `BOV_Score__c`, a FORMULA that
+     * already incorporates both flags. No selector widening, no new FLS surface. 🔴 DO NOT widen
+     * that selector "to support" this — it is `WITH SYSTEM_MODE` but its field list is still a
+     * contract, and neither flag has any reader here.
+     *
+     * ── THE COST, WHICH IS THE PART THAT NEEDED SIGN-OFF ──────────────────────────────
+     * A save that CHANGES either flag moves from (0 SOQL, 0 DML) to the SAME cost as any other
+     * scoring-input change already on the key: ONE selection query, and ONE selection write only
+     * if the ranking actually moved. It is CONSTANT per chunk, not per record, because it joins an
+     * existing `||` chain feeding one `Set<Id>` and one `reselectFor` call — no new query, no new
+     * statement, no new loop. A save that does NOT touch either flag is completely unaffected and
+     * still takes the zero-query fast path.
+     * 🟢 NO EXISTING BUDGET ASSERTION IN `BovAutoSelectionServiceTest` CHANGES VALUE, and that is
+     * a checkable claim rather than an expectation: the new terms can only add cost on a save that
+     * CHANGES a flag, and NO test in this repo writes either flag — the only writers anywhere are
+     * `scripts/seed-disposition-lifecycle-04-bovs.apex` and `-01-advance.apex`, and both set them
+     * at INSERT, which already took the unconditional `prior == null` re-rank branch. Every
+     * existing bound is therefore left EXACTLY as it was; none was widened.
+     * ⚠ ONE COST IS GENUINELY NEW AND IS ACCEPTED: on a LOCKED sale a flag tick now costs ONE
+     * QUERY and still zero DML — the key fires, `planFor` finds a lock leg and returns no writes.
+     * That is the correct shape (look, then refuse to write) and is pinned by
+     * `tickingAFlagOnAManuallyAppointedSale_doesNotMoveTheAppointment`.
+     *
+     * ⚠ FIRST LIVE EFFECT ON PRODUCTION DATA. `usman-dpeg` holds 4 BOV rows on DISP-0041. Until
+     * now these two flags have never changed an appointment on any real record — they moved the
+     * score and nothing else. After this change, editing either flag on those rows WILL re-rank
+     * that sale for real and may move the Selected pill. That is the intended behaviour and the
+     * whole point of the fix; it is written down because it is the first time these fields do
+     * anything, and a reviewer looking at DISP-0041 afterwards should not read a correct re-rank
+     * as an incident. The appointment lock still applies: if that sale has an approval in flight,
+     * an approval decision, or a manually-appointed broker, nothing moves.
      *
      * 🔴 MANDATORY, NOT OPTIONAL, AND THE CLASS HEADER ARGUES IT IN FULL: `BOV_Score__c` is
      * GRANDPARENT-DERIVED, so pricing an asset AFTER its sale's BOV responses arrived re-ranks

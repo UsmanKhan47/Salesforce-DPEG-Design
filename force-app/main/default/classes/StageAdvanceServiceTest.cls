@@ -62,8 +62,24 @@ private class StageAdvanceServiceTest {
             'Begin Review advances New -> Under Review');
     }
 
+    /**
+     * 🔴 RENAMED AND RE-SUBJECTED 2026-09-02. This method was
+     * `advanceMovesLoiToPsaAndPsaToClosedWon` and asserted `PSA -> Closed Won`. That hop no longer
+     * exists: `NEXT_STAGE` was repointed to `'Under Contract (PSA)' => 'About to Close'` when
+     * `Transaction_Closed_Before_Closed_Won` made a Transaction mandatory before a close, so the
+     * old assertion was not a fixture problem to be patched around — the BEHAVIOUR under test
+     * changed. Renaming it is the point: a method called `…PsaToClosedWon` that asserts
+     * `About to Close` would lie to every future reader.
+     *
+     * ⚠ The PSA hop now has a real side effect the old one did not: entering `'About to Close'`
+     * runs `ContractExecutionService.openTransactionsOnAboutToClose`, which opens ONE
+     * `Transaction__c` and (because `signContract` stamps `Contract_Executed_Date__c`) arms the
+     * Day-0 checklist fan-out that drains at `Test.stopTest()`. That is production behaviour, not
+     * fixture noise, and the second assertion below pins it — it is now the only place in this
+     * class that proves the repointed hop reaches the stage that actually opens a transaction.
+     */
     @isTest
-    static void advanceMovesLoiToPsaAndPsaToClosedWon() {
+    static void advanceMovesLoiToPsaAndPsaToAboutToClose() {
         Opportunity loiDeal = newOpp('LOI');
         Opportunity psaDeal = newOpp('Under Contract (PSA)');
 
@@ -105,8 +121,24 @@ private class StageAdvanceServiceTest {
 
         Assert.areEqual('Under Contract (PSA)',
             [SELECT StageName FROM Opportunity WHERE Id = :loiDeal.Id].StageName, 'LOI -> PSA');
-        Assert.areEqual('Closed Won',
-            [SELECT StageName FROM Opportunity WHERE Id = :psaDeal.Id].StageName, 'PSA -> Closed Won');
+        Assert.areEqual('About to Close',
+            [SELECT StageName FROM Opportunity WHERE Id = :psaDeal.Id].StageName,
+            'PSA -> About to Close (repointed 2026-09-02; it was PSA -> Closed Won until the '
+            + 'transaction gate made a Transaction mandatory before a close)');
+
+        // The reason the repoint was made, asserted rather than assumed: this hop is what opens
+        // the Transaction the Closed Won gate now demands.
+        Assert.areEqual(1,
+            [SELECT COUNT() FROM Transaction__c WHERE Opportunity__c = :psaDeal.Id],
+            'Entering About to Close opens exactly one Transaction — without it the deal could '
+            + 'never reach Closed Won, which is the whole point of routing PSA through here');
+        // WITH SYSTEM_MODE: an ungranted field is absent from the schema, so a plain SELECT
+        // throws "No such column" (measured on validate 0Afiw000000VDSPCA4, 2026-09-02).
+        Assert.isTrue(
+            [SELECT Has_Open_Transaction__c FROM Opportunity WHERE Id = :psaDeal.Id
+             WITH SYSTEM_MODE].Has_Open_Transaction__c,
+            'and DealTransactionGateService stamps the parent from that insert, so the deal '
+            + 'correctly reads "has an open transaction" and is NOT yet closable');
     }
 
     /**

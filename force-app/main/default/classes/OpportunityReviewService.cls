@@ -482,11 +482,26 @@ public with sharing class OpportunityReviewService {
 
         // Entering Underwriting opens the Underwriting record (same primary-stamp
         // pattern as the Contract Review at 'Under Contract (PSA)').
+        //
+        // ⚠ 2026-09-02 — this constructor used to also seed `Status__c = 'In Progress'`, and it was
+        // the ONLY production writer of that field anywhere (a live-org MetadataComponentDependency
+        // sweep found it; the repo-only audit that preceded the change did not). It was dropped
+        // rather than repointed, and that is a deliberate judgement, not an oversight:
+        //   - it was NOT a state transition. It seeded a brand-new row in the same constructor that
+        //     already sets `Stage__c = 'Requested'`, in the same DML, on the same record;
+        //   - `'In Progress'` was `Status__c`'s own `<default>true</default>` value, so the write
+        //     restated what the platform would have stored anyway;
+        //   - `Stage__c = 'Requested'` is the STRICTLY MORE PRECISE statement of the same state.
+        //     `Status__c` had no 'Requested' value at all, so a requested-but-not-started
+        //     underwriting read as 'In Progress' — the one place the two fields disagreed, and the
+        //     disagreement was `Status__c` being wrong.
+        // There is therefore no `Stage__c` write to preserve here; the equivalent one is the line
+        // below and it is unchanged.
         if (!uwOpps.isEmpty()) {
             List<Underwriting__c> uwToInsert = new List<Underwriting__c>();
             for (Id oppId : uwOpps) {
                 uwToInsert.add(new Underwriting__c(
-                    Opportunity__c = oppId, Stage__c = 'Requested', Status__c = 'In Progress'));
+                    Opportunity__c = oppId, Stage__c = 'Requested'));
             }
             insert uwToInsert;
             List<Opportunity> uwStamps = new List<Opportunity>();

@@ -7,6 +7,12 @@
  * P4 cleanup wave E (Disposition module). Consumers:
  *   - BovController.getSubmissions (the broker-outreach matrix on the Disposition
  *     record page)                                    -> selectByDispositionId
+ *   - BovController.countComparableResponsesFailSoft, the "N comparable responses"
+ *     badge on the BOV Outreach tile (2026-09-01,
+ *     Tranche 4 item 2)                               -> selectByDispositionId
+ *     ⚠ THE SECOND CONSUMER OF THAT ONE METHOD, AND THE TWO FAIL DIFFERENTLY. Read
+ *     the method's own javadoc before widening its SELECT — the blast-radius
+ *     argument there is now about BOTH callers, not just the matrix.
  *   - DispositionApprovalService.submitForApproval, the `BOV Outreach` branch
  *     (2026-08-19 flow redesign)                      -> selectSelectedByDispositionId
  *   - BovSubmissionService.replaceSelectedBroker
@@ -115,7 +121,10 @@ public with sharing class BovSubmissionSelector {
 
     /**
      * All BOV submissions for one Disposition, highest-scoring first — backs the
-     * broker-outreach matrix (BovController.getSubmissions).
+     * broker-outreach matrix (BovController.getSubmissions) AND, since 2026-09-01,
+     * the BOV Outreach tile's comparable-response badge
+     * (BovController.countComparableResponsesFailSoft). TWO consumers, not one; see
+     * the blast-radius block below, which is written about both.
      *
      * BOV_Score__c is a Number, so the ORDER BY is a numeric sort (DESC NULLS
      * LAST); unscored submissions fall to the bottom. The field list is the exact
@@ -136,6 +145,36 @@ public with sharing class BovSubmissionSelector {
      * DEPLOY-ORDER PREREQUISITE: `DPEG_Disposition_Edit` and `DPEG_Disposition_View` must be LIVE
      * before this class. A Metadata-API-deployed custom field arrives with NO FLS for anyone,
      * System Administrator included.
+     *
+     * ── 🔴 A SECOND CALLER SINCE 2026-09-01, AND IT FAILS IN A COMPLETELY DIFFERENT WAY ────────
+     * ⚠ THE PARAGRAPH ABOVE WAS WRITTEN WHEN `getSubmissions` WAS THE ONLY CONSUMER AND IT
+     * ARGUES THE ENTIRE FLS RISK FROM THAT ONE CALLER'S BLAST RADIUS. That is no longer the whole
+     * picture and the missing half is NOT a smaller version of the same thing.
+     * `BovController.countComparableResponsesFailSoft` (Tranche 4 item 2) reuses THIS read to
+     * count the rows the comparison matrix would render, deliberately — the matrix's exclusion
+     * rule (`isPreferred !== true`) lives in `c/bovComparisonMatrix._visible`, and counting the
+     * rows the matrix is FED is the only way the badge cannot drift from the rows the matrix
+     * SHOWS. Read that method's header for the full argument.
+     *
+     * THE TWO FAILURE MODES, SIDE BY SIDE, BECAUSE ONLY ONE OF THEM IS LOUD:
+     *   `getSubmissions`                     -> the QueryException reaches the outer catch, becomes
+     *                                           READ_FAILURE_MESSAGE, and THE ENTIRE COMPARISON
+     *                                           MATRIX DISAPPEARS. Visible, complained about,
+     *                                           diagnosed the same day.
+     *   `countComparableResponsesFailSoft`   -> the QueryException is swallowed by that method's
+     *                                           OWN narrow try/catch (mandatory there: without it
+     *                                           the whole BOV Outreach TILE would blank), the count
+     *                                           degrades to null, and the badge simply DOES NOT
+     *                                           RENDER. 🔴 SILENT. Nobody sees an error, nobody
+     *                                           sees a wrong number, and nobody sees the badge —
+     *                                           and a badge that has never been present for a
+     *                                           given persona is indistinguishable from a badge
+     *                                           that is correctly hidden because the count is low.
+     *
+     * ⇒ WIDENING THIS SELECT NOW COSTS TWO THINGS AND YOU WILL ONLY BE TOLD ABOUT ONE. Do not
+     * reason about it from the matrix alone. The permission-set prerequisite above is the fix for
+     * BOTH, and it is the fix for the quiet one too — there is no fail-soft to lean on, because the
+     * fail-soft IS the failure here.
      * ⚠ CHECKED, NOT ASSUMED (2026-08-24): those two sets are the ONLY permission sets in the repo
      * carrying any `BOV_Submission__c` field permission at all, and both grant this field
      * `readable = true`. `DPEG_Admin_Access` carries ZERO BOV field grants, so it could not read

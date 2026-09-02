@@ -331,9 +331,23 @@ public with sharing class DispositionApprovalService {
      *
      * ── WHY ZERO IS REFUSED TOO, AND WHERE THAT COMES FROM ───────────────────
      * Not an invented rule: `BOV_Submission__c.BOV_Score__c`'s own guard returns **null** for a
-     * blank OR ZERO OR NEGATIVE basis, because the score's 50-point value dimension divides by it.
+     * blank OR ZERO OR NEGATIVE basis, because the score's value dimension DIVIDES BY IT.
      * A zero target sale price satisfies "populated" and still blanks every BOV score on the sale,
      * so `<= 0` is refused with the same message. A currency of 0 is not a price.
+     *
+     * ⚠ THIS READ "the score's 50-point value dimension" UNTIL 2026-09-02. `BOV_Score__c` was
+     * re-weighted on 2026-09-01 and the Value dimension is now worth 40, not 50.
+     * 🟢 THE GATE'S ARGUMENT IS COMPLETELY UNAFFECTED and must not be reopened on the strength of
+     * the new number: what refuses a zero basis is the DIVISION and the formula's own guard
+     * clause, neither of which has a weight in it. The weight is dropped from the sentence rather
+     * than restated for that reason.
+     * 🔴 AND THE RE-WEIGHTING MAKES THE "blanks EVERY BOV score" CLAIM STRONGER, NOT WEAKER —
+     * WORTH STATING, BECAUSE THE OBVIOUS INFERENCE FROM THE NEW FORMULA IS THE WRONG ONE. The two
+     * new terms (Buyer Ready 10, Known Performer 10) do NOT divide by the basis, so a reader may
+     * reasonably assume a flagged response still scores 20 on an unpriced asset and that this gate
+     * is therefore over-strict now. It does not: `BOV_Score__c`'s guard returns null for the WHOLE
+     * formula, and that field's own description says so in terms — "the two flags cannot make an
+     * unpriced response scoreable". Read the field XML before relaxing this gate.
      *
      * ⚠ IT NAMES THE ON-SCREEN LABEL, NOT the API name, per this class's stated convention —
      * "Target Sale Price", which is `Target_Sale_Price__c`'s `<label>` on `Property_Asset__c`.

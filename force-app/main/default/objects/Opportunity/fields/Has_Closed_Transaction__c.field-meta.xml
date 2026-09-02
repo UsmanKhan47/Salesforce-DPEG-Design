@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY. A comment placed ABOVE
+        <CustomField> breaks `sf` deploy at source conversion with a misleading
+        "unable to find matching parent xml file" error.
+
+        NEW 2026-09-02. Sibling of Has_Open_Transaction__c — read that field's own comment for the
+        full two-checkbox rationale (why two, why Checkbox and not a count). This comment states
+        only what differs for this half of the pair.
+
+        =====================================================================================
+        THE STATE TABLE, REPEATED FOR THIS FIELD'S OWN RECORD
+        =====================================================================================
+            Has_Open_Transaction__c | Has_Closed_Transaction__c | meaning                  | Closed Won?
+            ========================|===========================|==========================|============
+            false                   | false                     | no Transaction at all    | REFUSED
+            true                    | (either)                  | at least one still open  | REFUSED
+            false                   | true                      | every Transaction closed | ALLOWED
+
+        This field alone can never distinguish "no Transaction" from "transaction not yet closed" —
+        both read false here. That is exactly why it does not stand alone: the validation rule
+        that reads it also reads Has_Open_Transaction__c, and the false/false row is what makes
+        the gate fail CLOSED for a deal that never opened a Transaction at all.
+
+        =====================================================================================
+        WHO WRITES IT / WHO READS IT / DEPLOY ORDER
+        =====================================================================================
+        Same writer, same deploy-order constraint, same FLS matrix as Has_Open_Transaction__c —
+        see that field's comment. In one line: DealTransactionGateService.recalculate via
+        TransactionTriggerHandler, SYSTEM_MODE DML, not a monotonic latch (delete/undelete
+        recompute it), read-only FLS in DPEG_Acquisition_View, DPEG_Acquisition_Edit and
+        DPEG_Opportunity_View, must land with or before the Apex that references it.
+
+        'Closed' here means Transaction__c.Status__c = 'Closed', deliberately NOT Stage__c =
+        'Closed' — see DealTransactionGateService.cls's class header ("WHAT COUNTS AS CLOSED") for
+        why Status__c is the correct key (Transaction_Complete_Close and
+        Transaction_Stage_Closed_Sets_Status both key on Status__c, and repointing either onto
+        Stage__c is an explicit prior user decision NOT to make).
+
+        ⚠ DO NOT HAND-EDIT. Read-only FLS is the only control, matching
+        Underwriting__c.Approval_Pending__c's precedent.
+
+        @see force-app/main/default/classes/DealTransactionGateService.cls
+        @see force-app/main/default/objects/Opportunity/fields/Has_Open_Transaction__c.field-meta.xml
+        @see force-app/main/default/objects/Opportunity/validationRules/Transaction_Closed_Before_Closed_Won.validationRule-meta.xml
+        @see agent-output/three-gaps-design-2026-09-02.md (item 3)
+    -->
+    <fullName>Has_Closed_Transaction__c</fullName>
+    <defaultValue>false</defaultValue>
+    <description>SYSTEM FIELD - DO NOT HAND-EDIT. TRUE when at least one of this deal&apos;s Transaction__c records has Status__c = &apos;Closed&apos;. Maintained by DealTransactionGateService.recalculate, called from TransactionTriggerHandler on Transaction__c insert/update/delete/undelete. A Checkbox, not a count, because a Number field is blank (not zero) until touched and Count__c = 0 evaluates FALSE when blank - a count-based gate would fail OPEN for every grandfathered deal, the opposite of the fail-closed decision this flag enforces. Not a monotonic latch: delete and undelete both trigger a recompute, so this can move back to false. Read together with Has_Open_Transaction__c by Transaction_Closed_Before_Closed_Won; false/false means no Transaction exists at all.</description>
+    <inlineHelpText>Ticked automatically once at least one of this deal&apos;s Transactions has reached Status = Closed. Maintained by automation; cannot be edited by hand.</inlineHelpText>
+    <label>Has Closed Transaction</label>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Checkbox</type>
+</CustomField>

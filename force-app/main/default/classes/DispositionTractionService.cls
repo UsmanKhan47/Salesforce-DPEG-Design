@@ -4,41 +4,89 @@
  * ladder that used to live inside `BrokerListingController.getListing`.
  *
  * ═══════════════════════════════════════════════════════════════════════════
- * 1. THE CLOCK IS SIX WEEKS, WITH RUNGS AT WEEK 1, WEEK 4 AND WEEK 6
- *    (user decision, 2026-08-21 — THIS OVERRIDES `DPEG-Stage-by-Stage.docx`)
+ * 1. THE CLOCK IS SIX WEEKS, WITH RUNGS AT WEEK 2, WEEK 4 AND WEEK 6
+ *    (user decision A2, 2026-09-02 — BA story 30. THIS IS THE FOURTH REVISION
+ *     OF THESE THRESHOLDS AND `DPEG-Stage-by-Stage.docx` IS NOW **TWO**
+ *     REVISIONS OUT OF DATE.)
  * ═══════════════════════════════════════════════════════════════════════════
- * 🔴 RETRACTION, NOT A DELETION. What this block said until 2026-08-21 is quoted below in full,
- * because the reasoning was sound and the source it cites is real — it was simply overruled by the
- * client, who owns the process. A future reader who finds the docx and the code disagreeing needs
- * to be able to see that the disagreement was decided, not overlooked.
+ * 🔴 RETRACTION IN PLACE, NOT A DELETION — TWICE OVER NOW. Every prior version of this block is
+ * quoted below rather than overwritten, because each one's reasoning was sound and each was
+ * OVERRULED rather than found wrong. A future reader who finds the docx, the deployed Path
+ * guidance and this file all disagreeing needs to be able to see that every disagreement was
+ * DECIDED, not overlooked. 🔴 THE NEXT PERSON TO CHANGE THESE NUMBERS MUST ADD A FIFTH QUOTED
+ * BLOCK AND NAME THE DECISION. Re-deriving them from any document is how this file got here.
  *
- *   RETRACTED — was: *"1. THE CLOCK IS 60 DAYS WITH A 30-DAY CHECKPOINT (D27.1 / D28-Q2).
- *   `docs/DPEG-Stage-by-Stage.docx` Part 2 line 213: 'The property is given about two months on the
- *   market. If there is no traction within the first month — no offers and no real interest — the
- *   team discusses it internally and decides whether to change the broker.' D27.1 made the document
- *   authoritative over the deployed 6-week Path guidance. … ½ × 60 = 30 TRACTION_CHECKPOINT_DAYS,
- *   ⅔ × 60 = 40 REVIEW_OVERDUE_DAYS, 1 × 60 = 60 MARKETING_PERIOD_DAYS … D28 also notes this is the
- *   SECOND time these numbers have been disputed; a third revision is the point at which to
- *   revisit, not before."*
+ *   RETRACTED 2026-09-02 — the 2026-08-21 block said, in full:
+ *
+ *     *"1. THE CLOCK IS SIX WEEKS, WITH RUNGS AT WEEK 1, WEEK 4 AND WEEK 6 (user decision,
+ *     2026-08-21 — THIS OVERRIDES `DPEG-Stage-by-Stage.docx`) … This was the THIRD dispute, which
+ *     is the condition the retracted text itself set for revisiting. The user settled it on
+ *     2026-08-21: **Week 1 / Week 4 / Week 6 wins, and it overrides `DPEG-Stage-by-Stage.docx`
+ *     Part 2 line 213.** The document is not 'reconciled' or reinterpreted here — it is overridden,
+ *     deliberately and on the record, by the client whose process it describes. The docx itself is
+ *     unchanged and now disagrees with this file; that is a documentation debt to settle in the
+ *     document, not a licence to re-derive 60 days from it.
+ *       7  WEEK_1_DAYS   the first check-in
+ *       28 WEEK_4_DAYS   the at-risk mark — the ONE label the user gave verbatim ('Week 4 — At Risk')
+ *       42 WEEK_6_DAYS   the end of the marketing period, and MARKETING_PERIOD_DAYS
+ *     ⚠ NONE OF THE THREE IS DERIVED. All three are given numbers, so no ratio argument survives
+ *     from the retracted text and a future revision cannot claim one threshold is 'the derived
+ *     one'."*
+ *
+ *   …and the block IT retracted, from before 2026-08-21, said:
+ *
+ *     *"1. THE CLOCK IS 60 DAYS WITH A 30-DAY CHECKPOINT (D27.1 / D28-Q2).
+ *     `docs/DPEG-Stage-by-Stage.docx` Part 2 line 213: 'The property is given about two months on
+ *     the market. If there is no traction within the first month — no offers and no real interest —
+ *     the team discusses it internally and decides whether to change the broker.' D27.1 made the
+ *     document authoritative over the deployed 6-week Path guidance. … ½ × 60 = 30
+ *     TRACTION_CHECKPOINT_DAYS, ⅔ × 60 = 40 REVIEW_OVERDUE_DAYS, 1 × 60 = 60
+ *     MARKETING_PERIOD_DAYS … D28 also notes this is the SECOND time these numbers have been
+ *     disputed; a third revision is the point at which to revisit, not before."*
+ *
+ * ── WHAT CHANGED ON 2026-09-02, AND WHAT DID NOT ────────────────────────────
+ * EXACTLY ONE NUMBER MOVED: the FIRST rung, from **7 days (Week 1)** to **14 days (Week 2)**.
+ * `WEEK_4_DAYS` (28) and `WEEK_6_DAYS` (42) are untouched, and so is `MARKETING_PERIOD_DAYS`.
+ * The disputed question was only ever "how long before the first broker check-in is due", and the
+ * answer is now two weeks.
  *
  * ── WHAT DECIDED IT ─────────────────────────────────────────────────────────
- * This was the THIRD dispute, which is the condition the retracted text itself set for revisiting.
- * The user settled it on 2026-08-21: **Week 1 / Week 4 / Week 6 wins, and it overrides
- * `DPEG-Stage-by-Stage.docx` Part 2 line 213.** The document is not "reconciled" or reinterpreted
- * here — it is overridden, deliberately and on the record, by the client whose process it describes.
- * The docx itself is unchanged and now disagrees with this file; that is a documentation debt to
- * settle in the document, not a licence to re-derive 60 days from it.
+ * User decision **A2, taken at Gate 1 on 2026-09-02**, against BA story 30 (the broker check-in
+ * clock). It was confirmed a second time in the same session after the justification below was
+ * corrected. The 2026-08-21 block's own escalation clause — "a third revision is the point at
+ * which to revisit" — has now been passed twice; this is the FOURTH revision and it is recorded as
+ * a DECISION rather than derived from any source, which is what that clause was asking for.
  *
- *   7  WEEK_1_DAYS   the first check-in
+ * 🔴 AND THE JUSTIFICATION THE REQUEST ARRIVED WITH WAS WRONG, WHICH IS WORTH MORE THAN THE CHANGE
+ * ITSELF. The change was proposed as affecting "the badge and the `Broker Alert Due` KPI". It does
+ * NOT affect that KPI, and nothing in this class ever could. `reports/Dispositions/Broker_Alert_Due`
+ * filters on `Disposition__c.Next_Broker_Checkin__c NEXT_N_DAYS:7` — a bare `<type>Date</type>`
+ * field with no formula, no default and, on a repo-wide grep, NO WRITER anywhere in Apex, Flow,
+ * trigger or process (only two seed scripts assign it). It is hand-maintained, and as of 2026-09-02
+ * it carries an `inlineHelpText` saying so. The rungs and that KPI are ENTIRELY DECOUPLED.
+ * ⇒ Changing the first rung changes **the badge, the rung panel and the detail sentence, and
+ * nothing else in the org.** Do not "fix" the KPI to match; the detection job that would maintain
+ * that field was DEFERRED at the same gate (G-3).
+ *
+ *   14 WEEK_2_DAYS   the first check-in  (was 7 / WEEK_1_DAYS until 2026-09-02)
  *   28 WEEK_4_DAYS   the at-risk mark — the ONE label the user gave verbatim ("Week 4 — At Risk")
  *   42 WEEK_6_DAYS   the end of the marketing period, and MARKETING_PERIOD_DAYS
  *
  * ⚠ NONE OF THE THREE IS DERIVED. All three are given numbers, so no ratio argument survives from
- * the retracted text and a future revision cannot claim one threshold is "the derived one".
+ * either retracted text and a future revision cannot claim one threshold is "the derived one".
+ * ⚠ THE FIRST TWO RUNGS ARE NOW 14 DAYS APART RATHER THAN 21, AND THAT IS THE DECISION, NOT AN
+ * ARTEFACT. Week 2 -> Week 4 -> Week 6 is an even fortnightly ladder; Week 1 -> Week 4 -> Week 6
+ * was not. Nothing in the code depends on the spacing.
  *
  * ⚠ THE NUMBERS ARE STILL HARDCODED ON PURPOSE. Configurable thresholds (Custom Metadata / a Custom
- * Setting) were offered at Gate 1 and NOT chosen — D28/Q2, unaffected by this revision. Do not
- * "improve" them into config.
+ * Setting) were offered at Gate 1 and NOT chosen — D28/Q2, unaffected by this revision or the
+ * previous one. Do not "improve" them into config.
+ *
+ * 🔴 DO NOT TOUCH `const DUE_SOON_DAYS = 7` IN `lwc/brokerListing/brokerListing.js`. Its own header
+ * states that it is `CallForOffersService.APPROACHING_DAYS` — an ACQUISITIONS constant — and that
+ * its equality with the old first rung was "a COINCIDENCE OF VALUE, not a derivation". As of
+ * 2026-09-02 the coincidence is GONE (7 vs 14), which removes the temptation rather than creating
+ * one; the two were never linked and must not now be "re-aligned" in either direction.
  *
  * ═══════════════════════════════════════════════════════════════════════════
  * 2. 🔴 THE CLOCK PAUSES AT THE FIRST OFFER (user decision, 2026-08-21 — NEW)
@@ -183,9 +231,15 @@
  */
 public with sharing class DispositionTractionService {
 
-    /** Week 1 — the first check-in. Given, not derived (see the class header). */
+    /**
+     * Week 2 — the first check-in. Given, not derived (see the class header).
+     *
+     * ⚠ WAS `WEEK_1_DAYS = 7` UNTIL 2026-09-02 (user decision A2, BA story 30). The CONSTANT was
+     * renamed as well as re-valued, deliberately: a `WEEK_1_DAYS = 14` would be a name that lies,
+     * and the name is what every rung label, badge string and test assertion is written against.
+     */
     @TestVisible
-    private static final Integer WEEK_1_DAYS = 7;
+    private static final Integer WEEK_2_DAYS = 14;
 
     /** Week 4 — the at-risk mark. The one threshold the user named verbatim. */
     @TestVisible
@@ -221,18 +275,28 @@ public with sharing class DispositionTractionService {
      *
      * 🔴 THE AT-RISK LINE IS DRAWN AT `WEEK_4`, NOT "EVERYTHING FROM INDEX 2 UP". That is a change
      * from the retired enum, whose header said index 2 upward was at-risk — true then, because index
-     * 2 was the day-30 half-way checkpoint. Week 1 is day SEVEN: calling a listing at risk one week
-     * after it went to market would mark almost every live listing, and the word would stop meaning
-     * anything. `isAtRisk` is set explicitly per branch below, never derived from an ordinal, so
-     * inserting a value cannot silently move that line — but read this note before you do.
+     * 2 was the day-30 half-way checkpoint. Week 2 is day FOURTEEN: calling a listing at risk two
+     * weeks after it went to market would mark almost every live listing, and the word would stop
+     * meaning anything. (⚠ This paragraph said "Week 1 is day SEVEN" until 2026-09-02; the argument
+     * is unchanged and if anything stronger at 14 days than it was at 7.) `isAtRisk` is set
+     * explicitly per branch below, never derived from an ordinal, so inserting a value cannot
+     * silently move that line — but read this note before you do.
+     *
+     * 🔴 `WEEK_1` WAS RENAMED TO `WEEK_2` ON 2026-09-02 (user decision A2) AND THE MEMBER NAME
+     * CROSSES THE `@AuraEnabled` BOUNDARY TWICE — as `Traction.band` and as `Rung.key`. Measured
+     * before the rename: NO production LWC branches on the literal `'WEEK_1'`. `listingAlerts.js`
+     * uses `r.key` only as a `for:each` key and `brokerListing.js` colours off the boolean
+     * `isAtRisk`, so the rename is confined to this file, its test, `BrokerListingControllerTest`
+     * and the two Jest suites' FIXTURES. ⚠ That measurement is what made the rename cheap — a
+     * future member rename must re-take it rather than cite this sentence.
      */
     public enum Band {
         /** `Listing_Date__c` is blank — the marketing clock has not started. NOT "day 0". */
         NOT_LISTED,
-        /** Inside week 1, or an offer exists at any point (which pauses and/or suppresses). */
+        /** Inside week 2, or an offer exists at any point (which pauses and/or suppresses). */
         ON_TRACK,
-        /** Day 7+, zero offers. The week-1 check-in is due. NOT an at-risk state. */
-        WEEK_1,
+        /** Day 14+, zero offers. The week-2 check-in is due. NOT an at-risk state. */
+        WEEK_2,
         /** Day 28+, zero offers. Four weeks on the market with nothing to show. AT RISK. */
         WEEK_4,
         /** Day 42+, zero offers. The whole six-week marketing period elapsed. HARD STOP. */
@@ -249,7 +313,7 @@ public with sharing class DispositionTractionService {
      * shows a row that is not true of the record in front of it.
      */
     public class Rung {
-        /** `Band` name of the rung — WEEK_1 / WEEK_4 / WEEK_6. The stable key for a `for:each`. */
+        /** `Band` name of the rung — WEEK_2 / WEEK_4 / WEEK_6. The stable key for a `for:each`. */
         @AuraEnabled public String key;
         /** Short human label, e.g. `Week 4`. */
         @AuraEnabled public String label;
@@ -330,8 +394,8 @@ public with sharing class DispositionTractionService {
      * ── ORDER IS LOAD-BEARING, IN TWO PLACES ────────────────────────────────
      * 1. OFFERS ARE TESTED BEFORE EVERY THRESHOLD. An offer is traction (D28/Q1) and it also stops
      *    the clock (§2), so no rung can fire while one exists.
-     * 2. THRESHOLDS DESCEND. `>= 42` before `>= 28` before `>= 7`; ascending order would make day 50
-     *    report Week 1 and every rung above it unreachable.
+     * 2. THRESHOLDS DESCEND. `>= 42` before `>= 28` before `>= 14`; ascending order would make day
+     *    50 report Week 2 and every rung above it unreachable.
      *
      * @param listingDate    `Disposition__c.Listing_Date__c`; null means the clock has not started.
      * @param offerCount     Offers logged against the disposition; null is treated as 0.
@@ -428,22 +492,22 @@ public with sharing class DispositionTractionService {
             t.rungs = buildRungs(listingDate, days, Band.WEEK_4, false);
             return t;
         }
-        if (days >= WEEK_1_DAYS) {
-            t.band = Band.WEEK_1.name();
+        if (days >= WEEK_2_DAYS) {
+            t.band = Band.WEEK_2.name();
             t.isAtRisk = false;
-            t.label = 'Week 1 — Check-in due';
-            t.detail = 'One week on the market with no offers yet. Check in with the broker on '
+            t.label = 'Week 2 — Check-in due';
+            t.detail = 'Two weeks on the market with no offers yet. Check in with the broker on '
                 + 'interest and showings.';
             t.listingStatusValue = 'On Track';
-            t.rungs = buildRungs(listingDate, days, Band.WEEK_1, false);
+            t.rungs = buildRungs(listingDate, days, Band.WEEK_2, false);
             return t;
         }
 
         t.band = Band.ON_TRACK.name();
         t.isAtRisk = false;
         t.label = 'Day ' + days + ' of ' + MARKETING_PERIOD_DAYS + ' — On Track';
-        t.detail = 'The week-1 check-in is due in ' + (WEEK_1_DAYS - days)
-            + ((WEEK_1_DAYS - days) == 1 ? ' day.' : ' days.');
+        t.detail = 'The week-2 check-in is due in ' + (WEEK_2_DAYS - days)
+            + ((WEEK_2_DAYS - days) == 1 ? ' day.' : ' days.');
         t.listingStatusValue = 'On Track';
         t.rungs = buildRungs(listingDate, days, null, false);
         return t;
@@ -473,7 +537,7 @@ public with sharing class DispositionTractionService {
         Boolean paused
     ) {
         List<Rung> rungs = new List<Rung>();
-        rungs.add(rung(Band.WEEK_1, 'Week 1', WEEK_1_DAYS, listingDate, days, currentBand, paused));
+        rungs.add(rung(Band.WEEK_2, 'Week 2', WEEK_2_DAYS, listingDate, days, currentBand, paused));
         rungs.add(rung(Band.WEEK_4, 'Week 4', WEEK_4_DAYS, listingDate, days, currentBand, paused));
         rungs.add(rung(Band.WEEK_6, 'Week 6', WEEK_6_DAYS, listingDate, days, currentBand, paused));
         return rungs;
@@ -571,15 +635,21 @@ public with sharing class DispositionTractionService {
      * value and the standing "grep the repo and query the org before touching a picklist" rule is
      * not engaged.
      *
-     * ── 🔴 WHY `WEEK_1` MAPS TO `On Track` AND NOT TO `At Risk` (2026-08-21) ────
+     * ── 🔴 WHY `WEEK_2` MAPS TO `On Track` AND NOT TO `At Risk` (2026-08-21; the argument
+     *      SURVIVED the 2026-09-02 rung move, it was not re-taken) ────
      * The ladder has four levels and the restricted picklist has three values, so one level has no
-     * home of its own. `WEEK_1` is the one that gives way, for two reasons that agree:
+     * home of its own. `WEEK_2` is the one that gives way, for two reasons that agree:
      *   1. A FOURTH VALUE IS OUT OF SCOPE. The user's instruction for this change was explicit —
      *      create or modify no field. Adding a value to a restricted picklist is a field change.
-     *   2. IT WOULD DILUTE THE SIGNAL ANYWAY. `At Risk` from day SEVEN would mark all but the first
-     *      week of every listing's life, and a flag that is almost always on is not a flag.
-     * ⚠ THE CONSEQUENCE, STATED: a listing at the week-1 check-in stores `On Track` while the card
-     * shows "Week 1 — Check-in due". The card is the finer instrument; the stored value is a
+     *      Decision A2 on 2026-09-02 did not reopen it.
+     *   2. IT WOULD DILUTE THE SIGNAL ANYWAY. `At Risk` from day FOURTEEN would mark all but the
+     *      first fortnight of every listing's life, and a flag that is almost always on is not a
+     *      flag. (⚠ This clause said "day SEVEN" until 2026-09-02. Moving the rung to 14 WEAKENS
+     *      the dilution argument slightly — a fortnight is a more defensible risk line than a
+     *      week — and it is still the wrong line, because `WEEK_4` is where the user's own
+     *      verbatim label puts "At Risk". Reason 1 is unaffected and remains decisive.)
+     * ⚠ THE CONSEQUENCE, STATED: a listing at the week-2 check-in stores `On Track` while the card
+     * shows "Week 2 — Check-in due". The card is the finer instrument; the stored value is a
      * three-position switch. This is the same choice `isAtRisk` makes, so the flag and the stored
      * value agree with each other — there is one rule here, not two.
      *

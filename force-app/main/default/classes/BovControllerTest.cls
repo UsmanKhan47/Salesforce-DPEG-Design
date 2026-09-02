@@ -58,6 +58,19 @@
  * admin cannot fail" — and names persona acceptance testing (§8 gate B5) as the only real
  * proof. A @TestVisible seam was deliberately NOT added: it would put test-only branching
  * into a live read path to cover three lines of defence-in-depth.
+ *
+ * ⚠ THERE ARE NOW **TWO** SUCH CATCHES AND THE SAME ARGUMENT COVERS BOTH (2026-09-01, Tranche 4
+ * item 2). `BovController.countComparableResponsesFailSoft` — which is what `matrixGenerated` now
+ * derives from — carries an identically-shaped fail-soft catch, and it is uncovered for the same
+ * structural reason: reaching it needs a principal who can read `Disposition__c` but NOT
+ * `BOV_Submission__c`, and no assignable persona in this org sits in that gap (both disposition
+ * permission sets grant the two together). `readPathsThrowAuraHandledException`'s bare Standard
+ * User cannot reach it either — `DispositionSelector.selectOutreachById` throws FIRST, one line
+ * earlier in the same method, so the outer catch fires and the new read is never attempted.
+ * 🔴 THAT ORDERING IS ALSO WHY THAT TEST STAYED GREEN through this change rather than needing
+ * repair, and it is worth knowing: if the comparable-response read is ever moved ABOVE the
+ * disposition read, that test's second assertion starts passing for a different reason and this
+ * paragraph becomes wrong. The same "no @TestVisible seam in a live read path" decision applies.
  * @author Unit Testing Agent
  */
 @isTest

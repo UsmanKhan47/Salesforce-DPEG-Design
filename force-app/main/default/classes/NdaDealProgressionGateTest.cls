@@ -104,6 +104,10 @@ private class NdaDealProgressionGateTest {
         Opportunity o = newOpp('About to Close');
         insert o;
         TestDataFactory.signContract(o); // isolate: Closed Won entry is ALSO gated by Contract_Signed_Before_Closed_Won
+        // isolate: and, since 2026-09-02, by Transaction_Closed_Before_Closed_Won. Without this
+        // the assertion below could read a message stack containing BOTH refusals, and this test
+        // would stop proving that the NDA rule specifically is what fired.
+        TestDataFactory.markTransactionClosed(o);
 
         Boolean blocked = false;
         try {

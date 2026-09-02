@@ -1266,6 +1266,77 @@ private class OpportunitySelectorTest {
             + 'must never build more than one');
     }
 
+    // ═════════════════════════════════════════════════════════════════════════════════════════
+    // selectTransactionGateFlagsByIds — the deal-close gate's stored-flag read (2026-09-02)
+    // ═════════════════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Returns the two gate flags as stored, for the deals asked about and no others.
+     *
+     * ⚠ The "and no others" half is not padding. `DealTransactionGateService` treats an ABSENT
+     * row as "unknown" and writes it blind; a selector that widened its filter would hand the
+     * service deals it never asked about and it would compute both flags false for them —
+     * blocking closes on deals nobody touched.
+     */
+    @isTest
+    static void selectTransactionGateFlags_returnsBothFlagsForExactlyTheRequestedDeals() {
+        List<Opportunity> deals = TestDataFactory.createOpportunities(3, true);
+        // AccessLevel.SYSTEM_MODE, not decoration: a field with zero FieldPermissions rows is
+        // ABSENT from the running user's schema, so a bare update throws "fields being
+        // inaccessible on Sobject Opportunity" even as an administrator. Measured on validate
+        // 0Afiw000000VDSPCA4, 2026-09-02.
+        Database.update(new List<Opportunity>{
+            new Opportunity(Id = deals[0].Id,
+                Has_Open_Transaction__c = true, Has_Closed_Transaction__c = false),
+            new Opportunity(Id = deals[1].Id,
+                Has_Open_Transaction__c = false, Has_Closed_Transaction__c = true)
+        }, true, AccessLevel.SYSTEM_MODE);
+
+        Test.startTest();
+        Map<Id, Opportunity> byId = new Map<Id, Opportunity>(
+            OpportunitySelector.selectTransactionGateFlagsByIds(
+                new Set<Id>{ deals[0].Id, deals[1].Id }));
+        Test.stopTest();
+
+        Assert.areEqual(2, byId.size(), 'Two asked for, two returned — the third is not included');
+        Assert.isFalse(byId.containsKey(deals[2].Id), 'and it is emphatically not included');
+        Assert.isTrue(byId.get(deals[0].Id).Has_Open_Transaction__c, 'deal 0 reads open');
+        Assert.isFalse(byId.get(deals[0].Id).Has_Closed_Transaction__c, 'and not closed');
+        Assert.isFalse(byId.get(deals[1].Id).Has_Open_Transaction__c, 'deal 1 reads not open');
+        Assert.isTrue(byId.get(deals[1].Id).Has_Closed_Transaction__c, 'and closed');
+    }
+
+    /** Null and empty inputs short-circuit without querying. */
+    @isTest
+    static void selectTransactionGateFlags_nullOrEmptyInput_returnsEmptyWithoutQuerying() {
+        Test.startTest();
+        Integer before = Limits.getQueries();
+        Assert.areEqual(0,
+            OpportunitySelector.selectTransactionGateFlagsByIds(null).size(), 'null');
+        Assert.areEqual(0,
+            OpportunitySelector.selectTransactionGateFlagsByIds(new Set<Id>()).size(), 'empty');
+        Assert.areEqual(before, Limits.getQueries(),
+            'and neither spent a query — measured INSIDE startTest/stopTest, because stopTest '
+            + 'restores the pre-test counters and the same assertion after it would be vacuous');
+        Test.stopTest();
+    }
+
+    /** One query for 251 deals, whatever the set size. */
+    @isTest
+    static void selectTransactionGateFlags_bulk251_isOneQuery() {
+        List<Opportunity> deals = TestDataFactory.createOpportunities(251, true);
+
+        Test.startTest();
+        Integer before = Limits.getQueries();
+        List<Opportunity> rows = OpportunitySelector.selectTransactionGateFlagsByIds(
+            new Map<Id, Opportunity>(deals).keySet());
+        Integer used = Limits.getQueries() - before;
+        Test.stopTest();
+
+        Assert.areEqual(251, rows.size(), 'All 251 come back');
+        Assert.areEqual(1, used, 'in ONE query');
+    }
+
     private static User buildStandardUser() {
         Profile standard = [SELECT Id FROM Profile WHERE Name = 'Standard User' LIMIT 1];
         String unique = 'oppsel' + System.currentTimeMillis();

@@ -16,14 +16,30 @@
         USER DECISIONS THIS FILE IS BUILT TO (do not re-open — see the task's own
         "Settled decisions" list):
           D-1 Full cutover approved. The approval process moves onto LOI__c.
-          D-3 ON REJECTION THE LOI STAYS AT Stage__c = 'Under Review'. Quoted: "The LOI stage will
-              remain on Under review after rejection." finalRejectionActions is intentionally
-              ABSENT below — not an oversight. The retired Opportunity.LOI_Approval's
-              Set_Stage_Underwriting rejection rewind is an ACCEPTED, DOCUMENTED regression — see
-              LoiApprovalStampService.cls's own header and workflows/LOI__c.workflow-meta.xml for
-              the tests that pin the old behaviour and the reasoning for not rebuilding it (an
-              Apex substitute would newly have to satisfy NDA_Signed_Before_Deal_Progression and
-              No_Backward_Stage_Movement, which the old approval's field update bypassed).
+          D-3 ON REJECTION THE LOI STAYS AT Stage__c = 'Under Review' — STILL TRUE, UNCHANGED.
+              Quoted: "The LOI stage will remain on Under review after rejection." Stage__c is
+              NOT touched by any action added below. WHAT CHANGED 2026-09-02 (item 1 of
+              agent-output/three-gaps-design-2026-09-02.md, decision D-1 = option L-A): this
+              process now DOES carry a finalRejectionActions block, but it writes ONLY
+              LOI_Status__c = 'Rejected' (LOI_Status_Rejected in workflows/LOI__c.workflow-meta
+              .xml) — the "free rejection marker" that design's §2.1 identified, since a
+              rejection changed nothing anywhere before. The retired Opportunity.LOI_Approval's
+              Set_Stage_Underwriting rejection rewind (a Stage__c move) is STILL an ACCEPTED,
+              DOCUMENTED regression — see LoiApprovalStampService.cls's own header and
+              workflows/LOI__c.workflow-meta.xml for the tests that pin the old behaviour and the
+              reasoning for not rebuilding it (an Apex substitute would newly have to satisfy
+              NDA_Signed_Before_Deal_Progression and No_Backward_Stage_Movement, which the old
+              approval's field update bypassed). Only the picklist value is new; the stage story
+              is untouched.
+          D-9 🔴 NEW 2026-09-02, item 1. initialSubmissionActions and recallActions are ADDED.
+              Submission writes LOI_Status__c = 'Pending Approval' (LOI_Status_Pending),
+              activating the pre-existing second criterion on LOI_Record_Page's Submit for
+              Approval visibility rule, which was inert until this change (nothing wrote that
+              value before). Recall writes LOI_Status__c = 'Draft' (LOI_Status_Recalled) — a
+              LITERAL, so a prior 'Countered' value (CounterOfferService.cls) is clobbered. This
+              is a KNOWN, USER-ACCEPTED information loss (three-gaps design §2.1/§7 D-1), taken
+              in preference to a second, lossless Checkbox field. See
+              workflows/LOI__c.workflow-meta.xml's own header for the full four-exit rationale.
           D-4 The marker is LOI_Status__c = 'Approved', written DIRECTLY by this process's own
               finalApprovalActions (NOT left to ApprovalAuditService, which only runs downstream
               of Opportunity.LOI_Approved__c flipping — routing through it here would be
@@ -175,7 +191,7 @@
         <label>Principal approves LOI</label>
         <name>Principal_Review_Step</name>
     </approvalStep>
-    <description>Principal decision to approve this LOI. Entry: Stage equals Under Review AND Record Type equals Acquisition LOI (excludes Disposition_LOI, which shares the same Stage value). Approval sets LOI Status to Approved; a flow mirrors the decision onto the Opportunity. Rejection leaves the LOI at Under Review (D-3) — no deal-stage rewind.</description>
+    <description>Principal decision to approve this LOI. Entry: Stage equals Under Review AND Record Type equals Acquisition LOI (excludes Disposition_LOI, which shares the same Stage value). Approval sets LOI Status to Approved; a flow mirrors the decision onto the Opportunity. Rejection leaves the LOI at Under Review (D-3) — no deal-stage rewind, but now sets LOI Status to Rejected. Submission sets LOI Status to Pending Approval, hiding Submit for Approval; recall resets it to Draft.</description>
     <enableMobileDeviceAccess>false</enableMobileDeviceAccess>
     <entryCriteria>
         <booleanFilter>1 AND 2</booleanFilter>
@@ -197,9 +213,27 @@
         </action>
     </finalApprovalActions>
     <finalApprovalRecordLock>false</finalApprovalRecordLock>
+    <finalRejectionActions>
+        <action>
+            <name>LOI_Status_Rejected</name>
+            <type>FieldUpdate</type>
+        </action>
+    </finalRejectionActions>
     <finalRejectionRecordLock>false</finalRejectionRecordLock>
+    <initialSubmissionActions>
+        <action>
+            <name>LOI_Status_Pending</name>
+            <type>FieldUpdate</type>
+        </action>
+    </initialSubmissionActions>
     <label>LOI Approval</label>
     <processOrder>1</processOrder>
+    <recallActions>
+        <action>
+            <name>LOI_Status_Recalled</name>
+            <type>FieldUpdate</type>
+        </action>
+    </recallActions>
     <recordEditability>AdminOnly</recordEditability>
     <showApprovalHistory>true</showApprovalHistory>
 </ApprovalProcess>

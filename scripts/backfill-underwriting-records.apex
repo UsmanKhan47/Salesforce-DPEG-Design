@@ -15,7 +15,7 @@ for (Opportunity o : opps) {
         }
         continue;
     }
-    toInsert.add(new Underwriting__c(Opportunity__c = o.Id, Stage__c = 'Requested', Status__c = 'In Progress'));
+    toInsert.add(new Underwriting__c(Opportunity__c = o.Id, Stage__c = 'Requested'));
 }
 insert toInsert;
 for (Underwriting__c uw : toInsert) {

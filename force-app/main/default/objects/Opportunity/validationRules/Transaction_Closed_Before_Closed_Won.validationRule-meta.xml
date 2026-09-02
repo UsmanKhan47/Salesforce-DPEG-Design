@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT, NOT IN <description>, AND IT MUST STAY THAT WAY.
+        ValidationRule.Description is capped at 255 characters. The full rationale below is
+        operationally important, so it was moved here rather than trimmed; a comment is
+        repo-only and is never sent to the Metadata API, so it can be as long as it needs to
+        be. Do not paste this back into <description>.
+
+        Item 3 of agent-output/three-gaps-design-2026-09-02.md: "a deal can't be closed until
+        its transaction is closed." Declarative half of a feature whose Apex
+        (DealTransactionGateService, TransactionTriggerHandler) was already built and validated
+        against this exact formula in check-only validate 0Afiw000000VVAnCAO — DO NOT ALTER THE
+        FORMULA BELOW without re-running that validation.
+
+        =====================================================================================
+        FAIL-CLOSED IS DELIBERATE — A DEAL WITH NO TRANSACTION CANNOT REACH CLOSED WON
+        =====================================================================================
+        User decision, 2026-09-02, explicit and re-confirmed. A Transaction is not required to
+        exist for a deal to progress up to 'Under Contract (PSA)' / 'About to Close' — but it IS
+        required to exist, and be closed, before the deal itself can close. This rule reads
+        Has_Open_Transaction__c and Has_Closed_Transaction__c together (see those two fields'
+        own comments for the full two-checkbox rationale) rather than a single flag, precisely
+        so that "no Transaction was ever opened" and "the Transaction is still open" are BOTH
+        refused, distinctly:
+
+            Has_Open_Transaction__c | Has_Closed_Transaction__c | meaning                  | Closed Won?
+            ========================|===========================|==========================|============
+            false                   | false                     | no Transaction at all    | REFUSED
+            true                    | (either)                  | at least one still open  | REFUSED
+            false                   | true                      | every Transaction closed | ALLOWED
+
+        The formula's OR(Has_Open_Transaction__c, NOT(Has_Closed_Transaction__c)) is the refusal
+        condition for the first two rows; it is false (i.e. the close is allowed) only on the
+        third row.
+
+        =====================================================================================
+        ONLY 'Closed Won' IS GATED. 'Dead/Pass' IS DELIBERATELY NOT.
+        =====================================================================================
+        A deal that dies has no Transaction and never will. 'Dead/Pass' is rank 0 and is a
+        universal, deliberately fail-open off-ramp from every stage
+        (No_Backward_Stage_Movement's own header records this invariant). Gating it here would
+        strand every dying deal permanently, with the only recovery a manual DML repoint, and it
+        would collide with Dead_Pass_Not_Allowed_From_Closed_Won, which already blocks the
+        reverse transition. This rule is scoped to ISPICKVAL(StageName, 'Closed Won') only and
+        touches no other stage.
+
+        =====================================================================================
+        ISCHANGED-SCOPED LIKE ITS FOUR SIBLINGS — AND THE INSERT HOLE IS DELIBERATE
+        =====================================================================================
+        Same shape as Contract_Signed_Before_Closed_Won, Completed_LOI_Before_PSA and this
+        object's other Closed-Won-adjacent gates: ISCHANGED(StageName) scopes the rule to the
+        TRANSITION into Closed Won, never to a record already sitting there (existing closed
+        deals are grandfathered, untouched).
+
+        This means a record INSERTED directly at StageName = 'Closed Won' crosses none of the
+        four ISCHANGED-scoped siblings, and does not cross this one either. That hole is
+        DELIBERATE, not an oversight: a Transaction__c cannot reference an Opportunity that does
+        not exist yet, so Has_Open_Transaction__c / Has_Closed_Transaction__c cannot possibly be
+        populated correctly within the SAME inserting DML that creates the Opportunity. An
+        insert-scoped version of this rule would make "insert a deal already at Closed Won"
+        unreachable by any route — including a legitimate data load, a migration, or a seed
+        script establishing historical closed deals — which is a strictly worse failure mode
+        than the gap this rule closes. Pinned by
+        StageApprovalGatesTest.transactionGate_doesNotFireOnInsert_andThatIsDeliberate — do not
+        "fix" that test to expect a throw on insert.
+
+        =====================================================================================
+        WHY THE LEGITIMATE CLOSE STILL PASSES
+        =====================================================================================
+        On the intended path, Transaction_Complete_Close (an after-save flow on Transaction__c)
+        is the thing that writes StageName = 'Closed Won' on the Opportunity, and it does so
+        only after DealTransactionGateService's after-trigger has already committed the flags
+        for that same save (Apex after-triggers run before after-save record-triggered flows —
+        platform Order of Execution steps 8 and 13). See DealTransactionGateService.cls's class
+        header ("ORDERING: WHY THE GATE DOES NOT BLOCK THE LEGITIMATE CLOSE") for the full
+        sequencing argument, including the known exposure on a deal with two Transactions, which
+        is this rule's problem to surface, not this rule's problem to solve.
+
+        Like Contract_Signed_Before_Closed_Won before it, this rule is one MORE thing
+        Transaction_Complete_Close's ordinary DML is subject to; a refusal here rolls back the
+        Transaction save that triggered the flow (accepted risk, same shape as that sibling
+        rule's own note).
+    -->
+    <fullName>Transaction_Closed_Before_Closed_Won</fullName>
+    <active>true</active>
+    <description>Blocks stage entry to Closed Won until this deal&apos;s Transaction is closed (fail-closed: a deal with no Transaction is also blocked). See the XML comment in this file for full rationale.</description>
+    <errorConditionFormula>AND(
+    ISCHANGED(StageName),
+    ISPICKVAL(StageName, &apos;Closed Won&apos;),
+    OR(
+        Has_Open_Transaction__c,
+        NOT(Has_Closed_Transaction__c)
+    )
+)</errorConditionFormula>
+    <errorDisplayField>StageName</errorDisplayField>
+    <errorMessage>This deal cannot be marked Closed Won until its transaction is closed. Move the deal to About to Close to hand it to the Transactions team, then close the Transaction - the deal then closes automatically.</errorMessage>
+</ValidationRule>

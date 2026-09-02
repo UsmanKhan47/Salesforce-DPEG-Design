@@ -176,21 +176,40 @@
  * top of this header, and `BROKER_LOOKUPS` in the SAME edit; a count in this file has now gone
  * stale on four separate occasions and every one of them was a partial edit, not a missed grep.
  *
- * 🔴 WHY `Broker_Listing__c` IS **NOT** IN `STORED_DENORM_TEXT` BELOW, AND WHEN THAT MUST
- * CHANGE. The object carries `Broker_Firm__c` and `Contact_Name__c` as stored Text(255) —
- * the same two field NAMES that put `BOV_Submission__c` in that map — so the obvious move is
- * to add it and the obvious move is WRONG TODAY. On `BOV_Submission__c` those two fields are
- * STAMPED FROM `Broker__c` by `BovSubmissionBrokerStampService`, which is what makes them a
- * denormalised copy that goes stale when the lookup is blanked. On `Broker_Listing__c` they
- * are not: `Broker_Firm__c` is copied from `Disposition__c.Selected_Broker__c` by
- * `DispositionStageEntryService.openBrokerListings`, `Contact_Name__c` is typed by a human,
- * and Tranche 1 ships the lookup with NO STAMP SERVICE AT ALL — the field is blank on every
- * auto-created listing. Listing them here would report text that never named the deleted
- * broker in the first place, which is a false positive in a guard whose whole value is that
- * its report can be trusted.
- * ⚠ THE MOMENT A STAMP SERVICE IS ADDED FOR `Broker_Listing__c.Broker__c`, THIS DECISION
- * INVERTS and both fields belong in `STORED_DENORM_TEXT`. That is the one thing to re-check
- * here; nothing else about this entry is conditional.
+ * 🔴 `Broker_Listing__c` IS **NOW IN** `STORED_DENORM_TEXT` BELOW — THE CONDITION THIS BLOCK
+ * SET OUT WAS MET ON 2026-09-02. The reasoning is retracted in place rather than deleted,
+ * because the ARGUMENT it makes is still the right test to apply to the next object; only its
+ * ANSWER for this one changed:
+ *
+ *     RETRACTED: "WHY `Broker_Listing__c` IS **NOT** IN `STORED_DENORM_TEXT` BELOW... the
+ *     obvious move is to add it and the obvious move is WRONG TODAY. On `BOV_Submission__c`
+ *     those two fields are STAMPED FROM `Broker__c` by `BovSubmissionBrokerStampService`,
+ *     which is what makes them a denormalised copy that goes stale when the lookup is
+ *     blanked. On `Broker_Listing__c` they are not: `Broker_Firm__c` is copied from
+ *     `Disposition__c.Selected_Broker__c` by `DispositionStageEntryService
+ *     .openBrokerListings`, `Contact_Name__c` is typed by a human, and Tranche 1 ships the
+ *     lookup with NO STAMP SERVICE AT ALL — the field is blank on every auto-created listing.
+ *     Listing them here would report text that never named the deleted broker in the first
+ *     place, which is a false positive in a guard whose whole value is that its report can be
+ *     trusted. ⚠ THE MOMENT A STAMP SERVICE IS ADDED FOR `Broker_Listing__c.Broker__c`, THIS
+ *     DECISION INVERTS and both fields belong in `STORED_DENORM_TEXT`."
+ *
+ * WHAT CHANGED: `BovSubmissionService.replaceSelectedBroker`'s write 3a (Tranche 4 item 5,
+ * lookup stamp added 2026-09-02 by code-review S1) now inserts a `Broker_Listing__c` with
+ * `Broker__c`, `Broker_Firm__c` and `Contact_Name__c` ALL SET FROM THE SAME SUBMISSION, in one
+ * statement. On those rows the two Text fields are a denormalised copy of the Contact in the
+ * lookup, exactly as on `BOV_Submission__c`, so a SetNull cascade leaves them naming a broker
+ * that no longer exists. That is a stamp in every sense that matters to this guard, even
+ * though no `*BrokerStampService` class was created for it — do not read the retracted text's
+ * phrase "stamp SERVICE" so literally that the condition never fires.
+ *
+ * ⚠ THE FALSE-POSITIVE WORRY IN THE RETRACTED TEXT DOES NOT SURVIVE THE CHANGE, AND THAT IS
+ * NOT LUCK — IT IS HOW STEP 2 IS BUILT. The scan's WHERE clause is `<lookup> IN :doomedIds`,
+ * so a row is only ever reported when its LOOKUP points at a Contact this run would delete.
+ * An auto-created listing has `Broker__c` BLANK (nothing but write 3a ever sets it), so it can
+ * never enter the result set and its stage-entry-copied `Broker_Firm__c` can never be
+ * reported. Every row this entry can report is a row whose text genuinely names the doomed
+ * Contact. Nothing about the entry is conditional any more.
  *
  * 🔴 DO NOT "FIX" THIS BY SWITCHING ANY OF THOSE FIELDS TO deleteConstraint = Restrict.
  * That was considered and rejected — see the XML comment in
@@ -217,13 +236,31 @@
  *
  * ⚠ COUNT CORRECTED 2026-08-31 (Tranche 1 code review, W-6). RETRACTED: "Three of the six
  * objects fail VISIBLY." The denominator moved to SEVEN with `Broker_Listing__c`; the NUMERATOR
- * did not, and that is the part worth stating rather than a silent bump. `Broker_Listing__c` is
- * in neither camp: it has no stamp service, so a SetNull there leaves behind NO text naming the
- * deleted broker (see the paragraph above), and it therefore fails neither visibly nor
- * corruptingly — it just quietly loses the link. 3 visible + 3 severe stored-text
- * (Disposition__c, BOV_Submission__c, BOV_Broker_Change__c) + 1 neither = 7.
- * 🔴 IF A STAMP SERVICE IS EVER ADDED FOR `Broker_Listing__c.Broker__c`, IT MOVES INTO THE
- * SEVERE GROUP, not the visible one, and this arithmetic becomes 3 + 4 + 0.
+ * did not, and that is the part worth stating rather than a silent bump.
+ *
+ * ⚠ AND CORRECTED AGAIN 2026-09-02, WHICH IS THE PREDICTED MOVE ACTUALLY HAPPENING. The line
+ * below said what would trigger it and it triggered:
+ *
+ *     RETRACTED: "`Broker_Listing__c` is in neither camp: it has no stamp service, so a
+ *     SetNull there leaves behind NO text naming the deleted broker (see the paragraph
+ *     above), and it therefore fails neither visibly nor corruptingly — it just quietly loses
+ *     the link. 3 visible + 3 severe stored-text (Disposition__c, BOV_Submission__c,
+ *     BOV_Broker_Change__c) + 1 neither = 7. 🔴 IF A STAMP SERVICE IS EVER ADDED FOR
+ *     `Broker_Listing__c.Broker__c`, IT MOVES INTO THE SEVERE GROUP, not the visible one, and
+ *     this arithmetic becomes 3 + 4 + 0."
+ *
+ * `BovSubmissionService.replaceSelectedBroker`'s write 3a now stamps the lookup alongside both
+ * Text fields (code-review S1), so `Broker_Listing__c` IS in the severe stored-text camp and
+ * the arithmetic IS 3 visible + 4 severe stored-text (Disposition__c, BOV_Submission__c,
+ * BOV_Broker_Change__c, Broker_Listing__c) + 0 neither = 7.
+ * ⚠ ITS SEVERITY IS PARTIAL, LIKE `BOV_Broker_Change__c`'S AND FOR A DIFFERENT REASON: only
+ * listings APPENDED BY A BROKER CHANGE carry the lookup at all, so a SetNull cascade corrupts
+ * those and merely no-ops on every auto-created listing. Partial is still severe — a corrupted
+ * row that reads as healthy is the failure mode this whole block is about, and one is enough.
+ * 🔴 IT IS NOT IN `FORCE_CLEARS_DENORM` AND MUST NOT BE ADDED THERE. Same call as
+ * `BOV_Submission__c` and `BOV_Broker_Change__c`: those two Text fields are what the Active
+ * Listing card RENDERS, so blanking them from a script would replace a wrong-but-diagnosable
+ * row with an empty one, and the report already names every affected row.
  *
  * `Disposition__c.Selected_Broker__c` IS DIFFERENT. It is a STORED Text(255) that
  * `DispositionBrokerStampService` writes from the lookup — a real value on the row, not a
@@ -532,9 +569,11 @@ final Map<String, List<String>> BROKER_LOOKUPS = new Map<String, List<String>>{
     'Lease_Inquiry__c'     => new List<String>{ 'Broker__c' },
     'Opportunity'          => new List<String>{ 'Broker__c' },
     'BOV_Broker_Change__c' => new List<String>{ 'Outgoing_Broker__c', 'Incoming_Broker__c' },
-    // 🔴 ADDED 2026-08-31 (Tranche 1 item 5). Deliberately absent from STORED_DENORM_TEXT
-    // below — its Broker_Firm__c / Contact_Name__c are NOT stamped from this lookup today.
-    // The full argument, and the condition that reverses it, is in this file's header.
+    // 🔴 ADDED 2026-08-31 (Tranche 1 item 5).
+    // ⚠ AMENDED 2026-09-02. RETRACTED: "Deliberately absent from STORED_DENORM_TEXT below —
+    // its Broker_Firm__c / Contact_Name__c are NOT stamped from this lookup today." They now
+    // ARE, on listings appended by BovSubmissionService.replaceSelectedBroker's write 3a, and
+    // the object HAS an entry in STORED_DENORM_TEXT below. Full argument in this file's header.
     'Broker_Listing__c'    => new List<String>{ 'Broker__c' }
 };
 
@@ -571,10 +610,25 @@ final Map<String, List<String>> BROKER_LOOKUPS = new Map<String, List<String>>{
 //    BROKER_LOOKUPS above, NO SHAPE CHANGE WAS NEEDED HERE: this map was already
 //    `Map<String, List<String>>` and can hold two field APIs under one object key without
 //    modification. The entry below is therefore a pure addition.
+//
+// 🔴 FOURTH ENTRY ADDED 2026-09-02 — Broker_Listing__c. The sentence six lines up that called
+//    it "a FOURTH (Broker_Listing__c) deliberately excluded for the reason given in the header"
+//    is RETRACTED; the header's own condition ("the moment a stamp is added for
+//    Broker_Listing__c.Broker__c, this decision INVERTS") was met by
+//    BovSubmissionService.replaceSelectedBroker's write 3a, which since code-review S1 sets
+//    Broker__c, Broker_Firm__c and Contact_Name__c from ONE submission in ONE statement. On
+//    those rows the two Text fields are a denormalised copy of the Contact in the lookup and a
+//    SetNull cascade strands them naming a deleted broker.
+//    ⚠ NO FALSE POSITIVES FROM AUTO-CREATED LISTINGS: STEP 2 only ever selects rows whose
+//    LOOKUP is in :doomedIds, and an auto-created listing's Broker__c is blank, so it cannot
+//    enter the result set. Read the header block before shortening this to a one-liner.
+//    ⚠ AND STILL NOT IN FORCE_CLEARS_DENORM below — scanning and clearing are separate
+//    decisions and only the scan changed.
 final Map<String, List<String>> STORED_DENORM_TEXT = new Map<String, List<String>>{
     'Disposition__c'       => new List<String>{ 'Selected_Broker__c' },
     'BOV_Submission__c'    => new List<String>{ 'Broker_Firm__c', 'Contact_Name__c' },
-    'BOV_Broker_Change__c' => new List<String>{ 'Outgoing_Broker_Firm__c', 'Incoming_Broker_Firm__c' }
+    'BOV_Broker_Change__c' => new List<String>{ 'Outgoing_Broker_Firm__c', 'Incoming_Broker_Firm__c' },
+    'Broker_Listing__c'    => new List<String>{ 'Broker_Firm__c', 'Contact_Name__c' }
 };
 
 // ── Of the objects above, the ones whose stored text the FORCE path may BLANK in STEP 4.

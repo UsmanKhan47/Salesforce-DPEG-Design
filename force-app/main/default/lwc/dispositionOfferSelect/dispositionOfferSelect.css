@@ -81,14 +81,25 @@
 }
 
 /*
- * 🔴 THE THREE FACT COLUMNS DO NOT WRAP, AND THAT IS THE POINT OF THE WHOLE CHANGE.
+ * 🔴 THE FACT COLUMNS DO NOT WRAP, AND THAT IS THE POINT OF THE WHOLE CHANGE.
  * `.qa-body` sets `overflow-wrap: anywhere`, which is right for a broker's name and catastrophic
  * for a figure: it would break `$1,850,000` across two lines mid-number, in a quick-action panel,
  * on the screen where DPEG picks the winning bid. The Broker column deliberately keeps the
  * inherited wrapping — a long name should take two lines rather than widen the panel.
+ *
+ * ⚠ SIX FACT COLUMNS SINCE 2026-09-02, NOT THREE (BA story 35: Earnest Money / DD Days / Closing
+ * Days). The list below must include every new one — a numeric column omitted from it inherits
+ * `overflow-wrap: anywhere` from `.qa-body` and breaks mid-figure, which is exactly the defect this
+ * rule exists to prevent and is invisible to Jest (jsdom computes no layout).
  */
 .qa-cell-amount,
 .qa-col-amount,
+.qa-cell-earnest,
+.qa-col-earnest,
+.qa-cell-dd,
+.qa-col-dd,
+.qa-cell-closing,
+.qa-col-closing,
 .qa-cell-date,
 .qa-col-date,
 .qa-cell-ref,
@@ -96,10 +107,53 @@
     white-space: nowrap;
 }
 
-/* Figures right-align so digit counts line up — the comparison the table exists to support. */
+/*
+ * Figures right-align so digit counts line up — the comparison the table exists to support.
+ * ⚠ THE HEADERS RIGHT-ALIGN WITH THEIR CELLS. A left-aligned "DD Days" above a right-aligned "30"
+ * reads as two unrelated columns at these widths.
+ */
 .qa-cell-amount,
-.qa-col-amount {
+.qa-col-amount,
+.qa-cell-earnest,
+.qa-col-earnest,
+.qa-cell-dd,
+.qa-col-dd,
+.qa-cell-closing,
+.qa-col-closing {
     text-align: right;
+}
+
+/*
+ * ── 🔴 EIGHT COLUMNS IN A SCREEN QUICK ACTION IS A WIDTH PROBLEM, AND JEST CANNOT SEE IT ───────
+ * The panel a `ScreenAction` renders into is narrow and NOT resizable by this component. The two
+ * DAY columns carry at most three digits, so they are pinned to a small fixed width and the space
+ * that frees goes to Broker (which wraps) and Earnest Money (which must not). Without this the
+ * browser distributes width by content and the two 2-character columns take as much as the
+ * currency ones.
+ *
+ * ⚠ `--slds-g-spacing-*` IS A SPACING SCALE, NOT A WIDTH SCALE, and SLDS 2 publishes no column-
+ * width hook — the same gap the `width: 100%` note above records. `ch` is used instead of `px`
+ * because these columns hold DIGITS: `5ch` is "about five characters wide" in whatever font the
+ * org is running, which is the actual requirement.
+ *
+ * ⚠ `slds-linter` STILL WARNS ON IT AND THERE IS NO FIX — measured 2026-09-02: *"There's no
+ * replacement styling hook for the 5ch static value"*, `slds/no-hardcoded-values-slds2`, exactly
+ * the message the `100%` above gets. It is a WARNING, not an error; this bundle lints at
+ * **0 errors, 4 warnings**, and the repo gate is the error count. The other three warnings (two
+ * 90px min-heights, one 100% width) pre-date 2026-09-02 and are untouched. Do not "fix" this by
+ * substituting a spacing hook — a spacing token in a width slot is a wrong value that happens to
+ * silence a linter.
+ *
+ * 🔴 THE ACCEPTANCE CRITERION FOR THIS BLOCK IS A BROWSER, NOT A TEST. `@sa11y/jest` and every
+ * assertion in the suite pass identically whether or not this rule exists; jsdom computes no
+ * layout. It must be checked on a real Disposition with at least two offers carrying all three
+ * terms — which, as of 2026-09-02, is a state `usman-dpeg` cannot reach without seeding.
+ */
+.qa-col-dd,
+.qa-cell-dd,
+.qa-col-closing,
+.qa-cell-closing {
+    width: 5ch;
 }
 
 .qa-cell-broker {

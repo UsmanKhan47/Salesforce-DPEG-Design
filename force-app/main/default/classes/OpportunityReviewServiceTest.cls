@@ -19,11 +19,15 @@ private class OpportunityReviewServiceTest {
         Test.stopTest();
 
         List<Underwriting__c> uws = [
-            SELECT Stage__c, Status__c FROM Underwriting__c WHERE Opportunity__c = :o.Id
+            SELECT Stage__c FROM Underwriting__c WHERE Opportunity__c = :o.Id
         ];
         System.assertEquals(1, uws.size(), 'One Underwriting record opens on entering the stage');
+        // ⚠ 2026-09-02 — a second assertion here read `Status__c` and required 'In Progress'.
+        // Underwriting__c.Status__c was retired as a strict-subset duplicate of Stage__c. NOTHING
+        // WAS LOST BY DELETING IT RATHER THAN REPOINTING IT: it asserted the COARSE projection of
+        // the very state the line below already pins exactly, on the same row, from the same
+        // insert. Repointing it onto Stage__c would have produced a duplicate of the next line.
         System.assertEquals('Requested', uws[0].Stage__c, 'Underwriting path starts at Requested');
-        System.assertEquals('In Progress', uws[0].Status__c, 'Coarse status starts In Progress');
 
         Opportunity stamped = [SELECT Primary_Underwriting__c FROM Opportunity WHERE Id = :o.Id];
         System.assertEquals(uws[0].Id, stamped.Primary_Underwriting__c,

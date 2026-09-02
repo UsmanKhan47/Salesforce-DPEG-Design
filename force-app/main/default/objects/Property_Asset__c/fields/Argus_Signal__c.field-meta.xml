@@ -32,18 +32,35 @@
         🔴 A3's KNOWN GAP LEFT OPEN BY THIS TRANCHE (D-3(b), REFUSED AT GATE 1 2026-08-31 - user
         chose to keep Tranche 2 to its five scoped items; repointing Sell_Ready_Argus is CANCELLED
         for T2). A3's stated goal was "so Home and the Dashboard can no longer disagree." Item
-        1a/1b close ONLY the band-DEFINITION disagreement. Two disagreements survive after this
-        tranche ships:
+        1a/1b close ONLY the band-DEFINITION disagreement. Two disagreements survived T2:
           1. POPULATION: the Home-page meter is WHERE Property__c != null AND
              Peak_Sell_Date__c != null (no Status__c filter - a Disposed asset stays on the
              meter), while the dashboard donuts are WHERE Status__c = 'Active' (no peak/property
              filter). Entangled with story 49's "nothing sets Status__c = 'Disposed'" gap -
-             Tranche 6.
-          2. THE "DISPOSITION READINESS" KPI TILE: Sell_Ready_Argus still filters THIS field
-             directly (Argus_Signal__c equals 'Sell Now'), not the band, and has no Status__c
-             filter either. It will keep disagreeing with the Home page's GREEN-band "Sell now"
-             count after this tranche ships.
-        DO NOT REPORT A3 AS FULLY CLOSED BY THIS TRANCHE. Only the band-definition half is.
+             pushed to Tranche 6, then re-scoped again as Tranche 5 (FINAL) item 1 / "Conversion 6".
+          2. THE "DISPOSITION READINESS" KPI TILE: Sell_Ready_Argus filtered THIS field directly
+             (Argus_Signal__c equals 'Sell Now'), not the band, and had no Status__c filter either.
+        DO NOT REPORT A3 AS FULLY CLOSED BY T2. Only the band-definition half was.
+
+        🟢 UPDATE - TRANCHE 5 (FINAL), 2026-09-02 (agent-output/disposition-gap-closure-t5-design.md
+        P-8, G-2; admin item 1). BOTH CLAIMS ABOVE THAT WERE TRUE AT T2 ARE RETRACTED AS OF THIS
+        TRANCHE, IN THE ORDER THEY BECOME FALSE:
+          - Disagreement 2 is CLOSED HERE: Dispositions/Sell_Ready_Argus now ALSO carries
+            `Property_Asset__c.Status__c equals Active`, alongside its existing Argus_Signal__c
+            filter, matching the shape already used by the other six Property_Asset__c reports on
+            this dashboard (Readiness_Mix, Readiness_Signal_By_Value_Avk, Portfolio_Sell_Readiness,
+            Properties_by_Argus_Value, Properties_in_AUM, Total_Argus_Value - all six carried this
+            filter since before T2 and were never wrong).
+          - Disagreement 1 and the "nothing sets Status__c = 'Disposed'" gap are closed by the SAME
+            tranche's Conversion 6 writer: on Disposition_Stage__c transitioning INTO 'Sale Closes',
+            a service writes the parent Property_Asset__c.Status__c = 'Disposed', and
+            PropertyAssetSelector.selectAllForMeterSummary / .selectAllForPortfolio pick up
+            `AND Status__c != 'Disposed'`. That writer and selector change are DEVELOPER-owned work
+            in this same tranche, not part of this admin edit - this field's own file only records
+            that the gap this paragraph used to describe is being closed, not that it already is.
+            🔴 DO NOT infer from this comment alone that the writer has landed. Verify
+            DispositionTriggerHandler / DispositionApprovalAdvanceService and PropertyAssetSelector
+            directly before relying on this being live in the org.
     -->
     <fullName>Argus_Signal__c</fullName>
     <label>Argus Signal</label>

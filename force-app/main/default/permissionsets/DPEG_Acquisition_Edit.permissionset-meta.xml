@@ -1102,6 +1102,19 @@
         <field>Opportunity.Guidance_Price_Low__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!-- ADDED 2026-09-02 - item 3 (agent-output/three-gaps-design-2026-09-02.md). READ-ONLY ON
+         PURPOSE even in this Edit set: system-maintained by DealTransactionGateService from
+         TransactionTrigger, never hand-edited - a hand write here would forge the close gate. -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Opportunity.Has_Closed_Transaction__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Opportunity.Has_Open_Transaction__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
         <field>Opportunity.Hold_Period__c</field>
@@ -1694,6 +1707,16 @@
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
+        <editable>false</editable>
+        <!-- NEW 2026-09-02, item 1 of agent-output/three-gaps-design-2026-09-02.md. System UI
+             flag; read-only even in this Edit set, mirroring Underwriting__c.Stage__c's grant
+             matrix in this same file. See objects/Underwriting__c/fields/Approval_Pending__c
+             .field-meta.xml's own header - a missing grant here hides Submit for Approval for
+             every user, silently and permanently. -->
+        <field>Underwriting__c.Approval_Pending__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
         <editable>true</editable>
         <field>Underwriting__c.Cash_On_Cash_Return__c</field>
         <readable>true</readable>
@@ -1758,6 +1781,26 @@
         <field>Underwriting__c.Stage__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!-- 🔴 RESTORED 2026-09-02 - PRODUCTION INCIDENT REVERSAL. DO NOT REMOVE THIS GRANT AGAIN
+         UNTIL WAVE 2a-W2 HAS SHIPPED.
+         This grant was removed earlier today as item 2 / wave 2a-W3 of
+         agent-output/three-gaps-design-2026-09-02.md, OUT OF ORDER: that design gates the FLS
+         removal (W3) on the Apex changes (W2) landing first. W2 never shipped, so
+         OpportunityReviewService.createReviewRecords was still inserting
+         Underwriting__c(Status__c = 'In Progress') from the Opportunity after-insert/after-update
+         trigger. With zero real FLS grants anywhere (a FieldPermissions query returned exactly one
+         row, on the platform-owned Session set sfdc_slack), the field left the accessible schema
+         entirely and that DML threw "Operation failed due to fields being inaccessible on Sobject
+         Underwriting__c".
+         Blast radius: that insert is the ONLY creator of Underwriting__c, so every route into the
+         Underwriting stage failed with CANNOT_INSERT_UPDATE_ACTIVATE_ENTITY - record page, the
+         Initiate Underwriting quick action, StageAdvanceController, Flow, API and seed scripts.
+         Zero Underwriting__c rows were created between the removal and this restore.
+         The retirement is still the intended end state; it must follow the design's wave order.
+         editable=true here, mirroring Underwriting__c.Stage__c immediately above and the 15 other
+         writable Underwriting__c grants on this deal-driver set. Status__c is a WRITTEN field on
+         this path (the Apex insert above, plus the UW_Status_Approved workflow field update); the
+         only read-only grants on this object here are Verdict__c and Approval_Pending__c. -->
     <fieldPermissions>
         <editable>true</editable>
         <field>Underwriting__c.Status__c</field>
