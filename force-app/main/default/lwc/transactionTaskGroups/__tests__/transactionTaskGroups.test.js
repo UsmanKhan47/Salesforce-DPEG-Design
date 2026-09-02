@@ -427,6 +427,43 @@ describe('c-transaction-task-groups', () => {
     // ═══════════════════════════════════════════════════════════════════════════════════════
 
     describe('empty states', () => {
+        it('shows NEITHER the empty message NOR content BETWEEN the discriminator and the data', async () => {
+            // 🔴 THE REGRESSION THIS FILE MISSED THE FIRST TIME, AND THE REASON IT MISSED IT.
+            // `renderChecklist()` emits getRecord AND the Apex wire before asserting, so this
+            // intermediate state was never observed. In it — with the empty state gated on the
+            // DISCRIMINATOR alone rather than on the data — the component rendered "no checklist
+            // items have been generated… the fan-out may not have completed" on EVERY page load of
+            // a perfectly healthy deal. An alarming, false diagnosis shown to everyone, every time.
+            //
+            // ⚠ THE ASSERTION MUST BE TAKEN BETWEEN THE TWO EMITS. Any helper that settles both
+            // wires before asserting is structurally blind to it.
+            const element = createComponent();
+            getRecord.emit(transactionRecord(true));
+            await flush();
+
+            // Discriminator resolved (the Apex adapter is provisioned), round trip still in flight.
+            expect(getChecklist.getLastConfig()).toEqual({ transactionId: RECORD_ID });
+            expect(element.shadowRoot.querySelector('.tg-empty')).toBeNull();
+            expect(element.shadowRoot.querySelector('.tg-error')).toBeNull();
+            expect(element.shadowRoot.querySelectorAll('.tg-task')).toHaveLength(0);
+
+            // Presence control: the component is WAITING, not wedged. Without this the assertions
+            // above would also pass against a component that never renders anything at all.
+            getChecklist.emit(CHECKLIST_ROWS);
+            await flush();
+            expect(element.shadowRoot.querySelectorAll('.tg-task').length).toBeGreaterThan(0);
+        });
+
+        it('does the same on the LEGACY model', async () => {
+            const element = createComponent();
+            getRecord.emit(transactionRecord(false));
+            await flush();
+            expect(element.shadowRoot.querySelector('.tg-empty')).toBeNull();
+            getTaskGroups.emit(LEGACY_ROWS);
+            await flush();
+            expect(element.shadowRoot.querySelectorAll('.tg-task').length).toBeGreaterThan(0);
+        });
+
         it('shows a NEW-MODEL empty message that names the fan-out, not a blank panel', async () => {
             const element = await renderChecklist([]);
             const empty = element.shadowRoot.querySelector('.tg-empty');
@@ -537,6 +574,37 @@ describe('c-transaction-task-groups', () => {
             // The dialog stays open so the user does not lose the comment they typed.
             expect(element.shadowRoot.querySelector('.tg-modal--confirm')).not.toBeNull();
             expect(notifyRecordUpdateAvailable).not.toHaveBeenCalled();
+        });
+
+        it('strips the raw subject marker out of the refusal toast', async () => {
+            // The server interpolates the blocking item's RAW Subject__c into the refusal text.
+            // Shown unstripped, the toast reads … (anti-fraud) while the row directly above it
+            // reads the same subject WITHOUT the marker — the same step spelled two ways, in one
+            // viewport, at the exact moment the user is confused about why their click failed.
+            // Only the DECORATION is removed; the server still owns the wording.
+            completeItem.mockRejectedValue({
+                body: {
+                    message:
+                        'Complete "Call title company to verbally verify wiring instructions (anti-fraud)" first.'
+                }
+            });
+            const element = await renderChecklist();
+            const toasts = [];
+            element.addEventListener('lightning__showtoast', (e) => toasts.push(e.detail));
+
+            const checkbox = element.shadowRoot.querySelector('input[data-id="i-plain"]');
+            checkbox.checked = true;
+            checkbox.dispatchEvent(new CustomEvent('change'));
+            await flush();
+            element.shadowRoot.querySelector('.slds-button_brand').click();
+            await flush();
+
+            expect(toasts).toHaveLength(1);
+            expect(toasts[0].message).not.toContain('anti-fraud');
+            // Presence control: the SENTENCE survives — only the parenthetical is gone. Without
+            // this, an implementation that blanked the message entirely would also pass.
+            expect(toasts[0].message).toContain('Complete');
+            expect(toasts[0].message).toContain('verify wiring instructions');
         });
 
         it('disables a BLOCKED row rather than letting the user type a comment and be refused', async () => {

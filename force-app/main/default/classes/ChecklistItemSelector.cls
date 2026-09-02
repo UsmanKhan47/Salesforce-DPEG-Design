@@ -127,8 +127,13 @@ public with sharing class ChecklistItemSelector {
     }
 
     /**
-     * Items a human is about to act on — the read behind `ChecklistItemService.complete`,
-     * `.reopen` and `.recordWireVerification`.
+     * Items a human is about to act on — the read behind `ChecklistItemService.complete` and
+     * `.recordWireVerification`. Those are the ONLY two consumers; this header is the
+     * authoritative consumer inventory, so it must not advertise a method that does not exist.
+     * (An earlier draft listed `.reopen`. Nothing reopens a checklist item today — the LWC
+     * disables a completed row's checkbox — and the method was deliberately not built rather
+     * than stranded with no caller. If it is ever added, read the `reopen()` note in
+     * `ChecklistItemService`'s header first: the evidence fields are not simply carried over.)
      *
      * ✅ `WITH USER_MODE`, AND THAT IS THE POINT OF THE WHOLE CUSTOM-OBJECT MOVE. The Task model
      * could not do this: `Task` object EDIT is un-grantable by permission set on this platform
@@ -205,10 +210,14 @@ public with sharing class ChecklistItemSelector {
      * ⚠ SELECTS ONLY WHAT `ChecklistController.ItemRow` ACTUALLY RENDERS, and that restraint is a
      * SECURITY decision here, not tidiness. Under `USER_MODE` every additional column is an
      * additional FLS grant that must exist or the WHOLE QUERY throws and the whole screen goes
-     * dark. `Checklist_Item__c.Stage__c` and `Is_Conditional__c` were dropped for exactly that
-     * reason: the phase comes from the PARENT checklist's `Stage__c` and conditionality is a
-     * group-level fact, so neither was ever read. Do not add a field here "in case the UI wants
-     * it" — add it when the UI reads it.
+     * dark. `Checklist_Item__c.Stage__c`, `Is_Conditional__c` and `Due_Date__c` were all dropped
+     * for exactly that reason: the phase comes from the PARENT checklist's `Stage__c`,
+     * conditionality is a group-level fact, and the due date is consumed SERVER-SIDE by
+     * `ChecklistRollupService` — through `selectByTransactionIds` above, which is `SYSTEM_MODE`
+     * and DOES still select it — to compute `Transaction__c.Tasks_Overdue__c`. This screen renders
+     * none of the three. Do not add a field here "in case the UI wants it"; add it when the UI
+     * reads it. An overdue badge would bring `Due_Date__c` back, together with the FLS grant it
+     * implies.
      *
      * @param transactionIds Parent `Transaction__c` ids; null/empty-safe.
      * @return Items on those deals with the display fields populated; an EMPTY list when the input
@@ -225,7 +234,7 @@ public with sharing class ChecklistItemSelector {
         return [
             SELECT Id, Checklist__c, Checklist__r.Transaction__c, Subject__c, Sequence__c,
                    Owner_Label__c, Flag__c, Is_Critical__c, Is_Wire_Verification__c,
-                   Is_Prerequisite_Met__c, Blocked_By__c, Due_Date__c, Comment__c,
+                   Is_Prerequisite_Met__c, Blocked_By__c, Comment__c,
                    Verbal_Verification_Completed__c, Verified_By_Name__c, Verification_Phone__c,
                    Verified_DateTime__c,
                    Completed_By__c, Completed_By__r.Name, Completed_DateTime__c

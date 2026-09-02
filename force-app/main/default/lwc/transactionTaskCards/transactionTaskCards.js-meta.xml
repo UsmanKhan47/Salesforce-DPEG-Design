@@ -3,7 +3,7 @@
     <apiVersion>67.0</apiVersion>
     <isExposed>true</isExposed>
     <masterLabel>Transaction Task Cards</masterLabel>
-    <description>Sidebar 2×2 grid of overall task counts across Active transactions (total, pending, at-risk/overdue, wire).</description>
+    <description>Sidebar 2x2 grid of overall task counts across Active transactions (total, pending, at-risk/overdue, wire).</description>
     <targets>
         <target>lightning__AppPage</target>
         <target>lightning__HomePage</target>

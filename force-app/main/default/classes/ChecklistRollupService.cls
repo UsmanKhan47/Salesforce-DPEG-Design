@@ -269,20 +269,55 @@ public with sharing class ChecklistRollupService {
     }
 
     /**
-     * 🔴 THE ROLLUP WRITES, WHICH MUST RUN **WITHOUT SHARING** - AND THIS IS A SEPARATE DECISION
-     * FROM `SYSTEM_MODE`, NOT A CONSEQUENCE OF IT.
+     * 🔴 THE ROLLUP WRITES, WHICH RUN **WITHOUT SHARING** - A SEPARATE DECISION FROM
+     * `SYSTEM_MODE`, NOT A CONSEQUENCE OF IT. ⚠ READ THE 2026-09-02 CORRECTION BELOW BEFORE
+     * CITING THIS BLOCK AS PRECEDENT: THE SHARING HALF OF ITS ORIGINAL ARGUMENT WAS WRONG.
      *
-     * `SYSTEM_MODE` lifts CRUD and FLS and **NEVER** sharing. `Transaction__c` is Private OWD, and
-     * `Checklist_Item__c` is master-detail with `writeRequiresMasterRead=false`, which means a
-     * principal needs only READ on the deal to EDIT one of its checklist items. So the ordinary case
-     * is a user who can legitimately tick an item on a deal they do not own and cannot edit - and
-     * under `with sharing` this counter update would then not apply.
-     * THIS PROJECT HAS A LIVE INCIDENT OF EXACTLY THAT SHAPE: an approval's parent write failed
-     * silently for every approver who did not OWN the record, worked in every test because the
-     * test's approver WAS the owner, and was swallowed by `allOrNone = false`. `TaskRollupService`
-     * documents the same hazard and accepts it as a residual because on ITS reported path the runner
-     * was always the owner; that accident does not hold here, so the decision is taken rather than
-     * inherited.
+     * `SYSTEM_MODE` lifts CRUD and FLS and **NEVER** sharing, so the two questions are asked
+     * separately.
+     *
+     * THE CRUD HALF IS SETTLED AND REAL. `DPEG_Checklist_Edit` grants `allowEdit=false` on
+     * `Transaction__c` (verified 2026-09-02), so a principal holding only that set cannot write
+     * these counters at all. `SYSTEM_MODE` covers exactly that, on its own, with no sharing
+     * escalation required.
+     *
+     * ═══════════════════════════════════════════════════════════════════════════════════════
+     * 🔴 CORRECTION 2026-09-02 - THE SHARING HALF WAS ARGUED FROM AN INVERTED FACT.
+     *    THE ORIGINAL JUSTIFICATION IS VOID. DO NOT CITE IT OR COPY IT INTO A NEW CLASS.
+     * ═══════════════════════════════════════════════════════════════════════════════════════
+     * This block used to read: "`Checklist_Item__c` is master-detail with
+     * `writeRequiresMasterRead=false`, which means a principal needs only READ on the deal to EDIT
+     * one of its checklist items." **THAT IS BACKWARDS.** `writeRequiresMasterRead=false` is the
+     * STRICTER setting: it requires read AND WRITE access on the master to create, edit or delete
+     * the detail. `true` is the one that needs only read. Both links carry `false`
+     * (`Checklist__c.Transaction__c` and `Checklist_Item__c.Checklist__c`, verified 2026-09-02),
+     * and the chain is two hops, so editing an item requires EDIT-level sharing on the Transaction.
+     *
+     * ⇒ ON THE TRIGGER PATH THE PREMISE THEREFORE DOES NOT EXIST. The user whose save fired
+     *   `ChecklistItemTrigger` demonstrably HAD edit access to the deal, or the platform would have
+     *   refused their item edit before this code ever ran. The "ticks an item on a deal they cannot
+     *   edit" case is not an edge case that rarely happens - it cannot happen.
+     *   `ChecklistItemService`'s header and `Checklist__c.object-meta.xml` both state the flag
+     *   CORRECTLY; this block was the outlier, and it was the sole justification for the
+     *   escalation below.
+     *
+     * ⚠ WHAT THAT HONESTLY LEAVES: an escalation whose stated reason is gone and which nobody has
+     * re-priced. It is deliberately NOT being flipped to `with sharing` in the Phase 3 UI change -
+     * that is a behaviour change to a deployed class, outside that change's scope, and the incident
+     * it was reacting to is real: an approval's parent write failed silently for every approver who
+     * did not OWN the record, worked in every test because the test's approver WAS the owner, and
+     * was swallowed by `allOrNone = false`.
+     *
+     * THE RE-PRICING QUESTION IS NARROW, so whoever picks it up should not re-derive it: is there
+     * any caller of `recalc` whose running principal lacks EDIT sharing on the deals in
+     * `transactionIds`? Every caller today is user-initiated - `ChecklistItemTrigger`,
+     * `ChecklistFanoutService.reconcile` off a Transaction save, and the fan-out Queueable running
+     * as its enqueuer - and for all three the argument above says the principal has edit access. A
+     * future migration batch or Schedulable would NOT, and `ChecklistMigrationBatch` (Phase 4 M1)
+     * is exactly that shape. Decide it with a NON-OWNER test that actually fails under
+     * `with sharing`, not on the sentence this block replaced. `TaskRollupService` documents a
+     * related hazard and accepts it as a residual; that is a different object with a different
+     * relationship and its reasoning does not transfer here in either direction.
      *
      * Scoped as narrowly as Apex allows: `private`, one class, one method, reached only from
      * `recalc`. Inner classes do NOT inherit the outer class's sharing keyword, so it is declared

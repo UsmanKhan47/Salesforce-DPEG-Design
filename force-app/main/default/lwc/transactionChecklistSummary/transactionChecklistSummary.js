@@ -33,8 +33,10 @@ export default class TransactionChecklistSummary extends LightningElement {
     _fannedOut;
     _checklistData = [];
     _checklistError;
+    _checklistLoaded = false;
     _legacyData = [];
     _legacyError;
+    _legacyLoaded = false;
 
     @wire(getRecord, { recordId: '$recordId', fields: [CHECKLIST_FANNED_OUT_FIELD] })
     wiredTransaction({ data, error }) {
@@ -70,9 +72,12 @@ export default class TransactionChecklistSummary extends LightningElement {
         if (data) {
             this._checklistData = data;
             this._checklistError = undefined;
+            this._checklistLoaded = true;
         } else if (error) {
             this._checklistError = error;
             this._checklistData = [];
+            // Both branches: the round trip is over either way.
+            this._checklistLoaded = true;
         }
     }
 
@@ -81,9 +86,11 @@ export default class TransactionChecklistSummary extends LightningElement {
         if (data) {
             this._legacyData = data;
             this._legacyError = undefined;
+            this._legacyLoaded = true;
         } else if (error) {
             this._legacyError = error;
             this._legacyData = [];
+            this._legacyLoaded = true;
         }
     }
 
@@ -112,6 +119,35 @@ export default class TransactionChecklistSummary extends LightningElement {
 
     get hasError() {
         return !!this.error;
+    }
+
+    /** The DISCRIMINATOR has not resolved and has not failed. Only the first half of loading. */
+    get isResolvingModel() {
+        return !this._modelResolved && !this._modelError;
+    }
+
+    /**
+     * Whether the ACTIVE model's Apex round trip has come back — with data or with an error.
+     *
+     * 🔴 THE SECOND HALF OF "LOADING". Resolving the discriminator only says WHICH Apex method
+     * to call; the call is a separate round trip, and between the two the groups list is
+     * legitimately empty. Without this, EVERY page load briefly rendered
+     * "Checklist generated, but no items found" on a healthy deal — a sentence whose whole
+     * purpose is to say something is WRONG. See `c/transactionTaskGroups` for the full writeup.
+     */
+    get dataLoaded() {
+        if (this.isChecklistModel) {
+            return this._checklistLoaded;
+        }
+        if (this.isLegacyModel) {
+            return this._legacyLoaded;
+        }
+        return false;
+    }
+
+    /** Either half still outstanding. No empty-state copy may render while true. */
+    get isLoading() {
+        return this.isResolvingModel || (!this.hasError && !this.dataLoaded);
     }
 
     get errorMessage() {
@@ -148,6 +184,11 @@ export default class TransactionChecklistSummary extends LightningElement {
      * problem from a deal that was never fanned out at all, and one worth telling someone about.
      */
     get emptyLabel() {
+        // ⚠ THE LOADING CHECK MUST COME FIRST. Both strings below are diagnoses, and a diagnosis
+        // rendered before the data arrives is a false one shown on every page load.
+        if (this.isLoading) {
+            return 'Loading…';
+        }
         if (this.isChecklistModel) {
             return 'Checklist generated, but no items found';
         }

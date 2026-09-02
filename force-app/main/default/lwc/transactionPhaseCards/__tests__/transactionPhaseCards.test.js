@@ -169,6 +169,25 @@ describe('c-transaction-phase-cards', () => {
         });
     });
 
+    it('shows NEITHER the empty message NOR cards BETWEEN the discriminator and the data', async () => {
+        // 🔴 See the matching test in c-transaction-task-groups. Gated on the discriminator
+        // alone, this component rendered "No checklist has been generated for this deal yet" on
+        // every page load of a healthy deal. The assertion has to sit BETWEEN the two emits.
+        const element = createComponent();
+        getRecord.emit(transactionRecord(true));
+        await flush();
+
+        expect(getChecklist.getLastConfig()).toEqual({ transactionId: RECORD_ID });
+        expect(element.shadowRoot.querySelector('.kpi-empty')).toBeNull();
+        expect(element.shadowRoot.querySelector('.kpi-error')).toBeNull();
+        expect(cards(element)).toHaveLength(0);
+
+        // Presence control — waiting, not wedged.
+        getChecklist.emit(CHECKLIST_ROWS);
+        await flush();
+        expect(cards(element)).toHaveLength(4);
+    });
+
     it('renders an explicit empty message instead of four 0 / 0 cards', async () => {
         // "No checklist exists" and "a checklist exists with nothing done" are different
         // statements and must not look alike.

@@ -90,6 +90,17 @@
         Membership was reconciled against the org before this edit; the deployed group carried no
         member absent from this file (see ARCHITECTURE.md §2's 2026-08-10 finding on this exact
         hazard - a PermissionSetGroup deploy replaces its member list wholesale).
+
+        DPEG_Checklist_View ADDED 2026-09-02, CONSOLIDATED PERMISSION PASS (Transaction checklist
+        rewrite Phases 1-3 gap closure). This group already carried DPEG_Transaction_View, which
+        is what lets a Junior Analyst open a Transaction record page, but not DPEG_Checklist_View -
+        so on any deal migrated to the new Checklist__c/Checklist_Item__c model, the USER_MODE
+        display selectors behind the three checklist LWCs raised
+        `System.QueryException: No such column` (an FLS denial wearing a schema error) and every
+        one of them rendered its generic error state. DPEG_TaskChecklist_View (the Task-model
+        view-only twin, already a member here since the earlier build) is UNCHANGED and BOTH stay
+        members through the Phase 4 dual-model migration, matching the ChecklistController /
+        TransactionTaskController dual-grant note in DPEG_Apex_Access.
     -->
     <permissionSets>DPEG_Acquisition_Edit</permissionSets>
     <permissionSets>DPEG_Apex_Access</permissionSets>
@@ -97,6 +108,7 @@
     <permissionSets>DPEG_App_Disposition</permissionSets>
     <permissionSets>DPEG_App_Transaction</permissionSets>
     <permissionSets>DPEG_Base_Access</permissionSets>
+    <permissionSets>DPEG_Checklist_View</permissionSets>
     <permissionSets>DPEG_Contact_Edit</permissionSets>
     <permissionSets>DPEG_Disposition_Edit</permissionSets>
     <permissionSets>DPEG_PropertyMgmt_View</permissionSets>

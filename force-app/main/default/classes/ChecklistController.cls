@@ -138,7 +138,6 @@ public with sharing class ChecklistController {
         @AuraEnabled public String phone;
         @AuraEnabled public Datetime verifiedAt;
         @AuraEnabled public String comment;
-        @AuraEnabled public Date dueDate;
         /**
          * The REAL completer — `Completed_By__r.Name`, stamped at the moment of transition by
          * `ChecklistItemDomain.stampCompletion` and never recomputed. This is what replaces the
@@ -239,7 +238,6 @@ public with sharing class ChecklistController {
                 itemRow.phone = item.Verification_Phone__c;
                 itemRow.verifiedAt = item.Verified_DateTime__c;
                 itemRow.comment = item.Comment__c;
-                itemRow.dueDate = item.Due_Date__c;
                 // Null-guarded: a sharing-restricted reader gets a null Completed_By__r back even
                 // though the lookup id is populated.
                 itemRow.completedByName = item.Completed_By__r != null ? item.Completed_By__r.Name : null;

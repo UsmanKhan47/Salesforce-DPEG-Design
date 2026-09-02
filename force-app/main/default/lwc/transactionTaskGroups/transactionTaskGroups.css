@@ -570,7 +570,17 @@
 /* ---- Blocked rows (wire-fraud prerequisite gate, advisory) ----
    Deliberately NOT the same treatment as .tg-task--critical. Critical means "this step is
    high-risk"; blocked means "this step cannot start yet". Colouring them alike would let a
-   reader mistake a merely-sequenced item for a deal-sinking one. */
+   reader mistake a merely-sequenced item for a deal-sinking one.
+
+   ⚠ THE `padding: 2px 7px` AND `border-radius: 10px` BELOW ARE A DELIBERATE BYTE-COPY OF
+   `.tg-cond`, THE PILL THIS ONE SITS NEXT TO, AND THEY RAISE THREE SLDS-LINTER WARNINGS.
+   Keeping them is the right call: the two pills must be the same size and shape, and matching
+   the sibling exactly is the only way to guarantee that.
+   To be precise about what the linter is objecting to — SLDS 2 spacing and radius hooks DO
+   exist; the warning is that none of them has a value matching these. So the fix is not
+   "use the nearest hook": substituting a scale radius here would silently change the pill's
+   shape and de-synchronise it from `.tg-cond`, which is a visual regression traded for a clean
+   report. If `.tg-cond` is ever migrated to hooks, migrate this rule in the SAME change. */
 .tg-task--blocked {
     background: var(--slds-g-color-surface-container-2, #f3f3f3);
 }

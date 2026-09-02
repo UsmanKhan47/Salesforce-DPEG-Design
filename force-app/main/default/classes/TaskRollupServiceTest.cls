@@ -547,4 +547,69 @@ private class TaskRollupServiceTest {
         }
         insert assignments;
     }
+
+    // ═════════════════════════════════════════════════════════════════════════════════
+    // 🔴 THE SUBJECT-MARKER GUARD. THE LAST SILENT PATH TO A ZERO WIRE-RISK COUNT.
+    // ═════════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * `TaskRollupService.recalc` derives `Transaction__c.Wire_Open_Risks__c` from
+     * `Subject.toLowerCase().contains('anti-fraud')`. That parse STAYS on the Task model — `Task`
+     * carries no `Is_Wire_Verification__c` to point at (verified against `objects/Activity/fields/`)
+     * and the new `Checklist_Item__c` model, which does, never routes through this class.
+     *
+     * 🔴 THAT LEAVES EXACTLY ONE WAY TO SILENTLY ZERO THE WIRE SENTINEL, AND THIS TEST CLOSES IT.
+     * Clean the `(anti-fraud)` marker out of `Transaction_Task_Def__mdt.Subject__c`, re-run
+     * `scripts/load-transaction-task-defs.apex`, and every deal fanned out AFTERWARDS gets unmarked
+     * subjects. `recalc` then counts ZERO open wire risks for it — no error, no exception, nothing
+     * in a log, and zero is the reassuring direction. Existing Tasks keep their frozen subjects, so
+     * the damage is invisible on the deals anyone would think to check.
+     *
+     * ⚠ EVERY OTHER TEST IN THIS CLASS IS BLIND TO IT, WHICH IS WHY THIS ONE READS THE CMDT RATHER
+     * THAN A FIXTURE. The rest build their own `Task` rows with hardcoded `(anti-fraud)` subjects,
+     * so they assert that the PARSE works — never that the DATA the parse depends on still says what
+     * it must. They would stay green through the entire failure.
+     *
+     * The invariant is deliberately expressed over `Is_Wire_Verification__c` rather than over a
+     * hardcoded {B2, I7} pair: that flag is what the NEW model counts, so this asserts the two
+     * mechanisms still agree about which items are wire steps. Re-flagging a row without marking
+     * its subject would diverge them, and that goes red here too.
+     *
+     * `__mdt` is readable in tests without `SeeAllData=true`.
+     */
+    @isTest
+    static void wireVerificationDefinitionsStillCarryTheAntiFraudMarker() {
+        List<Transaction_Task_Def__mdt> wireDefs = new List<Transaction_Task_Def__mdt>();
+        for (Transaction_Task_Def__mdt def : TransactionTaskDefProvider.getAllOrderedByGroupAndSequence()) {
+            if (def.Is_Wire_Verification__c == true) {
+                wireDefs.add(def);
+            }
+        }
+
+        // PRESENCE CONTROL FIRST, so the per-row loop below can never pass vacuously against an
+        // empty list. Zero here is itself a real defect and not a test-environment quirk: CMDT
+        // RECORDS are force-ignored (`.forceignore`) and load only via
+        // `scripts/load-transaction-task-defs.apex`, so zero means that ordered build step was
+        // skipped — in which case the fan-out creates no wire-verification items at all and
+        // `Wire_Open_Risks__c` is structurally zero on every deal in the org.
+        Assert.isTrue(
+            wireDefs.size() >= 2,
+            'Expected at least the two anti-fraud wire-verification definitions (B2 and I7), found '
+                + wireDefs.size() + '. If this is 0, scripts/load-transaction-task-defs.apex has not '
+                + 'been run in this org and the whole Transaction checklist is unseeded.'
+        );
+
+        for (Transaction_Task_Def__mdt def : wireDefs) {
+            String subject = def.Subject__c == null ? '' : def.Subject__c.toLowerCase();
+            Assert.isTrue(
+                subject.contains('anti-fraud'),
+                'Transaction_Task_Def__mdt ' + def.Group_Letter__c + def.Sequence__c
+                    + ' is flagged Is_Wire_Verification__c but its Subject__c no longer contains the '
+                    + ''anti-fraud' marker: "' + def.Subject__c + '". TaskRollupService.recalc parses '
+                    + 'that marker to compute Transaction__c.Wire_Open_Risks__c for every deal still '
+                    + 'on the legacy Task model, and it FAILS SILENTLY TO ZERO. Do not clean these '
+                    + 'subjects until M5 retires the Task model — see TaskRollupService's header.'
+            );
+        }
+    }
 }

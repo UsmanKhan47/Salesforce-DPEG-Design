@@ -36,8 +36,10 @@ export default class TransactionPhaseCards extends LightningElement {
     _fannedOut;
     _checklistData = [];
     _checklistError;
+    _checklistLoaded = false;
     _legacyData = [];
     _legacyError;
+    _legacyLoaded = false;
 
     @wire(getRecord, { recordId: '$recordId', fields: [CHECKLIST_FANNED_OUT_FIELD] })
     wiredTransaction({ data, error }) {
@@ -73,9 +75,12 @@ export default class TransactionPhaseCards extends LightningElement {
         if (data) {
             this._checklistData = data;
             this._checklistError = undefined;
+            this._checklistLoaded = true;
         } else if (error) {
             this._checklistError = error;
             this._checklistData = [];
+            // Both branches: the round trip is over either way.
+            this._checklistLoaded = true;
         }
     }
 
@@ -84,9 +89,11 @@ export default class TransactionPhaseCards extends LightningElement {
         if (data) {
             this._legacyData = data;
             this._legacyError = undefined;
+            this._legacyLoaded = true;
         } else if (error) {
             this._legacyError = error;
             this._legacyData = [];
+            this._legacyLoaded = true;
         }
     }
 
@@ -122,9 +129,32 @@ export default class TransactionPhaseCards extends LightningElement {
         return (e && e.body && e.body.message) || 'Unable to load phase progress.';
     }
 
-    /** The discriminator has not resolved and has not failed — still loading. */
-    get isResolving() {
+    /** The DISCRIMINATOR has not resolved and has not failed. Only the first half of loading. */
+    get isResolvingModel() {
         return !this._modelResolved && !this._modelError;
+    }
+
+    /**
+     * Whether the ACTIVE model's Apex round trip has come back — with data or with an error.
+     *
+     * 🔴 THE SECOND HALF OF "LOADING". Resolving the discriminator only says WHICH Apex method
+     * to call; the call is a separate round trip, and between the two `groups` is legitimately
+     * `[]`. Gated on the discriminator alone, the empty state fired on EVERY page load for a
+     * healthy deal. See `c/transactionTaskGroups` for the full writeup.
+     */
+    get dataLoaded() {
+        if (this.isChecklistModel) {
+            return this._checklistLoaded;
+        }
+        if (this.isLegacyModel) {
+            return this._legacyLoaded;
+        }
+        return false;
+    }
+
+    /** Either half still outstanding. Neither an error nor an empty state may render while true. */
+    get isLoading() {
+        return this.isResolvingModel || (!this.hasError && !this.dataLoaded);
     }
 
     /**
@@ -134,7 +164,7 @@ export default class TransactionPhaseCards extends LightningElement {
      * exists on this deal".
      */
     get isEmpty() {
-        return !this.hasError && !this.isResolving && this.groups.length === 0;
+        return !this.hasError && !this.isLoading && this.groups.length === 0;
     }
 
     /**
@@ -146,7 +176,7 @@ export default class TransactionPhaseCards extends LightningElement {
      * exactly this during the rewrite.
      */
     get showCards() {
-        return !this.hasError && !this.isEmpty && !this.isResolving;
+        return !this.hasError && !this.isEmpty && !this.isLoading;
     }
 
     get emptyMessage() {

@@ -45,7 +45,8 @@ import {
     normalizeLegacyGroups,
     percent,
     phaseKeyForLetter,
-    phaseKeyForStage
+    phaseKeyForStage,
+    stripMarkerForDisplay
 } from 'c/utilsTransactionChecklist';
 
 describe('c-utils-transaction-checklist :: model discrimination', () => {
@@ -144,6 +145,29 @@ describe('c-utils-transaction-checklist :: displaySubject', () => {
         expect(displaySubject(undefined)).toBe('');
         expect(displaySubject(null)).toBe('');
         expect(displaySubject('')).toBe('');
+    });
+});
+
+describe('c-utils-transaction-checklist :: stripMarkerForDisplay', () => {
+    it('strips the marker out of a SERVER MESSAGE that quotes a subject', () => {
+        // The wire-fraud gate interpolates the blocking item's RAW Subject__c into its refusal,
+        // and that refusal is shown to the user verbatim. Without this, the toast names the step
+        // one way and the row directly above it names the same step another way.
+        const refusal =
+            'Complete "Call title company to verbally verify wiring instructions (anti-fraud)" first.';
+        expect(stripMarkerForDisplay(refusal)).toBe(
+            'Complete "Call title company to verbally verify wiring instructions " first.'
+        );
+    });
+
+    it('leaves a message with no marker completely alone', () => {
+        const plain = 'This checklist item is no longer available to you.';
+        expect(stripMarkerForDisplay(plain)).toBe(plain);
+    });
+
+    it('returns the empty string for blank input, never undefined', () => {
+        expect(stripMarkerForDisplay(undefined)).toBe('');
+        expect(stripMarkerForDisplay(null)).toBe('');
     });
 });
 

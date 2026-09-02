@@ -18,7 +18,8 @@ import {
     PHASES,
     modelFor,
     normalizeChecklistGroups,
-    normalizeLegacyGroups
+    normalizeLegacyGroups,
+    stripMarkerForDisplay
 } from 'c/utilsTransactionChecklist';
 
 /**
@@ -83,10 +84,12 @@ export default class TransactionTaskGroups extends LightningElement {
     _checklistWire;
     _checklistData = [];
     _checklistError;
+    _checklistLoaded = false;
 
     _legacyWire;
     _legacyData = [];
     _legacyError;
+    _legacyLoaded = false;
 
     _selectedPhase;
     _selectedKey;
@@ -145,9 +148,13 @@ export default class TransactionTaskGroups extends LightningElement {
         if (result.data) {
             this._checklistData = result.data;
             this._checklistError = undefined;
+            this._checklistLoaded = true;
         } else if (result.error) {
             this._checklistError = result.error;
             this._checklistData = [];
+            // Set on the ERROR branch too: the round trip is over either way, and leaving it
+            // false would hold the component in its loading state behind an error it already has.
+            this._checklistLoaded = true;
         }
     }
 
@@ -157,9 +164,11 @@ export default class TransactionTaskGroups extends LightningElement {
         if (result.data) {
             this._legacyData = result.data;
             this._legacyError = undefined;
+            this._legacyLoaded = true;
         } else if (result.error) {
             this._legacyError = result.error;
             this._legacyData = [];
+            this._legacyLoaded = true;
         }
     }
 
@@ -188,9 +197,38 @@ export default class TransactionTaskGroups extends LightningElement {
     // Four mutually exclusive states, so an empty checklist is VISIBLY empty and never renders as
     // blank space that reads like a successful load of nothing.
 
-    /** The discriminator has not resolved and has not failed — still loading. */
-    get isResolving() {
+    /** The DISCRIMINATOR has not resolved and has not failed. Only the first half of loading. */
+    get isResolvingModel() {
         return !this._modelResolved && !this._modelError;
+    }
+
+    /**
+     * Whether the ACTIVE model's Apex round trip has come back — with data or with an error.
+     *
+     * 🔴 THIS IS THE SECOND HALF OF "LOADING", AND OMITTING IT INVERTED THE WHOLE POINT OF THE
+     * EMPTY STATE. Resolving the discriminator only tells us WHICH Apex method to call; the call
+     * itself is a separate round trip. Between the two, `groups` is legitimately `[]` — and with
+     * `showEmpty` gated on the discriminator alone, every single page load rendered
+     * "no checklist items have been generated… the fan-out may not have completed" for a moment,
+     * on healthy deals. An alarming, false, load-bearing message shown to everyone, every time.
+     *
+     * ⚠ THE JEST SUITE COULD NOT SEE IT, and that is the reusable lesson: the render helpers
+     * emitted `getRecord` AND the Apex wire before asserting, so the intermediate state was never
+     * observed. There is now a test that asserts BETWEEN the two emits.
+     */
+    get dataLoaded() {
+        if (this.isChecklistModel) {
+            return this._checklistLoaded;
+        }
+        if (this.isLegacyModel) {
+            return this._legacyLoaded;
+        }
+        return false;
+    }
+
+    /** Either half still outstanding. Neither an error nor an empty state may render while true. */
+    get isLoading() {
+        return this.isResolvingModel || (!this.hasModelError && !this.dataLoaded);
     }
 
     get hasModelError() {
@@ -220,7 +258,7 @@ export default class TransactionTaskGroups extends LightningElement {
     /** A genuinely empty checklist for a resolved model — distinct from an error and from loading. */
     get showEmpty() {
         return (
-            !this.isResolving &&
+            !this.isLoading &&
             !this.hasModelError &&
             !this.hasDataError &&
             this.groups.length === 0
@@ -236,7 +274,7 @@ export default class TransactionTaskGroups extends LightningElement {
 
     get showContent() {
         return (
-            !this.isResolving &&
+            !this.isLoading &&
             !this.hasModelError &&
             !this.hasDataError &&
             this.groups.length > 0
@@ -504,10 +542,23 @@ export default class TransactionTaskGroups extends LightningElement {
         }
     }
 
+    /**
+     * Surfaces a server refusal.
+     *
+     * ⚠ THE MESSAGE IS MARKER-STRIPPED, and only for that. The wire-fraud gate interpolates the
+     * blocking item's raw `Subject__c` into its text, so an unstripped toast names the step
+     * `"… (anti-fraud)"` while the row above it shows the same step without the marker. The
+     * WORDING is untouched — the server still owns the explanation.
+     */
     toastFailure(title, e, fallback) {
-        const msg = (e && e.body && e.body.message) || fallback;
+        const raw = (e && e.body && e.body.message) || fallback;
         this.dispatchEvent(
-            new ShowToastEvent({ title, message: msg, variant: 'error', mode: 'sticky' })
+            new ShowToastEvent({
+                title,
+                message: stripMarkerForDisplay(raw) || fallback,
+                variant: 'error',
+                mode: 'sticky'
+            })
         );
     }
 
@@ -669,10 +720,11 @@ export default class TransactionTaskGroups extends LightningElement {
             this._wireModal = {};
             await this.refreshAfterWrite();
         } catch (e) {
-            const msg =
+            // Marker-stripped for the same reason as toastFailure above.
+            const raw =
                 (e && e.body && e.body.message) ||
                 'Could not save the verification. Please try again.';
-            this._wireModal = { ...this._wireModal, error: msg };
+            this._wireModal = { ...this._wireModal, error: stripMarkerForDisplay(raw) || raw };
         } finally {
             this._wireSaving = false;
         }

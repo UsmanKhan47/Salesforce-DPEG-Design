@@ -210,10 +210,35 @@ export function phaseKeyForLetter(letter) {
  *          UNCONDITIONALLY — returning `undefined` renders the literal string `"undefined"`.
  */
 export function displaySubject(subject) {
-    if (!subject) {
+    return stripMarkerForDisplay(subject);
+}
+
+/**
+ * The same cosmetic strip, applied to a SERVER MESSAGE rather than to a subject.
+ *
+ * 🔴 WHY THIS EXISTS AS ITS OWN EXPORT. `ChecklistItemPrerequisiteService` interpolates the
+ * blocking item's RAW `Subject__c` into its refusal text — markers and all — and that text is
+ * surfaced to the user VERBATIM (deliberately: it names the step they have to finish). So without
+ * this, the toast says
+ *     Complete "Call title company to verbally verify wiring instructions (anti-fraud)" first
+ * while the row directly above it reads
+ *     Call title company to verbally verify wiring instructions
+ * — the same step, spelled two ways, in the same viewport, at the exact moment the user is
+ * confused about why their click was refused.
+ *
+ * ⚠ COSMETIC ONLY, and it must stay that way. It does not decide anything, and the SERVER text is
+ * still the single source of the explanation — this only removes decoration the UI hides
+ * everywhere else. `DISPLAY_MARKER_RE` is non-global, so it strips at most the one marker inside
+ * the quoted subject and cannot chew through the rest of a message.
+ *
+ * @param {string|null|undefined} text any user-facing string that may embed a subject.
+ * @returns {string} the text with a leading/trailing-trimmed marker removed; `''` when blank.
+ */
+export function stripMarkerForDisplay(text) {
+    if (!text) {
         return '';
     }
-    return String(subject).replace(DISPLAY_MARKER_RE, '').trim();
+    return String(text).replace(DISPLAY_MARKER_RE, '').trim();
 }
 
 /**

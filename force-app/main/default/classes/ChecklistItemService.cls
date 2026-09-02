@@ -85,6 +85,25 @@
  * (`.claude/rules/invocable-rule.md` governs the SHAPE of an invocable method when one exists;
  * it does not require inventing one.)
  *
+ * 🔴 READ THIS BEFORE BUILDING `reopen()`. IT IS NOT A ONE-LINE FLAG FLIP ON A WIRE ITEM.
+ * The obvious implementation restores the open flag via `ChecklistItemDomain.openFlagFor` and
+ * leaves everything else alone — which on a wire-verification item leaves
+ * `Verbal_Verification_Completed__c = true`, so `ChecklistRollupService` keeps reporting the item
+ * as NOT an open wire risk even though it is demonstrably open again. That was originally argued
+ * here as correct ("reopening the item does not un-make the phone call"), and on review that
+ * argument does not survive contact with WHY an operator would reopen one:
+ *
+ *   THE REALISTIC REASON IS THAT THE WIRING INSTRUCTIONS CHANGED — which is the classic business
+ *   email compromise pattern, and precisely the case where the earlier verification is VOID.
+ *   "The call happened" is not the same claim as "the instructions currently on file were
+ *   verified", and only the second is what this control exists to assert.
+ *
+ * ⇒ A future `reopen()` should almost certainly CLEAR `Verbal_Verification_Completed__c`,
+ *   `Verified_By_Name__c`, `Verification_Phone__c` and `Verified_DateTime__c` on an
+ *   `Is_Wire_Verification__c` item and force re-verification, so `Wire_Open_Risks__c` counts it
+ *   again. It is unreachable today — nothing reopens an item — which is the only reason this is a
+ *   note rather than a defect. Do not read the current behaviour as a decision that was made.
+ *
  * @see force-app/main/default/classes/ChecklistController.cls (the thin caller)
  * @see force-app/main/default/classes/ChecklistItemSelector.cls (the one read)
  * @see force-app/main/default/classes/ChecklistItemDomain.cls (the single definition of "done")

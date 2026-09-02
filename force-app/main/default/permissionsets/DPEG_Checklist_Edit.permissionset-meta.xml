@@ -334,6 +334,27 @@
         <object>Checklist__c</object>
         <viewAllRecords>false</viewAllRecords>
     </objectPermissions>
+    <!--
+        DELETE ON Checklist_Item__c IS DELIBERATELY allowDelete=false, AND THIS IS A SECURITY
+        CONTROL, NOT AN OVERSIGHT TO "COMPLETE" LATER. Consolidated permission pass, 2026-09-02.
+
+        Checklist_Item__c.Blocked_By__c is deleteConstraint=SetNull (self-lookup, §4.2 of
+        agent-output/design-transaction-fsd-gaps.md). Deleting a PREREQUISITE item silently nulls
+        the dependent item's Blocked_By__c - the platform does this for you, no trigger fires, no
+        error, no log entry - and the dependent's prerequisite gate (ChecklistItemTriggerHandler /
+        Is_Prerequisite_Met__c, §5.1 of the same doc) then evaluates as if the dependent had never
+        been gated at all. Concretely: delete B2 ("Call title company to verbally verify wiring
+        instructions (anti-fraud)") and B3 ("Send wire request to accounting with verified
+        instructions") becomes completable with NO verbal verification ever having happened. This
+        is the wire-fraud control the whole Phase-0/Phase-1 build exists to enforce, undone by a
+        single DELETE with no compensating signal anywhere in the UI or the data.
+        Verified 2026-09-02: no permission set or profile in this repo grants Delete on
+        Checklist_Item__c anywhere.
+        DO NOT add allowDelete=true here (or to DPEG_Checklist_View, or to any new set) without
+        first reading Checklist_Item__c.Blocked_By__c's own field-header and re-deriving whether
+        the SetNull hazard has been closed some other way (e.g. a delete-time trigger check) - it
+        has not, as of this comment.
+    -->
     <objectPermissions>
         <allowCreate>true</allowCreate>
         <allowDelete>false</allowDelete>

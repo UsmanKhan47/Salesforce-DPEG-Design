@@ -147,9 +147,19 @@ public with sharing class UtilityBillService {
      *  2. SHARING. SYSTEM_MODE does NOT lift sharing, and this project has already been bitten
      *     once by assuming it does. It is not relied on here: every record written is a
      *     `Utility_Bill__c` under the SAME `Meter__c` the user is already saving against, and
-     *     `Utility_Bill__c.Meter__c` carries `writeRequiresMasterRead = false`, so Read on the
-     *     meter is sufficient to edit its bills. The user provably has that - the master-detail
-     *     insert would have failed otherwise.
+     *     `Utility_Bill__c.Meter__c` carries `writeRequiresMasterRead = false`, which is the
+     *     STRICTER of the two settings: it requires read AND WRITE sharing on the meter to
+     *     create, edit or delete its bills (`true` is the one that needs only read). The user
+     *     provably has that - the master-detail insert would have failed otherwise.
+     *
+     *     ⚠ CORRECTED 2026-09-02. This sentence previously read "so Read on the meter is
+     *     sufficient to edit its bills", which inverts the flag. THE CONCLUSION IS UNCHANGED AND
+     *     IS NOW STRONGER, not weaker - the user turns out to hold WRITE sharing on the meter,
+     *     not merely read - so this class stays `with sharing` and no behaviour changes. It is
+     *     corrected because a security justification that states a false fact gets copied: the
+     *     same inverted sentence was found the same day in `ChecklistRollupService`, where it was
+     *     the SOLE justification for a `private without sharing` escalation and did not survive
+     *     the correction. Read that header before reusing this pattern.
      *
      * === `allOrNone = false`, AND WHY THAT IS THE LESSER EVIL ===
      * A re-link failure (realistically: row locking during a concurrent import) must not roll

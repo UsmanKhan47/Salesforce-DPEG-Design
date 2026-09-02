@@ -136,6 +136,23 @@ describe('c-transaction-checklist-summary', () => {
         );
     });
 
+    it('reads Loading… BETWEEN the discriminator and the data, not a diagnosis', async () => {
+        // 🔴 Gated on the discriminator alone this card rendered "Checklist generated, but no
+        // items found" on every page load of a healthy deal — a sentence whose entire purpose is
+        // to say something is WRONG. The assertion has to sit BETWEEN the two emits.
+        const element = createComponent();
+        getRecord.emit(transactionRecord(true));
+        await flush();
+
+        expect(getChecklist.getLastConfig()).toEqual({ transactionId: RECORD_ID });
+        expect(count(element)).toBe('Loading…');
+
+        // Presence control — waiting, not wedged.
+        getChecklist.emit(CHECKLIST_ROWS);
+        await flush();
+        expect(count(element)).toBe('3 of 12 complete');
+    });
+
     it('names the model in its empty text — an empty NEW checklist is a different problem', async () => {
         // Checklist_Fanned_Out__c is true, so the fan-out RAN and produced nothing. That is not
         // the same as a deal that was never fanned out, and the two must not read alike.

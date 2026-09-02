@@ -13,12 +13,24 @@
         Investor_Relations_Manager, and needs the matching object permission to use that
         visibility), plus app/tab visibility for all 4 apps, plus append-only Create on
         Lease/Renewal Activity notes.
+
+        DPEG_Checklist_View ADDED 2026-09-02, CONSOLIDATED PERMISSION PASS (Transaction checklist
+        rewrite Phases 1-3 gap closure). Same defect and same fix as DPEG_Junior_Analyst_PSG: this
+        group already carried DPEG_Transaction_View (record-page access) but not
+        DPEG_Checklist_View, so a Principal opening a deal migrated to the new
+        Checklist__c/Checklist_Item__c model hit the identical USER_MODE
+        `No such column` failure and saw the checklist cards render their error state.
+        DPEG_TaskChecklist_View was NOT a member of this group before this edit and is still not -
+        that is a SEPARATE, PRE-EXISTING gap on the Task-model view-only side, out of scope for
+        this pass (the task brief named only the DPEG_Checklist_View defect), and is reported
+        rather than silently fixed alongside it.
     -->
     <description>Principal persona: read-only View All across Acquisition, Disposition, Transaction, Property Mgmt and Contact; read-only IR object access (via role hierarchy); app/tab visibility for all 4 apps; append-only Create on Lease/Renewal Activity notes.</description>
     <label>DPEG Principal PSG</label>
     <permissionSets>DPEG_Base_Access</permissionSets>
     <permissionSets>DPEG_Apex_Access</permissionSets>
     <permissionSets>DPEG_Acquisition_View</permissionSets>
+    <permissionSets>DPEG_Checklist_View</permissionSets>
     <permissionSets>DPEG_Disposition_View</permissionSets>
     <permissionSets>DPEG_Transaction_View</permissionSets>
     <permissionSets>DPEG_PropertyMgmt_View</permissionSets>
