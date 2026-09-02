@@ -595,8 +595,13 @@ private class TaskRollupServiceTest {
         Assert.isTrue(
             wireDefs.size() >= 2,
             'Expected at least the two anti-fraud wire-verification definitions (B2 and I7), found '
-                + wireDefs.size() + '. If this is 0, scripts/load-transaction-task-defs.apex has not '
-                + 'been run in this org and the whole Transaction checklist is unseeded.'
+                + wireDefs.size() + '. '
+                + 'A RED HERE IS MOST LIKELY THE GUARD WORKING, NOT A BROKEN TEST. Transaction_Task_Def__mdt '
+                + 'RECORDS are force-ignored and load ONLY via scripts/load-transaction-task-defs.apex, '
+                + 'which is an ordered build step. Zero (or a count below 2) means that step is '
+                + 'outstanding in this org - so the fan-out would create no wire-verification items at '
+                + 'all and Transaction__c.Wire_Open_Risks__c would be structurally zero on every deal. '
+                + 'THE FIX IS TO RUN THE LOADER, NOT TO WEAKEN OR DELETE THIS ASSERTION.'
         );
 
         for (Transaction_Task_Def__mdt def : wireDefs) {
@@ -604,11 +609,15 @@ private class TaskRollupServiceTest {
             Assert.isTrue(
                 subject.contains('anti-fraud'),
                 'Transaction_Task_Def__mdt ' + def.Group_Letter__c + def.Sequence__c
-                    + ' is flagged Is_Wire_Verification__c but its Subject__c no longer contains the '
-                    + ''anti-fraud' marker: "' + def.Subject__c + '". TaskRollupService.recalc parses '
-                    + 'that marker to compute Transaction__c.Wire_Open_Risks__c for every deal still '
-                    + 'on the legacy Task model, and it FAILS SILENTLY TO ZERO. Do not clean these '
-                    + 'subjects until M5 retires the Task model — see TaskRollupService's header.'
+                    + ' is flagged Is_Wire_Verification__c but its Subject__c no longer contains '
+                    + 'the anti-fraud marker. Subject__c is: "' + def.Subject__c + '". '
+                    + 'TaskRollupService.recalc parses that marker to compute '
+                    + 'Transaction__c.Wire_Open_Risks__c for every deal still on the legacy Task '
+                    + 'model, and it FAILS SILENTLY TO ZERO. If this is red because the CMDT '
+                    + 'loader step is outstanding, RUN scripts/load-transaction-task-defs.apex - '
+                    + 'do NOT delete this assertion. Otherwise: do not clean these subjects until '
+                    + 'M5 retires the Task model. See the TaskRollupService class header and the '
+                    + 'javadoc on this test method before touching either.'
             );
         }
     }
