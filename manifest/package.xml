@@ -91,16 +91,10 @@
         <members>SiteRegisterControllerTest</members>
         <members>StageAdvanceController</members>
         <members>StageAdvanceControllerTest</members>
-        <members>TaskFanoutService</members>
-        <members>TaskFanoutServiceTest</members>
-        <members>TaskRollupService</members>
-        <members>TaskRollupServiceTest</members>
         <members>TestDataFactory</members>
         <members>TestDataFactoryTest</members>
         <members>TransactionController</members>
         <members>TransactionControllerTest</members>
-        <members>TransactionTaskController</members>
-        <members>TransactionTaskControllerTest</members>
         <members>UnderwritingGateTest</members>
         <members>WireController</members>
         <members>WireControllerTest</members>
@@ -247,14 +241,8 @@
         <members>Activity.Onboarding_Status__c</members>
         <members>Activity.Onboarding__c</members>
         <members>Activity.Source_System__c</members>
-        <members>Activity.Task_Group__c</members>
         <members>Activity.Task_Owner_Label__c</members>
         <members>Activity.Task_Sequence__c</members>
-        <members>Activity.Transaction_Deal__c</members>
-        <members>Activity.Verbal_Verification_Completed__c</members>
-        <members>Activity.Verification_Phone__c</members>
-        <members>Activity.Verified_At__c</members>
-        <members>Activity.Verified_By__c</members>
         <members>BOV_Submission__c.BOV_Amount__c</members>
         <members>BOV_Submission__c.BOV_Score__c</members>
         <members>BOV_Submission__c.Broker_Display__c</members>
@@ -749,7 +737,6 @@
         <members>Transaction__c.Target_Close_Date__c</members>
         <members>Transaction__c.Tasks_Complete__c</members>
         <members>Transaction__c.Tasks_Display__c</members>
-        <members>Transaction__c.Tasks_Fanned_Out__c</members>
         <members>Transaction__c.Tasks_Overdue__c</members>
         <members>Transaction__c.Tasks_Total__c</members>
         <members>Transaction__c.Wire_Open_Risks__c</members>
@@ -2064,7 +2051,6 @@
         <members>Task.OverdueTasks</members>
         <members>Task.RecurringTasks</members>
         <members>Task.TodaysTasks</members>
-        <members>Task.Transaction_Tasks_by_Group</members>
         <members>Task.UnscheduledTasks</members>
         <members>TimeSheet.All_TimeSheets</members>
         <members>TimeSheet.My_TimeSheets</members>

@@ -1,24 +1,31 @@
 /**
  * Tests for TaskSelector (P4, Module C — Transactions; SHARED cross-module selector).
  *
- * Covers all three relocated/contract queries:
- *   - selectChecklistByTransactionDealIds : field population, ORDER BY
- *     Task_Sequence__c, the `Task_Group__c != null` filter, the null/empty-input
- *     guard, a 251-record bulk read on the Set<Id> method (bulk-test-rule), AND the
- *     LastModifiedBy.Name spanning traversal that feeds the checklist row's
- *     "completed by" line (added 2026-08-28).
+ * Covers:
  *   - selectOpenByWhatIdsAndSubjectPrefix  : open-only + subject-prefix filtering,
  *     null/empty/blank guards, a 251-record bulk read across 251 distinct WhatIds,
  *     AND the standard-object USER_MODE proof (a Standard User reads rows under
  *     WITH USER_MODE — design §5/§7 requirement for standard-object selectors).
- *   - selectRequiredById : happy path (Id + Description selected) and the
- *     missing-Id -> System.QueryException contract completeWireVerification relies on.
+ *   - the four Onboarding reads (Property Management), including both SYSTEM_MODE
+ *     regression pins and the OnboardingRollupReads sharing-escape pin.
+ *   - selectByWhatIdAndSubjects (Dispositions) and the four EAC capture reads,
+ *     including the class's platform-fact sharing pin on selectByIds.
  *
- * @TestSetup builds one Transaction with the fan-out Flow suppressed
- * (Contract_Executed_Date__c = null) so no async checklist fan-out is enqueued
- * during setup. Tests query for that Transaction rather than re-calling a
- * default*() accessor — the TestDataFactory header warns the static scaffold
- * cache does NOT survive the @TestSetup boundary.
+ * 🔴 AMENDED 2026-09-03 (M5) — THE TRANSACTION HALF OF THIS SUITE IS GONE, AND SO IS ITS
+ * @TestSetup. Five subjects were retired with the legacy Task checklist:
+ *   - selectChecklistByTransactionDealIds  (field population, ORDER BY Task_Sequence__c, the
+ *     `Task_Group__c != null` filter, the bulk read, and the LastModifiedBy.Name traversal)
+ *   - selectRequiredById                   (happy path + the missing-Id QueryException contract
+ *                                           completeWireVerification relied on)
+ *   - selectByTransactionDealIds           (plus its FLS pin and its sharing-escape pin)
+ *   - selectForChecklistMigration          (which HOSTED the platform-fact sharing pin — see
+ *                                           selectByIds_systemModeDoesNotBypassSharing_... for
+ *                                           where that pin moved to, and why it must never be
+ *                                           deleted rather than moved)
+ * The `@testSetup` existed solely to build the one Transaction those tests read via a private
+ * `transactionId()` helper. With no reader left it was DML on every method for nothing, so both
+ * it and the helper were removed rather than left to rot. No surviving test in this class
+ * touches Transaction__c; if one is ever added, give it its own fixture.
  *
  * @see force-app/main/default/classes/WireSelectorTest.cls (P4 pilot test template)
  * @see agent-output/p4-selector-design.md (§3 #18, §5, §7)
@@ -26,132 +33,7 @@
 @isTest
 private class TaskSelectorTest {
 
-    private static final String GROUP_A = 'A. Contract Execution & Title Opening';
     private static final String REMINDER_PREFIX = 'Check in with broker';
-
-    @testSetup
-    static void setup() {
-        Transaction__c t = TestDataFactory.createTransaction(null, null, false);
-        TestDataFactory.applyOverrides(t, new Map<String, Object>{ 'Contract_Executed_Date__c' => null });
-        insert t;
-    }
-
-    private static Id transactionId() {
-        return [SELECT Id FROM Transaction__c LIMIT 1].Id;
-    }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // selectChecklistByTransactionDealIds
-    // ─────────────────────────────────────────────────────────────────────────
-
-    @isTest
-    static void selectChecklistByTransactionDealIds_populatesFieldsAndOrdersBySequence() {
-        Id txnId = transactionId();
-        Datetime verifiedAt = Datetime.newInstance(2026, 7, 16, 9, 15, 0);
-
-        // Inserted out of sequence to prove ORDER BY Task_Sequence__c.
-        Task second = new Task(
-            Transaction_Deal__c = txnId, Subject = 'Open Escrow', Task_Group__c = GROUP_A,
-            Task_Owner_Label__c = 'Danish', Status = 'Not Started', ActivityDate = Date.today().addDays(2),
-            Task_Sequence__c = 2, Description = 'second note'
-        );
-        Task first = new Task(
-            Transaction_Deal__c = txnId, Subject = 'Sign PSA', Task_Group__c = GROUP_A,
-            Task_Owner_Label__c = 'Danish', Status = 'Completed', ActivityDate = Date.today(),
-            Task_Sequence__c = 1, Verbal_Verification_Completed__c = true, Verified_By__c = 'Jane Verifier',
-            Verification_Phone__c = '555-0100', Verified_At__c = verifiedAt, Description = 'first note'
-        );
-        // Must be excluded — no Task_Group__c.
-        Task ungrouped = new Task(
-            Transaction_Deal__c = txnId, Subject = 'Ad-hoc', Status = 'Not Started', Task_Sequence__c = 3
-        );
-        insert new List<Task>{ second, first, ungrouped };
-
-        Test.startTest();
-        List<Task> rows = TaskSelector.selectChecklistByTransactionDealIds(new Set<Id>{ txnId });
-        Test.stopTest();
-
-        Assert.areEqual(2, rows.size(), 'Only the two Task_Group__c-bearing checklist Tasks are returned; the ungrouped Task is filtered out');
-        Assert.areEqual(1, rows[0].Task_Sequence__c, 'ORDER BY Task_Sequence__c must return sequence 1 first even though it was inserted second');
-        Assert.areEqual('Sign PSA', rows[0].Subject, 'Subject is selected');
-        Assert.areEqual(GROUP_A, rows[0].Task_Group__c, 'Task_Group__c is selected');
-        Assert.areEqual('Danish', rows[0].Task_Owner_Label__c, 'Task_Owner_Label__c is selected');
-        Assert.areEqual('Completed', rows[0].Status, 'Status is selected');
-        Assert.areEqual(true, rows[0].IsClosed, 'IsClosed is selected (derived from the Completed status)');
-        Assert.areEqual(Date.today(), rows[0].ActivityDate, 'ActivityDate is selected');
-        Assert.areEqual(true, rows[0].Verbal_Verification_Completed__c, 'Verbal_Verification_Completed__c is selected');
-        Assert.areEqual('Jane Verifier', rows[0].Verified_By__c, 'Verified_By__c is selected');
-        Assert.areEqual('555-0100', rows[0].Verification_Phone__c, 'Verification_Phone__c is selected');
-        Assert.areEqual(verifiedAt, rows[0].Verified_At__c, 'Verified_At__c is selected');
-        Assert.areEqual('first note', rows[0].Description, 'Description is selected');
-        Assert.areEqual(2, rows[1].Task_Sequence__c, 'The sequence-2 Task sorts after sequence-1');
-    }
-
-    /**
-     * The checklist row's completion line must name a PERSON, so the query has to traverse
-     * LastModifiedBy. Pins BOTH halves of the spanning read: that the parent object is
-     * traversed at all (a plain LastModifiedById would leave `LastModifiedBy` null and the
-     * controller would render no name), and that `.Name` is populated.
-     *
-     * The completing user is DELIBERATELY someone other than the Task_Owner_Label__c role —
-     * that is the reported 2026-08-28 scenario (admin completes a task labelled 'Danish'), and
-     * a fixture where the two coincide would pass even under the defective code.
-     */
-    @isTest
-    static void selectChecklistByTransactionDealIds_traversesLastModifiedByName() {
-        Id txnId = transactionId();
-
-        // Reproduces the reported scenario EXACTLY: the task is labelled with the 'Danish'
-        // ROLE, and somebody else (here the test-running user, standing in for the admin)
-        // closes it. No runAs: a Standard User closing this Task would fire
-        // TaskRollupTrigger's after-update rollup onto a Transaction__c they neither own nor
-        // have CRUD on, so the test would fail on sharing/CRUD rather than on the read under
-        // test. The fixture-integrity assertion below is what keeps this honest instead.
-        Task closing = new Task(
-            Transaction_Deal__c = txnId, Subject = 'Sign PSA', Task_Group__c = GROUP_A,
-            Task_Owner_Label__c = 'Danish', Status = 'Completed', Task_Sequence__c = 1
-        );
-        insert closing;
-
-        Test.startTest();
-        List<Task> rows = TaskSelector.selectChecklistByTransactionDealIds(new Set<Id>{ txnId });
-        Test.stopTest();
-
-        Assert.areEqual(1, rows.size(), 'The single checklist Task is returned');
-        Assert.areEqual(UserInfo.getUserId(), rows[0].LastModifiedById,
-            'LastModifiedById is selected and reflects the user who last touched the Task');
-        Assert.isNotNull(rows[0].LastModifiedBy,
-            'LastModifiedBy must be TRAVERSED, not just the Id selected — without the parent the '
-            + 'controller has no name to render and the row silently loses its completer');
-        Assert.areEqual(UserInfo.getName(), rows[0].LastModifiedBy.Name,
-            'LastModifiedBy.Name carries the completing user name');
-        Assert.areNotEqual(rows[0].Task_Owner_Label__c, rows[0].LastModifiedBy.Name,
-            'FIXTURE INTEGRITY: the completer must differ from the static role label, or this '
-            + 'test would pass even if the UI went back to rendering the role label');
-    }
-
-    @isTest
-    static void selectChecklistByTransactionDealIds_nullOrEmpty_returnsEmpty() {
-        Test.startTest();
-        List<Task> forNull = TaskSelector.selectChecklistByTransactionDealIds(null);
-        List<Task> forEmpty = TaskSelector.selectChecklistByTransactionDealIds(new Set<Id>());
-        Test.stopTest();
-
-        Assert.areEqual(0, forNull.size(), 'A null id set short-circuits to an empty list, not null');
-        Assert.areEqual(0, forEmpty.size(), 'An empty id set short-circuits to an empty list, not null');
-    }
-
-    @isTest
-    static void selectChecklistByTransactionDealIds_bulk251_readsAllViaSetId() {
-        Id txnId = transactionId();
-        TestDataFactory.createChecklistTasks(251, txnId, true);
-
-        Test.startTest();
-        List<Task> rows = TaskSelector.selectChecklistByTransactionDealIds(new Set<Id>{ txnId });
-        Test.stopTest();
-
-        Assert.areEqual(251, rows.size(), 'The Set<Id> checklist read returns all 251 Tasks at bulk volume');
-    }
 
     // ─────────────────────────────────────────────────────────────────────────
     // selectOpenByWhatIdsAndSubjectPrefix
@@ -254,48 +136,6 @@ private class TaskSelectorTest {
         }
         Test.stopTest();
     }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // selectRequiredById
-    // ─────────────────────────────────────────────────────────────────────────
-
-    @isTest
-    static void selectRequiredById_existingId_returnsTaskWithDescription() {
-        Task t = new Task(Subject = 'Verify wire', Status = 'Not Started', Description = 'existing comments');
-        insert t;
-
-        Test.startTest();
-        Task result = TaskSelector.selectRequiredById(t.Id);
-        Test.stopTest();
-
-        Assert.areEqual(t.Id, result.Id, 'selectRequiredById returns the record for the given Id');
-        // Reading Description proves it is in the SELECT — a SELECT Id-only query
-        // would throw SObjectException on this access.
-        Assert.areEqual('existing comments', result.Description,
-            'Description must be selected so completeWireVerification can decide whether to append its note');
-    }
-
-    @isTest
-    static void selectRequiredById_missingId_throwsQueryException() {
-        Task t = new Task(Subject = 'Temp', Status = 'Not Started');
-        insert t;
-        Id deletedId = t.Id;
-        delete t;
-
-        Test.startTest();
-        try {
-            TaskSelector.selectRequiredById(deletedId);
-            Assert.fail('A Task Id that no longer exists should raise a QueryException');
-        } catch (System.QueryException e) {
-            Assert.isTrue(e.getMessage().toLowerCase().contains('no rows'),
-                'Exception should indicate no matching Task row: ' + e.getMessage());
-        }
-        Test.stopTest();
-    }
-
-    // ═════════════════════════════════════════════════════════════════════════
-    // P4 Onboarding + Task-rollup cleanup wave — new method coverage
-    // ═════════════════════════════════════════════════════════════════════════
 
     // ─────────────────────────────────────────────────────────────────────────
     // selectChecklistByOnboardingId
@@ -454,62 +294,6 @@ private class TaskSelectorTest {
         Test.startTest();
         List<Task> forNull = TaskSelector.selectByOnboardingIds(null);
         List<Task> forEmpty = TaskSelector.selectByOnboardingIds(new Set<Id>());
-        Test.stopTest();
-
-        Assert.areEqual(0, forNull.size(), 'A null id set short-circuits to an empty list, not null');
-        Assert.areEqual(0, forEmpty.size(), 'An empty id set short-circuits to an empty list, not null');
-    }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // selectByTransactionDealIds  (rollup read — no Task_Group__c filter)
-    // ─────────────────────────────────────────────────────────────────────────
-
-    @isTest
-    static void selectByTransactionDealIds_populatesFieldsAndIncludesUngroupedTasks() {
-        Id txnId = transactionId();
-        Task closed = new Task(Transaction_Deal__c = txnId, Subject = 'done', Status = 'Completed',
-            Task_Group__c = GROUP_A, ActivityDate = Date.today().addDays(-1));
-        // Deliberately NO Task_Group__c — proves this rollup read does NOT apply the
-        // `Task_Group__c != null` filter that selectChecklistByTransactionDealIds does.
-        Task ungrouped = new Task(Transaction_Deal__c = txnId, Subject = 'Verify wiring (anti-fraud)',
-            Status = 'Not Started', Verbal_Verification_Completed__c = false);
-        insert new List<Task>{ closed, ungrouped };
-
-        Test.startTest();
-        List<Task> rows = TaskSelector.selectByTransactionDealIds(new Set<Id>{ txnId });
-        Test.stopTest();
-
-        Assert.areEqual(2, rows.size(), 'Both Tasks are returned — including the one with no Task_Group__c');
-        Map<String, Task> bySubject = new Map<String, Task>();
-        for (Task t : rows) {
-            bySubject.put(t.Subject, t);
-        }
-        Assert.areEqual(txnId, bySubject.get('done').Transaction_Deal__c, 'Transaction_Deal__c is selected (rollup keys its maps on it)');
-        Assert.areEqual(true, bySubject.get('done').IsClosed, 'IsClosed is selected');
-        Assert.areEqual(Date.today().addDays(-1), bySubject.get('done').ActivityDate, 'ActivityDate is selected');
-        Assert.areEqual(false, bySubject.get('Verify wiring (anti-fraud)').Verbal_Verification_Completed__c,
-            'Verbal_Verification_Completed__c is selected');
-    }
-
-    @isTest
-    static void selectByTransactionDealIds_bulk251_readsAllViaSetId() {
-        Id txnId = transactionId();
-        // Suppressed Transaction (no Contract_Executed_Date__c) so no async fan-out;
-        // the TaskRollupTrigger recalc that fires on insert is the production path.
-        TestDataFactory.createChecklistTasks(251, txnId, true);
-
-        Test.startTest();
-        List<Task> rows = TaskSelector.selectByTransactionDealIds(new Set<Id>{ txnId });
-        Test.stopTest();
-
-        Assert.areEqual(251, rows.size(), 'The Set<Id> rollup read returns all 251 Tasks at bulk volume');
-    }
-
-    @isTest
-    static void selectByTransactionDealIds_nullOrEmpty_returnsEmpty() {
-        Test.startTest();
-        List<Task> forNull = TaskSelector.selectByTransactionDealIds(null);
-        List<Task> forEmpty = TaskSelector.selectByTransactionDealIds(new Set<Id>());
         Test.stopTest();
 
         Assert.areEqual(0, forNull.size(), 'A null id set short-circuits to an empty list, not null');
@@ -821,10 +605,21 @@ private class TaskSelectorTest {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Trigger-driven rollup recomputes (added 2026-08-05) — the two WITH SYSTEM_MODE reads that
+    // Trigger-driven rollup recomputes (added 2026-08-05) — the WITH SYSTEM_MODE reads that
     // replaced WITH USER_MODE after a REPRODUCED production failure (see each method's own
-    // Javadoc in TaskSelector for the full incident). These are the SELECTOR-level regression
-    // pins:
+    // Javadoc in TaskSelector for the full incident).
+    //
+    // 🔴 AMENDED 2026-09-03 (M5). THIS SECTION HELD FOUR TESTS ACROSS TWO SUBJECTS AND NOW HOLDS
+    // TWO, ACROSS ONE. `selectByTransactionDealIds` — the read whose failure WAS reproduced — was
+    // retired with `TaskRollupService`, taking its FLS pin
+    // (`..._minimumAccessUserNoFLS_returnsRows_pinsProductionIncident`) and its sharing pin
+    // (`..._rollupReadEscapesSharing_nonOwnerSeesAllRows`) with it. `selectByOnboardingIds` and
+    // its two pins survive, and they are now the ONLY selector-level statement of both properties
+    // in this class. ⚠ Their justification was always "the same latent defect as the Transaction
+    // read"; that sibling is gone, so read TaskSelector's header for the mechanism rather than
+    // looking for a co-resident example. Do not weaken either of these two on the grounds that
+    // "the incident was on a different method" — it was, and the mechanism is the platform's.
+    // These are the SELECTOR-level regression pins:
     //   - a principal with NO FLS on the custom fields these queries read must still get rows
     //     back (the old USER_MODE code threw `No such column ... on entity 'Task'` for exactly
     //     this shape of persona);
@@ -866,62 +661,10 @@ private class TaskSelectorTest {
     //
     // End-to-end coverage through the real callers, where the restricted principal DOES have to
     // perform DML (to fire the trigger, and because the rollup itself writes back to the parent),
-    // lives in TaskRollupServiceTest / OnboardingTaskRollupServiceTest — see those files' own
+    // lives in OnboardingTaskRollupServiceTest — see that file's own
     // design notes for how object CRUD is granted there (Route B) without leaking the withheld
     // Task FLS.
     // ─────────────────────────────────────────────────────────────────────────
-
-    /**
-     * 🔴 REGRESSION PIN — reproduces, at the selector level, the production failure recorded in
-     * TaskSelector.selectByTransactionDealIds's own Javadoc (2026-08-05). The Transaction__c and
-     * its checklist Task are created in the default (full-access) test context; the restricted
-     * principal performs ONLY the SELECT. A principal with NO FLS on Transaction_Deal__c must
-     * still get rows back under WITH SYSTEM_MODE. Under the OLD WITH USER_MODE code this exact
-     * call threw `No such column 'Transaction_Deal__c' on entity 'Task'` for precisely this
-     * shape of persona. If this is ever reverted alongside a "harmonizing" change back to
-     * WITH USER_MODE, this test goes red here.
-     */
-    @isTest
-    static void selectByTransactionDealIds_minimumAccessUserNoFLS_returnsRows_pinsProductionIncident() {
-        User minAccessUser = buildMinimumAccessUser('txnFls');
-        System.runAs(new User(Id = UserInfo.getUserId())) {
-            insert minAccessUser;
-        }
-
-        // Parent + Task created in the default (full-access) context — the restricted principal
-        // below never performs any DML at all; it only reads.
-        //
-        // 🔴 OwnerId IS LOAD-BEARING (added 2026-08-17). Without it the Task is owned by the
-        // test-running admin, and Activity's sharing model in this org is Private
-        // (objects/Activity/Activity.object-meta.xml, no sharingRules anywhere in the repo), so
-        // minAccessUser could not see the row AT ALL and this test failed `Expected: 1, Actual: 0`
-        // — reading as a broken fix when nothing was broken. WITH SYSTEM_MODE bypasses FLS and
-        // CRUD and NEVER sharing (that is the whole point of the sibling
-        // ..._systemModeDoesNotBypassSharing_... pins below, which already set OwnerId for exactly
-        // this reason). Making the restricted principal the OWNER isolates the ONE variable this
-        // test is about — the withheld Transaction_Deal__c FLS — from record visibility, which is
-        // a different question with its own dedicated test.
-        Transaction__c t = TestDataFactory.createTransaction(null, null, false);
-        TestDataFactory.applyOverrides(t, new Map<String, Object>{ 'Contract_Executed_Date__c' => null });
-        insert t;
-        insert new Task(Transaction_Deal__c = t.Id, Subject = 'Sign PSA', Status = 'Completed',
-            OwnerId = minAccessUser.Id);
-
-        Test.startTest();
-        System.runAs(minAccessUser) {
-            List<Task> rows = TaskSelector.selectByTransactionDealIds(new Set<Id>{ t.Id });
-
-            Assert.areEqual(1, rows.size(),
-                'A principal with NO permission-set FLS on Transaction_Deal__c must still see rows '
-                + 'under WITH SYSTEM_MODE. The old WITH USER_MODE code threw a QueryException for '
-                + 'exactly this persona (the reproduced 2026-08-05 production incident) — see this '
-                + 'method\'s own Javadoc.');
-            Assert.areEqual(t.Id, rows[0].Transaction_Deal__c,
-                'Transaction_Deal__c — the exact field the production incident could not read — is populated');
-        }
-        Test.stopTest();
-    }
-
     /**
      * The same latent defect, fixed pre-emptively for selectByOnboardingIds (it had no
      * reproduced incident of its own — it is invoked directly from OnboardingService.completeTask
@@ -959,54 +702,18 @@ private class TaskSelectorTest {
     }
 
     /**
-     * ⚠ SHARING-BOUNDARY PIN. WITH SYSTEM_MODE bypasses FLS and CRUD ONLY — it must NEVER widen
-     * record-level visibility, and this class stays `with sharing`. Task/Event's sharing model in
-     * this org is Private (objects/Activity/Activity.object-meta.xml declares
-     * `<sharingModel>Private</sharingModel>`, and no sharingRules-meta.xml exists anywhere in the
-     * repo for Activity), so a user who does not own a checklist Task and shares no
-     * role-hierarchy/sharing-rule access to its owner must still see ZERO rows here, exactly as
-     * before this change. Includes a POSITIVE CONTROL (the owner DOES see their own row, asserted
-     * first) so a fixture regression that produced no visible Task at all cannot pass silently as
-     * a false "sharing works" result.
+     * 🔴 INVERTED 2026-09-02, for the same reason and in the same change as the Transaction rollup
+     * read above. Was `selectByOnboardingIds_systemModeDoesNotBypassSharing_nonOwnerSeesNoRows`.
+     *
+     * ⚠ THE ONBOARDING CASE IS THE MIRROR IMAGE, AND IT IS THE WORSE OF THE TWO STATES. Its WRITE
+     * half (`OnboardingTaskRollupService.RollupWrites`) has been `private without sharing` since
+     * 2026-08-22 while this read stayed filtered — an always-succeeding write over a filtered read
+     * writes all twelve `Onboarding__c` counters, including `Completion_Pct__c`, computed from a
+     * partial view, SILENTLY. Nothing throws. This change closed the read half
+     * (`TaskSelector.OnboardingRollupReads`); the write was deliberately not touched.
      */
     @isTest
-    static void selectByTransactionDealIds_systemModeDoesNotBypassSharing_nonOwnerSeesNoRows() {
-        User owner = buildMinimumAccessUser('txnShareOwner');
-        User outsider = buildMinimumAccessUser('txnShareOut');
-        System.runAs(new User(Id = UserInfo.getUserId())) {
-            insert new List<User>{ owner, outsider };
-        }
-
-        // Created in the default (full-access) context; ownership is assigned via OwnerId rather
-        // than by running the DML as `owner` — neither restricted user ever performs any DML here.
-        Transaction__c t = TestDataFactory.createTransaction(null, null, false);
-        TestDataFactory.applyOverrides(t, new Map<String, Object>{ 'Contract_Executed_Date__c' => null });
-        insert t;
-        insert new Task(Transaction_Deal__c = t.Id, Subject = 'Owner-only checklist Task',
-            Status = 'Not Started', OwnerId = owner.Id);
-
-        Test.startTest();
-        System.runAs(owner) {
-            List<Task> rows = TaskSelector.selectByTransactionDealIds(new Set<Id>{ t.Id });
-            Assert.areEqual(1, rows.size(),
-                'POSITIVE CONTROL: the Task\'s own owner must see it. If this returns 0, the fixture '
-                + 'itself is broken (e.g. no Task was actually created), and the outsider assertion '
-                + 'below would pass for the wrong reason.');
-        }
-        System.runAs(outsider) {
-            List<Task> rows = TaskSelector.selectByTransactionDealIds(new Set<Id>{ t.Id });
-            Assert.areEqual(0, rows.size(),
-                'A non-owner with no role-hierarchy relationship to the Task owner, no sharing rule, and '
-                + 'no View/Modify All Data must see ZERO rows even under WITH SYSTEM_MODE — sharing is '
-                + 'still enforced. A non-zero result here would mean SYSTEM_MODE (or a dropped '
-                + '`with sharing`) is leaking row visibility, not just bypassing FLS.');
-        }
-        Test.stopTest();
-    }
-
-    /** Same sharing-boundary proof (with positive control) as above, for selectByOnboardingIds. */
-    @isTest
-    static void selectByOnboardingIds_systemModeDoesNotBypassSharing_nonOwnerSeesNoRows() {
+    static void selectByOnboardingIds_rollupReadEscapesSharing_nonOwnerSeesAllRows() {
         User owner = buildMinimumAccessUser('onbShareOwner');
         User outsider = buildMinimumAccessUser('onbShareOut');
         System.runAs(new User(Id = UserInfo.getUserId())) {
@@ -1027,13 +734,80 @@ private class TaskSelectorTest {
         }
         System.runAs(outsider) {
             List<Task> rows = TaskSelector.selectByOnboardingIds(new Set<Id>{ o.Id });
-            Assert.areEqual(0, rows.size(),
-                'Same sharing-boundary proof as the Transaction rollup read: WITH SYSTEM_MODE never '
-                + 'bypasses sharing, so a non-owner with no hierarchy/sharing-rule access sees ZERO rows '
-                + 'here too.');
+            Assert.areEqual(1, rows.size(),
+                'A non-owner must now see the row, because TaskSelector.OnboardingRollupReads is '
+                + '`without sharing`. A result of 0 here means the read half was reverted while '
+                + 'OnboardingTaskRollupService.RollupWrites stays `without sharing` — which does not '
+                + 'throw, it writes 0 total / 0% complete onto Onboarding__c successfully. That is '
+                + 'the silent-wrong-counter state this pairing exists to prevent.');
         }
         Test.stopTest();
     }
+
+    /**
+     * 🔴 THE PLATFORM-FACT PIN. `WITH SYSTEM_MODE` BYPASSES CRUD AND FLS AND **NEVER** SHARING —
+     * AND THAT MUST STAY PINNED SOMEWHERE IN THIS CLASS.
+     *
+     * ⚠ THIS PIN HAS NOW MOVED TWICE, AND BOTH MOVES WERE FORCED BY THE HOST BEING RETIRED, NEVER
+     * BY THE PROPERTY BEING DOUBTED. Read the chain before touching it:
+     *   1. It lived on `selectByTransactionDealIds` until 2026-09-02, when that read was given an
+     *      EXPLICIT sharing escape (`TaskSelector.RollupReads`) and its assertion had to invert.
+     *   2. It moved to `selectForChecklistMigration`, chosen because that method's own Javadoc
+     *      DEPENDED on the filter (`ChecklistMigrationService` reported unfilterable deals as
+     *      `NOT_VISIBLE`). M5 retired that method on 2026-09-03.
+     *   3. It now lives on `selectByIds`, and that host is not arbitrary either: it is
+     *      `WITH SYSTEM_MODE`, it is sharing-filtered, and it backs `EmailThreadGuardService` —
+     *      the EAC capture pipeline, which runs as whatever principal Einstein Activity Capture
+     *      committed under (a connected-mailbox user, or Automated Process) and therefore sees a
+     *      genuinely restricted row set in production.
+     *
+     * 🔴 IF THIS HOST IS EVER RETIRED, MOVE THE PIN AGAIN — DO NOT DELETE IT. Without it, the next
+     * `SYSTEM_MODE` selector added to this class has nothing asserting its rows are still
+     * sharing-filtered, and a silently dropped class-level `with sharing`, or a `SYSTEM_MODE`
+     * mistakenly believed to widen visibility, would go unnoticed. The two surviving escape tests
+     * above assert the OPPOSITE (all rows), so they cannot substitute; a suite where every
+     * SYSTEM_MODE assertion says "sees everything" is one edit away from being unable to tell an
+     * escape from a bug.
+     *
+     * Includes the same POSITIVE CONTROL shape as its predecessors, so a fixture that created no
+     * visible Task cannot pass the zero-row assertion for the wrong reason.
+     */
+    @isTest
+    static void selectByIds_systemModeDoesNotBypassSharing_nonOwnerSeesNoRows() {
+        User owner = buildMinimumAccessUser('eacShareOwner');
+        User outsider = buildMinimumAccessUser('eacShareOut');
+        System.runAs(new User(Id = UserInfo.getUserId())) {
+            insert new List<User>{ owner, outsider };
+        }
+
+        // Created in the default (full-access) context; ownership is assigned via OwnerId rather
+        // than by running the DML as `owner` — neither restricted user performs any DML here.
+        // Activity is sharingModel Private in this org with no sharing rules, which is what makes
+        // the outsider assertion below meaningful rather than incidental.
+        Task companion = new Task(Subject = 'Owner-only captured email', Status = 'Completed',
+            TaskSubtype = 'Email', OwnerId = owner.Id);
+        insert companion;
+
+        Test.startTest();
+        System.runAs(owner) {
+            List<Task> rows = TaskSelector.selectByIds(new Set<Id>{ companion.Id });
+            Assert.areEqual(1, rows.size(),
+                'POSITIVE CONTROL: the Task\'s own owner must see it. If this returns 0 the fixture '
+                + 'is broken (no Task created, or the OwnerId did not stick) and the outsider '
+                + 'assertion below would pass for the wrong reason.');
+        }
+        System.runAs(outsider) {
+            List<Task> rows = TaskSelector.selectByIds(new Set<Id>{ companion.Id });
+            Assert.areEqual(0, rows.size(),
+                'THE PLATFORM FACT: WITH SYSTEM_MODE bypasses CRUD and FLS and NEVER sharing. A '
+                + 'non-owner with no hierarchy or sharing-rule access must see ZERO rows here. A '
+                + 'non-zero result means either this method gained a `without sharing` escape or '
+                + 'TaskSelector\'s class-level `with sharing` was dropped — and in the latter case '
+                + 'every remaining sharing-filtered read in the class silently widened at once.');
+        }
+        Test.stopTest();
+    }
+
 
     // ─────────────────────────────────────────────────────────────────────────
     // Helpers

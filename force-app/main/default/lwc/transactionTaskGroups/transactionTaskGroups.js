@@ -11,18 +11,10 @@ import recordWireVerification from '@salesforce/apex/ChecklistController.recordW
 // Insurance_Binder__c), so it is imperative and deliberately not a cacheable wire.
 import getCaptureContext from '@salesforce/apex/ChecklistController.getCaptureContext';
 import linkCaptureDocuments from '@salesforce/apex/ChecklistController.linkCaptureDocuments';
-// Legacy model (standard Task). Still live for every deal Phase 4 has not cut over.
-import getTaskGroups from '@salesforce/apex/TransactionTaskController.getTaskGroups';
-import completeTask from '@salesforce/apex/TransactionTaskController.completeTask';
-import completeWireVerification from '@salesforce/apex/TransactionTaskController.completeWireVerification';
 import { MONTHS } from 'c/utils';
 import {
-    MODEL_CHECKLIST,
-    MODEL_LEGACY,
     PHASES,
-    modelFor,
     normalizeChecklistGroups,
-    normalizeLegacyGroups,
     stripMarkerForDisplay
 } from 'c/utilsTransactionChecklist';
 
@@ -31,28 +23,46 @@ import {
  * confirm / anti-fraud-verification / view-details dialogs.
  *
  * ═══════════════════════════════════════════════════════════════════════════════════════════
- * 🔴 THIS COMPONENT SERVES **TWO DATA MODELS AT ONCE**, AND WHICH ONE IS NOT A GUESS.
+ * 🔴 AMENDED 2026-09-03 (M5) — THE SECOND DATA MODEL AND ITS DISCRIMINATOR ARE GONE.
  * ═══════════════════════════════════════════════════════════════════════════════════════════
- * `Transaction__c.Checklist_Fanned_Out__c` — read via LDS `getRecord`, ARCHITECTURE.md §5's
- * first-choice data access — decides:
+ * This component used to serve TWO models at once, choosing on
+ * `Transaction__c.Checklist_Fanned_Out__c`:
  *   true  -> `ChecklistController`         (Checklist__c / Checklist_Item__c)
  *   false -> `TransactionTaskController`   (legacy standard Task)
- * Phase 4 cuts deals over one at a time, so both are live in the same org for weeks. Only the
- * SELECTED model's Apex wire is provisioned: the other's `transactionId` parameter resolves to
- * `undefined`, and an LWC wire with an undefined reactive parameter does not call its adapter.
+ * Three imports (`getTaskGroups`, `completeTask`, `completeWireVerification`), the legacy wire,
+ * the legacy branch in `groups` / `dataError` / `dataLoaded`, and both write-path `else` branches
+ * were deleted with that controller.
  *
- * 🔴 IF THE DISCRIMINATOR CANNOT BE READ, NEITHER MODEL RENDERS. An explicit error is shown.
- * Falling back to legacy would be the worst option available: a migrated deal STILL HAS its old
- * `Task` rows — design §7 leaves them in place deliberately so the migration stays reversible —
- * so a wrong guess renders a complete, plausible, silently stale checklist.
+ * 🔴 REMOVING THE DISCRIMINATOR IS SAFE ONLY BECAUSE NO DEAL CAN BE ON THE LEGACY MODEL ANY MORE,
+ * AND THAT IS A MEASURED FACT ABOUT THE ORG, NOT AN INFERENCE FROM THIS FILE. The legacy fan-out
+ * (`TaskFanoutService`), its queueable, its rollup, its Phase 0 prerequisite gate, its controller
+ * and service, and `scripts/fanout-seeded-transactions.apex` — the last thing that could put a
+ * deal BACK on the Task model — were deleted in the same change, after a probe confirmed ZERO
+ * `Task` rows carry `Transaction_Deal__c` or `Task_Group__c` org-wide, and the eight
+ * Transaction-only `Activity` fields went with them. Nothing can produce a legacy-model deal, so
+ * the removed branch has no reachable state in which it would have been correct.
  *
- * 🔴 RISK 1 (the subject-text coupling) IS RETIRED HERE. The `CRITICAL_RE` / `WIRE_RE` regexes
- * that used to live at the top of this file are gone. Criticality and wire-verification now come
- * from `Is_Critical__c` / `Is_Wire_Verification__c` — the same two fields
- * `ChecklistRollupService` uses for `Transaction__c.Wire_Open_Risks__c`, so the red flag on this
- * screen and the number on the Wire Sentinel dashboard tile can no longer drift apart. The legacy
- * path still parses subjects because `Task` carries no such fields, and that parse is confined to
- * `normalizeLegacyGroups` in `c/utilsTransactionChecklist`. Full argument in that module's header.
+ * ⚠ THERE IS ONE USER-VISIBLE CONSEQUENCE, AND NO AUTOMATED TEST IN THIS REPO CAN SEE IT.
+ * `Checklist_Fanned_Out__c` is false on EVERY Transaction with no executed contract, not only on
+ * migrated deals — so those deals used to take the LEGACY branch and render
+ * "No tasks yet. Set the Contract Executed Date to generate the checklist." They now take the
+ * checklist branch with zero rows. The empty-state copy below was rewritten to keep that
+ * guidance, because losing it would be a real regression (design §7 UI-4). Verify it in a
+ * browser on a deal with no `Contract_Executed_Date__c`.
+ *
+ * ⚠ THE `Checklist_Fanned_Out__c` LDS READ IS RETAINED, DEMOTED FROM DISCRIMINATOR TO ADVISORY.
+ * It no longer selects a data source; it only distinguishes "the fan-out ran and produced
+ * nothing" (worth escalating) from "this deal has not been fanned out yet" (normal). Because it
+ * is advisory, A FAILED FLAG READ IS NO LONGER FATAL — it used to blank the whole component,
+ * correctly, since without it neither model could be chosen. Now it degrades one sentence.
+ *
+ * 🔴 RISK 1 (the subject-text coupling) IS FULLY RETIRED. The `CRITICAL_RE` / `WIRE_RE` regexes
+ * that used to live at the top of this file went in Phase 3; their `LEGACY_*_RE` successors in
+ * `c/utilsTransactionChecklist` went at M5. Criticality and wire-verification come from
+ * `Is_Critical__c` / `Is_Wire_Verification__c` — the same two fields `ChecklistRollupService`
+ * uses for `Transaction__c.Wire_Open_Risks__c`, so the red flag on this screen and the number on
+ * the Wire Sentinel dashboard tile cannot drift apart. NO SUBJECT IS PARSED FOR MEANING ANYWHERE
+ * ON THIS PATH. `stripMarkerForDisplay` is cosmetic and stays.
  *
  * ⚠ NO CLIENT-SIDE PERMISSION GATE, DELIBERATELY. `Checklist_Item__c` is `ControlledByParent`
  * under a Private-OWD `Transaction__c`, and `getObjectInfo.updateable` has NO RECORD CONTEXT — it
@@ -64,7 +74,7 @@ import {
  *
  * ⚠ APEX DML HAPPENS BEHIND LDS's BACK. Every successful write calls
  * `notifyRecordUpdateAvailable` so the Path and the highlights panel pick up the counters
- * `ChecklistRollupService` / `TaskRollupService` just wrote to the parent Transaction.
+ * `ChecklistRollupService` just wrote to the parent Transaction.
  * (`getRecordNotifyChange` is the deprecated form of the same call; it is also exported by the
  * Jest stub as a WIRE ADAPTER rather than a callable, so calling it throws inside tests.)
  *
@@ -81,19 +91,13 @@ export default class TransactionTaskGroups extends LightningElement {
      */
     @api phase;
 
-    _modelResolved = false;
-    _modelError;
+    _flagResolved = false;
     _fannedOut;
 
     _checklistWire;
     _checklistData = [];
     _checklistError;
     _checklistLoaded = false;
-
-    _legacyWire;
-    _legacyData = [];
-    _legacyError;
-    _legacyLoaded = false;
 
     _selectedPhase;
     _selectedKey;
@@ -108,50 +112,24 @@ export default class TransactionTaskGroups extends LightningElement {
     _capture = {};
     _captureSaving = false;
 
-    // ---- Model discrimination -------------------------------------------------------------
+    // ---- Fan-out flag (ADVISORY — empty-state wording only, see the class header) ----------
 
     @wire(getRecord, { recordId: '$recordId', fields: [CHECKLIST_FANNED_OUT_FIELD] })
     wiredTransaction({ data, error }) {
         if (data) {
             this._fannedOut = getFieldValue(data, CHECKLIST_FANNED_OUT_FIELD);
-            this._modelResolved = true;
-            this._modelError = undefined;
+            this._flagResolved = true;
         } else if (error) {
-            // Do NOT fall back to a model here — see the class header.
-            this._modelError = error;
-            this._modelResolved = false;
+            // NOT fatal since M5 — this read no longer chooses a data model, so a failure here
+            // must not blank a checklist the Apex wire may have loaded perfectly well.
+            this._flagResolved = false;
             this._fannedOut = undefined;
         }
     }
 
-    get model() {
-        return this._modelResolved ? modelFor(this._fannedOut) : undefined;
-    }
-
-    get isChecklistModel() {
-        return this.model === MODEL_CHECKLIST;
-    }
-
-    get isLegacyModel() {
-        return this.model === MODEL_LEGACY;
-    }
-
-    /**
-     * The wire parameter for the NEW model. `undefined` when the deal is not on it, which stops
-     * the adapter being provisioned at all — this is what keeps exactly one model's Apex running.
-     */
-    get checklistTransactionId() {
-        return this.isChecklistModel ? this.recordId : undefined;
-    }
-
-    /** The wire parameter for the LEGACY model. See `checklistTransactionId`. */
-    get legacyTransactionId() {
-        return this.isLegacyModel ? this.recordId : undefined;
-    }
-
     // ---- Data -----------------------------------------------------------------------------
 
-    @wire(getChecklist, { transactionId: '$checklistTransactionId' })
+    @wire(getChecklist, { transactionId: '$recordId' })
     wiredChecklist(result) {
         this._checklistWire = result;
         if (result.data) {
@@ -167,93 +145,44 @@ export default class TransactionTaskGroups extends LightningElement {
         }
     }
 
-    @wire(getTaskGroups, { transactionId: '$legacyTransactionId' })
-    wiredLegacy(result) {
-        this._legacyWire = result;
-        if (result.data) {
-            this._legacyData = result.data;
-            this._legacyError = undefined;
-            this._legacyLoaded = true;
-        } else if (result.error) {
-            this._legacyError = result.error;
-            this._legacyData = [];
-            this._legacyLoaded = true;
-        }
-    }
-
-    /** The normalised groups for whichever model is active. One shape, one template. */
     get groups() {
-        if (this.isChecklistModel) {
-            return normalizeChecklistGroups(this._checklistData);
-        }
-        if (this.isLegacyModel) {
-            return normalizeLegacyGroups(this._legacyData);
-        }
-        return [];
+        return normalizeChecklistGroups(this._checklistData);
     }
 
     get dataError() {
-        if (this.isChecklistModel) {
-            return this._checklistError;
-        }
-        if (this.isLegacyModel) {
-            return this._legacyError;
-        }
-        return undefined;
+        return this._checklistError;
     }
 
     // ---- Render states --------------------------------------------------------------------
-    // Four mutually exclusive states, so an empty checklist is VISIBLY empty and never renders as
+    // Three mutually exclusive states, so an empty checklist is VISIBLY empty and never renders as
     // blank space that reads like a successful load of nothing.
 
-    /** The DISCRIMINATOR has not resolved and has not failed. Only the first half of loading. */
-    get isResolvingModel() {
-        return !this._modelResolved && !this._modelError;
-    }
-
     /**
-     * Whether the ACTIVE model's Apex round trip has come back — with data or with an error.
+     * Whether the Apex round trip has come back — with data or with an error.
      *
-     * 🔴 THIS IS THE SECOND HALF OF "LOADING", AND OMITTING IT INVERTED THE WHOLE POINT OF THE
-     * EMPTY STATE. Resolving the discriminator only tells us WHICH Apex method to call; the call
-     * itself is a separate round trip. Between the two, `groups` is legitimately `[]` — and with
-     * `showEmpty` gated on the discriminator alone, every single page load rendered
-     * "no checklist items have been generated… the fan-out may not have completed" for a moment,
-     * on healthy deals. An alarming, false, load-bearing message shown to everyone, every time.
+     * 🔴 OMITTING THIS INVERTED THE WHOLE POINT OF THE EMPTY STATE, AND IT STILL WOULD. Between
+     * mount and the wire resolving, `groups` is legitimately `[]` — and with `showEmpty` ungated,
+     * every single page load rendered "no checklist items have been generated… the fan-out may not
+     * have completed" for a moment, on healthy deals. An alarming, false, load-bearing message
+     * shown to everyone, every time.
      *
      * ⚠ THE JEST SUITE COULD NOT SEE IT, and that is the reusable lesson: the render helpers
-     * emitted `getRecord` AND the Apex wire before asserting, so the intermediate state was never
-     * observed. There is now a test that asserts BETWEEN the two emits.
+     * emitted every wire before asserting, so the intermediate state was never observed. There is
+     * a test that asserts BEFORE the Apex wire emits.
+     * ⚠ This used to be the SECOND half of a two-part loading gate; the first half (waiting on the
+     * model discriminator) went at M5. Do not read its removal as making this one redundant.
      */
     get dataLoaded() {
-        if (this.isChecklistModel) {
-            return this._checklistLoaded;
-        }
-        if (this.isLegacyModel) {
-            return this._legacyLoaded;
-        }
-        return false;
+        return this._checklistLoaded;
     }
 
-    /** Either half still outstanding. Neither an error nor an empty state may render while true. */
+    /** The round trip is outstanding. Neither an error nor an empty state may render while true. */
     get isLoading() {
-        return this.isResolvingModel || (!this.hasModelError && !this.dataLoaded);
-    }
-
-    get hasModelError() {
-        return !!this._modelError;
-    }
-
-    get modelErrorMessage() {
-        const e = this._modelError;
-        return (
-            (e && e.body && e.body.message) ||
-            'This deal could not be read, so the checklist cannot be shown. Refresh the page, or contact your administrator if it persists.'
-        );
+        return !this.dataLoaded;
     }
 
     get hasDataError() {
-        return !this.hasModelError && !!this.dataError;
+        return !!this.dataError;
     }
 
     get dataErrorMessage() {
@@ -264,30 +193,35 @@ export default class TransactionTaskGroups extends LightningElement {
         );
     }
 
-    /** A genuinely empty checklist for a resolved model — distinct from an error and from loading. */
+    /** A genuinely empty checklist — distinct from an error and from loading. */
     get showEmpty() {
-        return (
-            !this.isLoading &&
-            !this.hasModelError &&
-            !this.hasDataError &&
-            this.groups.length === 0
-        );
+        return !this.isLoading && !this.hasDataError && this.groups.length === 0;
     }
 
+    /**
+     * 🔴 THE EMPTY-STATE COPY IS WHERE THE RETIRED DISCRIMINATOR STILL MATTERS (M5, design §7
+     * UI-4). Before M5, a deal with `Checklist_Fanned_Out__c = false` took the LEGACY branch and
+     * was told what to DO about it — "Set the Contract Executed Date to generate the checklist."
+     * That is the single most useful sentence this component renders, it applies to every deal
+     * before contract execution, and collapsing both cases into the new model's "contact your
+     * administrator" message would have replaced actionable guidance with an escalation for a
+     * perfectly normal state. So the fan-out flag is still read, purely to keep this distinction.
+     *
+     * The third branch is REACHABLE and is not padding: it means the advisory LDS read failed, so
+     * neither diagnosis can be asserted honestly and the copy says only what is certainly true.
+     */
     get emptyMessage() {
-        if (this.isChecklistModel) {
-            return 'This deal is on the new checklist, but no checklist items have been generated for it yet. If that looks wrong, contact your administrator — the fan-out may not have completed.';
+        if (!this._flagResolved) {
+            return 'No checklist items to show for this deal.';
         }
-        return 'No tasks yet. Set the Contract Executed Date to generate the checklist.';
+        if (this._fannedOut === true) {
+            return 'This deal has a checklist, but no items have been generated for it yet. If that looks wrong, contact your administrator — the fan-out may not have completed.';
+        }
+        return 'No checklist yet. Set the Contract Executed Date to generate the checklist.';
     }
 
     get showContent() {
-        return (
-            !this.isLoading &&
-            !this.hasModelError &&
-            !this.hasDataError &&
-            this.groups.length > 0
-        );
+        return !this.isLoading && !this.hasDataError && this.groups.length > 0;
     }
 
     // ---- Phase layer ----------------------------------------------------------------------
@@ -539,7 +473,11 @@ export default class TransactionTaskGroups extends LightningElement {
         // branch above wins when both are true, which cannot happen today (no wire-verification
         // item carries a capture def) but is ordered deliberately: the anti-fraud control is the
         // more specific one and must never be displaced by a generic dialog.
-        if (event.target.dataset.capture === 'true' && this.isChecklistModel) {
+        // ⚠ The `&& this.isChecklistModel` conjunct was dropped at M5 — capture is a
+        // Checklist_Item__c-only feature and there is no other model left to exclude. `hasCapture`
+        // is resolved SERVER-SIDE from the item's coordinate, so a row that carries it is by
+        // construction a checklist item.
+        if (event.target.dataset.capture === 'true') {
             event.target.checked = false; // hold unchecked until the capture is saved
             this.openCapture(itemId, subject);
             return;
@@ -552,15 +490,17 @@ export default class TransactionTaskGroups extends LightningElement {
      * Refreshes both the checklist itself and the parent Transaction after a successful write.
      *
      * ⚠ THE `notifyRecordUpdateAvailable` CALL IS NOT OPTIONAL. The completion was an imperative
-     * Apex DML, and the rollup then wrote `Tasks_Complete__c` / `Wire_Open_Risks__c` on the parent
-     * — all of it behind LDS's back. Without this, the Path and the highlights panel keep showing
-     * the counters from before the click until the user reloads the page.
+     * Apex DML, and `ChecklistRollupService` then wrote `Tasks_Complete__c` / `Wire_Open_Risks__c`
+     * on the parent — all of it behind LDS's back. Without this, the Path and the highlights panel
+     * keep showing the counters from before the click until the user reloads the page.
+     * ⚠ It ALSO refreshes the advisory `Checklist_Fanned_Out__c` read, which is harmless and
+     * slightly useful: completing the last item on a freshly fanned-out deal leaves both LDS
+     * caches consistent.
      */
     async refreshAfterWrite() {
         notifyRecordUpdateAvailable([{ recordId: this.recordId }]);
-        const active = this.isChecklistModel ? this._checklistWire : this._legacyWire;
-        if (active) {
-            await refreshApex(active);
+        if (this._checklistWire) {
+            await refreshApex(this._checklistWire);
         }
     }
 
@@ -609,11 +549,7 @@ export default class TransactionTaskGroups extends LightningElement {
         const { itemId, notes } = this._confirm;
         this._confirmSaving = true;
         try {
-            if (this.isChecklistModel) {
-                await completeItem({ itemId, comment: notes });
-            } else {
-                await completeTask({ taskId: itemId, notes });
-            }
+            await completeItem({ itemId, comment: notes });
             // Only dismiss the dialog once the write actually succeeds.
             this._confirm = {};
             await this.refreshAfterWrite();
@@ -970,21 +906,12 @@ export default class TransactionTaskGroups extends LightningElement {
         }
         this._wireSaving = true;
         try {
-            if (this.isChecklistModel) {
-                await recordWireVerification({
-                    itemId,
-                    verifiedByName: verifiedBy.trim(),
-                    phone: phone.trim(),
-                    comment: (comments || '').trim()
-                });
-            } else {
-                await completeWireVerification({
-                    taskId: itemId,
-                    verifiedBy: verifiedBy.trim(),
-                    phone: phone.trim(),
-                    comments: (comments || '').trim()
-                });
-            }
+            await recordWireVerification({
+                itemId,
+                verifiedByName: verifiedBy.trim(),
+                phone: phone.trim(),
+                comment: (comments || '').trim()
+            });
             this._wireModal = {};
             await this.refreshAfterWrite();
         } catch (e) {

@@ -9,8 +9,13 @@
  *
  * Carve-out 1 (the LOI-rejection approval transition) is pinned separately in
  * LoiGateTest.directLoiToUnderwritingUpdate_isAllowedByCarveOut1_notByApproval - see that
- * method's header for why the pre-existing LoiGateTest.rejectionReturnsDealToUnderwriting does
- * NOT pin it (approval-process field updates bypass validation rules entirely in this org).
+ * method's header for why LoiGateTest.rejectionLeavesLoiUnderReviewAndDoesNotRewindTheDeal
+ * (renamed and inverted 2026-09-03 from rejectionReturnsDealToUnderwriting) does NOT pin it:
+ * approval-process field updates bypass validation rules entirely in this org, so the old
+ * LOI -> Underwriting rewind never reached the rule formula - and since D-3 retired that rewind,
+ * the method now asserts the deal does NOT move at all, so there is no backward move left to
+ * pin. directLoiToUnderwritingUpdate_isAllowedByCarveOut1_notByApproval is the ONLY pin on
+ * carve-out 1; protect it.
  *
  * @author Unit Testing Agent
  */

@@ -197,7 +197,18 @@ private class TransactionControllerTest {
         List<Transaction__c> bulkTxns = TestDataFactory.createTransactions(251, false);
         TestDataFactory.applyOverrides(bulkTxns, new Map<String, Object>{
             'Status__c' => 'Active',
-            'Tasks_Fanned_Out__c' => true, // suppress the Day-0 fan-out Flow; irrelevant to this controller
+            // Suppress the Day-0 fan-out Flow; irrelevant to this controller.
+            // 🔴 THE CLAIM FLAG IS WHAT SUPPRESSES IT (2026-09-03). A7 repointed
+            // flows/Transaction_Task_Fanout onto ChecklistFanoutService and moved its second entry
+            // filter from Tasks_Fanned_Out__c to Checklist_Fanned_Out__c; M5 then deleted
+            // Tasks_Fanned_Out__c entirely. Without Checklist_Fanned_Out__c = true all 251 deals
+            // would fan out ~96 checklist rows each.
+            // ⚠ AND THE USUAL FIX - nulling Contract_Executed_Date__c, the filter both flow
+            // versions share - IS WRONG HERE: getKpis derives avgTimeToCloseDays from
+            // Contract_Executed_Date__c.daysBetween(Target_Close_Date__c), so a null date drops
+            // ttcCount to zero and the `75` assertion below fails. The date is load-bearing in this
+            // method; the claim flag is not read by this controller at all.
+            'Checklist_Fanned_Out__c' => true,
             'Is_Wire_Approval_Due__c' => false,
             'Is_Earnest_At_Risk__c' => false
         });
@@ -290,7 +301,7 @@ private class TransactionControllerTest {
 
     /**
      * 🔴 tasksTotal MUST STAY NULL, NOT 0, BEFORE THE DAY-0 FAN-OUT (added 2026-08-12). This is the
-     * fix for the hardcoded '/75' (record page showed '/82') denominator: TaskFanoutService writes
+     * fix for the hardcoded '/75' (record page showed '/82') denominator: ChecklistFanoutService writes
      * Tasks_Total__c = createdForTxn, a count gated by each Transaction's OWN condition fields, so
      * no constant is ever right and the client must be able to tell "not fanned out yet" apart from
      * "fanned out and legitimately produced zero tasks". Coalescing to 0 here would erase that
@@ -301,12 +312,12 @@ private class TransactionControllerTest {
         Transaction__c notFannedOut = TestDataFactory.createTransaction(null, null, false);
         TestDataFactory.applyOverrides(notFannedOut, new Map<String, Object>{
             'Status__c' => 'Active', 'Contract_Executed_Date__c' => null,
-            'Tasks_Fanned_Out__c' => false, 'Tasks_Total__c' => null, 'Tasks_Complete__c' => null
+            'Checklist_Fanned_Out__c' => false, 'Tasks_Total__c' => null, 'Tasks_Complete__c' => null
         });
         Transaction__c fannedOut = TestDataFactory.createTransaction(null, null, false);
         TestDataFactory.applyOverrides(fannedOut, new Map<String, Object>{
             'Status__c' => 'Active', 'Contract_Executed_Date__c' => null,
-            'Tasks_Fanned_Out__c' => true, 'Tasks_Total__c' => 42, 'Tasks_Complete__c' => 10
+            'Checklist_Fanned_Out__c' => true, 'Tasks_Total__c' => 42, 'Tasks_Complete__c' => 10
         });
         insert new List<Transaction__c>{ notFannedOut, fannedOut };
 

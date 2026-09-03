@@ -43,8 +43,43 @@
  * routing in place its `update t` fires the after-update context on the same Task, so
  * an explicit call would recompute twice per click.
  *
+ * ═══ 🔴 AMENDED 2026-09-02 — THE READ HALF WAS CLOSED. IT HAD BEEN MISSING SINCE 2026-08-22,
+ *     AND THE PAIR ONLY MAKES SENSE TOGETHER ═══
+ * The `RollupWrites` escalation above was correct and is UNCHANGED. What was wrong for eleven
+ * days is that it shipped ALONE. `TaskSelector.selectByOnboardingIds` — the one read feeding the
+ * loop below — stayed `with sharing`, so this class had an ALWAYS-SUCCEEDING write paired with a
+ * SHARING-FILTERED read. That combination does not fail. It writes all twelve counters, including
+ * `Completion_Pct__c`, computed from whatever subset of Tasks the running principal happens to
+ * see — successfully, silently, and read straight onto `OnboardingController` and the PM
+ * dashboards. Of the two possible asymmetries this is the WORSE one: a filtered write fails
+ * loudly; a filtered read publishes a wrong number.
+ *
+ * ⇒ FIXED as the MIRROR IMAGE of the Transaction-side repair made the same day. There, the WRITE
+ *   was filtered and moved up to meet an already-escaping read; here the READ moved up to meet an
+ *   already-escaping write (`TaskSelector.OnboardingRollupReads`). Nothing in THIS class changed.
+ *
+ * WHY IT WAS NEVER OBSERVED, AND WHY THAT IS NOT A CONTROL. `OnboardingFanoutService` sets
+ * `tk.OwnerId = o.OwnerId` (`cls:287`) and suppresses the trigger recalc in favour of one explicit
+ * call, so on the fan-out path owner == runner and the read is complete. Nothing on the PM side
+ * reassigns `Onboarding__c.OwnerId` away from its creator — there is no
+ * `resolveTransactionOwnerId` equivalent here. That is an accident of the current feature set.
+ * 🔴 IT IS EXACTLY THE PROPERTY THAT CHANGED ON THE TRANSACTION SIDE on 2026-08-28
+ * (`ContractExecutionService.cls:359` began reassigning the deal to the Transactions team), and
+ * four days later that produced `AsyncApexJob 707iw0000046Rh6AAE` — 82 Tasks rolled back, zero
+ * checklist Tasks org-wide. The PM side was closed in the same change so it cannot repeat it.
+ * ⚠ IT WAS ALREADY REACHABLE WITHOUT ANY SUCH CHANGE. `TaskRollupTriggerHandler` routes
+ * `Onboarding__c` on all four after-contexts, and `Onboarding_PM_All_RW` grants a PM-group member
+ * Edit on EVERY `Onboarding__c` while `Activity` stays Private with no sharing rules — so that
+ * member sees only their OWN Tasks. Editing one reassigned Task recomputed all twelve counters
+ * from a partial view.
+ *
+ * 🔴 THE PAIR IS THE UNIT OF CHANGE. Reverting `TaskSelector.OnboardingRollupReads` to
+ * `with sharing` while `RollupWrites` below stays `without sharing` restores the silent-zero
+ * state — nothing throws, no test that only asserts "no exception" catches it, and the only
+ * symptom is a wrong percentage on a dashboard. If one of the two is ever reverted, revert both.
+ *
  * All SOQL is delegated to `TaskSelector.selectByOnboardingIds` (already
- * `WITH SYSTEM_MODE`, for the same automation-path reason). This service holds none.
+ * `WITH SYSTEM_MODE`, and — since 2026-09-02 — `without sharing`; see below). This service holds none.
  *
  * BULK SHAPE: one selector call and one DML statement per invocation regardless of
  * how many Onboardings are passed. Never call it per record.

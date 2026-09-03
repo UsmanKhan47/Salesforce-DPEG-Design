@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  M5 legacy Task retirement — ADMIN-SCOPE constructive members only (companion to
+  destructiveChanges.xml in this same folder). This is a SCOPED manifest for validating/deploying
+  just the admin half; it is not a replacement for the repo's root manifest/package.xml (already
+  amended in place for this change) and is not meant to be deployed alone in production — the
+  final deploy must combine this with the salesforce-developer subagent's amended Apex classes,
+  triggers and LWC bundles as ONE payload (see the note in destructiveChanges.xml in this folder).
+-->
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <types>
+        <members>DPEG_Task_Edit</members>
+        <members>DPEG_TaskChecklist_View</members>
+        <members>Transaction_Prereq_Override_Access</members>
+        <members>DPEG_Apex_Access</members>
+        <name>PermissionSet</name>
+    </types>
+    <version>67.0</version>
+</Package>

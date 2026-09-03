@@ -445,7 +445,9 @@ private class TransactionActionPermissionServiceTest {
     }
 
     // ═════════════════════════════════════════════════════════════════════════════════════════
-    // PREREQUISITE OVERRIDE GATE (added 2026-08-31) — the third, independent token.
+    // PREREQUISITE OVERRIDE GATE (added 2026-08-31) — the second, independent token.
+    // ⚠ AMENDED 2026-09-03 (M5). It was the THIRD token; the middle one was
+    //   `Transaction_Task_Actions` / hasTaskActionAccess, retired with the legacy Task checklist.
     // ═════════════════════════════════════════════════════════════════════════════════════════
 
     /**
@@ -453,22 +455,29 @@ private class TransactionActionPermissionServiceTest {
      * so the wire-fraud disarm refusal applies to them — which is the whole point of the gate.
      *
      * 🔴 AND THE BOUNDARY THAT MATTERS MOST FOR THIS TOKEN: it is asked from inside a BEFORE-UPDATE
-     * TRIGGER, in the same transaction as the TASK gate on every checklist completion. If the two
-     * shared a cache, every `Transaction_Task_Actions` holder would silently inherit the override.
+     * TRIGGER, so it runs in the same transaction as whichever other gate the same save consulted.
+     * If two gates shared a cache, whichever ran first would silently answer the other's question.
      * The second half asserts the two answers are independent within one transaction.
+     *
+     * ⚠ AMENDED 2026-09-03 (M5) — THE CONTROL GATE CHANGED, THE PROPERTY BEING PROVED DID NOT.
+     * This test used to ask `hasTaskActionAccess` first, because the task gate was the one that ran
+     * in the same transaction on every checklist completion. That gate and its token are retired,
+     * so the control moved to `hasTransactionActionAccess`, the only other gate left in this class.
+     * The assertion is deliberately NOT dropped: cache independence is the defect class this file
+     * exists to catch, and with only two gates left a shared cache would be MORE damaging, not less.
      */
     @isTest
-    static void hasPrereqOverrideAccess_bareUser_isDeniedAndDoesNotShareTheTaskGateCache() {
+    static void hasPrereqOverrideAccess_bareUser_isDeniedAndDoesNotShareTheStageGateCache() {
         User bareUser = buildStandardUser('tapsPO');
         insert bareUser;
 
         Test.startTest();
         Boolean overrideAllowed;
-        Boolean taskAllowed;
+        Boolean stageAllowed;
         TransactionActionPermissionService.clearCache();
         System.runAs(bareUser) {
-            // Ask the TASK gate first, so a shared cache would have answered the override gate too.
-            taskAllowed = TransactionActionPermissionService.hasTaskActionAccess();
+            // Ask the STAGE gate first, so a shared cache would have answered the override gate too.
+            stageAllowed = TransactionActionPermissionService.hasTransactionActionAccess();
             overrideAllowed = TransactionActionPermissionService.hasPrereqOverrideAccess();
         }
         TransactionActionPermissionService.clearCache();
@@ -477,15 +486,16 @@ private class TransactionActionPermissionServiceTest {
         Assert.isFalse(overrideAllowed,
             'A user with no Transaction_Prereq_Override grant and no "Modify All Data" must not be '
             + 'able to disarm a live wire-fraud gate');
-        Assert.isFalse(taskAllowed,
-            'Control: the task gate denies this user too, so the assertion above is not being '
+        Assert.isFalse(stageAllowed,
+            'Control: the stage gate denies this user too, so the assertion above is not being '
             + 'carried by an unexpectedly permissive runner');
     }
 
     /**
      * The administrator bypass, which for THIS token is the primary route rather than a fallback:
-     * the M5 mass key-clear, Phase 1 renumbering and wrong-but-resolvable key repair are all run
-     * from anonymous Apex or a script, where no permission set may be assigned.
+     * Phase 1 renumbering and wrong-but-resolvable key repair are both run from anonymous Apex or a
+     * script, where no permission set may be assigned. (A third reason, "the M5 mass key-clear",
+     * was listed here until 2026-09-03; M5 shipped without needing one — see the token's Javadoc.)
      *
      * Also pins the cache: a second ask must return the memoized answer rather than recomputing.
      */
@@ -543,26 +553,31 @@ private class TransactionActionPermissionServiceTest {
     }
 
     /**
-     * `clearCache` must clear ALL THREE caches. Added with the third gate because a cache added
-     * without a matching line in `clearCache` is invisible until a `runAs` test starts returning the
-     * previous user's answer — which is precisely the class of bug this whole file exists to prevent.
+     * `clearCache` must clear EVERY cache in the class. A cache added without a matching line in
+     * `clearCache` is invisible until a `runAs` test starts returning the previous user's answer —
+     * which is precisely the class of bug this whole file exists to prevent.
+     *
+     * ⚠ AMENDED 2026-09-03 (M5). Was `clearCache_clearsAllThreeGateCaches`; the middle cache,
+     * `cachedHasTaskActionAccess`, retired with the legacy Task checklist. Renamed rather than
+     * edited in place so a reviewer reading the diff cannot mistake a narrowed assertion for a
+     * weakened one — the remaining two are still asserted, and BOTH preconditions still checked.
      */
     @isTest
-    static void clearCache_clearsAllThreeGateCaches() {
+    static void clearCache_clearsBothGateCaches() {
         Test.startTest();
         TransactionActionPermissionService.hasTransactionActionAccess();
-        TransactionActionPermissionService.hasTaskActionAccess();
         TransactionActionPermissionService.hasPrereqOverrideAccess();
+        Assert.isNotNull(TransactionActionPermissionService.cachedHasTransactionActionAccess,
+            'Precondition: the stage gate was asked, so it is cached');
         Assert.isNotNull(TransactionActionPermissionService.cachedHasPrereqOverrideAccess,
-            'Precondition: all three asked, so all three cached');
+            'Precondition: the override gate was asked, so it is cached');
 
         TransactionActionPermissionService.clearCache();
         Test.stopTest();
 
         Assert.isNull(TransactionActionPermissionService.cachedHasTransactionActionAccess, 'stage cleared');
-        Assert.isNull(TransactionActionPermissionService.cachedHasTaskActionAccess, 'task cleared');
         Assert.isNull(TransactionActionPermissionService.cachedHasPrereqOverrideAccess,
-            'override cleared — the line most likely to be forgotten when a fourth gate is added');
+            'override cleared — the line most likely to be forgotten when a third gate is added');
     }
 
     /**

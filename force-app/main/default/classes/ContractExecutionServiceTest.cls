@@ -1,7 +1,18 @@
 /**
  * Tests ContractExecutionService: executing the PSA stamps the parent
  * Opportunity (Day 0), creates exactly ONE Transaction (arming the existing
- * Day-0 task fan-out), and never duplicates on re-execution.
+ * Day-0 checklist fan-out), and never duplicates on re-execution.
+ *
+ * ⚠ NOMENCLATURE, 2026-09-03. The Transaction_Task_Fanout flow was repointed from
+ * TaskFanoutService to ChecklistFanoutService: the Day-0 artefacts are now 11 `Checklist__c` rows
+ * and 82 `Checklist_Item__c` rows, NOT 82 `Task` rows. The flow's API name was deliberately kept,
+ * so "task fan-out" survives in places as a proper noun. Where the comments and assertion messages
+ * below still say "82", the number is unchanged and still correct - it is the ITEM count. Only one
+ * site in this class actually QUERIED the legacy artefact
+ * (anOpenedTransactionIsOwnedByTheConfiguredTransactionsOwner); it is repointed and carries the
+ * full argument. The historical incident recorded on bulkExecution251ContractsHandsOffToTransactions
+ * is left naming TaskFanoutService/TaskFanoutQueueable on purpose: it is a record of what was
+ * MEASURED on the model that existed then, and rewriting it would falsify the measurement.
  *
  * ── 🔴 SINCE TRANCHE 3C (2026-08-09) handleExecution HAS TWO ARMS, AND THE TESTS BELOW ARE SPLIT
  *      ACCORDINGLY ────────────────────────────────────────────────────────────
@@ -311,7 +322,7 @@ private class ContractExecutionServiceTest {
         System.assertEquals('Active', txns[0].Status__c, 'Transaction opens Active');
         System.assertEquals(12000000, txns[0].Contract_Value__c, 'Contract value carried over');
         // 🔴 Day 0 is the CONTRACT EXECUTION date, not the date the stage changed. Every one of the
-        // 82 checklist tasks is dated by offset from this field, so anchoring it to "now" would
+        // 82 Day-0 checklist items is dated by offset from this field, so anchoring it to "now" would
         // silently shift every deadline on a deal that executed weeks before it closed.
         System.assertEquals(signed.Contract_Executed_Date__c.date(), txns[0].Contract_Executed_Date__c,
             'Day 0 comes from the contract execution date, not from today');
@@ -366,9 +377,11 @@ private class ContractExecutionServiceTest {
      * executed in one transaction (forces a second 200-record trigger batch).
      *
      * This test found TWO INDEPENDENT governor breaks in the execution cascade.
-     * Do not shrink the record count, weaken the assertions, or inject
-     * TaskFanoutService.taskDefsOverride to make it pass - it must run against
-     * production-representative data (82 checklist defs) or it proves nothing.
+     * Do not shrink the record count, weaken the assertions, or inject a def override to make it
+     * pass - it must run against production-representative data (82 checklist defs) or it proves
+     * nothing. (The named seam was `TaskFanoutService.taskDefsOverride`; since the 2026-09-03
+     * repoint the equivalent lever lives on ChecklistFanoutService. Neither is used here, and the
+     * prohibition applies to whichever one exists.)
      *
      * Both breaks are fixed; the numbers below are what was measured on
      * DPEG-Acq-5 before the fix, and are recorded so the next reader does not
@@ -401,6 +414,15 @@ private class ContractExecutionServiceTest {
      * (10,000 rows / ~86 rows per deal). That is ARITHMETIC, NOT INEFFICIENCY:
      * no query tuning could move it, which is why the fan-out had to go async
      * rather than be optimised in place.
+     *
+     * ⚠ STILL VALID, AND DELIBERATELY NOT REWRITTEN (2026-09-03). Everything above is a record of
+     * what was MEASURED on the Task model, so it keeps naming TaskFanoutService /
+     * TaskFanoutQueueable - editing those names would falsify the measurement rather than update
+     * it. What this test ASSERTS is unaffected by the repoint: it asserts 251 Contract Reviews and
+     * 251 Transactions, no Task and no Checklist row anywhere, so the artefact swap cannot make it
+     * pass or fail differently. The governor argument also survives intact - ChecklistFanoutService
+     * is async for the same arithmetic (96 rows per Transaction, CHUNK_SIZE 50), so the DML break
+     * this test was written to catch stays caught.
      */
     @isTest
     static void bulkExecution251ContractsHandsOffToTransactions() {
@@ -549,7 +571,7 @@ private class ContractExecutionServiceTest {
             'UNCHANGED BEHAVIOUR: an executed acquisition PSA still stamps Contract Signed');
         Assert.isNotNull(o.Contract_Executed_Date__c,
             'UNCHANGED BEHAVIOUR: Day 0 is still stamped, and openTransactionsOnAboutToClose still '
-            + 'reads it back to date the 82-task checklist');
+            + 'reads it back to date the 82-item Day-0 checklist');
         Assert.areEqual('Contract Signed', o.Deal_Status__c,
             'UNCHANGED BEHAVIOUR: the deal status is still stamped');
 
@@ -826,7 +848,7 @@ private class ContractExecutionServiceTest {
      *
      * Under a global repoint, this fixture's `-> Signed` step would fire the whole acquisition
      * handoff one hop EARLY: Contract_Signed__c, Deal_Status__c, four notifications, the Offering
-     * shell — and, worst, `Contract_Executed_Date__c`, which is DAY 0 for the 82-task transaction
+     * shell — and, worst, `Contract_Executed_Date__c`, which is DAY 0 for the 82-item transaction
      * checklist. Every deadline on every acquisition deal would shift to the signature date.
      *
      * ⚠ THE ASSERTIONS ARE ON THE STATE AT 'Signed', BEFORE ANY EXECUTION HAPPENS. Asserting the
@@ -867,7 +889,7 @@ private class ContractExecutionServiceTest {
             + 'Contract_Signed__c. The terminal constant was repointed globally instead of split '
             + 'per record type — see ContractExecutionService.DISPOSITION_TERMINAL.');
         Assert.isNull(atSigned.Contract_Executed_Date__c,
-            '🔴 AND THIS IS THE EXPENSIVE ONE. Contract_Executed_Date__c is DAY 0 for the 82-task '
+            '🔴 AND THIS IS THE EXPENSIVE ONE. Contract_Executed_Date__c is DAY 0 for the 82-item '
             + 'Day-0 checklist that openTransactionsOnAboutToClose reads back. Stamping it at '
             + 'SIGNATURE instead of EXECUTION silently shifts every deadline on every acquisition '
             + 'deal, with no error anywhere.');
@@ -1181,7 +1203,7 @@ private class ContractExecutionServiceTest {
             'The refusal takes the ENTIRE execution with it, not just the date: Contract Signed is '
             + 'not stamped. Observed refusal: ' + observed);
         Assert.isNull(after.Contract_Executed_Date__c,
-            'and Day 0 is not stamped, so a Transaction opened later would date its 82-task '
+            'and Day 0 is not stamped, so a Transaction opened later would date its 82-item '
             + 'checklist from today instead. Observed refusal: ' + observed);
         Assert.areNotEqual('Contract Signed', after.Deal_Status__c,
             'and the deal status is not advanced either. Observed refusal: ' + observed);
@@ -1369,7 +1391,8 @@ private class ContractExecutionServiceTest {
         Test.stopTest();
 
         List<Transaction__c> txns = [
-            SELECT Id, OwnerId FROM Transaction__c WHERE Opportunity__c = :cr.Opportunity__c
+            SELECT Id, OwnerId, Loan_Required__c
+            FROM Transaction__c WHERE Opportunity__c = :cr.Opportunity__c
         ];
         Assert.areEqual(1, txns.size(), 'Entering About to Close still opens exactly one Transaction');
         Assert.areEqual(danishStandIn.Id, txns[0].OwnerId,
@@ -1380,28 +1403,95 @@ private class ContractExecutionServiceTest {
             'and it is specifically NOT the deal driver who ran the chain — the exact defect '
             + 'this change exists to fix (TXN-0267, owned by Junior Dhanani).');
 
-        // ── CONSEQUENCE (a): the Day-0 checklist follows the Transaction owner ──
-        // TaskFanoutService line ~117 does `tk.OwnerId = t.OwnerId`, so the 82-row checklist the
-        // Transaction_Task_Fanout flow builds is now owned by the transactions owner too. Asserted
-        // rather than assumed, and the count is asserted non-zero so this cannot pass vacuously if
-        // the fan-out ever stops firing.
-        // ⚠ `Transaction_Deal__c`, NOT `WhatId`. TaskFanoutService relates the checklist through
-        // the custom lookup on purpose ("so checklist tasks stay out of the Activity timeline"),
-        // so a WhatId query returns ZERO ROWS and this whole cascade assertion silently becomes
-        // unreachable — measured, it fails the precondition rather than passing vacuously only
-        // because the precondition is asserted.
-        List<Task> checklist = [SELECT OwnerId FROM Task WHERE Transaction_Deal__c = :txns[0].Id];
-        Assert.isTrue(checklist.size() > 0,
-            'PRECONDITION: the Day-0 fan-out must have produced tasks, otherwise the ownership '
-            + 'assertion below is vacuous.');
-        Set<Id> taskOwners = new Set<Id>();
-        for (Task t : checklist) {
-            taskOwners.add(t.OwnerId);
+        // -- CONSEQUENCE (a): the Day-0 checklist hangs off the re-owned Transaction --
+        //
+        // REPOINTED 2026-09-03, WITH THE Transaction_Task_Fanout FLOW. This block used to read
+        // `[SELECT OwnerId FROM Task WHERE Transaction_Deal__c = :txns[0].Id]` and assert
+        // `Task.OwnerId` per row, because TaskFanoutService explicitly copied the owner down
+        // (`tk.OwnerId = t.OwnerId`). The flow now calls ChecklistFanoutService, which creates
+        // Checklist__c + Checklist_Item__c rows and NO Tasks, so that query returned zero rows.
+        // The precondition below is what caught it (deploy 0Afiw000000WQiXCAW) and it did exactly
+        // its job: it refused to let an ownership assertion pass against an empty list. It is kept
+        // for the same reason, repointed rather than relaxed.
+        // (`Transaction_Deal__c` is the TASK-side lookup and does not exist on Checklist__c at all;
+        // the checklist reaches the deal through its master-detail `Transaction__c`, and an item
+        // reaches it one hop further through `Checklist__r.Transaction__c`.)
+        //
+        // WHY THE OWNERSHIP ASSERTION MOVED RATHER THAN BEING REWRITTEN PER ROW, AND WHY THAT IS
+        // NOT A WEAKENING. Checklist__c and Checklist_Item__c are MasterDetail /
+        // ControlledByParent, so they have NO OwnerId FIELD AT ALL - there is no per-row owner for
+        // a fan-out to copy, and ChecklistFanoutService stamps none (grep it: zero OwnerId
+        // assignments; the argument is in its header at the `FanoutWrites` note). Access to every
+        // checklist row IS access to `txns[0]`, structurally. So the ownership fact is asserted
+        // where the service actually writes it - on `Transaction__c.OwnerId`, three assertions up -
+        // and what this block adds is the half that assertion cannot carry on its own: that the
+        // Day-0 rows EXIST and hang off THAT deal. Both queries below are keyed on `txns[0].Id`,
+        // so parentage is enforced by the WHERE clause rather than by a separate assertion.
+        //
+        // The ControlledByParent premise is PINNED, not trusted - with a presence control first,
+        // because `fields.getMap()` keys are lowercase and a mis-cased key would make the absence
+        // check pass for the wrong reason.
+        Map<String, Schema.SObjectField> checklistFields =
+            Schema.SObjectType.Checklist__c.fields.getMap();
+        Assert.isTrue(checklistFields.containsKey('transaction__c'),
+            'CONTROL FOR THE PIN BELOW: a lowercase key lookup must find a field that DOES exist '
+            + 'on Checklist__c. If this is red the pin proves nothing and neither line should be '
+            + 'trusted.');
+        Assert.isFalse(checklistFields.containsKey('ownerid'),
+            'PREMISE OF THE ASSERTION SHAPE ABOVE: Checklist__c is ControlledByParent and has no '
+            + 'OwnerId, so the deal-level ownership assertion IS the checklist ownership '
+            + 'assertion. Red here means the children gained an independent owner that '
+            + 'ChecklistFanoutService does not set, i.e. the whole Day-0 checklist would land on '
+            + 'the deal driver again - restore a per-row owner assertion at that point.');
+
+        List<Checklist__c> checklists = [
+            SELECT Id, Is_Conditional__c
+            FROM Checklist__c WHERE Transaction__c = :txns[0].Id
+        ];
+        Assert.isTrue(checklists.size() > 0,
+            'PRECONDITION: the Day-0 fan-out must have produced checklist groups on the re-owned '
+            + 'Transaction, otherwise everything below is vacuous. Zero rows means either the '
+            + 'Transaction_Task_Fanout flow did not fire (check its Checklist_Fanned_Out__c entry '
+            + 'filter) or the Queueable it enqueues did not run inside this test.');
+
+        List<Checklist_Item__c> items = [
+            SELECT Id
+            FROM Checklist_Item__c WHERE Checklist__r.Transaction__c = :txns[0].Id
+        ];
+        Assert.isTrue(items.size() > 0,
+            'PRECONDITION: those checklist groups must carry items. Groups with zero items means '
+            + 'PASS 2 of ChecklistFanoutService.fanOutChunk did not run, which a group count on '
+            + 'its own cannot see.');
+
+        // DERIVED FROM THE FIXTURE, NOT HARDCODED. A loan deal produces all 11 groups and 82
+        // items; a cash deal drops group F (Loan Package and Financing, 12 items), which is the
+        // ONE conditional group in Task_Group_Def__mdt and the only one keyed on
+        // `Loan_Required__c` (see scripts/load-task-group-defs.apex). That field defaults to true
+        // and ContractExecutionService never sets it, so this fixture IS a loan deal - but the
+        // expectation is read off the record rather than assumed, so a changed default or a future
+        // explicit write cannot make this pass for the wrong reason.
+        // The row COUNTS are deliberately NOT pinned here: they come from CMDT rows loaded by a
+        // script, ChecklistFanoutServiceTest owns their exact values, and a hardcoded 82 in an
+        // OWNERSHIP test would report on work this method does not do.
+        Integer conditionalGroups = 0;
+        for (Checklist__c cl : checklists) {
+            if (cl.Is_Conditional__c == true) {
+                conditionalGroups++;
+            }
         }
-        Assert.areEqual(new Set<Id>{ danishStandIn.Id }, taskOwners,
-            'INTENDED CASCADE: every fanned-out checklist Task inherits the Transaction owner, so '
-            + 'the whole 82-row checklist now lands on the transactions owner rather than on the '
-            + 'deal driver. If this ever needs to differ, route in TaskFanoutService — not here.');
+        if (txns[0].Loan_Required__c == true) {
+            Assert.isTrue(conditionalGroups > 0,
+                'A loan deal (Loan_Required__c = true) must include the conditional financing '
+                + 'group, so the fan-out this test drove is the FULL checklist rather than a '
+                + 'reduced one. Zero conditional groups means ChecklistFanoutService stopped '
+                + 'honouring Task_Group_Def__mdt.Condition_Field__c and every loan deal is short '
+                + 'a group.');
+        } else {
+            Assert.areEqual(0, conditionalGroups,
+                'A cash deal (Loan_Required__c = false) must NOT receive the conditional financing '
+                + 'group. Red here means the condition gate is inert and every cash deal carries '
+                + 'financing items nobody can ever complete.');
+        }
     }
 
     /**
@@ -1414,7 +1504,7 @@ private class ContractExecutionServiceTest {
         Assert.areEqual('danish.rehman@usmandpeg.uat',
             ContractExecutionService.transactionOwnerUsername,
             'Transactions are assigned to Danish on creation (user requirement, 2026-08-28). '
-            + 'Changing this literal reassigns every future Transaction AND its 82-task '
+            + 'Changing this literal reassigns every future Transaction AND its 82-item '
             + 'checklist, so it is pinned here on purpose.');
     }
 

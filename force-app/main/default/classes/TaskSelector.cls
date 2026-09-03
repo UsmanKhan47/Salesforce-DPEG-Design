@@ -7,18 +7,34 @@
  * │ SHARED / CROSS-MODULE SELECTOR — THIS IS A CONTRACT, NOT A PRIVATE HELPER. │
  * └───────────────────────────────────────────────────────────────────────────┘
  * Task is the one genuinely cross-module object in the P4 selector rollout
- * (design §3 #18, §7, §10 flag 7). Two owners consume it:
+ * (design §3 #18, §7, §10 flag 7). Its consumers today:
  *
- *   • Transactions (owner, this module):
- *       - TransactionTaskController.getTaskGroups            -> selectChecklistByTransactionDealIds
- *       - TransactionTaskController.completeWireVerification -> selectRequiredById
- *   • Property Management (Module B, repoint is PM's job — NOT done here):
+ *   • Property Management:
+ *       - OnboardingController.getChecklist                  -> selectChecklistByOnboardingId
+ *       - OnboardingController.completeTask                  -> selectForOnboardingCompletion
+ *       - OnboardingTaskRollupService.recalc                 -> selectByOnboardingIds
  *       - BrokerCheckInReminderSchedulable idempotency       -> selectOpenByWhatIdsAndSubjectPrefix
+ *   • Dispositions:
+ *       - DispositionTaskController.getClosingTasks          -> selectByWhatIdAndSubjects
+ *   • Broker Protection / EAC capture:
+ *       - selectByInboundMessageId, selectLatestByThreadOrMessageIds,
+ *         selectByIds, selectThreadAnchorsByAnchorValues
  *
- * The full public surface below is deliberately built NOW, in Transactions,
- * BEFORE PM repoints its Schedulable, so PM inherits a complete, stable
- * interface rather than having to grow this class later (design §7 sequencing:
- * "Transactions builds TaskSelector first; PM's repoint depends on it existing").
+ * 🔴 AMENDED 2026-09-03 — M5 LEGACY TASK RETIREMENT. TRANSACTIONS NO LONGER CONSUMES
+ * THIS CLASS AT ALL, AND THAT IS THE HEADLINE, NOT A FOOTNOTE.
+ * This class was built by and for Transactions ("Transactions builds TaskSelector first;
+ * PM's repoint depends on it existing"). Five methods left with the legacy Task-based
+ * Transaction checklist:
+ *     selectChecklistByTransactionDealIds  (TransactionTaskController.getTaskGroups)
+ *     selectRequiredById                   (TransactionTaskController.completeWireVerification)
+ *     selectByTransactionDealIds + the `RollupReads` inner class   (TaskRollupService)
+ *     selectChecklistByDealsAndSequences   (TaskPrerequisiteService)
+ *     selectForChecklistMigration          (ChecklistMigrationService / AuditService)
+ * The Transaction checklist now lives on `Checklist_Item__c` and is read by
+ * `ChecklistItemSelector`. ⇒ THIS CLASS IS NOW OWNED BY PROPERTY MANAGEMENT IN PRACTICE
+ * even though its git history is Transactions'. A change here that "cleans up" an
+ * onboarding method has no Transaction fallback to catch it.
+ *
  * selectOpenByWhatIdsAndSubjectPrefix has no in-module consumer yet — that is
  * intentional; it is the pre-agreed PM contract, covered by its own test
  * (including the runAs USER_MODE proof), not dead code.
@@ -30,44 +46,47 @@
  * that is the reads a human asked for. Design §5 measured this live: the only
  * FLS-bearing standard Task fields in scope (ActivityDate / Description / WhatId /
  * WhoId) are all Standard User READ=true, so USER_MODE returns rows for the internal
- * personas driving those reads. Custom Task fields (Task_Group__c, Task_Sequence__c,
- * Task_Owner_Label__c, Verbal_Verification_*, Verified_By__c/At__c,
- * Verification_Phone__c) rely on the deployed permsets (P3: custom-field FLS gap = 0).
+ * personas driving those reads. The custom Task fields this class still selects
+ * (Task_Owner_Label__c, Onboarding_*, Blocked_Reason__c, Source_System__c,
+ * Thread_Key__c, Inbound_Message_Id__c) rely on the deployed permsets
+ * (P3: custom-field FLS gap = 0).
+ * ⚠ 2026-09-03 (M5): this list previously also named Task_Group__c, Task_Sequence__c,
+ * Verbal_Verification_*, Verified_By__c/At__c and Verification_Phone__c. All but
+ * Task_Sequence__c were DELETED from Activity at M5; Task_Sequence__c survives because
+ * OnboardingFanoutService writes it, but nothing in THIS class reads it any more.
  *
- * SIX methods are `WITH SYSTEM_MODE` (FOUR until 2026-08-31, FIVE until 2026-09-02). Each carries its own
- * justification at its own declaration; all six sit on an AUTOMATION PATH, where
+ * THREE methods are `WITH SYSTEM_MODE` (SIX between 2026-09-02 and M5). Each carries its own
+ * justification at its own declaration; all three sit on an AUTOMATION PATH, where
  * `USER_MODE` THROWS rather than degrades and so converts one missing FLS grant into a
  * broken write:
  *
  *   EAC capture pipeline (added 2026-08-02)
  *     • selectByIds                        <- EmailThreadGuardService
  *     • selectThreadAnchorsByAnchorValues  <- EmailThreadAnchorService (guard+adopter)
- *   Rollup recomputes — PLATFORM-DRIVEN, NOT USER-REQUESTED (added 2026-08-05).
- *   ⚠ The two entries below rest on DIFFERENT evidence; do not read the second as
- *   inheriting the first's. Only ONE of them fixes an observed failure:
- *     • selectByTransactionDealIds         <- TaskRollupService, fired by
- *       TaskRollupTrigger (after-insert). REPRODUCED PRODUCTION FAILURE — a USER_MODE
- *       FLS denial here rolled back an entire 82-Task Day-0 fan-out.
+ *   Rollup recompute — PLATFORM-DRIVEN, NOT USER-REQUESTED (added 2026-08-05).
  *     • selectByOnboardingIds              <- OnboardingTaskRollupService.recalc,
- *       called DIRECTLY by OnboardingService.completeTask (no trigger involved).
- *       PROSPECTIVE ONLY — inert on today's live path, because an earlier USER_MODE
- *       read in that same method throws first. See the method's own Javadoc.
- *   Wire-fraud prerequisite gate — BEFORE-TRIGGER, USER-SAVE-ROLLING-BACK (added 2026-08-31).
- *     • selectChecklistByDealsAndSequences <- TaskPrerequisiteService, fired by
- *       TaskRollupTrigger (before-update). Same class of failure as
- *       selectByTransactionDealIds above, one context earlier: a USER_MODE FLS denial on
- *       the brand-new `Blocked_By__c` field would abort the SAVING USER'S OWN update of a
- *       checklist item. Not an observed failure — a structurally identical one, on a field
- *       that by construction has zero FieldPermissions on the day it deploys.
- *   Phase 4 checklist migration — QUEUEABLE CHAIN + READ-ONLY AUDIT (added 2026-09-02).
- *     • selectForChecklistMigration        <- ChecklistMigrationService (a Queueable chunk) and
- *       ChecklistMigrationAuditService (the M2 reconciliation, driven from a script). Reads
- *       NINE custom Activity fields at once (plus eight standard ones) - exactly the nine that design
- *       §8 lists as Transaction-only - so it is the widest FLS surface in this class and
- *       the one most certain to throw under USER_MODE. PROSPECTIVE in the sense that it has no
- *       live caller until the migration is run, but structurally identical to
- *       selectByTransactionDealIds, whose failure WAS reproduced. 🔴 RETIRED AT M5 — remove this
- *       entry in the same change.
+ *       called DIRECTLY by OnboardingService.completeTask AND routed from
+ *       TaskRollupTrigger's four after-contexts.
+ *       ⚠ ITS SYSTEM_MODE JUSTIFICATION IS INHERITED, NOT MEASURED, AND THAT MATTERS MORE
+ *       NOW THAN IT DID. It was moved to SYSTEM_MODE for CONSISTENCY with a sibling —
+ *       `selectByTransactionDealIds` — whose USER_MODE FLS denial WAS a reproduced
+ *       production failure (2026-08-05: a `No such column 'Transaction_Deal__c'` throw
+ *       escaped TaskRollupTrigger as CANNOT_INSERT_UPDATE_ACTIVATE_ENTITY and rolled back
+ *       an entire 82-Task Day-0 fan-out). That sibling was retired at M5, so the evidence
+ *       for this entry is now HISTORICAL rather than co-resident. It is retained
+ *       deliberately: the mechanism (a Metadata-API-deployed custom field arrives with no
+ *       FLS for anyone) is a platform property, not a property of the retired class.
+ *       🔴 ALSO ESCAPES SHARING since 2026-09-02 (`OnboardingRollupReads`) — see the
+ *       SHARING INVENTORY below. Mode and sharing are two decisions, not one.
+ *
+ * 🔴 AMENDED 2026-09-03 — M5. THREE SYSTEM_MODE ENTRIES LEFT THIS INVENTORY, AND THEY ARE
+ * NAMED HERE RATHER THAN SILENTLY DROPPED BECAUSE ARCHITECTURE.md §2 MAKES THIS BLOCK THE
+ * AUTHORITATIVE RECORD OF WHICH READS ESCAPE AND WHY:
+ *     • selectByTransactionDealIds         (TaskRollupService — the reproduced failure above)
+ *     • selectChecklistByDealsAndSequences (TaskPrerequisiteService, the Phase 0 gate)
+ *     • selectForChecklistMigration        (ChecklistMigrationService / AuditService)
+ * All three read Transaction-only `Activity` fields that no longer exist. Do not cite any of
+ * them as precedent for a new escape; cite the mechanism instead.
  *
  * ⚠ AMENDED 2026-08-02 — the statement "There is NO guest/automation path on Task,
  * so NO `SYSTEM_MODE` appears here" was true when written and is NO LONGER TRUE.
@@ -84,7 +103,7 @@
  * fan-out, which inserted its 82 checklist Tasks; TaskRollupTrigger fired
  * after-insert; TaskRollupService called selectByTransactionDealIds; and its
  * USER_MODE query threw `No such column 'Transaction_Deal__c' on entity 'Task'` —
- * the platform's wording for an FLS DENIAL, not a missing field (it exists:
+ * the platform's wording for an FLS DENIAL, not a missing field (it existed then:
  * objects/Activity/fields/Transaction_Deal__c.field-meta.xml). The throw escaped the
  * trigger as CANNOT_INSERT_UPDATE_ACTIVATE_ENTITY and rolled back all 82 inserts,
  * leaving the Day-0 checklist — the core of the Transaction module — UNBUILDABLE BY
@@ -94,88 +113,75 @@
  * same change for CONSISTENCY AND FUTURE CALLERS ONLY — it is NOT a second instance
  * of this defect and could not have produced one (its live caller throws earlier); the
  * distinction is spelled out in that method's Javadoc so nobody cites it as evidence.
+ * ⚠ 2026-09-03 (M5): the failing method and the field it named are BOTH GONE. This
+ * paragraph is kept as the EVIDENCE for selectByOnboardingIds' mode, which is now the
+ * only survivor of the pair and would otherwise look like an unjustified escape. The
+ * incident is real and dated; it is simply no longer reproducible in this class.
  *
- * ⚠ SCOPE OF THE BYPASS — THIS IS WHAT MAKES IT SAFE. `SYSTEM_MODE` bypasses FLS and
- * CRUD ONLY. It does NOT bypass sharing: this class stays `with sharing`, so every
- * SYSTEM_MODE method still returns only rows the running user can already see. The
- * change removes a field-level failure mode without widening record visibility by a
- * single row.
+ * ⚠ SCOPE OF THE BYPASS. `SYSTEM_MODE` bypasses FLS and CRUD ONLY. It does NOT bypass
+ * sharing — sharing is a SEPARATE question, asked separately, and answered in the block
+ * immediately below rather than here.
  *
- * Do not "harmonize" the two groups — they answer questions for different principals.
+ * ┌───────────────────────────────────────────────────────────────────────────┐
+ * │ 🔴 SHARING INVENTORY — ADDED 2026-09-02. THIS CLASS HAS ONE ESCAPE.        │
+ * └───────────────────────────────────────────────────────────────────────────┘
+ * 🔴 THIS BLOCK USED TO READ: "It does NOT bypass sharing: this class stays `with
+ * sharing`, so EVERY SYSTEM_MODE method still returns only rows the running user can
+ * already see." THAT SENTENCE IS NO LONGER TRUE, and it is quoted rather than deleted
+ * because ARCHITECTURE.md §2 makes these headers the AUTHORITATIVE inventory of which
+ * reads escape and why — a stale one tells the next security review that no exemption
+ * exists here, which is worse than no header at all.
+ *
+ * The class itself STAYS `with sharing` and must: it backs the PM onboarding checklist UI
+ * and the PM reminder Schedulable, whose whole job is to respect what the running user may
+ * see. ONE read escapes, through its OWN narrow `private without sharing` inner class,
+ * justified at its own declaration:
+ *
+ *   • selectByOnboardingIds       -> `OnboardingRollupReads` (OnboardingTaskRollupService)
+ *
+ * ⚠ AMENDED 2026-09-03 (M5) — THERE WERE TWO. The second was
+ * `selectByTransactionDealIds -> RollupReads` (TaskRollupService), retired with the legacy
+ * Task checklist along with the inner class itself. It is named here because this block is
+ * the authoritative record; do not read its absence as a revocation.
+ *
+ * The surviving escape was opened on 2026-09-02 by a measured production failure
+ * (`AsyncApexJob 707iw0000046Rh6AAE`, deal `a0Riw000000Ao3ZEAS`, user `005iw000000AJhJAAW`,
+ * `UserRecordAccess` = HasReadAccess true / HasEditAccess FALSE / MaxAccessLevel 'Read'),
+ * and for a reason that is the OPPOSITE of a convenience: its WRITE half
+ * (`OnboardingTaskRollupService.RollupWrites`) escapes sharing, so a filtered read here
+ * would not fail — it would SUCCEED WITH ZEROES and publish authoritative counters,
+ * including `Completion_Pct__c`, computed from rows the principal cannot see. Read the
+ * method declaration for the full argument; do not summarise it here.
+ *
+ * 🔴 THE PAIRING IS THE POINT. The read may not be reverted to `with sharing` while its
+ * write half stays escalated, and the escape may not be extended to a second method — a
+ * new read needing this treatment gets its OWN inner class and its OWN measurement.
+ * 🔴 EVERY OTHER METHOD IN THIS CLASS IS STILL SHARING-FILTERED, INCLUDING THE TWO OTHER
+ * SYSTEM_MODE ONES. That platform fact — `WITH SYSTEM_MODE` bypasses CRUD and FLS and
+ * NEVER sharing — is pinned by
+ * `TaskSelectorTest.selectByIds_systemModeDoesNotBypassSharing_nonOwnerSeesNoRows`.
+ * ⚠ THAT PIN HAS NOW MOVED TWICE AND MUST NOT BE ALLOWED TO LAPSE. It lived on
+ * `selectByTransactionDealIds` until 2026-09-02, then on `selectForChecklistMigration`
+ * until M5; both hosts were retired. If the current host is ever retired, MOVE THE PIN
+ * to another SYSTEM_MODE + sharing-filtered method in the same change — do not delete it.
+ *
+ * Do not "harmonize" the two mode groups — they answer questions for different principals.
  *
  * NOT-FOUND CONTRACT is per-caller (pilot WireSelector pattern):
- *   - list reads (checklist / open-reminders) : missing rows are normal ->
+ *   - list reads (checklist / open-reminders)  : missing rows are normal ->
  *     return an EMPTY List, never null.
- *   - fetch-for-update (selectRequiredById)    : the caller passed a specific Id
+ *   - fetch-for-update (selectForOnboardingCompletion) : the caller passed a specific Id
  *     it expects to exist; a miss is an error -> single-row SOQL assignment lets
  *     the native System.QueryException fly (matches the old inline query).
  *
  * BULK SHAPE — the child-by-parent reads take a `Set<Id>` and return a `List`,
- * so both consumers work in bulk (TransactionTaskController passes a singleton
- * set; PM's Schedulable passes N overdue-assignment Ids). Getting this shape
- * right is the whole reason Transactions owns Task first.
+ * so consumers work in bulk (PM's Schedulable passes N overdue-assignment Ids).
  *
  * @see .claude/skills/sf-apex/references/AccountSelector.cls
  * @see force-app/main/default/classes/WireSelector.cls (P4 pilot template)
  * @see agent-output/p4-selector-design.md (§3 #18, §4, §5, §7)
  */
 public with sharing class TaskSelector {
-
-    /**
-     * Day-0 checklist Tasks for one or more Transactions, ordered by
-     * Task_Sequence__c. Backs TransactionTaskController.getTaskGroups (which
-     * passes a single Transaction Id as a singleton set and buckets the rows by
-     * Task_Group__c). Checklist Tasks attach via the custom Transaction_Deal__c
-     * lookup (not WhatId) and always carry a Task_Group__c, so the WHERE mirrors
-     * the original inline query exactly (`Task_Group__c != null`).
-     *
-     * Static SOQL (not dynamic): the field set is fixed and has a single caller,
-     * so the query is inlined and `WITH USER_MODE` sits after the WHERE and BEFORE
-     * ORDER BY — the clause order the pilot flagged as a compile-breaker.
-     *
-     * SPANNING READ — `LastModifiedById, LastModifiedBy.Name` (added 2026-08-28).
-     * The checklist row's completion line used to render Task_Owner_Label__c (the STATIC
-     * ROLE seeded from Transaction_Task_Def__mdt: 'Danish', 'CFO', 'Legal'...) next to the
-     * completion date, which read as "completed by <role>" and was FALSE for everyone
-     * except the one person that role names. The row now names the actual last modifier.
-     * ⚠ Task has NO dedicated completed-by field; LastModifiedBy is "who last touched the
-     * record", so a later edit to a closed task reassigns the name. See
-     * TransactionTaskController.getTaskGroups for the trade-off note at the assignment site.
-     *
-     * WHY THIS IS SAFE UNDER `WITH USER_MODE` (MEASURED in usman-dpeg 2026-08-28, not
-     * assumed — USER_MODE THROWS "No such column" on an FLS denial, it does not degrade):
-     *   - `Task.LastModifiedById.getDescribe().isPermissionable()` = FALSE, and
-     *     `SELECT COUNT() FROM FieldPermissions WHERE Field = 'Task.LastModifiedById'` = 0.
-     *     No permission set can grant OR deny it — it is readable whenever Task is.
-     *   - `User.Name.getDescribe().isPermissionable()` = FALSE — same story.
-     *   - `EntityDefinition.InternalSharingModel` for User = 'Read' (Public Read Only), so
-     *     the traversal resolves for every internal persona on this page (DPEG_Transaction_Edit
-     *     / DPEG_Transaction_View holders and the read-only acquisitions PSGs).
-     * A tightened User OWD, or an Experience Cloud (external) reader, would return a null
-     * `LastModifiedBy` — which the controller tolerates: the name drops off the row rather
-     * than throwing. Re-measure the three facts above if User OWD is ever tightened.
-     *
-     * @param transactionDealIds Transaction__c Ids whose checklist Tasks to load.
-     * @return Matching Tasks ordered by Task_Sequence__c; an empty list when the
-     *         input is null/empty or no checklist Tasks exist (never null).
-     * @example
-     * List<Task> rows = TaskSelector.selectChecklistByTransactionDealIds(new Set<Id>{ txnId });
-     */
-    public static List<Task> selectChecklistByTransactionDealIds(Set<Id> transactionDealIds) {
-        if (transactionDealIds == null || transactionDealIds.isEmpty()) {
-            return new List<Task>();
-        }
-        return [
-            SELECT Id, Subject, Task_Group__c, Task_Owner_Label__c, Status, IsClosed,
-                   ActivityDate, Task_Sequence__c, Verbal_Verification_Completed__c,
-                   Verified_By__c, Verified_At__c, Verification_Phone__c, Description,
-                   LastModifiedDate, LastModifiedById, LastModifiedBy.Name
-            FROM Task
-            WHERE Transaction_Deal__c IN :transactionDealIds AND Task_Group__c != null
-            WITH USER_MODE
-            ORDER BY Task_Sequence__c
-        ];
-    }
 
     /**
      * Open Tasks whose WhatId is in the supplied set and whose Subject begins with
@@ -211,39 +217,14 @@ public with sharing class TaskSelector {
         ];
     }
 
-    /**
-     * Fetches exactly one Task by Id for the wire-verification update path
-     * (backs TransactionTaskController.completeWireVerification). Uses a single-row
-     * SOQL assignment with LIMIT 1: when the Id resolves to no row, Apex throws
-     * System.QueryException ("List has no rows for assignment to SObject"),
-     * preserving the caller contract that a missing target is an error.
-     *
-     * FIELD SET IS DELIBERATE: `Id, Description`. completeWireVerification reads
-     * Description on the returned record to decide whether to append the standard
-     * verification note; a `SELECT Id`-only query would reintroduce a
-     * `System.SObjectException` on that access. Do not narrow this field list.
-     *
-     * @param taskId Task Id to load for update; must reference an existing row.
-     * @return The Task with Id and Description populated.
-     * @throws System.QueryException when no Task matches the Id.
-     */
-    public static Task selectRequiredById(Id taskId) {
-        return [
-            SELECT Id, Description
-            FROM Task
-            WHERE Id = :taskId
-            WITH USER_MODE
-            LIMIT 1
-        ];
-    }
-
     // ─────────────────────────────────────────────────────────────────────────
     // P4 Onboarding + Task-rollup cleanup wave — additional Task query surface.
     // These relocate inline SOQL out of OnboardingController,
-    // OnboardingTaskRollupService, TaskRollupService, and DispositionTaskController.
-    // None of the three methods above fit those callers (different field sets and
-    // filters — see each method's doc), so each caller gets a purpose-built method
-    // rather than an overload of an existing one.
+    // OnboardingTaskRollupService and DispositionTaskController. (TaskRollupService was
+    // a fourth beneficiary until M5, 2026-09-03, when it and its read were retired.)
+    // The method above does not fit those callers (different field sets and filters —
+    // see each method's doc), so each caller gets a purpose-built method rather than an
+    // overload of an existing one.
     // ─────────────────────────────────────────────────────────────────────────
 
     /**
@@ -287,13 +268,14 @@ public with sharing class TaskSelector {
      * System.QueryException, preserving the caller contract that the checkbox click
      * targets a Task that exists.
      *
-     * FIELD SET IS DELIBERATE and DISTINCT from selectRequiredById (which selects
-     * only Id, Description for the wire path). completeTask additionally reads
-     * Onboarding__c (to decide which parent to recalc), Onboarding_Status__c and
-     * Status (to flip them), and Description (to append the note). Reusing
-     * selectRequiredById here would throw System.SObjectException on the first of
-     * those extra-field reads — which is why this is its own method, not a widening
-     * of the shared wire-path method.
+     * FIELD SET IS DELIBERATE. completeTask reads Onboarding__c (to decide which
+     * parent to recalc), Onboarding_Status__c and Status (to flip them), and
+     * Description (to append the note); a narrower list would throw
+     * System.SObjectException on the first unselected read.
+     * ⚠ Until M5 (2026-09-03) this paragraph explained why the method was NOT a
+     * widening of a shared `selectRequiredById` that also served the legacy wire
+     * path. That sibling is gone with the Task checklist, so this is now simply the
+     * onboarding completion read — do not "consolidate" it with anything.
      *
      * @param taskId Task Id to load for update; must reference an existing row.
      * @return The Task with Id, Onboarding__c, Onboarding_Status__c, Status and
@@ -369,15 +351,60 @@ public with sharing class TaskSelector {
      * automation-path reasoning as the EAC methods at the bottom of this class and as
      * `LeadSelector.GuestReads` / `GroupMemberSelector` (ARCHITECTURE.md §2).
      *
-     * SCOPE OF THE BYPASS: `SYSTEM_MODE` bypasses FLS and CRUD ONLY — it does NOT
-     * bypass sharing. This class remains `with sharing`, so the recompute still sees
-     * only the Tasks the running user can already see; it cannot read a Task under an
-     * Onboarding__c the user has no access to. That distinction is what makes this
-     * safe.
+     * ═══════════════════════════════════════════════════════════════════════════
+     * 🔴 SHARING — CORRECTED 2026-09-02. THIS READ ESCAPES SHARING, VIA
+     *    `OnboardingRollupReads`. THE PARAGRAPH BELOW IS THE ONE IT REPLACES.
+     * ═══════════════════════════════════════════════════════════════════════════
+     * 🔴 THIS SAID: "SCOPE OF THE BYPASS: `SYSTEM_MODE` bypasses FLS and CRUD ONLY — it
+     * does NOT bypass sharing. This class remains `with sharing`, so the recompute still
+     * sees only the Tasks the running user can already see… That distinction is what
+     * makes this safe." The first two sentences remain true of the PLATFORM. The
+     * conclusion — that the filter made this method safe — was exactly backwards, and it
+     * is quoted rather than deleted so nobody re-derives it.
+     *
+     * WHY IT WAS BACKWARDS. This method's WRITE half,
+     * `OnboardingTaskRollupService.RollupWrites`, has been `private without sharing`
+     * since 2026-08-22, correctly and for its own measured reason (`Onboarding__c` is
+     * Private OWD, shared to `DPEG_Property_Mgmt_Team` by one criteria rule; a filtered
+     * write simply does not apply). A write that ALWAYS succeeds paired with a read that
+     * is FILTERED does not fail — it produces SILENTLY WRONG COUNTERS. All twelve of
+     * them, including `Completion_Pct__c`, read by `OnboardingController` and the PM
+     * dashboards. That is strictly the worse of the two failure states, and it has been
+     * shipped since 2026-08-22.
+     *
+     * 🔴 IT IS REACHABLE, and the reachability is structural rather than exotic.
+     * `TaskRollupTriggerHandler` routes `Onboarding__c` on all four after-contexts (the
+     * same 2026-08-22 change), so ANY principal who can edit ONE onboarding Task while
+     * not owning the rest recomputes all twelve counters from a partial view and writes
+     * them successfully. A PM-group member holds Edit on EVERY `Onboarding__c` (via
+     * `Onboarding_PM_All_RW`) while seeing only their OWN Tasks — `Activity` is
+     * `sharingModel Private` and no `sharingRules/Activity*` or `sharingRules/Task*`
+     * file exists anywhere in this repo (verified across all 198 files in
+     * `sharingRules/`). An individually reassigned Task, an admin-created Task, or an
+     * ownership change on the parent puts them in that state.
+     *
+     * ⚠ WHY IT HAS NOT BEEN NOTICED, AND WHY THAT PROTECTION IS NOT A GUARANTEE.
+     * `OnboardingFanoutService` sets `tk.OwnerId = o.OwnerId` (`cls:287`) and suppresses
+     * the trigger recalc in favour of one explicit call, so on the fan-out path owner ==
+     * runner and the read is complete. There is NO `resolveTransactionOwnerId` equivalent
+     * on the PM side — nothing reassigns `Onboarding__c.OwnerId` away from its creator.
+     * That is an accident of the current feature set, not a control. It is PRECISELY the
+     * property that changed on the Transaction side on 2026-08-28
+     * (`ContractExecutionService.cls:359`) and produced `AsyncApexJob 707iw0000046Rh6AAE`
+     * on 2026-09-02. This method was closed in the same change so the PM side cannot
+     * repeat it.
+     *
+     * ⇒ THE FIX HERE IS THE MIRROR IMAGE of the Transaction rollup's: there the WRITE was
+     *   filtered and moved; here the WRITE was already escaped and the READ moved to meet
+     *   it. `OnboardingTaskRollupService.RollupWrites` is DELIBERATELY UNCHANGED.
+     * 🔴 THE PAIR ONLY MAKES SENSE TOGETHER. Reverting this read to `with sharing` while
+     *   that write stays `without sharing` restores the silent-zero state — it will not
+     *   throw, and no test that only asserts "no exception" will catch it.
      *
      * @param onboardingIds Onboarding__c Ids whose checklist Tasks to load.
      * @return Matching Tasks; an empty list when the input is null/empty or no
-     *         checklist Tasks exist (never null).
+     *         checklist Tasks exist (never null). Rows are returned WITHOUT sharing —
+     *         every Task under the supplied Onboardings, not just the caller's own.
      * @example
      * List<Task> rows = TaskSelector.selectByOnboardingIds(onboardingIds);
      */
@@ -385,144 +412,55 @@ public with sharing class TaskSelector {
         if (onboardingIds == null || onboardingIds.isEmpty()) {
             return new List<Task>();
         }
-        return [
-            SELECT Onboarding__c, Onboarding_Status__c, ActivityDate
-            FROM Task
-            WHERE Onboarding__c IN :onboardingIds
-            WITH SYSTEM_MODE
-        ];
+        return new OnboardingRollupReads().byOnboardingIds(onboardingIds);
     }
 
     /**
-     * ALL checklist Tasks for one or more Transactions (via the custom
-     * Transaction_Deal__c lookup), for the transaction rollup recompute. Backs
-     * TaskRollupService.recalc, which counts closed / past-due-open / open
-     * anti-fraud wire-verification Tasks per deal.
+     * 🔴 THE SHARING ESCAPE FOR THE ONBOARDING ROLLUP READ, AND NOTHING ELSE.
      *
-     * DISTINCT from selectChecklistByTransactionDealIds above: that method is for
-     * the checklist UI and (a) adds `AND Task_Group__c != null`, (b) does NOT
-     * select Transaction_Deal__c, and (c) orders by Task_Sequence__c. The rollup
-     * needs Transaction_Deal__c (to key its per-deal maps) and must NOT impose the
-     * Task_Group__c filter — the original rollup query had no such filter, and
-     * introducing one would silently change the counts for any fan-out Task lacking
-     * a group. So this is a separate, unfiltered, rollup-shaped read, not a reuse
-     * of the checklist method.
+     * `without sharing` is confined to this inner class so it applies to ONE query. The
+     * enclosing `TaskSelector` stays `with sharing` and must — it also backs the checklist
+     * UI and PM's reminder Schedulable, whose job is to respect what the running user may
+     * see. This is the shape ARCHITECTURE.md §2 prescribes, and the live in-repo
+     * precedents are `TransactionSelector.DealCloseGateReads`,
+     * `OpportunitySelector.NdaGateReads` and `OnboardingTaskRollupService.RollupWrites`.
      *
-     * ⚠ `WITH SYSTEM_MODE` — CHANGED 2026-08-05 to fix a CONFIRMED PRODUCTION
-     * FAILURE, reproduced in `usman-dpeg`. A Transaction__c was created with
-     * Contract_Executed_Date__c set; the Transaction_Task_Fanout flow ran
-     * TaskFanoutService, which enqueued TaskFanoutQueueable; the job inserted its 82
-     * checklist Tasks; TaskRollupTrigger fired after-insert; TaskRollupService called
-     * THIS method; and the `WITH USER_MODE` query threw:
+     * ⚠ Inner classes do NOT inherit the outer class's sharing keyword, so the mode is
+     * declared explicitly rather than left to the caller. Apex forbids static methods on
+     * inner classes, hence the instance method and the `new OnboardingRollupReads()` at
+     * the call site — the `RollupWrites` shape already used in this codebase.
      *
-     *   CANNOT_INSERT_UPDATE_ACTIVATE_ENTITY, TaskRollupTrigger: execution of
-     *   AfterInsert caused by: System.QueryException: No such column
-     *   'Transaction_Deal__c' on entity 'Task'
+     * The full justification is at `selectByOnboardingIds`'s own declaration. Read it
+     * before touching this.
      *
-     * `Transaction_Deal__c` DOES exist
-     * (objects/Activity/fields/Transaction_Deal__c.field-meta.xml) — "No such column"
-     * is how Salesforce reports an FLS DENIAL under `WITH USER_MODE`. The throw
-     * escaped the trigger and rolled back all 82 inserts, so the Day-0 checklist —
-     * the core of the Transaction module — was UNBUILDABLE BY ANY NON-ADMIN. Every
-     * DPEG persona is on `Minimum Access - Salesforce`, which grants no FLS at all;
-     * access comes only from permission sets, so one ungranted custom field on this
-     * SELECT is enough to take down the whole fan-out.
-     *
-     * WHY SYSTEM_MODE RATHER THAN A PERMISSION-SET GRANT: this is a TRIGGER-DRIVEN
-     * ROLLUP RECOMPUTE, not a user-initiated read. Nobody asked for these rows — a
-     * trigger recomputes the "N / 82" counters on the acting user's behalf, and
-     * `USER_MODE` THROWS (it does not degrade) the moment one selected field is
-     * inaccessible. Making an automatic recompute depend on the acting user's FLS
-     * means any persona missing any one custom field silently breaks an unrelated
-     * write. That is the documented precedent in ARCHITECTURE.md §2 for the EAC
-     * capture pipeline, and it applies verbatim here. Granting FLS instead would fix
-     * today's persona and leave the class fragile for the next one — the failure mode
-     * is structural, not a provisioning oversight.
-     *
-     * SCOPE OF THE BYPASS: `SYSTEM_MODE` bypasses FLS and CRUD ONLY — NOT sharing.
-     * This class remains `with sharing`, so the recompute still counts only the Tasks
-     * the running user can already see. That distinction is what makes the change
-     * safe: it removes a field-level failure mode without widening record visibility
-     * by a single row.
-     *
-     * @param transactionDealIds Transaction__c Ids whose Tasks to load.
-     * @return Matching Tasks (Transaction_Deal__c, IsClosed, ActivityDate, Subject,
-     *         Verbal_Verification_Completed__c); an empty list when the input is
-     *         null/empty or no Tasks exist (never null).
-     * @example
-     * List<Task> rows = TaskSelector.selectByTransactionDealIds(txnIds);
+     * 🔴 DO NOT ADD A SECOND METHOD HERE. A query that lands in an existing escape class
+     * silently inherits an argument made for a different question; a new read needing this
+     * treatment gets its OWN inner class and its OWN measurement.
+     * ⚠ 2026-09-03 (M5): this note used to say "SEPARATE FROM `RollupReads` BELOW ON
+     * PURPOSE — DO NOT MERGE THEM", because a sibling escape existed for the Transaction
+     * rollup (different caller, different principal, different evidence). That sibling was
+     * retired with the legacy Task checklist, so this is now the class's only escape. The
+     * one-class-per-question rule stands regardless — it is not a consequence of there
+     * having been two.
      */
-    public static List<Task> selectByTransactionDealIds(Set<Id> transactionDealIds) {
-        if (transactionDealIds == null || transactionDealIds.isEmpty()) {
-            return new List<Task>();
-        }
-        return [
-            SELECT Transaction_Deal__c, IsClosed, ActivityDate, Subject, Verbal_Verification_Completed__c
-            FROM Task
-            WHERE Transaction_Deal__c IN :transactionDealIds
-            WITH SYSTEM_MODE
-        ];
-    }
+    private without sharing class OnboardingRollupReads {
 
-    /**
-     * Every checklist Task on the supplied Transactions, with the FULL field set the Phase 4
-     * migration and its reconciliation report need. Backs `ChecklistMigrationService` and
-     * `ChecklistMigrationAuditService`.
-     *
-     * 🔴 `WITH SYSTEM_MODE` — AUTOMATION PATH, AND THE SIXTH ENTRY IN THIS CLASS'S MODE
-     * INVENTORY. The caller is a Queueable chain (and a read-only audit driven from a script),
-     * neither of which is a read a human asked for. It reads NINE custom `Activity` fields (plus eight
-     * standard ones),
-     * every one of them Metadata-API-deployed and therefore carrying FieldPermissions for
-     * whoever the permission pass granted and nobody else — so under `USER_MODE` one missing
-     * grant raises `System.QueryException: No such column`, an FLS denial wearing a schema
-     * error, and the migration chunk dies with 25 deals half-considered. This class has already
-     * paid for exactly that once: on 2026-08-05 a `USER_MODE` read of `Transaction_Deal__c`
-     * rolled back an entire 82-row Day-0 fan-out.
-     * ⚠ SYSTEM_MODE lifts CRUD/FLS and NEVER sharing. This class stays `with sharing`, so a deal
-     * the runner cannot see returns NO ROWS. That is deliberate and is why
-     * `ChecklistMigrationService` diffs the ids it ASKED for against the ids it got back and
-     * reports the difference as `NOT_VISIBLE` — a silently skipped deal is the failure mode this
-     * migration is most likely to hide, so it is surfaced rather than tolerated.
-     *
-     * 🔴 THE FIELD SET IS THE MIGRATION MAPPING AND IT IS NOT DECORATIVE. `Task_Group__c` +
-     * `Task_Sequence__c` are the COORDINATE the whole migration keys on — never the Subject,
-     * which a bare-substring match would use to wrongly flag A4 and A5. `Subject` is selected
-     * anyway because the legacy `anti-fraud` parse is one half of the reconciliation's RISK 1
-     * canary; nothing MAPS on it. Do not narrow this list without reading
-     * `ChecklistMigrationDomain.project`, which reads every column returned here.
-     *
-     * ⚠ ORDERED BY deal, then group, then sequence, so a migration chunk and an audit run walk
-     * the rows in the same order and two runs can be diffed line for line.
-     *
-     * 🔴 RETIRED AT M5 WITH THE REST OF THE TASK MODEL, and this entry must leave the inventory
-     * block above at the same time. ARCHITECTURE §2 makes that block the authoritative record of
-     * which reads escape and why; a stale one tells the next review an exemption exists that
-     * does not.
-     *
-     * NOT-FOUND CONTRACT: a list read. An empty list is MEANINGFUL — a deal that was never
-     * fanned out on the Task model has no checklist Tasks, and the migration must treat that as
-     * nothing to migrate rather than as an error.
-     *
-     * @param transactionDealIds Parent `Transaction__c` ids; null/empty-safe.
-     * @return Checklist Tasks on those deals (Task_Group__c populated), ordered; never null.
-     * @example
-     * List<Task> rows = TaskSelector.selectForChecklistMigration(dealIds);
-     */
-    public static List<Task> selectForChecklistMigration(Set<Id> transactionDealIds) {
-        if (transactionDealIds == null || transactionDealIds.isEmpty()) {
-            return new List<Task>();
+        /**
+         * The onboarding rollup's Task read, unfiltered by sharing so the twelve counters
+         * are computed from EVERY Task under the Onboarding rather than from the running
+         * principal's subset.
+         *
+         * @param onboardingIds Onboarding__c Ids; never null/empty (the wrapper guards).
+         * @return Every checklist Task under those Onboardings.
+         */
+        private List<Task> byOnboardingIds(Set<Id> onboardingIds) {
+            return [
+                SELECT Onboarding__c, Onboarding_Status__c, ActivityDate
+                FROM Task
+                WHERE Onboarding__c IN :onboardingIds
+                WITH SYSTEM_MODE
+            ];
         }
-        return [
-            SELECT Id, Transaction_Deal__c, Task_Group__c, Task_Sequence__c, Task_Owner_Label__c,
-                   Subject, Status, IsClosed, ActivityDate, Description, Conditional__c,
-                   Verbal_Verification_Completed__c, Verified_By__c, Verified_At__c,
-                   Verification_Phone__c, LastModifiedDate, LastModifiedById
-            FROM Task
-            WHERE Transaction_Deal__c IN :transactionDealIds AND Task_Group__c != null
-            WITH SYSTEM_MODE
-            ORDER BY Transaction_Deal__c, Task_Group__c, Task_Sequence__c NULLS FIRST
-        ];
     }
 
     /**
@@ -678,7 +616,7 @@ public with sharing class TaskSelector {
     // for the same automation-path reason stated above — a USER_MODE FLS denial in
     // the Transaction rollup rolled back a whole Day-0 fan-out in production, and the
     // Onboarding rollup followed for consistency and future callers rather than as a
-    // second observed failure. See the class header for the full four-method
+    // second observed failure. See the class header for the full six-method
     // inventory and for which entry rests on which evidence.
     // ═════════════════════════════════════════════════════════════════════════
 
@@ -799,85 +737,4 @@ public with sharing class TaskSelector {
         ];
     }
 
-    /**
-     * Completion state of the Tasks named as prerequisites by `Task.Blocked_By__c`. THE SINGLE READ
-     * behind the Phase 0 wire-fraud prerequisite gate (`TaskPrerequisiteService`, design
-     * `agent-output/design-transaction-fsd-gaps.md` §5.1 / §10) — B3 cannot complete while B2 is
-     * open, I8 cannot complete while I7 is open.
-     *
-     * Called ONCE PER TRIGGER CHUNK from a BEFORE UPDATE context, and only when at least one Task in
-     * that chunk carries a non-blank `Blocked_By__c` — which is at most two Tasks per Transaction.
-     * The field set is deliberately minimal: `IsClosed` is the decision, `Task_Group__c` and
-     * `Task_Sequence__c` are the KEY the caller matches on, and `Subject` NAMES the blocking step in
-     * the refusal message and is read for DISPLAY ONLY (no branch reads it — that is the whole point
-     * of the feature; see `TaskPrerequisiteService`'s header on RISK 1).
-     *
-     * 🔴 WHY THE SIGNATURE IS (deals, sequences) AND NOT A SET OF PREREQUISITE IDs. `Blocked_By__c`
-     * IS NOT A LOOKUP AND CANNOT BE — measured on `usman-dpeg` 2026-08-31: a `CustomField` with
-     * `referenceTo` = `Task` fails deploy with *"referenceTo value of 'Task' does not resolve to a
-     * valid sObject type"*. Task/Event are not valid custom-relationship TARGETS on this platform. So
-     * the field is `Text(20)` carrying the prerequisite's `<GroupLetter>|<Sequence>` key (`B|2`,
-     * `I|7`) and the prerequisite is found as a SIBLING under the same `Transaction_Deal__c`. The
-     * caller does the letter matching in memory — see the row-count note below for why that is not a
-     * cop-out.
-     *
-     * ⚠ ROW COUNT, DERIVED RATHER THAN HOPED. The WHERE cannot filter on the group letter (it lives
-     * inside `Task_Group__c` as `"<Letter>. <Group Name>"`, and SOQL has no `IN`-of-`LIKE`), so this
-     * returns every checklist Task on the named deals whose sequence is in the set — roughly
-     * `groups x sequences` rows per deal, i.e. ~11 x 2 = ~22 for the real B3/I8 pair. A full 200-row
-     * before-update chunk of blocked items is 100 deals (two blocked items each), so ~2,200 rows
-     * against the 50,000 query-row limit. Building a dynamic `OR`-of-`LIKE` to trim that would trade a
-     * comfortable margin for an injection surface. Do not.
-     *
-     * 🔴 `WITH SYSTEM_MODE` — FIFTH MEMBER OF THE MODE INVENTORY IN THIS CLASS HEADER, AND IT IS A
-     * CORRECTNESS REQUIREMENT, NOT A CONVENIENCE. This is an AUTOMATION-PATH read: performed on the
-     * saving user's behalf, never at their request. `USER_MODE` THROWS rather than degrades, and
-     * a `USER_MODE` FLS denial here would raise `System.QueryException: No such column` — an FLS
-     * denial wearing a schema error — inside a BEFORE trigger, which escapes as
-     * `CANNOT_INSERT_UPDATE_ACTIVATE_ENTITY` and rolls back THE USER'S OWN SAVE of a checklist item
-     * that has nothing to do with the missing grant. That is not hypothetical in this org: the
-     * identical failure on `Transaction_Deal__c` rolled back a whole 82-Task Day-0 fan-out (see this
-     * class's header, 2026-08-05).
-     * Concretely and not by analogy: this SELECT reads `Transaction_Deal__c`, `Task_Group__c` and
-     * `Task_Sequence__c`, all THREE of which are permission-set-granted custom fields, and
-     * `Transaction_Deal__c` is the very field whose USER_MODE denial produced the 2026-08-05
-     * rollback. `Blocked_By__c` itself is not read here — it comes from `Trigger.new`, where FLS does
-     * not apply — but it is brand new and carries zero FieldPermissions on the day it deploys, so
-     * anyone who later adds it (or `Verbal_Verification_Completed__c`, the obvious next refinement)
-     * to this SELECT would recreate that failure exactly. Do not "tighten" this to USER_MODE.
-     *
-     * ⚠ SCOPE OF THE BYPASS IS UNCHANGED AND THE CLASS STAYS `with sharing`. SYSTEM_MODE lifts
-     * CRUD/FLS and never sharing, so this still returns only rows the running user can see.
-     * `TaskFanoutService` stamps every checklist Task with the Transaction's `OwnerId`, so a
-     * prerequisite and the item it blocks always share an owner and the read is satisfied by
-     * ownership on every path the model builds. A Task individually REASSIGNED away from that owner
-     * can hide its prerequisite; the caller treats an absent row as UNRESOLVED and refuses the
-     * completion (fails closed), which is the correct direction for an anti-fraud control and is
-     * asserted by `TaskPrerequisiteServiceTest`.
-     *
-     * NOT-FOUND CONTRACT: a list read — missing rows are meaningful, not exceptional. Returns an
-     * EMPTY list, never null. The caller distinguishes "absent" from "open" and refuses both.
-     *
-     * @param dealIds   `Transaction_Deal__c` ids of the blocked Tasks; null/empty-safe.
-     * @param sequences `Task_Sequence__c` values named by the blocked Tasks' `Blocked_By__c` keys;
-     *                  null/empty-safe.
-     * @return Checklist Tasks on those deals at those sequences, with Id, Transaction_Deal__c,
-     *         Task_Group__c, Task_Sequence__c, Subject and IsClosed populated; an empty list when
-     *         either input is null/empty or nothing matches (never null).
-     * @example
-     * List<Task> candidates = TaskSelector.selectChecklistByDealsAndSequences(dealIds, sequences);
-     */
-    public static List<Task> selectChecklistByDealsAndSequences(Set<Id> dealIds, Set<Decimal> sequences) {
-        if (dealIds == null || dealIds.isEmpty() || sequences == null || sequences.isEmpty()) {
-            return new List<Task>();
-        }
-        return [
-            SELECT Id, Transaction_Deal__c, Task_Group__c, Task_Sequence__c, Subject, Status, IsClosed
-            FROM Task
-            WHERE Transaction_Deal__c IN :dealIds
-              AND Task_Sequence__c IN :sequences
-              AND Task_Group__c != null
-            WITH SYSTEM_MODE
-        ];
-    }
 }

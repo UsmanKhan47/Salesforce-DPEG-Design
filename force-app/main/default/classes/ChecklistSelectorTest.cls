@@ -20,9 +20,27 @@ private class ChecklistSelectorTest {
 
     private static final Integer BULK_ROWS = 20;
 
+    /**
+     * 🔴 `createTransactionsOnChecklistModel`, NOT `createTransactions`, AND THE WHOLE CLASS
+     * DEPENDS ON IT. `createTransactions` populates `Contract_Executed_Date__c`, which is the FIRST
+     * entry filter of `flows/Transaction_Task_Fanout`; since that flow was repointed onto
+     * `ChecklistFanoutService` on 2026-09-03 a plain fixture deal materialises ELEVEN extra
+     * `Checklist__c` groups and ~96 extra `Checklist_Item__c` rows on this very deal at
+     * `Test.stopTest()`. That reds `Assert.areEqual(1, checklists.size())`,
+     * `Assert.areEqual(BULK_ROWS, ...)` twice, and `Assert.isFalse(... Checklist_Fanned_Out__c)` -
+     * the fan-out sets that flag as its own dedupe guard.
+     *
+     * The date is load-bearing for nothing here: every assertion below reads `Group_Letter__c`,
+     * `Items_Total__c`, `Stage__c`, `Sequence__c`, `Transaction__c`, `Loan_Required__c`,
+     * `Checklist_Fanned_Out__c` or `Target_Close_Date__c`, and `Contract_Executed_Date__c` is not in
+     * `TransactionSelector.CRITICAL_DATE_FIELDS`, so `selectForCriticalDates` never projects it.
+     * `Checklist_Fanned_Out__c` is deliberately left FALSE by that factory, which is what keeps
+     * `transactionSelectorReadsTheChecklistGuardAndTheConditionField`'s "starts false" assertion a
+     * real assertion rather than a restatement of the fixture.
+     */
     @TestSetup
     static void setupTestData() {
-        Transaction__c deal = TestDataFactory.createTransactions(1, true)[0];
+        Transaction__c deal = TestDataFactory.createTransactionsOnChecklistModel(1, true)[0];
         Checklist__c checklistGroup = TestDataFactory.createChecklist(deal.Id, true);
         TestDataFactory.createChecklistItems(BULK_ROWS, checklistGroup.Id, true);
     }
@@ -45,7 +63,17 @@ private class ChecklistSelectorTest {
 
     @isTest
     static void selectsChecklistsByIdKeyedForTheHandler() {
-        Checklist__c checklistGroup = [SELECT Id, Transaction__c FROM Checklist__c LIMIT 1];
+        // Qualified by the fixture's own parent rather than a bare LIMIT 1. Suppression above
+        // already removes the only foreign rows that exist today; this makes the pick correct even
+        // if a later hand re-arms the fan-out or adds a second deal to this class.
+        Transaction__c deal = [SELECT Id FROM Transaction__c LIMIT 1];
+        Checklist__c checklistGroup = [
+            SELECT Id, Transaction__c
+            FROM Checklist__c
+            WHERE Transaction__c = :deal.Id
+            ORDER BY Sequence__c ASC
+            LIMIT 1
+        ];
 
         Test.startTest();
         Map<Id, Checklist__c> byId = ChecklistSelector.selectByIds(new Set<Id>{ checklistGroup.Id });
@@ -72,7 +100,16 @@ private class ChecklistSelectorTest {
 
     @isTest
     static void selectsItemsByIdWithTheDealForTheGate() {
-        List<Checklist_Item__c> items = [SELECT Id FROM Checklist_Item__c LIMIT 2];
+        // Qualified by the fixture's own grandparent and ordered, so the two rows picked are always
+        // the fixture's first two and never a Day-0 fan-out row.
+        Transaction__c deal = [SELECT Id FROM Transaction__c LIMIT 1];
+        List<Checklist_Item__c> items = [
+            SELECT Id
+            FROM Checklist_Item__c
+            WHERE Checklist__r.Transaction__c = :deal.Id
+            ORDER BY Sequence__c ASC
+            LIMIT 2
+        ];
         Set<Id> ids = new Set<Id>{ items[0].Id, items[1].Id };
 
         Test.startTest();

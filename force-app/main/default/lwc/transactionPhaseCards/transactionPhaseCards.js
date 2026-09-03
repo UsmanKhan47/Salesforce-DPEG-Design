@@ -2,25 +2,25 @@ import { LightningElement, api, wire } from 'lwc';
 import { getRecord, getFieldValue } from 'lightning/uiRecordApi';
 import CHECKLIST_FANNED_OUT_FIELD from '@salesforce/schema/Transaction__c.Checklist_Fanned_Out__c';
 import getChecklist from '@salesforce/apex/ChecklistController.getChecklist';
-import getTaskGroups from '@salesforce/apex/TransactionTaskController.getTaskGroups';
-import {
-    MODEL_CHECKLIST,
-    MODEL_LEGACY,
-    PHASES,
-    modelFor,
-    normalizeChecklistGroups,
-    normalizeLegacyGroups
-} from 'c/utilsTransactionChecklist';
+import { PHASES, normalizeChecklistGroups } from 'c/utilsTransactionChecklist';
 
 /**
  * Sidebar 2x2 grid: checklist progress for each of the four deal phases.
  *
- * 🔴 SERVES BOTH CHECKLIST MODELS, discriminated on `Transaction__c.Checklist_Fanned_Out__c` read
- * via LDS `getRecord`. Only the selected model's Apex wire is provisioned — the other's
- * `transactionId` resolves to `undefined` and the adapter is never called. If the discriminator
- * cannot be read, NEITHER model renders and an error is shown: a migrated deal still carries its
- * old `Task` rows, so guessing legacy would show plausible, silently stale numbers. Full argument
- * in `c/utilsTransactionChecklist`.
+ * 🔴 AMENDED 2026-09-03 (M5) — THE MODEL DISCRIMINATOR IS GONE. This component used to serve TWO
+ * checklist models, choosing between `ChecklistController.getChecklist` and
+ * `TransactionTaskController.getTaskGroups` on `Transaction__c.Checklist_Fanned_Out__c`. The
+ * legacy Task model is retired — its controller, service, fan-out, rollup and the script that
+ * could re-arm it were all deleted, and a probe confirmed zero `Task` rows carry
+ * `Transaction_Deal__c` org-wide — so NO DEAL CAN BE ON THE LEGACY MODEL ANY MORE and there is
+ * nothing left to discriminate between. `getChecklist` is now wired unconditionally on `recordId`.
+ *
+ * ⚠ THE `Checklist_Fanned_Out__c` LDS READ IS DELIBERATELY RETAINED, DEMOTED FROM DISCRIMINATOR TO
+ * ADVISORY: it no longer chooses a data source, it only chooses the wording of `emptyMessage`.
+ * Dropping it would have collapsed "the fan-out ran and produced nothing" into "no checklist yet"
+ * and made the empty state WORSE than the legacy one it replaces — the UI-4 regression risk in
+ * `agent-output/design-legacy-task-retirement.md` §3.3. A failed flag read is therefore no longer
+ * fatal; it degrades one sentence, and the four cards still render.
  *
  * ⚠ THE PHASE LABELS COME FROM `c/utilsTransactionChecklist.PHASES` AND ARE NO LONGER DECLARED
  * HERE. This component used to carry its own copy of the array, which is how it drifted to
@@ -31,46 +31,26 @@ import {
 export default class TransactionPhaseCards extends LightningElement {
     @api recordId;
 
-    _modelResolved = false;
-    _modelError;
+    _flagResolved = false;
     _fannedOut;
     _checklistData = [];
     _checklistError;
     _checklistLoaded = false;
-    _legacyData = [];
-    _legacyError;
-    _legacyLoaded = false;
 
     @wire(getRecord, { recordId: '$recordId', fields: [CHECKLIST_FANNED_OUT_FIELD] })
     wiredTransaction({ data, error }) {
         if (data) {
             this._fannedOut = getFieldValue(data, CHECKLIST_FANNED_OUT_FIELD);
-            this._modelResolved = true;
-            this._modelError = undefined;
+            this._flagResolved = true;
         } else if (error) {
-            this._modelError = error;
-            this._modelResolved = false;
+            // Advisory only — see the class header. The cards still render; only `emptyMessage`
+            // loses its ability to tell "fanned out and empty" from "never fanned out".
+            this._flagResolved = false;
             this._fannedOut = undefined;
         }
     }
 
-    get model() {
-        return this._modelResolved ? modelFor(this._fannedOut) : undefined;
-    }
-    get isChecklistModel() {
-        return this.model === MODEL_CHECKLIST;
-    }
-    get isLegacyModel() {
-        return this.model === MODEL_LEGACY;
-    }
-    get checklistTransactionId() {
-        return this.isChecklistModel ? this.recordId : undefined;
-    }
-    get legacyTransactionId() {
-        return this.isLegacyModel ? this.recordId : undefined;
-    }
-
-    @wire(getChecklist, { transactionId: '$checklistTransactionId' })
+    @wire(getChecklist, { transactionId: '$recordId' })
     wiredChecklist({ data, error }) {
         if (data) {
             this._checklistData = data;
@@ -84,40 +64,12 @@ export default class TransactionPhaseCards extends LightningElement {
         }
     }
 
-    @wire(getTaskGroups, { transactionId: '$legacyTransactionId' })
-    wiredLegacy({ data, error }) {
-        if (data) {
-            this._legacyData = data;
-            this._legacyError = undefined;
-            this._legacyLoaded = true;
-        } else if (error) {
-            this._legacyError = error;
-            this._legacyData = [];
-            this._legacyLoaded = true;
-        }
-    }
-
     get groups() {
-        if (this.isChecklistModel) {
-            return normalizeChecklistGroups(this._checklistData);
-        }
-        if (this.isLegacyModel) {
-            return normalizeLegacyGroups(this._legacyData);
-        }
-        return [];
+        return normalizeChecklistGroups(this._checklistData);
     }
 
     get error() {
-        if (this._modelError) {
-            return this._modelError;
-        }
-        if (this.isChecklistModel) {
-            return this._checklistError;
-        }
-        if (this.isLegacyModel) {
-            return this._legacyError;
-        }
-        return undefined;
+        return this._checklistError;
     }
 
     get hasError() {
@@ -129,36 +81,25 @@ export default class TransactionPhaseCards extends LightningElement {
         return (e && e.body && e.body.message) || 'Unable to load phase progress.';
     }
 
-    /** The DISCRIMINATOR has not resolved and has not failed. Only the first half of loading. */
-    get isResolvingModel() {
-        return !this._modelResolved && !this._modelError;
-    }
-
     /**
-     * Whether the ACTIVE model's Apex round trip has come back — with data or with an error.
+     * Whether the Apex round trip has come back — with data or with an error.
      *
-     * 🔴 THE SECOND HALF OF "LOADING". Resolving the discriminator only says WHICH Apex method
-     * to call; the call is a separate round trip, and between the two `groups` is legitimately
-     * `[]`. Gated on the discriminator alone, the empty state fired on EVERY page load for a
-     * healthy deal. See `c/transactionTaskGroups` for the full writeup.
+     * 🔴 STILL LOAD-BEARING AFTER M5. Between mount and the wire resolving, `groups` is
+     * legitimately `[]`, and rendering the empty state then fires it on EVERY page load for a
+     * healthy deal. This gate used to have a second half (waiting on the model discriminator);
+     * that half is gone, this one is not.
      */
     get dataLoaded() {
-        if (this.isChecklistModel) {
-            return this._checklistLoaded;
-        }
-        if (this.isLegacyModel) {
-            return this._legacyLoaded;
-        }
-        return false;
+        return this._checklistLoaded;
     }
 
-    /** Either half still outstanding. Neither an error nor an empty state may render while true. */
+    /** The round trip is still outstanding. Neither an error nor an empty state may render. */
     get isLoading() {
-        return this.isResolvingModel || (!this.hasError && !this.dataLoaded);
+        return !this.hasError && !this.dataLoaded;
     }
 
     /**
-     * True when the model resolved, nothing errored, and there is no checklist at all.
+     * True when the round trip finished, nothing errored, and there is no checklist at all.
      * Rendered as an explicit message: four `0 / 0` cards look like a load that worked and found
      * nothing done, which is a different and much less alarming statement than "no checklist
      * exists on this deal".
@@ -168,21 +109,29 @@ export default class TransactionPhaseCards extends LightningElement {
     }
 
     /**
-     * 🔴 NOTHING RENDERS WHILE THE MODEL IS STILL RESOLVING, AND THAT IS A DELIBERATE CHANGE.
-     * Before Phase 3 this component painted four `0 / 0` cards immediately — which was harmless
-     * when there was one data source and one wire, and is not harmless now: it states "the
-     * checklist loaded and nothing is done" at a moment when the component does not yet know
-     * which of TWO models the deal is even on. A `transactionPhaseCards` regression test caught
-     * exactly this during the rewrite.
+     * 🔴 NOTHING RENDERS WHILE THE DATA IS STILL LOADING, AND THAT IS A DELIBERATE CHANGE.
+     * Before Phase 3 this component painted four `0 / 0` cards immediately, which states "the
+     * checklist loaded and nothing is done" at a moment when nothing has loaded. A
+     * `transactionPhaseCards` regression test caught exactly this during the rewrite.
+     * ⚠ The gate is narrower after M5 (one wire, not two) but it is NOT redundant — the Apex
+     * round trip is still asynchronous and `groups` is still `[]` until it returns.
      */
     get showCards() {
         return !this.hasError && !this.isEmpty && !this.isLoading;
     }
 
+    /**
+     * ⚠ AMENDED 2026-09-03 (M5). This used to name the MODEL that produced the emptiness; it now
+     * names the CAUSE, read from the flag directly. The neutral third case is new and REACHABLE:
+     * it means the advisory LDS flag read failed, so neither diagnosis can be asserted honestly.
+     */
     get emptyMessage() {
-        return this.isChecklistModel
-            ? 'No checklist has been generated for this deal yet.'
-            : 'No tasks have been generated for this deal yet.';
+        if (!this._flagResolved) {
+            return 'No checklist items to show for this deal.';
+        }
+        return this._fannedOut === true
+            ? 'A checklist was generated for this deal, but it contains no items.'
+            : 'No checklist has been generated for this deal yet.';
     }
 
     /** One card per phase: complete/total progress, green once every item in the phase is done. */

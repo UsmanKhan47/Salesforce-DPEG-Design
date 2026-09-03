@@ -310,53 +310,105 @@ public with sharing class ChecklistRollupService {
      *   escalation below.
      *
      * ═══════════════════════════════════════════════════════════════════════════════════════
-     * 🔴 RESOLVED 2026-09-02 - THE ESCALATION IS **REMOVED**. THIS CLASS IS NOW `with sharing`.
-     *    THE DECISION IS RECORDED HERE RATHER THAN MADE SILENTLY, IN EITHER DIRECTION.
+     * 🔴 RE-EXAMINED 2026-09-02 AGAINST A MEASURED OUTAGE - AND THE ANSWER IS STILL **NO**.
+     *    THIS CLASS STAYS `with sharing`. THE NEGATIVE RESULT IS RECORDED HERE BECAUSE A
+     *    NEGATIVE RESULT NOBODY WROTE DOWN GETS RE-LITIGATED EVERY TIME.
      * ═══════════════════════════════════════════════════════════════════════════════════════
-     * The narrow re-pricing question this block used to leave open was: IS THERE ANY CALLER OF
-     * `recalc` WHOSE RUNNING PRINCIPAL LACKS EDIT SHARING ON THE DEALS IN `transactionIds`?
-     * As of today the answer is NO, for every caller that exists:
-     *   • `ChecklistItemTrigger` (after contexts) - the corrected `writeRequiresMasterRead=false`
-     *     reading above PROVES the saving user holds edit on the deal, or the platform would have
-     *     refused their item edit before this code ran. Not an edge case; it cannot happen.
-     *   • `ChecklistFanoutService.reconcile` - fires from a `Transaction__c` save, so the principal
-     *     just edited the deal.
-     *   • `ChecklistFanoutQueueable` - runs as its enqueuer, who created or edited the deal. (And
-     *     the rollup is suppressed throughout the fan-out anyway.)
-     *   • `ChecklistMigrationService` (Phase 4 M1) - THE ONE SHAPE THAT WOULD NOT HOLD THE ACCESS,
-     *     and it is no longer hypothetical: it was built, and it deliberately routes AROUND this
-     *     class entirely. It suppresses this rollup across all four of its statements and writes
-     *     the counters itself from what it just created (`ChecklistMigrationService.cls:79-83`).
-     *     So the future-migration premise this escalation rested on has now been tested by reality
-     *     and did not need it.
-     * ⇒ ZERO identified callers require the escalation. An unjustified `without sharing` on a class
-     *   exercised on EVERY checklist completion is standing privilege with no beneficiary, and the
-     *   correct disposition of a control whose premise is gone is removal, not indefinite deferral.
+     * The block that stood here recorded the REMOVAL of a `without sharing` escalation and set
+     * the bar for restoring it: "IT MUST COME WITH A NAMED CALLER IN THIS BLOCK. Never flip it
+     * back on a hypothetical." That bar was tested on 2026-09-02 and HELD.
      *
-     * ⚠ WHY THIS IS SAFE DESPITE THE INCIDENT THAT MOTIVATED IT. That incident was an approval's
-     * parent write failing SILENTLY for every approver who did not own the record, swallowed by
-     * `allOrNone = false` and green in every test because the test's approver WAS the owner. THAT
-     * SHAPE IS STRUCTURALLY IMPOSSIBLE HERE: this method uses `allOrNone = true`, so an access gap
-     * raises a `DmlException` that aborts the caller's save. Loud, immediate, and attributable.
-     * ⚠ `AccessLevel.SYSTEM_MODE` IS UNCHANGED AND IS A SEPARATE DECISION. It answers CRUD/FLS -
-     * `DPEG_Checklist_Edit` grants `allowEdit=false` on `Transaction__c` - and it never answered
-     * sharing. Removing the sharing escalation does not touch it.
-     * ⚠ LIVE PRECEDENT ON THE IDENTICAL WRITE PATH: `ChecklistOutcomeService.commitDealWrites`
-     * writes the same parent `Transaction__c`, on the same completion path, `with sharing` plus
-     * `SYSTEM_MODE`, and declined to copy this escalation for exactly these reasons.
+     * WHAT HAPPENED. A production failure was measured on the LEGACY model's identical shape -
+     * `AsyncApexJob 707iw0000046Rh6AAE`, deal `a0Riw000000Ao3ZEAS`, user `005iw000000AJhJAAW`,
+     * `UserRecordAccess` = HasReadAccess true / HasEditAccess **FALSE** / MaxAccessLevel 'Read'.
+     * `ContractExecutionService.cls:359` (2026-08-28) hands the Day-0 `Transaction__c` to the
+     * Transactions team on insert while the whole downstream chain keeps running as the DEAL
+     * DRIVER, so `TaskRollupService`'s counter write - `with sharing` + `SYSTEM_MODE`, the same
+     * shape as `RollupWrites` below - was refused and rolled back all 82 Day-0 Tasks. The obvious
+     * inference was that THIS class carries the same defect and must be flipped to
+     * `without sharing` in the same change.
      *
-     * 🔴 WHAT BREAKS IF A CALLER WITHOUT EDIT SHARING APPEARS LATER, STATED SO NOBODY HAS TO GUESS.
-     * The `Database.update` below raises `INSUFFICIENT_ACCESS_ON_CROSS_REFERENCE_ENTITY` (or
-     * `INSUFFICIENT_ACCESS_OR_READONLY`) and, because `allOrNone = true`, aborts that caller's
-     * whole transaction. On a user path that cannot arise. On a future Schedulable or batch it
-     * means the JOB FAILS with a stack rather than writing partial counters - which is the right
-     * failure for numbers the dashboard, the KPIs and the wire-risk tile all read.
-     * ⇒ RESTORING IT IS A ONE-WORD CHANGE BACK TO `without sharing`, AND IT MUST COME WITH A NAMED
-     *   CALLER IN THIS BLOCK. Never flip it back on a hypothetical, which is how it got here.
-     *   Prove the need with a NON-OWNER test that actually fails under `with sharing`.
-     * ⚠ `TaskRollupService` documents a related hazard and ACCEPTS it as a residual; that is a
-     * different object with a different relationship and its reasoning does not transfer here in
-     * either direction.
+     * ⇒ 🔴 THAT INFERENCE IS WRONG, AND IT WAS TRACED STATEMENT BY STATEMENT RATHER THAN ASSUMED.
+     *   **THE DAY-0 DRIVER NEVER REACHES THIS CLASS.** `ChecklistFanoutService.cls:296` calls
+     *   `suppressTriggerRecalc(true)` and holds it across ALL FOUR of its DML statements,
+     *   restoring the prior value in a `finally`. The fan-out then writes the four
+     *   `Transaction__c` counters ITSELF, from the `DealTally` it built in memory. So on the
+     *   Day-0 chain this class's `recalc` is not merely harmless - it is NOT INVOKED. The Day-0
+     *   driver is therefore NOT a named caller for this class, and flipping the keyword on it
+     *   would be flipping on a hypothesis this investigation FALSIFIED - precisely what the bar
+     *   above forbids.
+     *
+     * ✅ THE OTHER LIVE CALLERS STILL HOLD EDIT BY CONSTRUCTION, RE-CHECKED THE SAME DAY:
+     *   • `ChecklistItemTrigger` (after contexts) - `writeRequiresMasterRead=false` on BOTH links
+     *     is the STRICTER setting (read AND WRITE on the master), so a user who just saved an item
+     *     provably holds Edit on the deal or the platform would have refused their save first.
+     *     Not an edge case; it cannot happen.
+     *   • `ChecklistFanoutService.reconcile` -> its trailing explicit `recalc` fires from
+     *     `TransactionTriggerHandler.afterUpdate` ONLY when `Loan_Required__c` changed - the
+     *     principal just edited the deal.
+     *   • `ChecklistMigrationService` (Phase 4 M1) - suppresses this rollup across all four of its
+     *     statements and writes the counters itself. The future-migration premise the original
+     *     escalation rested on was tested by reality and did not need it.
+     *
+     * ⇒ ZERO callers require the escalation, on evidence rather than on the absence of evidence.
+     *   This is now a PROVEN DISTINCTION rather than an untested claim, because the sibling
+     *   `TaskRollupService` DID need it, in the same investigation, on the same day, for the same
+     *   principal - and got it (`TaskRollupService.RollupWrites`, plus its READ half at
+     *   `TaskSelector.RollupReads`; the two moved together, see below).
+     *
+     * ═══════════════════════════════════════════════════════════════════════════════════════
+     * 🔴 TRIP WIRE - THE ONE THING THAT KILLS THE PREMISE ABOVE. READ THIS BEFORE EDITING
+     *    `ChecklistFanoutService`, NOT AFTER.
+     * ═══════════════════════════════════════════════════════════════════════════════════════
+     * The entire argument rests on ONE line in ANOTHER class: **`ChecklistFanoutService.cls:296`,
+     * `ChecklistRollupService.suppressTriggerRecalc(true)`**, held across all four fan-out
+     * statements. IF THAT SUPPRESSION IS EVER REMOVED, NARROWED, OR MOVED INSIDE THE FOUR
+     * STATEMENTS, THE DAY-0 DRIVER REACHES THIS CLASS IMMEDIATELY and this block is void - the
+     * `Database.update(dealWrites, ...)` below then fails for exactly the reason
+     * `TaskRollupService`'s did, and rolls back the whole checklist fan-out.
+     * THE SAME APPLIES IF: a Schedulable, batch or Queueable caller of `recalc` appears; anything
+     * calls `recalc` / `recalcForChecklistIds` from a context whose principal did not just edit
+     * the deal; or `writeRequiresMasterRead` flips to `true` on either master-detail link.
+     * ⇒ ANY of those ⇒ RE-OPEN THIS BLOCK AND RE-DECIDE. Do not assume the answer is still no.
+     * ⚠ Note the coupling is INVISIBLE FROM THIS FILE. A change to `ChecklistFanoutService`'s
+     *   suppression looks local and is not; that is why the trip wire is written here in the
+     *   class whose premise dies, and cross-referenced there.
+     *
+     * 🔴 AND IF IT IS EVER RESTORED, THE READ MUST BE ANSWERED IN THE SAME CHANGE. The Task-side
+     * fix proved this the hard way: escalating a rollup's WRITE while its READ stays filtered does
+     * not fail, it writes ZEROES successfully and puts "no open wire risks" on a deal that has
+     * two. This class is currently SAFE ON THE READ SIDE FOR A STRUCTURAL REASON, and it is
+     * recorded here so a future restorer does not have to re-derive it: `Checklist__c` and
+     * `Checklist_Item__c` are `ControlledByParent` with NO `OwnerId` at all, so any principal who
+     * can read the deal reads EVERY checklist and item on it; and the guard loop below skips any
+     * deal absent from the guard read, so an unreadable deal gets no write. Readable deal ⇒
+     * complete item read; unreadable deal ⇒ no write. There is no state in which this class
+     * publishes counters computed from a partial view.
+     * ⚠ THAT SECOND HALF DEPENDS ON `TransactionSelector.selectForChecklistFanout` STAYING
+     *   SHARING-FILTERED. It was deliberately NOT escalated on 2026-09-02 for this reason -
+     *   `TaskRollupService` got its own `selectClaimFlagsForTaskRollup` instead. Escalating the
+     *   shared method in place would silently convert this class's fail-closed guard into a
+     *   fail-open one.
+     * ⚠ THE `ControlledByParent` PROPAGATION HALF IS REASONED, NOT MEASURED. That a principal
+     *   holding `viewAllRecords` on `Transaction__c` reads its `ControlledByParent` details is
+     *   standard platform behaviour and is the stated premise of `Checklist__c.object-meta.xml` -
+     *   but that file itself records that it "could not be measured (no org access this session)",
+     *   and it was not measured on 2026-09-02 either. It is the ONE assumption this read-side
+     *   conclusion rests on. Probe before relying on it in a new context:
+     *   `UserRecordAccess` for the driver against a `Checklist__c` / `Checklist_Item__c` on a deal
+     *   he does not own. If it is false, this class needs a read escalation after all.
+     *
+     * ⚠ CORRECTED 2026-09-02, IN THE CALLER LIST ABOVE: the `ChecklistFanoutQueueable` bullet used
+     * to read "runs as its enqueuer, WHO CREATED OR EDITED THE DEAL". That conflates two different
+     * access facts and the first one is false - the enqueuer CREATED the deal and, since
+     * 2026-08-28, provably CANNOT EDIT IT (`MaxAccessLevel = 'Read'`, measured). The bullet's
+     * CONCLUSION survives, but only because of the suppression above, NOT because of access. If
+     * anyone cites that bullet as evidence of access, they are citing a corrected error.
+     *
+     * ⚠ `TaskRollupService` documented a related hazard and accepted it as a residual until
+     * 2026-09-02, when it stopped being residual and became the default Day-0 path. That is a
+     * different object with a different relationship; its reasoning does not transfer here in
+     * either direction, and the fact that IT was escalated is not an argument that THIS should be.
      *
      * ⚠ THE INNER CLASS IS KEPT DELIBERATELY, EVEN THOUGH ITS ONLY REASON FOR EXISTING WAS TO SCOPE
      * THE ESCALATION. Collapsing it into a private static method is the obvious follow-up and is

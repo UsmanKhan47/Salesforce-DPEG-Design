@@ -7,6 +7,17 @@
  * rather than being incidentally covered.
  *
  * Pure in-memory: no `@TestSetup`, no DML except where the stamp must be observed end to end.
+ *
+ * ⚠ EVERY DEAL HERE IS BUILT BY `TestDataFactory.createTransactionsOnChecklistModel`, WHICH NULLS
+ * `Contract_Executed_Date__c` AND THEREFORE SUPPRESSES THE DAY-0 FAN-OUT. `createTransactions` sets
+ * that date, which is the FIRST entry filter of `flows/Transaction_Task_Fanout`, so a plain fixture
+ * deal enqueues `ChecklistFanoutService` and materialises ~96 `Checklist_Item__c` rows at
+ * `Test.stopTest()`. That was harmless while the flow produced Tasks; since the 2026-09-03 repoint
+ * it produces rows of the very object this class asserts about, and
+ * `stampCompletionIsNullSafe`'s `COUNT() == 0` pin is the assertion that would be falsified first
+ * if a `@TestSetup` were ever added here. The date is load-bearing for nothing below - no assertion
+ * reads it, and none reads a value derived from it (`Due_Date__c` is set explicitly by
+ * `createChecklistItems`, not derived) - so suppression is free.
  */
 @isTest
 private class ChecklistItemDomainTest {
@@ -37,7 +48,7 @@ private class ChecklistItemDomainTest {
 
     @isTest
     static void stampsCompletionOnTransitionOnly() {
-        Transaction__c deal = TestDataFactory.createTransactions(1, true)[0];
+        Transaction__c deal = TestDataFactory.createTransactionsOnChecklistModel(1, true)[0];
         Checklist__c checklistGroup = TestDataFactory.createChecklist(deal.Id, true);
         Checklist_Item__c item = TestDataFactory.createChecklistItem(checklistGroup.Id, true);
 
@@ -64,7 +75,7 @@ private class ChecklistItemDomainTest {
 
     @isTest
     static void clearsTheStampWhenAnItemIsReopened() {
-        Transaction__c deal = TestDataFactory.createTransactions(1, true)[0];
+        Transaction__c deal = TestDataFactory.createTransactionsOnChecklistModel(1, true)[0];
         Checklist__c checklistGroup = TestDataFactory.createChecklist(deal.Id, true);
         Checklist_Item__c item = TestDataFactory.createChecklistItem(checklistGroup.Id, true);
         update new Checklist_Item__c(Id = item.Id, Flag__c = 'Completed');
@@ -86,7 +97,7 @@ private class ChecklistItemDomainTest {
     static void preservesACallerSuppliedCompletedBy() {
         // The Phase 4 migration carries historical completions across and must be able to state who
         // completed them; overwriting that with the migration user would destroy the history.
-        Transaction__c deal = TestDataFactory.createTransactions(1, true)[0];
+        Transaction__c deal = TestDataFactory.createTransactionsOnChecklistModel(1, true)[0];
         Checklist__c checklistGroup = TestDataFactory.createChecklist(deal.Id, true);
         Checklist_Item__c item = TestDataFactory.createChecklistItem(checklistGroup.Id, false);
         item.Flag__c = 'Completed';
@@ -105,7 +116,7 @@ private class ChecklistItemDomainTest {
 
     @isTest
     static void collectChecklistIdsIsNullSafeAndDeduplicates() {
-        Id fakeId = TestDataFactory.createTransactions(1, true)[0].Id;
+        Id fakeId = TestDataFactory.createTransactionsOnChecklistModel(1, true)[0].Id;
         Test.startTest();
         Assert.isTrue(ChecklistItemDomain.collectChecklistIds(null).isEmpty(),
             'Null in, empty set out - never null');

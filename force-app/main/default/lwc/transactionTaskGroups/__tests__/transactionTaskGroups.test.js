@@ -1,5 +1,38 @@
 /**
- * c-transaction-task-groups — LDS discriminator + TWO Apex @wire READS + FOUR imperative WRITES.
+ * c-transaction-task-groups — ONE Apex @wire READ + an ADVISORY LDS read + FOUR imperative
+ * WRITES.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════════════════════
+ * 🔴 AMENDED 2026-09-03 (M5) — THE SECOND MODEL IS GONE, AND SEVEN TESTS WENT WITH IT.
+ * ═══════════════════════════════════════════════════════════════════════════════════════════
+ * `TransactionTaskController` and the legacy Task checklist are retired. Deleted here:
+ * the `renderLegacy` helper, the `LEGACY_ROWS` fixture, both "wires ONLY the X Apex"
+ * discrimination tests, "still derives critical/wire from the subject on the LEGACY model", the
+ * legacy loading test, the legacy empty-message test, both "calls the LEGACY controller" write
+ * tests, and "never offers a capture dialog on the LEGACY model".
+ *
+ * 🔴 THREE OF THOSE WERE PAIRED ASSERTIONS, AND DELETING HALF OF A PAIR LEAVES THE OTHER HALF
+ * ASSERTING NOTHING. Each was REPLACED, not dropped:
+ *   • "wires ONLY the checklist Apex when true" / "…ONLY the legacy Apex when false" — the
+ *     surviving half's negative clause (`getTaskGroups.getLastConfig()` is undefined) has no
+ *     subject any more, so it degrades to "the checklist Apex was called". Replaced by a
+ *     parameterised test that asserts the config on BOTH flag values: the read must no longer
+ *     depend on the flag at all, and a stray `fannedOut ?` guard reintroduced on the wire
+ *     parameter reds the `false` row.
+ *   • `expect(completeTask).not.toHaveBeenCalled()` / `expect(completeItem).not…` in the two
+ *     write tests — these were the proof the component picked the right controller. With one
+ *     controller left, the falsifier is the PARAMETER SHAPE, so the surviving tests keep their
+ *     `toHaveBeenCalledWith` assertions (which a wrong-shape call still fails) and drop only
+ *     the now-subjectless negatives.
+ *   • "never offers a capture dialog on the LEGACY model" — the property it pinned (a row
+ *     without `hasCapture` must not open the capture dialog) is real and model-independent, so
+ *     it was re-expressed on the surviving model rather than deleted.
+ *
+ * 🔴 THE LDS READ SURVIVES, DEMOTED FROM DISCRIMINATOR TO ADVISORY. It now only selects the
+ * wording of `emptyMessage` — specifically, whether the deal was fanned out and produced
+ * nothing, or was never fanned out at all. A FAILED FLAG READ IS THEREFORE NO LONGER FATAL, and
+ * the inverted test below pins that: blanking the checklist on that failure would now HIDE data
+ * that loaded perfectly well.
  *
  * ═══════════════════════════════════════════════════════════════════════════════════════════
  * 🔴 THE PREVIOUS VERSION OF THIS SUITE WOULD HAVE PASSED VACUOUSLY AGAINST THE REWRITE.
@@ -17,11 +50,9 @@
  * `createApexTestWireAdapter` (reads) and plain `jest.fn()` (writes).
  *
  * 🔴 `emit()` ON AN APEX TEST WIRE ADAPTER IGNORES THE CONFIG. It delivers data to the component
- * whether or not the real adapter would have been called, so "the legacy wire rendered nothing"
- * is NOT evidence that the legacy Apex was skipped. The only honest check is
- * `getLastConfig()` — asserted on BOTH adapters in the discrimination tests below. A component
- * that wired both models unconditionally would render correctly and still be wrong (two Apex
- * round-trips per page view, and a legacy read against a migrated deal).
+ * whether or not the real adapter would have been called, so "rows rendered" is NOT evidence
+ * that the adapter was called with the right argument. The only honest check is
+ * `getLastConfig()`.
  *
  * ⚠ COMPLETION-DATE TEXT RUNS `new Date()` MATH and is timezone-drifting, so it is never
  * asserted. Structural DOM (subjects, flags, counts, phase labels, disabled state) is stable.
@@ -34,20 +65,9 @@ import completeItem from '@salesforce/apex/ChecklistController.completeItem';
 import recordWireVerification from '@salesforce/apex/ChecklistController.recordWireVerification';
 import getCaptureContext from '@salesforce/apex/ChecklistController.getCaptureContext';
 import linkCaptureDocuments from '@salesforce/apex/ChecklistController.linkCaptureDocuments';
-import getTaskGroups from '@salesforce/apex/TransactionTaskController.getTaskGroups';
-import completeTask from '@salesforce/apex/TransactionTaskController.completeTask';
-import completeWireVerification from '@salesforce/apex/TransactionTaskController.completeWireVerification';
 
 jest.mock(
     '@salesforce/apex/ChecklistController.getChecklist',
-    () => {
-        const { createApexTestWireAdapter } = require('@salesforce/sfdx-lwc-jest');
-        return { default: createApexTestWireAdapter(jest.fn()) };
-    },
-    { virtual: true }
-);
-jest.mock(
-    '@salesforce/apex/TransactionTaskController.getTaskGroups',
     () => {
         const { createApexTestWireAdapter } = require('@salesforce/sfdx-lwc-jest');
         return { default: createApexTestWireAdapter(jest.fn()) };
@@ -73,16 +93,6 @@ jest.mock(
 );
 jest.mock(
     '@salesforce/apex/ChecklistController.linkCaptureDocuments',
-    () => ({ default: jest.fn() }),
-    { virtual: true }
-);
-jest.mock(
-    '@salesforce/apex/TransactionTaskController.completeTask',
-    () => ({ default: jest.fn() }),
-    { virtual: true }
-);
-jest.mock(
-    '@salesforce/apex/TransactionTaskController.completeWireVerification',
     () => ({ default: jest.fn() }),
     { virtual: true }
 );
@@ -201,44 +211,7 @@ const CHECKLIST_ROWS = [
     }
 ];
 
-/** Legacy payload: `TransactionTaskController.GroupRow[]`. */
-const LEGACY_ROWS = [
-    {
-        key: 'B. Earnest Money & Wires',
-        letter: 'B',
-        name: 'Earnest Money & Wires',
-        ownerLabel: 'Danish',
-        conditional: false,
-        total: 2,
-        complete: 0,
-        pct: 0,
-        tasks: [
-            {
-                id: 't-wire',
-                subject: 'Call title company to verbally verify wiring instructions (anti-fraud)',
-                done: false,
-                verifyComplete: false,
-                verifiedBy: null,
-                notes: null,
-                ownerLabel: 'Danish',
-                completedByName: null,
-                completedDate: null,
-                phone: null,
-                verifiedAt: null
-            },
-            {
-                id: 't-plain',
-                subject: 'Open escrow',
-                done: false,
-                verifyComplete: false,
-                notes: null,
-                ownerLabel: 'Danish'
-            }
-        ]
-    }
-];
-
-/** The LDS record carrying the discriminator. */
+/** The LDS record carrying the ADVISORY fan-out flag (the discriminator until M5). */
 function transactionRecord(fannedOut) {
     return {
         id: RECORD_ID,
@@ -261,7 +234,7 @@ function createComponent(phase) {
     return element;
 }
 
-/** Settles the wire -> getter -> re-render chain. Two ticks: model resolves, then data renders. */
+/** Settles the wire -> getter -> re-render chain. */
 async function flush() {
     await Promise.resolve();
     await Promise.resolve();
@@ -274,16 +247,6 @@ async function renderChecklist(rows = CHECKLIST_ROWS, phase) {
     getRecord.emit(transactionRecord(true));
     await flush();
     getChecklist.emit(rows);
-    await flush();
-    return element;
-}
-
-/** Mounts on the LEGACY model with the standard fixture. */
-async function renderLegacy(rows = LEGACY_ROWS, phase) {
-    const element = createComponent(phase);
-    getRecord.emit(transactionRecord(false));
-    await flush();
-    getTaskGroups.emit(rows);
     await flush();
     return element;
 }
@@ -301,41 +264,72 @@ describe('c-transaction-task-groups', () => {
     });
 
     // ═══════════════════════════════════════════════════════════════════════════════════════
-    // Model discrimination — the migration-window contract.
+    // The Apex read, and the ADVISORY fan-out flag that no longer selects it (M5).
     // ═══════════════════════════════════════════════════════════════════════════════════════
 
-    describe('model discrimination', () => {
-        it('wires ONLY the checklist Apex when Checklist_Fanned_Out__c is true', async () => {
-            await renderChecklist();
-            expect(getChecklist.getLastConfig()).toEqual({ transactionId: RECORD_ID });
-            // 🔴 The legacy adapter must be provisioned with an UNDEFINED parameter, which is what
-            // stops LWC calling it at all. Asserting only "no legacy rows rendered" would pass
-            // even if both models were queried on every page view.
-            expect(getTaskGroups.getLastConfig()).toEqual({ transactionId: undefined });
-        });
+    describe('data source', () => {
+        it.each([
+            ['a fanned-out deal', true],
+            ['a deal that was never fanned out', false]
+        ])(
+            'wires the checklist Apex with the recordId on %s — the read ignores the flag',
+            async (_label, fannedOut) => {
+                // 🔴 THE REPLACEMENT FOR THE DELETED DISCRIMINATION PAIR (M5). Until M5 a `false`
+                // flag meant the checklist Apex was NOT provisioned at all and the legacy one was,
+                // and the pair asserted each other's `{ transactionId: undefined }`. With one
+                // controller left, the surviving negative has no subject — so the property that
+                // replaces it is that the flag no longer influences the read AT ALL. A stray
+                // `fannedOut ?` guard reintroduced on the wire parameter reds the `false` row
+                // here; a single-flag test could not tell "the flag is ignored" from "the flag
+                // happened to be true".
+                const element = createComponent();
+                getRecord.emit(transactionRecord(fannedOut));
+                await flush();
+                getChecklist.emit(CHECKLIST_ROWS);
+                await flush();
 
-        it('wires ONLY the legacy Apex when Checklist_Fanned_Out__c is false', async () => {
-            await renderLegacy();
-            expect(getTaskGroups.getLastConfig()).toEqual({ transactionId: RECORD_ID });
-            expect(getChecklist.getLastConfig()).toEqual({ transactionId: undefined });
-        });
+                expect(getChecklist.getLastConfig()).toEqual({ transactionId: RECORD_ID });
+                expect(element.shadowRoot.querySelectorAll('.tg-task').length).toBeGreaterThan(0);
+            }
+        );
 
-        it('renders an error and NEITHER model when the discriminator cannot be read', async () => {
+        it('STILL RENDERS the checklist when the advisory flag read fails', async () => {
+            // 🔴 THE INVERTED ASSERTION (M5). This read "renders an error and NEITHER model when
+            // the discriminator cannot be read", which was CORRECT while the flag chose the data
+            // model: without it the component could not know what to render, and guessing legacy
+            // would have shown a complete, plausible, silently stale checklist. The flag is now
+            // advisory — it only picks the wording of emptyMessage — so refusing to render on its
+            // failure would HIDE a checklist that loaded perfectly well. Renamed rather than
+            // edited in place so a reviewer reading the diff cannot mistake a reversed
+            // expectation for a weakened one; the component changed to match.
             const element = createComponent();
             getRecord.error();
             await flush();
-            // Both payloads are pushed anyway — emit() ignores the config — so this proves the
-            // component refuses to render EITHER, rather than proving nothing arrived.
             getChecklist.emit(CHECKLIST_ROWS);
-            getTaskGroups.emit(LEGACY_ROWS);
             await flush();
 
-            expect(element.shadowRoot.querySelector('.tg-error')).not.toBeNull();
-            expect(element.shadowRoot.querySelectorAll('.tg-task')).toHaveLength(0);
-            expect(element.shadowRoot.querySelector('.tg-empty')).toBeNull();
+            expect(element.shadowRoot.querySelector('.tg-error')).toBeNull();
+            expect(element.shadowRoot.querySelectorAll('.tg-task').length).toBeGreaterThan(0);
         });
 
-        it('renders neither an error nor an empty state before the discriminator resolves', async () => {
+        it('falls back to NEUTRAL empty copy when the advisory flag read fails and there is no data', async () => {
+            // The empty-state half of the test above. Without the flag the component cannot say
+            // WHY it is empty, so it must say only what is certainly true — never the actionable
+            // "Set the Contract Executed Date" (which would be a guess) and never the alarming
+            // "contact your administrator" (which would be a false diagnosis).
+            const element = createComponent();
+            getRecord.error();
+            await flush();
+            getChecklist.emit([]);
+            await flush();
+
+            expect(element.shadowRoot.querySelector('.tg-error')).toBeNull();
+            const empty = element.shadowRoot.querySelector('.tg-empty');
+            expect(empty).not.toBeNull();
+            expect(empty.textContent).toBe('No checklist items to show for this deal.');
+        });
+
+        it('renders neither an error nor an empty state before anything resolves', async () => {
             // The loading state must not look like "this deal has no checklist".
             const element = createComponent();
             await flush();
@@ -391,16 +385,15 @@ describe('c-transaction-task-groups', () => {
             expect(textOf(element, '.tg-subject')).toContain('Order the ALTA survey');
         });
 
-        it('still derives critical/wire from the subject on the LEGACY model', async () => {
-            // Task carries no boolean fields, so the parse is correct there and must survive.
-            const element = await renderLegacy();
-            const rows = [...element.shadowRoot.querySelectorAll('.tg-task')];
-            const wireRow = rows.find((r) =>
-                r.querySelector('.tg-subject').textContent.includes('verbally verify')
-            );
-            expect(wireRow.querySelector('.tg-flag')).not.toBeNull();
-            expect(wireRow.querySelector('input').dataset.wire).toBe('true');
-        });
+        // 🔴 REMOVED 2026-09-03 (M5): "still derives critical/wire from the subject on the LEGACY
+        // model". `Task` carried no `Is_Critical__c` / `Is_Wire_Verification__c`, so the subject
+        // parse was CORRECT there and that test existed to stop an over-eager cleanup deleting
+        // the regex while the legacy model was still live. Both the model and the two
+        // `LEGACY_*_RE` constants in `c/utilsTransactionChecklist` are now gone, so the test had
+        // no subject. ⚠ ITS COUNTERPART ABOVE IS WHAT NOW CARRIES THE WHOLE OF RISK 1: the
+        // MARKERLESS / MARKED_BUT_NOT_CRITICAL pair proves the boolean fields are the ONLY source
+        // of meaning. Do not thin that pair — with the legacy direction gone it is the only
+        // remaining falsifier for a reintroduced subject parse on this component.
     });
 
     // ═══════════════════════════════════════════════════════════════════════════════════════
@@ -441,21 +434,23 @@ describe('c-transaction-task-groups', () => {
     // ═══════════════════════════════════════════════════════════════════════════════════════
 
     describe('empty states', () => {
-        it('shows NEITHER the empty message NOR content BETWEEN the discriminator and the data', async () => {
+        it('shows NEITHER the empty message NOR content BEFORE the Apex data arrives', async () => {
             // 🔴 THE REGRESSION THIS FILE MISSED THE FIRST TIME, AND THE REASON IT MISSED IT.
-            // `renderChecklist()` emits getRecord AND the Apex wire before asserting, so this
-            // intermediate state was never observed. In it — with the empty state gated on the
-            // DISCRIMINATOR alone rather than on the data — the component rendered "no checklist
-            // items have been generated… the fan-out may not have completed" on EVERY page load of
-            // a perfectly healthy deal. An alarming, false diagnosis shown to everyone, every time.
+            // `renderChecklist()` settles every wire before asserting, so this intermediate state
+            // was never observed. In it — with the empty state ungated on the DATA — the component
+            // rendered "no checklist items have been generated… the fan-out may not have
+            // completed" on EVERY page load of a perfectly healthy deal. An alarming, false
+            // diagnosis shown to everyone, every time.
             //
-            // ⚠ THE ASSERTION MUST BE TAKEN BETWEEN THE TWO EMITS. Any helper that settles both
-            // wires before asserting is structurally blind to it.
+            // ⚠ THE ASSERTION MUST BE TAKEN BEFORE THE APEX EMIT. Any helper that settles the
+            // wire before asserting is structurally blind to it. (Pre-M5 it had to sit BETWEEN
+            // the discriminator emit and the Apex emit; the discriminator is gone, the hazard is
+            // not, and `dataLoaded` is still the gate that prevents it.)
             const element = createComponent();
             getRecord.emit(transactionRecord(true));
             await flush();
 
-            // Discriminator resolved (the Apex adapter is provisioned), round trip still in flight.
+            // The Apex adapter is provisioned; the round trip is still in flight.
             expect(getChecklist.getLastConfig()).toEqual({ transactionId: RECORD_ID });
             expect(element.shadowRoot.querySelector('.tg-empty')).toBeNull();
             expect(element.shadowRoot.querySelector('.tg-error')).toBeNull();
@@ -468,16 +463,6 @@ describe('c-transaction-task-groups', () => {
             expect(element.shadowRoot.querySelectorAll('.tg-task').length).toBeGreaterThan(0);
         });
 
-        it('does the same on the LEGACY model', async () => {
-            const element = createComponent();
-            getRecord.emit(transactionRecord(false));
-            await flush();
-            expect(element.shadowRoot.querySelector('.tg-empty')).toBeNull();
-            getTaskGroups.emit(LEGACY_ROWS);
-            await flush();
-            expect(element.shadowRoot.querySelectorAll('.tg-task').length).toBeGreaterThan(0);
-        });
-
         it('shows a NEW-MODEL empty message that names the fan-out, not a blank panel', async () => {
             const element = await renderChecklist([]);
             const empty = element.shadowRoot.querySelector('.tg-empty');
@@ -486,10 +471,26 @@ describe('c-transaction-task-groups', () => {
             expect(element.shadowRoot.querySelector('.tg-error')).toBeNull();
         });
 
-        it('shows the LEGACY empty message, which is different text', async () => {
-            const element = await renderLegacy([]);
+        it('keeps the ACTIONABLE empty message for a deal that was never fanned out', async () => {
+            // 🔴 THE ONE USER-VISIBLE REGRESSION M5 COULD HAVE CAUSED, PINNED (design §7 UI-4).
+            // Before M5 this text came from the LEGACY branch, because `Checklist_Fanned_Out__c`
+            // is false on EVERY deal with no executed contract — not only on un-migrated ones.
+            // Removing the discriminator without moving this copy would have replaced the single
+            // most useful sentence this component renders with the new model's "contact your
+            // administrator", i.e. an escalation for a completely normal state. The flag wire is
+            // retained purely to keep this distinction; if someone deletes it, this reds.
+            const element = createComponent();
+            getRecord.emit(transactionRecord(false));
+            await flush();
+            getChecklist.emit([]);
+            await flush();
+
             const empty = element.shadowRoot.querySelector('.tg-empty');
             expect(empty.textContent).toContain('Contract Executed Date');
+            // Absence pin with a presence control: the alarming copy must NOT appear here, and
+            // the sibling test above proves it DOES appear when the flag is true — so this is not
+            // passing merely because no message rendered at all.
+            expect(empty.textContent).not.toContain('fan-out');
         });
 
         it('shows an error, not an empty state, when the checklist read fails', async () => {
@@ -509,9 +510,12 @@ describe('c-transaction-task-groups', () => {
 
     describe('completion', () => {
         it('calls the CHECKLIST controller with the checklist parameter names', async () => {
-            // ⚠ Parameter names are the wire contract. `completeItem({itemId, comment})` and
-            // `completeTask({taskId, notes})` are NOT interchangeable; passing the wrong shape
-            // reaches Apex as nulls and completes nothing.
+            // ⚠ Parameter names are the wire contract, and this is now the ONLY falsifier for
+            // the write path. Until M5 this test also asserted `completeTask` was NOT called,
+            // which proved the component picked the right controller; with one controller left
+            // that negative has no subject. `toHaveBeenCalledWith` still fails a wrong-shape
+            // call — `{taskId, notes}` reaches Apex as nulls and completes nothing — so the
+            // proof survives the pair's removal. Do not relax it to `toHaveBeenCalled()`.
             completeItem.mockResolvedValue();
             const element = await renderChecklist();
             const checkbox = element.shadowRoot.querySelector('input[data-id="i-plain"]');
@@ -532,21 +536,6 @@ describe('c-transaction-task-groups', () => {
             await flush();
 
             expect(completeItem).toHaveBeenCalledWith({ itemId: 'i-plain', comment: 'ordered' });
-            expect(completeTask).not.toHaveBeenCalled();
-        });
-
-        it('calls the LEGACY controller with the legacy parameter names', async () => {
-            completeTask.mockResolvedValue();
-            const element = await renderLegacy();
-            const checkbox = element.shadowRoot.querySelector('input[data-id="t-plain"]');
-            checkbox.checked = true;
-            checkbox.dispatchEvent(new CustomEvent('change'));
-            await flush();
-            element.shadowRoot.querySelector('.slds-button_brand').click();
-            await flush();
-
-            expect(completeTask).toHaveBeenCalledWith({ taskId: 't-plain', notes: '' });
-            expect(completeItem).not.toHaveBeenCalled();
         });
 
         it('notifies LDS after a successful write so the highlights panel is not stale', async () => {
@@ -676,34 +665,11 @@ describe('c-transaction-task-groups', () => {
                 phone: '713-555-0142',
                 comment: ''
             });
-            expect(completeWireVerification).not.toHaveBeenCalled();
-        });
-
-        it('calls the LEGACY controller with its parameter names', async () => {
-            completeWireVerification.mockResolvedValue();
-            const element = await renderLegacy();
-            const checkbox = element.shadowRoot.querySelector('input[data-id="t-wire"]');
-            checkbox.checked = true;
-            checkbox.dispatchEvent(new CustomEvent('change'));
-            await flush();
-
-            const inputs = element.shadowRoot.querySelectorAll('lightning-input');
-            inputs[0].value = 'Jane Doe';
-            inputs[0].dispatchEvent(new CustomEvent('change'));
-            inputs[1].value = '713-555-0142';
-            inputs[1].dispatchEvent(new CustomEvent('change'));
-            await flush();
-
-            element.shadowRoot.querySelector('.slds-button_brand').click();
-            await flush();
-
-            expect(completeWireVerification).toHaveBeenCalledWith({
-                taskId: 't-wire',
-                verifiedBy: 'Jane Doe',
-                phone: '713-555-0142',
-                comments: ''
-            });
-            expect(recordWireVerification).not.toHaveBeenCalled();
+            // ⚠ The `expect(completeWireVerification).not.toHaveBeenCalled()` line that stood
+            // here, and its LEGACY twin, were the pair proving the right controller was chosen.
+            // One controller remains, so the parameter-shape assertion above is the falsifier —
+            // `{taskId, verifiedBy, comments}` vs `{itemId, verifiedByName, comment}` is exactly
+            // the mistake it still catches. Do not relax it.
         });
     });
 
@@ -1121,15 +1087,21 @@ describe('c-transaction-task-groups', () => {
             expect(dialog.textContent).toContain('Attach the Property Condition Report');
         });
 
-        it('never offers a capture dialog on the LEGACY model', async () => {
-            // 🔴 `Loan__c` and `Insurance_Binder__c` hang off the CHECKLIST model. An un-migrated
-            // deal must behave exactly as it did before Phase 5 — that is the point of the
-            // dual-model window. `normalizeLegacyGroups` hard-codes `hasCapture` false, and this
-            // asserts the component does not reintroduce it from anywhere else.
-            const element = await renderLegacy();
+        it('never offers a capture dialog for a row whose hasCapture is false', async () => {
+            // 🔴 RE-EXPRESSED 2026-09-03 (M5). This was "never offers a capture dialog on the
+            // LEGACY model": `Loan__c` / `Insurance_Binder__c` hang off the CHECKLIST model, and
+            // `normalizeLegacyGroups` hard-coded `hasCapture` false so an un-migrated deal
+            // behaved exactly as it did before Phase 5. The legacy model is gone, but the
+            // PROPERTY it pinned is model-independent and still worth pinning: `hasCapture` is
+            // resolved SERVER-SIDE from the item coordinate, and a row without it must open the
+            // ordinary confirm dialog, never the capture one. Re-homed on the surviving model
+            // rather than deleted — the M5 change also dropped an `isChecklistModel` conjunct
+            // from the capture branch in `handleCheck`, so this is now the only test that would
+            // notice if the branch started firing indiscriminately.
+            const element = await renderChecklist();
 
             const box = [...element.shadowRoot.querySelectorAll('input.tg-check')].find(
-                (b) => b.dataset.id === 't-plain'
+                (b) => b.dataset.id === 'i-plain'
             );
             box.checked = true;
             box.dispatchEvent(new CustomEvent('change'));
@@ -1137,6 +1109,9 @@ describe('c-transaction-task-groups', () => {
 
             expect(getCaptureContext).not.toHaveBeenCalled();
             expect(element.shadowRoot.querySelector('.tg-modal--capture')).toBeNull();
+            // Presence control: the ordinary confirm dialog DID open, so this is not passing
+            // because the click was swallowed entirely.
+            expect(element.shadowRoot.querySelector('.tg-modal')).not.toBeNull();
         });
 
         it('is accessible with the capture dialog open', async () => {

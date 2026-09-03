@@ -1380,80 +1380,6 @@ public with sharing class TestDataFactory {
     }
 
     /**
-     * Day-0 checklist Tasks for a Transaction. These attach via Transaction_Deal__c
-     * (NOT WhatId) so they stay off the Activity timeline, and they fire
-     * TaskRollupTrigger.
-     *
-     * NOTE: this method does not cap `count`. TaskFanoutService fans out 82 Tasks
-     * per Transaction (82 Transaction_Task_Def__mdt rows across 11 Task_Group_Def__mdt
-     * groups — the figure TaskFanoutServiceTest:248 already asserts); 251 Transactions
-     * x 82 = 20,582 rows against the 10,000 DML-rows limit. That break is a genuine
-     * Phase 7 finding — the factory deliberately does not paper over it by shrinking
-     * the fan-out. (This note said "~75 … 18,825" until 2026-08-31 and understated the
-     * overflow by 1,757 rows; the count has been 82 since the definitions were loaded.)
-     *
-     * @param count         Tasks to create.
-     * @param transactionId Transaction__c.Id (required).
-     * @param doInsert      Insert when true.
-     * @return Tasks.
-     */
-    public static List<Task> createChecklistTasks(Integer count, Id transactionId, Boolean doInsert) {
-        requirePositive(count);
-        requireId(transactionId, 'transactionId');
-        List<Task> tasks = new List<Task>();
-        for (Integer i = 0; i < count; i++) {
-            tasks.add(new Task(
-                Subject = 'Test Checklist Task ' + i,
-                Status = 'Not Started',
-                Priority = 'Normal',
-                ActivityDate = Date.today().addDays(14),
-                Transaction_Deal__c = transactionId,
-                Task_Group__c = 'A. Contract Execution & Title Opening',
-                Task_Sequence__c = i + 1
-            ));
-        }
-        insertIf(doInsert, tasks);
-        return tasks;
-    }
-
-    /** Checklist Tasks against the shared scaffold Transaction. @param count Tasks. @param doInsert Insert when true. @return Tasks. */
-    public static List<Task> createChecklistTasks(Integer count, Boolean doInsert) {
-        return createChecklistTasks(count, defaultTransaction().Id, doInsert);
-    }
-
-    /**
-     * Fan-out shaped data: N Tasks for each supplied Transaction, one DML total.
-     * @param transactions      Parent Transactions (must be inserted).
-     * @param tasksPerTransaction Tasks per Transaction.
-     * @param doInsert          Insert when true.
-     * @return All Tasks across all Transactions.
-     */
-    public static List<Task> createChecklistTasksFor(
-        List<Transaction__c> transactions,
-        Integer tasksPerTransaction,
-        Boolean doInsert
-    ) {
-        requirePositive(tasksPerTransaction);
-        List<Task> tasks = new List<Task>();
-        for (Transaction__c txn : transactions) {
-            requireId(txn.Id, 'Transaction__c.Id (insert Transactions before fanning out Tasks)');
-            for (Integer i = 0; i < tasksPerTransaction; i++) {
-                tasks.add(new Task(
-                    Subject = 'Test Checklist Task ' + i,
-                    Status = 'Not Started',
-                    Priority = 'Normal',
-                    ActivityDate = Date.today().addDays(14),
-                    Transaction_Deal__c = txn.Id,
-                    Task_Group__c = 'A. Contract Execution & Title Opening',
-                    Task_Sequence__c = i + 1
-                ));
-            }
-        }
-        insertIf(doInsert, tasks);
-        return tasks;
-    }
-
-    /**
      * Onboarding checklist Tasks (Property Management module).
      * @param count        Tasks to create.
      * @param onboardingId Onboarding__c.Id (required).
@@ -2637,30 +2563,74 @@ public with sharing class TestDataFactory {
     }
 
     /**
-     * Transactions for CHECKLIST-model tests, created with the LEGACY fan-out already marked done.
+     * Transactions for CHECKLIST-model tests, created with BOTH Day-0 fan-out flows suppressed.
      *
      * 🔴 WITHOUT THIS, ANY TEST THAT ASSERTS A `Transaction__c` COUNTER IS ASSERTING AGAINST THE
-     * WRONG WRITER, AND THE NUMBER IT GETS BACK IS 70. `flows/Transaction_Task_Fanout` is
-     * `CreateAndUpdate` on `Transaction__c` and fires on `Contract_Executed_Date__c`, which
-     * `createTransactions` sets - so every plain test Transaction enqueues the legacy Task fan-out,
-     * which runs at `Test.stopTest()` and writes `Tasks_Total__c` itself. 82 definitions minus the
-     * 12 in the loan-only group F (the factory creates deals with `Loan_Required__c = false`) = 70.
-     * Four fields are contested this way: `Tasks_Total__c`, `Tasks_Complete__c`, `Tasks_Overdue__c`
-     * and `Wire_Open_Risks__c`, all written by BOTH `TaskRollupService` and
-     * `ChecklistRollupService`.
+     * WRONG WRITER. `flows/Transaction_Task_Fanout` is `CreateAndUpdate` on `Transaction__c` and
+     * its FIRST entry filter is `Contract_Executed_Date__c IsNull false`, which `createTransactions`
+     * satisfies - so every plain test Transaction enqueues a Day-0 fan-out that runs at
+     * `Test.stopTest()` and writes `Tasks_Total__c` itself. Four fields are affected this way:
+     * `Tasks_Total__c`, `Tasks_Complete__c`, `Tasks_Overdue__c` and `Wire_Open_Risks__c`.
+     * ⚠ Until M5 (2026-09-03) those four were CONTESTED - written by BOTH `TaskRollupService` and
+     * `ChecklistRollupService`. The Task rollup is retired, so `ChecklistRollupService` is now the
+     * sole writer. THE SUPPRESSION IS STILL REQUIRED: one writer running unbidden at
+     * `Test.stopTest()` still overwrites whatever a test asserted, it just no longer races a
+     * second one.
      *
-     * Setting `Tasks_Fanned_Out__c = true` AT INSERT is what suppresses it: the flow filters on that
-     * field, and `TaskFanoutService.fanOutNow` skips any deal already flagged. It must be set in the
-     * INSERT payload, not afterwards - the Queueable re-reads the deal when it executes at
-     * `stopTest`, so a later update is a race rather than a guard.
+     * 🔴 THE SUPPRESSION DEVICE CHANGED ON 2026-09-03 AND THE REASON IS THE WHOLE POINT OF THIS
+     * BLOCK. Until then this method suppressed the flow by setting `Tasks_Fanned_Out__c = true`,
+     * because the flow's SECOND filter was `Tasks_Fanned_Out__c = false`. A7 of
+     * `agent-output/design-checklist-cutover-and-stage-gate.md` repointed that flow onto
+     * `ChecklistFanoutService` and moved the second filter to `Checklist_Fanned_Out__c = false`.
+     * A flag-based device keyed to the OLD filter stops suppressing anything the moment the filter
+     * moves, and `doesRequireRecordChangedToMeetCriteria` does NOT apply on insert - so every
+     * factory-built Transaction in the whole suite would have started enqueuing
+     * `ChecklistFanoutService` at 96 rows per deal.
      *
-     * ⚠ THIS IS TEST ISOLATION, NOT A PRODUCTION FIX. The two models genuinely contend for those
-     * four fields on any deal where both guards are true, which is precisely the state the Phase 4
-     * migration creates at step M1. See `ChecklistRollupService`s header.
+     * ⇒ SUPPRESSION IS NOW `Contract_Executed_Date__c = null`, AND THAT IS DELIBERATELY THE FILTER
+     * THE TWO FLOWS SHARE. Both the legacy filter and the repointed one require that field to be
+     * non-null, so nulling it suppresses EITHER, and it survives the next repoint too. It is also
+     * the device `TransactionSelectorTest`, `TaskSelectorTest` and `TransactionControllerTest`
+     * already use, via
+     * `applyOverrides(..., 'Contract_Executed_Date__c' => null)`.
+     *
+     * 🔴 WHY NOT `Checklist_Fanned_Out__c = true`, THE OBVIOUS-LOOKING SWAP: it would gut the two
+     * suites that matter most here. `TransactionStageGateService` fails OPEN on an unclaimed deal,
+     * and `TransactionStageGateServiceTest`'s N7a/N7b pair needs a genuinely UNCLAIMED deal to be
+     * anything other than vacuous; and `ChecklistFanoutService`'s own dedupe guard reads that same
+     * flag, so every fan-out test would silently create nothing. Claim state is test-owned, never
+     * factory-owned - set it explicitly at the call site.
+     *
+     * 🔴 `Tasks_Fanned_Out__c = true` WAS ALSO SET HERE UNTIL M5 (2026-09-03), AND IT WAS NOT
+     * REDUNDANT - REMOVING IT WAS A REAL COVERAGE DECISION, NOT A CLEANUP.
+     * It kept the legacy `TaskFanoutService.fanOutNow` dedupe guard armed for any test calling that
+     * service directly, and `ChecklistFanoutServiceTest.createsChecklistsAndItemsForALoanDeal`
+     * asserted it was STILL true after a checklist fan-out as its proof that the two guards were
+     * INDEPENDENT. The field is deleted at M5 (nothing writes it any more), so both the assignment
+     * and that assertion had to go. ⚠ THE PROOF DID NOT: it was replaced by
+     * `ChecklistFanoutServiceTest.guardIsKeyedOnTheFlagAloneNotOnPreExistingChecklists`, which
+     * clears `Checklist_Fanned_Out__c` on a deal that still HAS its checklists and shows the fan-out
+     * re-enters - falsifying "the guard reads row existence" without needing a second flag. Read
+     * that test before touching this factory's suppression device again.
+     *
+     * ⚠ WHATEVER FLAG A FUTURE VERSION OF THIS METHOD SETS MUST BE SET IN THE INSERT PAYLOAD, NOT
+     * AFTERWARDS - a later update is a race rather than a guard, and (see
+     * `.claude/agent-memory-local/salesforce-developer/clearing-a-mutex-flag-refires-its-flow.md`)
+     * writing `false` to a mutex flag afterwards is a record changing INTO a fan-out flow's criteria.
+     *
+     * ⚠ CONSEQUENCE FOR CALLERS: items built by `ChecklistFanoutService` on a deal from this factory
+     * have a NULL `Due_Date__c`, because `buildItem` derives it from `Contract_Executed_Date__c`.
+     * A test that needs a real due date must set the date itself BEFORE insert and suppress the flow
+     * another way - see `ChecklistFanoutServiceTest.seedsTheFlagAndTheWireMarkersFromTheDefinition`,
+     * which pre-claims the deal and opens `ChecklistFanoutService.bypassDedupe`.
+     *
+     * ⚠ THIS IS TEST ISOLATION, NOT A PRODUCTION FIX. (Until M5 the two models genuinely contended
+     * for those four fields on any deal where both guards were true - the state the Phase 4
+     * migration created at step M1. There is one model now.) See `ChecklistRollupService`s header.
      *
      * @param count    Number of Transactions.
      * @param doInsert Insert when true.
-     * @return Transactions with the legacy fan-out guard pre-set.
+     * @return Transactions with no contract execution date, so neither fan-out flow fires.
      */
     public static List<Transaction__c> createTransactionsOnChecklistModel(
         Integer count,
@@ -2668,7 +2638,10 @@ public with sharing class TestDataFactory {
     ) {
         List<Transaction__c> transactions = createTransactions(count, null, null, false);
         for (Transaction__c deal : transactions) {
-            deal.Tasks_Fanned_Out__c = true;
+            // Suppresses the Day-0 fan-out flow: its first entry filter requires this field to be
+            // non-null. Chosen over a flag because a flag-based device dies the moment the flow's
+            // second filter is repointed - see the block above.
+            deal.Contract_Executed_Date__c = null;
         }
         insertIf(doInsert, transactions);
         return transactions;
@@ -2980,6 +2953,82 @@ public with sharing class TestDataFactory {
             insert assignments;
         }
         return approver;
+    }
+
+    /**
+     * 🔴 THE TASK-CAPABLE, NO-CUSTOM-FLS PERSONA. PROMOTED 2026-09-02 from byte-identical private
+     * copies in `TaskRollupServiceTest` and `OnboardingTaskRollupServiceTest` — see
+     * "Promoting private fixture helpers" in this agent's memory: reuse a helper across test
+     * classes by promoting it here rather than copy-pasting a third and fourth time (this method
+     * is now also used directly by `ChecklistFanoutServiceTest`, added the same day for the Day-0
+     * rollup sharing fix; `TaskRollupServiceTest` and `TaskFanoutServiceTest` were also callers
+     * until M5, 2026-09-03).
+     *
+     * Builds (does NOT insert) a user on the `Standard User` profile — the LEAST-privileged
+     * profile in this org that can create a `Task` at all (`PermissionsEditTask = true`,
+     * measured; `Minimum Access - Salesforce` is `false`, and no permission set can supply it
+     * because `Task` has zero `ObjectPermissions` rows org-wide — Activity CRUD is not
+     * permission-set-grantable here, it lives on the profile alone).
+     *
+     * 🔴 What the profile does NOT give is the point: it grants NO FLS on any Metadata-API-
+     * deployed custom field, so this persona cannot read/write any custom field on `Task` or
+     * `Transaction__c` (`Transaction_Deal__c`, `Onboarding__c`, `Onboarding_Status__c`, etc.)
+     * from its PROFILE alone. Callers assign only the specific object-level permission set(s)
+     * the scenario under test needs — never one that also grants the withheld field(s), or the
+     * regression pin it backs stops discriminating. See the callers' own headers for the
+     * `FieldPermissions` queries that verify this per scenario.
+     *
+     * @param aliasSeed Short tag identifying the calling test/persona. Folded into
+     *                  Username/Email for uniqueness; NOT used for `Alias` (fixed and under the
+     *                  8-character cap) since Alias has no uniqueness constraint in Salesforce.
+     * @return An uninserted `Standard User`-profile `User`. Insert inside
+     *         `System.runAs(new User(Id = UserInfo.getUserId()))` if the caller also assigns
+     *         permission sets in the same transaction (both are SETUP objects; mixing setup
+     *         object TYPES together is fine, mixing setup and non-setup DML is what throws
+     *         `MIXED_DML_OPERATION`).
+     * @example
+     * User driver = TestDataFactory.createStandardUserNoFls('rollupDrv');
+     * System.runAs(new User(Id = UserInfo.getUserId())) {
+     *     insert driver;
+     *     TestDataFactory.assignPermissionSets(driver.Id, new Set<String>{ 'DPEG_Transaction_View' });
+     * }
+     */
+    public static User createStandardUserNoFls(String aliasSeed) {
+        Profile standardUserProfile = [SELECT Id FROM Profile WHERE Name = 'Standard User' LIMIT 1];
+        String unique = aliasSeed + String.valueOf(Datetime.now().getTime())
+            + String.valueOf(Math.abs(Crypto.getRandomInteger()));
+        return new User(
+            FirstName = 'Min',
+            LastName = 'Access',
+            Alias = 'minshr',
+            Email = 'min.access.nofls@example.invalid',
+            Username = unique + '@example.invalid.dpeg',
+            ProfileId = standardUserProfile.Id,
+            TimeZoneSidKey = 'America/Chicago',
+            LocaleSidKey = 'en_US',
+            EmailEncodingKey = 'UTF-8',
+            LanguageLocaleKey = 'en_US'
+        );
+    }
+
+    /**
+     * Assigns the named permission sets to an ALREADY-INSERTED user. PROMOTED 2026-09-02 from
+     * identical private copies in `TaskRollupServiceTest` and `OnboardingTaskRollupServiceTest`.
+     *
+     * `PermissionSetAssignment` is a SETUP object, so callers must invoke this inside the SAME
+     * `System.runAs(new User(Id = UserInfo.getUserId()))` isolation block used for the User
+     * insert itself — mixing setup-object TYPES together in one transaction is fine; mixing
+     * setup and non-setup objects together is what throws `MIXED_DML_OPERATION`.
+     *
+     * @param userId              Already-inserted User Id.
+     * @param permissionSetNames  Names of the PermissionSet records to assign.
+     */
+    public static void assignPermissionSets(Id userId, Set<String> permissionSetNames) {
+        List<PermissionSetAssignment> assignments = new List<PermissionSetAssignment>();
+        for (PermissionSet ps : [SELECT Id FROM PermissionSet WHERE Name IN :permissionSetNames]) {
+            assignments.add(new PermissionSetAssignment(AssigneeId = userId, PermissionSetId = ps.Id));
+        }
+        insert assignments;
     }
 
     /**
@@ -3899,7 +3948,7 @@ public with sharing class TestDataFactory {
         List<Onboarding_Task_Def__mdt> defs = new List<Onboarding_Task_Def__mdt>();
         for (Integer i = 0; i < count; i++) {
             // ⚠ No DeveloperName / MasterLabel: those are system fields on a __mdt sObject
-            // and are not needed by any consumer. `TaskFanoutServiceTest` sets neither.
+            // and are not needed by any consumer. No CMDT fixture in this repo sets either.
             defs.add(new Onboarding_Task_Def__mdt(
                 Category__c = categories[Math.mod(i, categories.size())],
                 Subject__c = 'Test checklist item ' + i,

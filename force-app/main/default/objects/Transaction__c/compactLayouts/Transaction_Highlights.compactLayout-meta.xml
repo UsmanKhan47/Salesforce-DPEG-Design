@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CompactLayout xmlns="http://soap.sforce.com/2006/04/metadata">
     <fullName>Transaction_Highlights</fullName>
+    <fields>Property_Name__c</fields>
+    <fields>Name</fields>
     <fields>Contract_Executed_Date__c</fields>
-    <fields>EM_Wired__c</fields>
     <fields>Feasibility_Deadline__c</fields>
     <fields>Target_Close_Date__c</fields>
     <fields>Tasks_Display__c</fields>

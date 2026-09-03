@@ -1,0 +1,170 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  M5 legacy Task retirement - ADMIN-SCOPE destructive members only
+  (agent-output/design-legacy-task-retirement.md Section 5, Steps 1.3, 2, 4, 5, 6; both waves,
+  shipped together per an explicit user waiver of the cutover rollback window, 2026-09-03).
+
+  THIS FILE IS INCOMPLETE ON ITS OWN. It must be MERGED with the salesforce-developer subagent's
+  Apex-class and script destructive members (TaskFanoutService, TaskFanoutServiceTest,
+  TaskFanoutQueueable, TaskPrerequisiteService, TaskPrerequisiteServiceTest,
+  TransactionTaskService, TransactionTaskServiceTest, TransactionTaskController,
+  TransactionTaskControllerTest, TaskRollupService, TaskRollupServiceTest,
+  TaskRollupDualModelGuardTest, ChecklistMigrationService, ChecklistMigrationDomain,
+  ChecklistMigrationQueueable, ChecklistMigrationAuditService, plus their 4 test classes) into ONE
+  combined destructive manifest before the final deploy. This repo has measured that the
+  post destructive changes deploy flag cannot pair with a source-dir deploy, and only one
+  destructive manifest can accompany a manifest-based deploy - do not attempt to run this file and
+  the developer's file as two separate deploys unless intentionally sequencing Wave 1 before Wave 2.
+
+  Member form for the 8 Activity fields: written as "Activity.Field__c", NOT "Task.Field__c".
+  These fields are declared under objects/Activity/fields/ and federate onto both Task and Event;
+  this repo's own manifest/package.xml already uses this exact form for the SAME fields in its
+  CustomField constructive block (verified: manifest/package.xml pre-edit lines 244-251), and the
+  design's own Section 2.4 states this explicitly. (Permission-set fieldPermissions grants, by
+  contrast, correctly use "Task.Field__c" / "Event.Field__c" - a permission set is not deploying
+  the field itself, it is granting FLS on a Task/Event row, and Activity is not a valid SObject
+  prefix there - see Broker_Protection_Access.permissionset-meta.xml precedent cited in the design.)
+
+  Ordering note: Salesforce resolves dependency order WITHIN a single destructive-changes payload
+  automatically (all members here are submitted as one transaction) - the step ordering in the
+  design's Section 5 (list view before fields; TaskFanoutService before Tasks_Fanned_Out__c; etc.)
+  governs which components must NOT be split across separate deploys, not the line order within
+  this file. Since the user has waived the Wave 1 / Wave 2 rollback boundary and asked for one
+  combined payload, every constraint the design listed as "same payload" is satisfied by merging
+  into ONE manifest deploy - do not further subdivide into the design's original Steps 1 through 6
+  unless the combined deploy fails and a staged retry is needed for diagnosis.
+
+  Confirmed via R0 pre-flight against usman-dpeg (2026-09-03):
+    P1  (Task.Transaction_Deal__c populated) = 0    -> PASS, field deletions carry no data
+    P2  (Task.Task_Group__c populated)       = 0    -> PASS
+    P1b (same, ALL ROWS / Recycle Bin)       = 82   -> the 2026-09-02 deletion is still recoverable
+                                                        until ~2026-09-17, but the user has
+                                                        EXPLICITLY WAIVED the cutover rollback, so
+                                                        this no longer gates Wave 2.
+    P5  (Tooling ValidationRule query)       = 3 rows: Task (Active=true), Checklist_Item__c
+                                                        (Active=true, NOT included below, must
+                                                        stay), and Activity (Active=true) - the
+                                                        ORG-ONLY ORPHAN predicted by design Section
+                                                        3.2 is REAL and is included below (Step 5).
+  See the accompanying R0 report for P3, P4, P6 through P9 (all passed / recorded).
+
+  DO NOT let any tooling union this file with an old retrieve that still names:
+    Activity.Task_Owner_Label__c, Activity.Task_Sequence__c, Activity.Conditional__c (PM fields -
+      OnboardingFanoutService.cls writes all three, OnboardingController.cls renders the first)
+    Transaction__c.Tasks_Total__c / Tasks_Complete__c / Tasks_Overdue__c / Wire_Open_Risks__c /
+      Tasks_Open__c / Tasks_Display__c (the NEW checklist model's counters)
+    Task.Blocked_Reason__c, Task.Source_System__c, Task.Onboarding__c and siblings (PM, untouched)
+    objects/Checklist_Item__c/validationRules/Prerequisite_Must_Be_Met_To_Complete (same fullName
+      as the Task rule below, DIFFERENT object, NEW MODEL, must stay Active)
+    customPermissions/Transaction_Prereq_Override (ChecklistItemPrerequisiteService.cls line 554
+      is a live production caller in the NEW model)
+    Wire__c.Verbal_Verification_Completed__c and the Checklist_Item__c same-named siblings
+      (Blocked_By__c, Is_Prerequisite_Met__c, Verbal_Verification_Completed__c,
+      Verification_Phone__c) - name collisions with the retiring Activity fields; naming any of
+      these Checklist_Item__c or Wire__c fields here would be a production outage.
+-->
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <types>
+        <members>Task.Transaction_Tasks_by_Group</members>
+        <name>ListView</name>
+    </types>
+    <types>
+        <members>Task.Prerequisite_Must_Be_Met_To_Complete</members>
+        <!-- Org-only orphan, no source file ever existed for it in this repo. Confirmed
+             Active=true via Tooling on usman-dpeg 2026-09-03 (design Section 3.2, Section 5 Step
+             5). It is already functionally inert (binds to the abstract Activity parent and
+             fires on neither Task nor Event), so this is hygiene, not a behavioural fix, but it
+             is included per the user's explicit instruction to prepare Step 5 in this pass rather
+             than leave it conditional. -->
+        <members>Activity.Prerequisite_Must_Be_Met_To_Complete</members>
+        <name>ValidationRule</name>
+    </types>
+    <types>
+        <members>Transaction_Task_Actions</members>
+        <name>CustomPermission</name>
+    </types>
+    <types>
+        <members>Activity.Task_Group__c</members>
+        <members>Activity.Transaction_Deal__c</members>
+        <members>Activity.Blocked_By__c</members>
+        <members>Activity.Is_Prerequisite_Met__c</members>
+        <members>Activity.Verbal_Verification_Completed__c</members>
+        <members>Activity.Verified_By__c</members>
+        <members>Activity.Verified_At__c</members>
+        <members>Activity.Verification_Phone__c</members>
+        <members>Transaction__c.Tasks_Fanned_Out__c</members>
+        <name>CustomField</name>
+    </types>
+    <!--
+      OBSOLETE FLOW VERSION, ADDED 2026-09-03 after the first failed destructive deploy
+      (0Afiw000000WeQXCA0) reported 5 of its 6 errors as TaskFanoutService/the three Activity
+      identity fields/Tasks_Fanned_Out__c still being "referenced elsewhere ... Flow Version -
+      301iw000001Gx79". Deactivating a flow version does not drop its references; only deleting
+      the obsolete version itself does.
+
+      Member form is "<FlowApiName>-<VersionNumber>", i.e. a SPECIFIC-VERSION address, not the
+      bare flow name and not a flow-definition-level delete. This is the standard Metadata API
+      addressing scheme for individual flow versions (retrieve/deploy/destructiveChanges all use
+      it identically), and it was proven empirically against usman-dpeg on 2026-09-03 rather than
+      assumed, because a wrong form here either fails the deploy or deletes the live version:
+        - `sf project retrieve start`, metadata parameter "Flow:Transaction_Task_Fanout-1", returned
+          exactly ONE component, Id 301iw000001Gx79AAC - byte-identical to the Id named in the
+          deploy error above (301iw000001Gx79, truncated to 15 chars by the error message). This IS
+          version 1, Status Obsolete (confirmed via Tooling `Flow` query: VersionNumber=1,
+          Status='Obsolete').
+        - The same retrieve with metadata parameter "Flow:Transaction_Task_Fanout" (the BARE,
+          unversioned form) returned Id 301iw00000438l7AAA - this is version 2, MasterLabel
+          "Transaction Checklist Fanout", Status Active (Tooling: VersionNumber=2,
+          Status='Active'). The bare name resolves to the ACTIVE version, NOT the obsolete one and
+          NOT the whole flow definition. Using the unversioned member here would have targeted and
+          deleted the live fan-out - the one thing this change must not touch.
+      This directly answers the "could an unversioned member catch v2" question: yes, definitively
+      - the bare name IS v2's address in this org right now. Only the versioned form isolates v1.
+
+      Paused-interview check: queried FlowInterview scoped to this flow version
+      (FlowVersionView.DurableId = '301iw000001Gx79AAC') = 0 rows, and an org-wide
+      `SELECT COUNT(Id) FROM FlowInterview` = 0 rows confirms the query itself is valid and there
+      is nothing running anywhere that would block a version delete (this flow is
+      ProcessType=AutoLaunchedFlow, consistent with having no paused Wait-element interviews).
+    -->
+    <!--
+      APEX HALF, MERGED IN BY salesforce-devops 2026-09-03 (the block the header above said was
+      still owed). All 20 names below were verified in the SAME pass, both directions:
+        (a) PRESENT in usman-dpeg  - Tooling ApexClass query returned a row for each one;
+        (b) ABSENT from the repo   - Glob over force-app/main/default/classes/ returns no .cls or
+            .cls-meta.xml for any of them, so the local deletion is already staged and the org copy
+            is the only surviving one.
+      The header lists 16 named classes "plus their 4 test classes"; enumerated in full that is the
+      20 members below. A destructive member names the CLASS ONLY - the .cls-meta.xml is removed
+      with it and must NOT be listed separately.
+      TaskFanoutQueueableTest is deliberately NOT listed: it does not exist in the org (the Tooling
+      query returned no row for it), and naming a non-existent member fails the whole deploy.
+      NOT LISTED, MUST SURVIVE - re-verified present in the org in the same pass:
+        ChecklistFanoutService, ChecklistRollupService, TransactionStageGateService,
+        OnboardingFanoutService, TaskSelector, TaskRollupTriggerHandler.
+    -->
+    <types>
+        <members>TaskFanoutService</members>
+        <members>TaskFanoutServiceTest</members>
+        <members>TaskFanoutQueueable</members>
+        <members>TaskPrerequisiteService</members>
+        <members>TaskPrerequisiteServiceTest</members>
+        <members>TransactionTaskService</members>
+        <members>TransactionTaskServiceTest</members>
+        <members>TransactionTaskController</members>
+        <members>TransactionTaskControllerTest</members>
+        <members>TaskRollupService</members>
+        <members>TaskRollupServiceTest</members>
+        <members>TaskRollupDualModelGuardTest</members>
+        <members>ChecklistMigrationService</members>
+        <members>ChecklistMigrationServiceTest</members>
+        <members>ChecklistMigrationDomain</members>
+        <members>ChecklistMigrationDomainTest</members>
+        <members>ChecklistMigrationQueueable</members>
+        <members>ChecklistMigrationQueueableTest</members>
+        <members>ChecklistMigrationAuditService</members>
+        <members>ChecklistMigrationAuditServiceTest</members>
+        <name>ApexClass</name>
+    </types>
+    <version>67.0</version>
+</Package>

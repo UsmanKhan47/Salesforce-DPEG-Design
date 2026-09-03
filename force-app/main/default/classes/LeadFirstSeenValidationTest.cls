@@ -39,6 +39,40 @@
  * protect the whole pipeline if the flow were ever deactivated. It is carried by the formula and
  * documented here rather than pretended to be tested.
  *
+ * -- *** THE SINGLE-TRANSACTION RE-STAMP TRAP (fixed 2026-09-03; MEASURED, not reasoned) ------
+ * `clearingAnAlreadyStampedFirstSeenDateIsRefused` FAILED ON EVERY RUN FROM THE DAY IT WAS
+ * WRITTEN (2026-08-19) UNTIL 2026-09-03 - 25 recorded runs, never once green. It was a FIXTURE
+ * defect. The rule was never at fault, and the org was never at fault. Anyone tempted to
+ * "simplify" that method back onto the shared `insertedLead()` helper will resurrect it.
+ *
+ * The mechanism, measured on `usman-dpeg` at API 67.0 on 2026-09-03 by anonymous Apex:
+ *
+ *   - `Lead_Intake_Stamp` assigns `$Flow.CurrentDateTime`, which is the TRANSACTION START time
+ *     and is second-granular - not the wall clock at the moment the element runs.
+ *   - An Apex test performs its insert and its update in ONE transaction. The insert stamped
+ *     ms=1788435091000. The update set the field to null; the same before-save flow saw IsNull
+ *     and backfilled it with `$Flow.CurrentDateTime` - the IDENTICAL ms=1788435091000.
+ *   - Validation rules evaluate AFTER before-save flows, so the rule compared 1788435091000
+ *     against 1788435091000: `ISCHANGED` FALSE, rule correctly silent, no DmlException, and the
+ *     `refused` flag stayed false. The old second assertion (`isNotNull`) passed anyway, because
+ *     the flow had put a value back - which is exactly how the failure hid its own cause.
+ *   - CONTROL, same transaction: changing the field to a non-null `now - 400 days` WAS refused,
+ *     with the rule message. So the rule is deployed, Active and firing; only the blank-then-
+ *     backfill path was invisible to it.
+ *
+ * THE FIX IS THE FIXTURE, AND IT DOES NOT WEAKEN THE ASSERTION. Insert the Lead with an EXPLICIT
+ * back-dated stamp (`leadStampedInThePast()`), so the prior value is genuinely older than the
+ * transaction. The flow then backfills the blank with a value that DIFFERS from the prior one,
+ * `ISCHANGED` is true, `PRIORVALUE` is non-blank, and the rule fires. Measured: refused = true,
+ * message = the rule own text, stored value = the original back-dated stamp, preserved exactly.
+ * The method still asserts a real `DmlException` refusal - it now also asserts that the surviving
+ * value is the ORIGINAL one, which the old `isNotNull` check could not distinguish from a reset.
+ *
+ * This is also the production shape rather than a contrivance: in production the stamp and the
+ * tampering attempt are always separate transactions, so the prior value is always older than the
+ * current one. The same-transaction collision is an artefact of test execution only, which is
+ * precisely why this passed review as written and still never worked.
+ *
  * ⚠ THE CONVERSION PATH IS INERT EITHER WAY AND IS NOT TESTED HERE.
  * `Database.convertLead` only enforces Lead validation rules when
  * `shouldLeadConvertRequireValidation` is true; that setting lives in
@@ -62,6 +96,34 @@ private class LeadFirstSeenValidationTest {
 
     private static Lead insertedLead() {
         List<Lead> leads = TestDataFactory.createLeads(1, false);
+        insertWithDupBypass(leads);
+        return [SELECT Id, First_Seen_Date__c, Status FROM Lead WHERE Id = :leads[0].Id];
+    }
+
+    /**
+     * The prior value for any test that must observe the rule FIRE on a blanking attempt.
+     *
+     * Back-dated relative to `Date.today()` rather than to a calendar literal - a literal drifts
+     * out from under the `BP_Expiry__c` window (first-seen + the configured protection days) as
+     * the org ages, and the test would start failing for a reason unrelated to what it asserts.
+     * Built with zero milliseconds so equality assertions are safe against any second-granularity
+     * rounding on the way to the database and back.
+     */
+    private static Datetime backDatedStamp() {
+        return Datetime.newInstanceGmt(Date.today().addDays(-14), Time.newInstance(8, 0, 0, 0));
+    }
+
+    /**
+     * A Lead whose first-seen stamp is a genuine HISTORICAL value, not one minted by
+     * `Lead_Intake_Stamp` inside the running transaction. See "THE SINGLE-TRANSACTION RE-STAMP
+     * TRAP" in the class header for why the difference decides whether the rule can fire at all.
+     *
+     * The insert itself is already proven safe by `insertingALeadWithAnExplicitFirstSeenDateIsAllowed`
+     * - ISCHANGED is false on create, so supplying the field here cannot trip the rule.
+     */
+    private static Lead leadStampedInThePast() {
+        List<Lead> leads = TestDataFactory.createLeads(1, false);
+        leads[0].First_Seen_Date__c = backDatedStamp();
         insertWithDupBypass(leads);
         return [SELECT Id, First_Seen_Date__c, Status FROM Lead WHERE Id = :leads[0].Id];
     }
@@ -190,21 +252,40 @@ private class LeadFirstSeenValidationTest {
         // The other half of tampering, and the more dangerous one: BLANKING the field would make
         // BP_Expiry__c null and LeadFunnelController fall back to CreatedDate, silently RESETTING
         // a broker's protection window rather than merely moving it.
-        Lead lead = insertedLead();
+        //
+        // *** THE FIXTURE IS `leadStampedInThePast()`, NOT `insertedLead()`, AND PUTTING THE
+        //     LATTER BACK RE-BREAKS THIS METHOD FOR A REASON THAT HAS NOTHING TO DO WITH THE RULE.
+        // Full account under "THE SINGLE-TRANSACTION RE-STAMP TRAP" in the class header. The short
+        // version: a stamp minted by `Lead_Intake_Stamp` inside THIS transaction is re-minted
+        // byte-identically when the same flow backfills the blank, so ISCHANGED evaluates FALSE
+        // and there is nothing for the rule to refuse. A historical prior value is the production
+        // shape, and it restores the refusal.
+        Lead lead = leadStampedInThePast();
+        Assert.areEqual(backDatedStamp(), lead.First_Seen_Date__c,
+            'PRECONDITION: the prior value is non-blank AND older than this transaction, which is '
+            + 'what makes the flow backfill a real change that the rule can see');
 
         Test.startTest();
-        Boolean refused = false;
+        String message = null;
         try {
             update new Lead(Id = lead.Id, First_Seen_Date__c = null);
+            Assert.fail('Clearing an already-stamped first-seen date must be REFUSED. Blanking it '
+                + 'nulls BP_Expiry__c and drops LeadFunnelController back to CreatedDate, which '
+                + 'restarts a broker protection window that has already been running.');
         } catch (DmlException e) {
-            refused = true;
+            message = e.getDmlMessage(0);
         }
         Test.stopTest();
 
-        Assert.isTrue(refused, 'Clearing an already-stamped first-seen date must be REFUSED');
-        Assert.isNotNull(
+        Assert.isNotNull(message, 'The refusal is a DmlException carrying the rule own message');
+        // Asserted on a SUBSTRING for the same reason as the sibling method above: the error
+        // message is user-facing copy an admin may legitimately reword.
+        Assert.isTrue(message.containsIgnoreCase('first seen'),
+            'and the message names the field, so the user learns which one - got: ' + message);
+        Assert.areEqual(backDatedStamp(),
             [SELECT First_Seen_Date__c FROM Lead WHERE Id = :lead.Id].First_Seen_Date__c,
-            'and the stored value is untouched');
+            'and the stored value is still the ORIGINAL stamp, not merely non-blank - a re-stamped '
+            + 'value would be a reset protection window wearing a passing assertion');
     }
 
     @isTest

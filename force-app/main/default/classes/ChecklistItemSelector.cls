@@ -16,6 +16,8 @@
  * │                                separate justification at the declaration. Do not merge them.│
  * │     • selectForOutcomeByIds  <- ChecklistOutcomeService (Phase 5), reading the PARENT DEAL   │
  * │                                after a completion has already been saved                    │
+ * │     • selectOpenForStageGate <- TransactionStageGateService (BEFORE-UPDATE trigger on        │
+ * │                                Transaction__c), Part B of the checklist cutover design       │
  * │   USER_MODE (a read the running user asked for):                                           │
  * │     • selectForCompletion    <- ChecklistItemService, driven by a human clicking Complete   │
  * │     • selectForDisplayByTransactionIds                                                     │
@@ -351,6 +353,115 @@ public with sharing class ChecklistItemSelector {
             FROM Checklist_Item__c
             WHERE Checklist__r.Transaction__c IN :transactionIds
             WITH USER_MODE
+            ORDER BY Checklist__r.Sequence__c ASC NULLS FIRST, Sequence__c ASC NULLS FIRST
+        ];
+    }
+
+    /**
+     * Items belonging to the stages a set of deals is about to LEAVE - the single read behind the
+     * stage-advancement gate (`TransactionStageGateService`, design Part B).
+     *
+     * ONE QUERY FOR THE WHOLE TRIGGER CHUNK. `stages` is the UNION of the candidate deals prior
+     * stages, so at most four values, and `transactionIds` is every candidate deal in the chunk.
+     * The caller re-attributes each returned row to its own deal in memory. Adding a deal or a
+     * stage to either set costs nothing - it is still exactly one query, never a function of row
+     * count.
+     *
+     * =========================================================================================
+     * `OR Stage__c = NULL` IS DELIBERATE AND LOAD-BEARING. DO NOT SIMPLIFY IT AWAY.
+     * =========================================================================================
+     * `Checklist_Item__c.Stage__c` has NO default value, deliberately - the field description
+     * says a plausible default "would hide a fan-out that failed to stamp the phase", and
+     * `ChecklistFanoutService.lastRunUnstagedItemCount` exists to count exactly that failure.
+     * With a bare `Stage__c IN :stages` an unstamped item would be INVISIBLE to the gate, and a
+     * safety control whose failure mode is "silently stops refusing" is the wrong shape. Returning
+     * the row lets the caller attribute it through its parent `Checklist__r.Stage__c`, and count
+     * it when even that is blank.
+     *
+     * =========================================================================================
+     * THE DONE TEST IS NOT IN THIS WHERE CLAUSE, AND THAT IS NOT AN OVERSIGHT.
+     * =========================================================================================
+     * "Open" would be `Flag__c NOT IN ('Completed','Verified')`. Writing that here would create a
+     * SECOND definition of done in an org whose single definition is `ChecklistItemDomain.isDone`
+     * - a method whose own header says in capitals DO NOT WRITE `Flag__c == 'Completed'` ANYWHERE
+     * ELSE, because `Flag__c` is a lossy picklist where `Verified` is also a done state. Nothing
+     * would catch a SOQL literal list drifting from that method. The caller filters in memory
+     * with `isDone`, which costs one extra pass over rows it already has and keeps the
+     * definition singular. `Flag__c` is selected below for exactly that reason.
+     *
+     * =========================================================================================
+     * MODE: `WITH SYSTEM_MODE` - AUTOMATION PATH (ARCHITECTURE.md S2, justified here at its own
+     * declaration and NOT by inheriting the justifications above it).
+     * =========================================================================================
+     * This runs inside a BEFORE-UPDATE trigger on `Transaction__c`, on the saving principal's
+     * behalf - it is not a read they asked for; they asked to move a deal to the next stage.
+     * `USER_MODE` throws rather than degrades: one missing FLS grant on any of the eight fields
+     * below raises `System.QueryException: No such column` - an FLS denial wearing a schema error
+     * - which inside a before-update trigger escapes as `CANNOT_INSERT_UPDATE_ACTIVATE_ENTITY`
+     * and ROLLS BACK THE USER OWN STAGE SAVE with a message naming a column, not a permission.
+     * Every DPEG persona is on Minimum Access and every custom field below arrives from the
+     * Metadata API with zero FieldPermissions rows for anybody, System Administrator included, so
+     * this is the default case rather than an edge case. Same reasoning as `selectByIdsWithDeal`,
+     * which backs the sibling before-update gate on `Checklist_Item__c`.
+     * The consequence is stated plainly: this read cannot be denied by FLS, so the GATE cannot be
+     * disabled by removing somebody's grants. That is the intent - it is a safety control, not a
+     * report.
+     *
+     * =========================================================================================
+     * SHARING, ASKED AS A SEPARATE QUESTION BECAUSE `SYSTEM_MODE` NEVER LIFTS IT.
+     * =========================================================================================
+     * No escalation, and none is needed. The principal is UPDATING the `Transaction__c`, so they
+     * demonstrably hold RECORD-LEVEL EDIT on it - a before-update trigger cannot be reached
+     * otherwise. `Checklist_Item__c` is `ControlledByParent` under `Checklist__c`, itself
+     * `ControlledByParent` under `Transaction__c`, so record-level access propagates down both
+     * hops by definition and they can read every item on that deal.
+     *
+     * THIS ARGUMENT DOES NOT DEPEND ON THE UNPROVEN `viewAllRecords` PROPAGATION, AND THE TWO ARE
+     * EASY TO CONFLATE. `Checklist__c.object-meta.xml` and `ChecklistRollupService` both record
+     * that whether OBJECT-LEVEL View All propagates to a `ControlledByParent` detail was never
+     * measured. That open question is about a VIEW-ONLY persona reading somebody else's deal.
+     * It is a different question from this one, and if it comes back FALSE this method is
+     * unaffected. Note also that `DPEG_Transaction_View` grants `allowEdit=false`, so a view-only
+     * persona measurably has `HasEditAccess = false` on a deal (measured 2026-09-02, recorded in
+     * `TaskRollupService`) and therefore never reaches this read at all.
+     * A `private without sharing` inner class would be the shape if an escape were ever needed.
+     * It is NOT needed, it is not present, and adding one would need its own written reason -
+     * this org took a production outage on 2026-09-02 from confusing these two decisions.
+     *
+     * ORDERED by parent group sequence then item sequence so the refusal message enumerates
+     * outstanding items in checklist order rather than in database order, and so two runs produce
+     * a byte-identical message.
+     *
+     * @param transactionIds Deals whose items are being judged; null/empty-safe.
+     * @param stages         The union of `Transaction__c.Stage__c` values those deals are LEAVING;
+     *                       null/empty-safe. Items whose `Stage__c` is NULL are returned
+     *                       regardless of this set - see above.
+     * @return Items on those deals in those stages (plus every unstamped item on those deals),
+     *         with Id, Checklist__c, Checklist__r.Transaction__c, Checklist__r.Group_Letter__c,
+     *         Checklist__r.Stage__c, Stage__c, Sequence__c, Subject__c and Flag__c populated; an
+     *         EMPTY list when either input is null/empty or nothing matches, never null.
+     *         An empty list is MEANINGFUL - it means nothing is outstanding - so the caller must
+     *         not treat it as an error. Reading any field NOT in this inventory throws
+     *         `System.SObjectException` at runtime with no compile-time warning; a selector
+     *         @return IS its contract.
+     * @example
+     * List&lt;Checklist_Item__c&gt; rows = ChecklistItemSelector.selectOpenForStageGate(dealIds, stages);
+     */
+    public static List<Checklist_Item__c> selectOpenForStageGate(
+        Set<Id> transactionIds,
+        Set<String> stages
+    ) {
+        if (transactionIds == null || transactionIds.isEmpty()
+                || stages == null || stages.isEmpty()) {
+            return new List<Checklist_Item__c>();
+        }
+        return [
+            SELECT Id, Checklist__c, Checklist__r.Transaction__c, Checklist__r.Group_Letter__c,
+                   Checklist__r.Stage__c, Stage__c, Sequence__c, Subject__c, Flag__c
+            FROM Checklist_Item__c
+            WHERE Checklist__r.Transaction__c IN :transactionIds
+              AND (Stage__c IN :stages OR Stage__c = NULL)
+            WITH SYSTEM_MODE
             ORDER BY Checklist__r.Sequence__c ASC NULLS FIRST, Sequence__c ASC NULLS FIRST
         ];
     }

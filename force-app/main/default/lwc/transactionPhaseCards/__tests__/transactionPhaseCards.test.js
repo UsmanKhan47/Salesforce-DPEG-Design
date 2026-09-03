@@ -1,8 +1,21 @@
 /**
- * c-transaction-phase-cards — LDS discriminator + TWO Apex @wire READS, no writes.
+ * c-transaction-phase-cards — ONE Apex @wire READ plus an ADVISORY LDS read, no writes.
  *
- * The sidebar twin of `c-transaction-task-groups`: same dual-model contract, same shared
- * normaliser, so the same two things are pinned here.
+ * The sidebar twin of `c-transaction-task-groups`: same shared normaliser, so the same things
+ * are pinned here.
+ *
+ * 🔴 AMENDED 2026-09-03 (M5) — THE SECOND MODEL AND ITS DISCRIMINATOR ARE GONE.
+ * The suite carried a matched pair — "wires ONLY the checklist Apex on a migrated deal" and
+ * "wires ONLY the legacy Apex on an un-migrated deal" — each asserting the OTHER model's
+ * `getLastConfig()` was `{ transactionId: undefined }`. With `TransactionTaskController`
+ * deleted the second half cannot exist, and the first half's negative clause has no subject.
+ * ⇒ Replaced by a parameterised test that asserts the config on BOTH flag values, which is the
+ * property that matters now: the Apex read no longer depends on the flag at all. A stray
+ * `fannedOut ?` guard reintroduced on the wire parameter reds the `false` row.
+ *
+ * 🔴 THE LDS READ SURVIVES, DEMOTED TO ADVISORY — it now only selects the wording of
+ * `emptyMessage`. A failed flag read is therefore NO LONGER FATAL, and the test below pins the
+ * inversion: blanking the cards on that failure would hide data that loaded perfectly well.
  *
  * 🔴 THE PHASE LABELS. This component used to carry its OWN copy of the PHASES array, which is
  * how it drifted to `Closing` / `Post Closing` while `Transaction__c.Stage__c` said `Closing Prep`
@@ -12,25 +25,16 @@
  * at all.
  *
  * 🔴 `getLastConfig()`, NOT "nothing rendered". An Apex test wire adapter's `emit()` ignores its
- * config, so a component wiring BOTH models on every page view would render correctly and still
- * be wrong. The config assertions are the only honest check.
+ * config, so a component that called Apex with the wrong argument would still render correctly
+ * and still be wrong. The config assertions are the only honest check.
  */
 import { createElement } from 'lwc';
 import TransactionPhaseCards from 'c/transactionPhaseCards';
 import { getRecord } from 'lightning/uiRecordApi';
 import getChecklist from '@salesforce/apex/ChecklistController.getChecklist';
-import getTaskGroups from '@salesforce/apex/TransactionTaskController.getTaskGroups';
 
 jest.mock(
     '@salesforce/apex/ChecklistController.getChecklist',
-    () => {
-        const { createApexTestWireAdapter } = require('@salesforce/sfdx-lwc-jest');
-        return { default: createApexTestWireAdapter(jest.fn()) };
-    },
-    { virtual: true }
-);
-jest.mock(
-    '@salesforce/apex/TransactionTaskController.getTaskGroups',
     () => {
         const { createApexTestWireAdapter } = require('@salesforce/sfdx-lwc-jest');
         return { default: createApexTestWireAdapter(jest.fn()) };
@@ -48,9 +52,15 @@ const CHECKLIST_ROWS = [
     { id: 'g4', letter: 'J', name: 'Post', stage: 'Post-Closing', total: 15, complete: 3, pct: 20, items: [] }
 ];
 
-const LEGACY_ROWS = [
-    { key: 'A. Contract', letter: 'A', name: 'Contract', total: 6, complete: 6, pct: 100, tasks: [] },
-    { key: 'J. Post', letter: 'J', name: 'Post', total: 15, complete: 3, pct: 20, tasks: [] }
+/**
+ * A checklist filling only TWO of the four phases, so the other two must read `0 / 0` rather
+ * than vanishing. (Was `LEGACY_ROWS` until M5; the retired legacy fixture was the only place
+ * this partial-coverage case was exercised, so it was re-expressed on the surviving model
+ * rather than dropped with it.)
+ */
+const PARTIAL_ROWS = [
+    { id: 'g1', letter: 'A', name: 'Contract', stage: 'Open Contract', total: 6, complete: 6, pct: 100, items: [] },
+    { id: 'g4', letter: 'J', name: 'Post', stage: 'Post-Closing', total: 15, complete: 3, pct: 20, items: [] }
 ];
 
 function transactionRecord(fannedOut) {
@@ -86,28 +96,33 @@ describe('c-transaction-phase-cards', () => {
         jest.clearAllMocks();
     });
 
-    it('wires ONLY the checklist Apex on a migrated deal', async () => {
+    it.each([
+        ['a fanned-out deal', true],
+        ['a deal that was never fanned out', false]
+    ])(
+        'wires the checklist Apex with the recordId on %s — the read no longer depends on the flag',
+        async (_label, fannedOut) => {
+            // 🔴 THE REPLACEMENT FOR THE DELETED DISCRIMINATOR PAIR (M5). Before M5 a `false`
+            // flag meant the checklist Apex was NOT called at all. A single-flag test cannot
+            // distinguish "the flag is ignored" from "the flag happens to be true".
+            const element = createComponent();
+            getRecord.emit(transactionRecord(fannedOut));
+            await flush();
+            getChecklist.emit(CHECKLIST_ROWS);
+            await flush();
+
+            expect(getChecklist.getLastConfig()).toEqual({ transactionId: RECORD_ID });
+            expect(cards(element)).toHaveLength(4);
+        }
+    );
+
+    it('renders 0 / 0 for a phase with no groups rather than dropping the card', async () => {
         const element = createComponent();
         getRecord.emit(transactionRecord(true));
         await flush();
-        getChecklist.emit(CHECKLIST_ROWS);
+        getChecklist.emit(PARTIAL_ROWS);
         await flush();
 
-        expect(getChecklist.getLastConfig()).toEqual({ transactionId: RECORD_ID });
-        expect(getTaskGroups.getLastConfig()).toEqual({ transactionId: undefined });
-        expect(cards(element)).toHaveLength(4);
-    });
-
-    it('wires ONLY the legacy Apex on an un-migrated deal', async () => {
-        const element = createComponent();
-        getRecord.emit(transactionRecord(false));
-        await flush();
-        getTaskGroups.emit(LEGACY_ROWS);
-        await flush();
-
-        expect(getTaskGroups.getLastConfig()).toEqual({ transactionId: RECORD_ID });
-        expect(getChecklist.getLastConfig()).toEqual({ transactionId: undefined });
-        // Legacy fixture only fills two phases; the other two read 0 / 0 rather than vanishing.
         expect(cards(element).map((c) => c.value)).toEqual(['6 / 6', '0 / 0', '0 / 0', '3 / 15']);
     });
 
@@ -169,10 +184,11 @@ describe('c-transaction-phase-cards', () => {
         });
     });
 
-    it('shows NEITHER the empty message NOR cards BETWEEN the discriminator and the data', async () => {
-        // 🔴 See the matching test in c-transaction-task-groups. Gated on the discriminator
-        // alone, this component rendered "No checklist has been generated for this deal yet" on
-        // every page load of a healthy deal. The assertion has to sit BETWEEN the two emits.
+    it('shows NEITHER the empty message NOR cards BEFORE the Apex data arrives', async () => {
+        // 🔴 See the matching test in c-transaction-task-groups. Ungated, this component renders
+        // "No checklist has been generated for this deal yet" on every page load of a healthy
+        // deal. The assertion has to sit BEFORE the Apex emit. (Pre-M5 it sat between the
+        // discriminator emit and the Apex emit; the discriminator is gone, the hazard is not.)
         const element = createComponent();
         getRecord.emit(transactionRecord(true));
         await flush();
@@ -202,25 +218,43 @@ describe('c-transaction-phase-cards', () => {
         expect(element.shadowRoot.querySelector('.kpi-error')).toBeNull();
     });
 
-    it('renders an error and NO cards when the discriminator cannot be read', async () => {
+    it('still renders the CARDS when the ADVISORY flag read fails but data arrives', async () => {
+        // 🔴 THE INVERTED ASSERTION (M5). This test previously read "renders an error and NO
+        // cards when the discriminator cannot be read", and that was CORRECT while the flag
+        // chose the data model. The flag is now advisory — it only picks the wording of
+        // emptyMessage — so blanking the grid on its failure would HIDE data that loaded
+        // perfectly well. Renamed rather than edited in place so a reviewer reading the diff
+        // cannot mistake a reversed expectation for a weakened one.
         const element = createComponent();
         getRecord.error();
         await flush();
-        // Pushed anyway — emit() ignores config — so this proves refusal, not absence.
         getChecklist.emit(CHECKLIST_ROWS);
-        getTaskGroups.emit(LEGACY_ROWS);
         await flush();
 
-        expect(element.shadowRoot.querySelector('.kpi-error')).not.toBeNull();
-        expect(cards(element)).toHaveLength(0);
-        expect(element.shadowRoot.querySelector('.kpi-empty')).toBeNull();
+        expect(element.shadowRoot.querySelector('.kpi-error')).toBeNull();
+        expect(cards(element)).toHaveLength(4);
     });
 
-    it('shows neither an error nor an empty message before the discriminator resolves', async () => {
+    it('falls back to neutral empty copy when the advisory flag read fails and there is no data', async () => {
+        // The empty-state half of the test above. The component cannot say WHY it is empty
+        // without the flag, so it must say only what is certainly true.
+        const element = createComponent();
+        getRecord.error();
+        await flush();
+        getChecklist.emit([]);
+        await flush();
+
+        expect(element.shadowRoot.querySelector('.kpi-error')).toBeNull();
+        const empty = element.shadowRoot.querySelector('.kpi-empty');
+        expect(empty).not.toBeNull();
+        expect(empty.textContent).toBe('No checklist items to show for this deal.');
+    });
+
+    it('shows neither an error nor an empty message before anything resolves', async () => {
         // ⚠ DELIBERATE BEHAVIOUR CHANGE FROM THE PRE-PHASE-3 SUITE, which asserted four `0 / 0`
         // cards in this state. Four zeroed cards read as "the checklist loaded and nothing is
-        // done" — a factual claim the component cannot yet make, because it does not even know
-        // which model the deal is on. Rendering nothing is the honest state.
+        // done" — a factual claim the component cannot yet make, because nothing has loaded.
+        // Rendering nothing is the honest state.
         const element = createComponent();
         await flush();
         expect(element.shadowRoot.querySelector('.kpi-error')).toBeNull();
@@ -234,7 +268,7 @@ describe('c-transaction-phase-cards', () => {
         const element = createComponent();
         getRecord.emit(transactionRecord(false));
         await flush();
-        getTaskGroups.error({ message: 'Phase progress unavailable.' });
+        getChecklist.error({ message: 'Phase progress unavailable.' });
         await flush();
 
         expect(cards(element)).toHaveLength(0);

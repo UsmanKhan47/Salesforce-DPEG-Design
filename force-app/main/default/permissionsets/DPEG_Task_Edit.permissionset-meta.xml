@@ -36,16 +36,26 @@
         migration, and any Phase 1 repair of a resolvable-but-wrong key) must hold in addition to
         this set.
     -->
-    <customPermissions>
-        <enabled>true</enabled>
-        <name>Transaction_Task_Actions</name>
-    </customPermissions>
+    <!--
+        2026-09-03, M5 legacy Task retirement (agent-output/design-legacy-task-retirement.md §5 Steps
+        2 and 4, both waves shipped together per an explicit user waiver of the cutover rollback
+        window). REMOVED the Transaction_Task_Actions customPermissions grant (the class it gated,
+        TransactionTaskService, is retired) and, for BOTH Task.* and Event.* (Activity-scoped fields
+        federate to both), the 8 fieldPermissions blocks for Blocked_By__c, Is_Prerequisite_Met__c,
+        Task_Group__c, Transaction_Deal__c, Verbal_Verification_Completed__c, Verified_By__c,
+        Verified_At__c, Verification_Phone__c. KEPT Task_Owner_Label__c, Task_Sequence__c,
+        Conditional__c on both Task and Event (Property Management writes/reads these) and every
+        Onboarding*/Blocked_Reason__c/Source_System__c/Description/WhatId/ActivityDate block,
+        unchanged.
+        ⚠ The design's own admin prompt (§9) named only "8 Task.* fieldPermissions" to strip. It did
+        not mention that this file also carries an identical 8-field Event.* block for the same
+        Activity-scoped names - left alone those become dangling references to deleted fields the
+        moment the Activity fields are removed (Step 4). Both halves are stripped here.
+        The org copy of this permission set was retrieved and diffed immediately before this edit
+        (2026-09-03) and was byte-identical in fieldPermissions/customPermissions content to this
+        file at HEAD (comments aside) - no drift to reconcile.
+    -->
     <description>Create/read/update standard Tasks, no delete. Task has no custom fields and no OWD/sharing of its own - row access to non-owned tasks derives from the Activity model plus Read/Write sharing on the parent Transaction.</description>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>Event.Blocked_By__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
         <field>Event.Blocked_Reason__c</field>
@@ -72,11 +82,6 @@
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
-        <editable>false</editable>
-        <field>Event.Is_Prerequisite_Met__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
         <editable>true</editable>
         <field>Event.Onboarding_Status__c</field>
         <readable>true</readable>
@@ -92,11 +97,6 @@
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
-        <editable>false</editable>
-        <field>Event.Task_Group__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
         <editable>true</editable>
         <field>Event.Task_Owner_Label__c</field>
         <readable>true</readable>
@@ -107,31 +107,6 @@
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
-        <editable>false</editable>
-        <field>Event.Transaction_Deal__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Event.Verbal_Verification_Completed__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Event.Verification_Phone__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Event.Verified_At__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Event.Verified_By__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
         <editable>true</editable>
         <field>Event.WhatId</field>
         <readable>true</readable>
@@ -139,11 +114,6 @@
     <fieldPermissions>
         <editable>true</editable>
         <field>Task.ActivityDate</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>Task.Blocked_By__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -182,11 +152,6 @@
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
-        <editable>false</editable>
-        <field>Task.Is_Prerequisite_Met__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
         <editable>true</editable>
         <field>Task.Source_System__c</field>
         <readable>true</readable>
@@ -197,11 +162,6 @@
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
-        <editable>false</editable>
-        <field>Task.Task_Group__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
         <editable>true</editable>
         <field>Task.Task_Owner_Label__c</field>
         <readable>true</readable>
@@ -209,31 +169,6 @@
     <fieldPermissions>
         <editable>false</editable>
         <field>Task.Task_Sequence__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>Task.Transaction_Deal__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Task.Verbal_Verification_Completed__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Task.Verified_By__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Task.Verified_At__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Task.Verification_Phone__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <hasActivationRequired>false</hasActivationRequired>
@@ -254,11 +189,12 @@
         objectPermissions. Do not re-add this block believing the earlier absence was a bug or
         an unfinished deploy.
 
-        The replacement authorization path is the Transaction_Task_Actions custom permission
-        (granted above via <customPermissions>), which TransactionTaskService reads via
-        FeatureManagement.checkPermission before running its Task-completion DML in system mode.
-        Sharing is unaffected by this — only object-level CRUD is bypassed, and only on that one
-        write path. See customPermissions/Transaction_Task_Actions.customPermission-meta.xml for
-        the full rationale.
+        The replacement authorization path WAS the Transaction_Task_Actions custom permission,
+        which TransactionTaskService read via FeatureManagement.checkPermission before running its
+        Task-completion DML in system mode. 🔴 2026-09-03 UPDATE — M5 legacy Task retirement: both
+        TransactionTaskService and the Transaction_Task_Actions custom permission are RETIRED (the
+        customPermissions grant above was removed in this same pass). This paragraph is historical
+        only; there is no longer a Task CRUD escape hatch on this permission set, and none is needed
+        — Task.* writes on the retiring wire-fraud path went with it.
     -->
 </PermissionSet>

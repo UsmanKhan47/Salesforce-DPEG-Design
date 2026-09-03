@@ -1,14 +1,22 @@
 /**
  * Tests for TransactionSelector (P4, Module C — Transactions).
  *
- * Covers selectByIdsWithConditionFields:
- *   - base fields + a valid, describe-resolved condition field are selected and
- *     readable via SObject.get (the exact access TaskFanoutService performs);
- *   - a bogus condition field is skipped, not injected — the query still succeeds
- *     (the §6 defense-in-depth guarantee against a bad CMDT Condition_Field__c row);
- *   - null conditionFields still returns the base fields;
- *   - null/empty transactionIds short-circuit to an empty map;
- *   - a 251-record bulk read on the Set<Id> method (bulk-test-rule).
+ * Covers the dashboard reads, the critical-date read and the deal-close aggregate.
+ *
+ * 🔴 AMENDED 2026-09-03 (M5) — FIVE TESTS LEFT THIS CLASS AND ONE OF THEIR GUARANTEES DID NOT.
+ * They covered `selectByIdsWithConditionFields`, the legacy Task fan-out's dynamic read, retired
+ * with `TaskFanoutService`:
+ *   - base fields + a valid, describe-resolved condition field selected and readable via
+ *     SObject.get; a bogus condition field skipped rather than injected (the §6
+ *     defense-in-depth guarantee against a bad CMDT Condition_Field__c row); null
+ *     conditionFields; null/empty ids; a 251-record bulk read.
+ * ⚠ THE DESCRIBE-ALLOWLIST GUARANTEE IS A SECURITY CONTROL ON THE SHARED `queryByIds` BUILDER,
+ * WHICH SURVIVES — so losing its only test would have been a silent hole, not a tidy-up. It is
+ * NOT lost: `ChecklistSelectorTest.transactionSelectorReadsTheChecklistGuardAndTheConditionField`
+ * exercises the same builder through `selectForChecklistFanout`, passing
+ * `{'Loan_Required__c', 'No_Such_Field__c', '  ', null}` and asserting the bogus, blank and null
+ * entries are describe-rejected while the real one lands. Verified before deleting these tests.
+ * Do not delete that test without re-homing the allowlist proof here.
  *
  * Transactions are created with the fan-out Flow suppressed
  * (Contract_Executed_Date__c = null) so inserting them does not enqueue async
@@ -28,7 +36,7 @@ private class TransactionSelectorTest {
         TestDataFactory.applyOverrides(t, new Map<String, Object>{
             'Contract_Executed_Date__c' => null,
             'Loan_Required__c' => loanRequired,
-            'Tasks_Fanned_Out__c' => false
+            'Checklist_Fanned_Out__c' => false
         });
         insert t;
         return t;
@@ -49,85 +57,6 @@ private class TransactionSelectorTest {
         return txns;
     }
 
-    @isTest
-    static void selectByIdsWithConditionFields_selectsBaseAndValidConditionField() {
-        Transaction__c t = insertSuppressedTransaction(true);
-
-        Test.startTest();
-        Map<Id, Transaction__c> result = TransactionSelector.selectByIdsWithConditionFields(
-            new Set<Id>{ t.Id }, new Set<String>{ 'Loan_Required__c' });
-        Test.stopTest();
-
-        Assert.areEqual(1, result.size(), 'The single Transaction is returned keyed by Id');
-        Transaction__c fetched = result.get(t.Id);
-        Assert.isNotNull(fetched, 'The map is keyed by Transaction Id');
-        Assert.areEqual(UserInfo.getUserId(), fetched.OwnerId, 'OwnerId base field is selected');
-        Assert.areEqual(false, fetched.Tasks_Fanned_Out__c, 'Tasks_Fanned_Out__c base field is selected');
-        Assert.areEqual(true, fetched.get('Loan_Required__c'),
-            'The valid condition field is selected and readable via SObject.get — the access TaskFanoutService performs');
-    }
-
-    @isTest
-    static void selectByIdsWithConditionFields_skipsInvalidConditionField() {
-        Transaction__c t = insertSuppressedTransaction(false);
-
-        Test.startTest();
-        // A condition field that does not exist on Transaction__c must be dropped by
-        // the describe allowlist, NOT concatenated into the SELECT (which would throw
-        // a malformed-query exception). The query should still succeed and return the row.
-        Map<Id, Transaction__c> result = TransactionSelector.selectByIdsWithConditionFields(
-            new Set<Id>{ t.Id }, new Set<String>{ 'Definitely_Not_A_Real_Field__c' });
-        Test.stopTest();
-
-        Assert.areEqual(1, result.size(),
-            'A bogus condition field is skipped, so the query still succeeds and returns the Transaction');
-        Assert.areEqual(t.Id, result.get(t.Id).Id, 'Base fields are still selected when the condition field is invalid');
-    }
-
-    @isTest
-    static void selectByIdsWithConditionFields_nullConditionFields_returnsBaseFields() {
-        Transaction__c t = insertSuppressedTransaction(false);
-
-        Test.startTest();
-        Map<Id, Transaction__c> result = TransactionSelector.selectByIdsWithConditionFields(
-            new Set<Id>{ t.Id }, null);
-        Test.stopTest();
-
-        Assert.areEqual(1, result.size(), 'A null condition-field set still returns the Transaction with base fields');
-        Assert.areEqual(UserInfo.getUserId(), result.get(t.Id).OwnerId, 'Base OwnerId is selected with no condition fields');
-    }
-
-    @isTest
-    static void selectByIdsWithConditionFields_nullOrEmptyIds_returnsEmptyMap() {
-        Test.startTest();
-        Map<Id, Transaction__c> forNull = TransactionSelector.selectByIdsWithConditionFields(
-            null, new Set<String>{ 'Loan_Required__c' });
-        Map<Id, Transaction__c> forEmpty = TransactionSelector.selectByIdsWithConditionFields(
-            new Set<Id>(), null);
-        Test.stopTest();
-
-        Assert.areEqual(0, forNull.size(), 'Null ids short-circuit to an empty map, not null');
-        Assert.areEqual(0, forEmpty.size(), 'Empty ids short-circuit to an empty map, not null');
-    }
-
-    @isTest
-    static void selectByIdsWithConditionFields_bulk251_readsAllViaSetId() {
-        List<Transaction__c> txns = TestDataFactory.createTransactions(251, false);
-        TestDataFactory.applyOverrides(txns, new Map<String, Object>{ 'Contract_Executed_Date__c' => null });
-        insert txns;
-
-        Set<Id> ids = new Set<Id>();
-        for (Transaction__c t : txns) {
-            ids.add(t.Id);
-        }
-
-        Test.startTest();
-        Map<Id, Transaction__c> result = TransactionSelector.selectByIdsWithConditionFields(
-            ids, new Set<String>{ 'Loan_Required__c' });
-        Test.stopTest();
-
-        Assert.areEqual(251, result.size(), 'All 251 Transactions are read in a single bulk Set<Id> query');
-    }
 
     // ─────────────────────────────────────────────────────────────────────────
     // Dashboard reads relocated from TransactionController (P4 cleanup wave)
@@ -231,7 +160,7 @@ private class TransactionSelectorTest {
     }
 
     /**
-     * 🔴 Tasks_Total__c is NULL before the Day-0 fan-out runs (Tasks_Fanned_Out__c = false on
+     * 🔴 Tasks_Total__c is NULL before the Day-0 fan-out runs (Checklist_Fanned_Out__c = false on
      * insert), and the selector must return that null verbatim rather than coalescing it — the
      * controller (TransactionController.TxnRow.tasksTotal) is what decides how a null is rendered,
      * and it can only make that decision if the selector does not pre-empt it.
@@ -242,7 +171,7 @@ private class TransactionSelectorTest {
         TestDataFactory.applyOverrides(notYetFannedOut, new Map<String, Object>{
             'Contract_Executed_Date__c' => null,
             'Status__c' => 'Active',
-            'Tasks_Fanned_Out__c' => false,
+            'Checklist_Fanned_Out__c' => false,
             'Tasks_Total__c' => null
         });
         insert notYetFannedOut;
@@ -410,7 +339,12 @@ private class TransactionSelectorTest {
         Opportunity deal = TestDataFactory.createOpportunity(null, true);
         List<Transaction__c> rows = TestDataFactory.createTransactions(3, deal.Id, null, false);
         for (Transaction__c row : rows) {
-            row.Tasks_Fanned_Out__c = true;
+            // 🔴 THE NULL DATE IS THE FAN-OUT SUPPRESSION, NOT THE FLAG (changed 2026-09-03). A7
+            // repointed flows/Transaction_Task_Fanout onto ChecklistFanoutService and moved its
+            // second entry filter from Tasks_Fanned_Out__c to Checklist_Fanned_Out__c (M5 then
+            // DELETED that field). Contract_Executed_Date__c is the filter both
+            // versions share and this test never reads it. Same device as `activeDeal` above.
+            row.Contract_Executed_Date__c = null;
             row.Status__c = 'Active';
         }
         rows[2].Status__c = 'Draft';
@@ -460,7 +394,10 @@ private class TransactionSelectorTest {
         List<Transaction__c> rows = TestDataFactory.createTransactions(BULK_N, null, null, false);
         for (Integer i = 0; i < BULK_N; i++) {
             rows[i].Opportunity__c = dealList[i].Id;
-            rows[i].Tasks_Fanned_Out__c = true;
+            // The null date is what suppresses the Day-0 fan-out since the 2026-09-03 repoint;
+            // without it these 251 deals each enqueue ~96 checklist rows. See the sibling
+            // aggregate test above for the full reasoning.
+            rows[i].Contract_Executed_Date__c = null;
             rows[i].Status__c = 'Active';
         }
         insert rows;

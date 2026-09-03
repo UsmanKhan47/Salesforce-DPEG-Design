@@ -4,8 +4,6 @@
  * ("All SOQL must live in Selector classes. Nothing else queries that object.").
  *
  * Consumers:
- *   - TaskFanoutService.fanOutNow (the Day-0 checklist fan-out; dynamic
- *     condition-field read below).
  *   - TransactionController (Active-Transactions dashboard: KPI header, task
  *     summary, stage donut, and the row table — the four static reads below).
  *   - ContractExecutionService.handleExecution (idempotency guard: which
@@ -22,7 +20,17 @@
  *     transaction is closed" gate — aggregateStatusCountsByOpportunityIds, added
  *     2026-09-02; the class's FIRST sharing escape, see MODE below).
  *
- * WHY A DYNAMIC QUERY LIVES HERE (design §6): the fan-out reads a fixed base
+ * 🔴 AMENDED 2026-09-03 — M5 LEGACY TASK RETIREMENT. TWO CONSUMERS AND THEIR TWO
+ * METHODS LEFT THIS CLASS, AND ONE OF THEM CARRIED A RUNTIME-ONLY HAZARD:
+ *   - TaskFanoutService.fanOutNow      -> selectByIdsWithConditionFields + BASE_FIELDS
+ *   - TaskRollupService.recalc         -> selectClaimFlagsForTaskRollup +
+ *                                         the `TaskRollupGuardReads` escape class
+ * `selectClaimFlagsForTaskRollup` was the Task half of the M1→M3 dual-model tiebreak.
+ * With the Task model gone there is no second writer to tiebreak against, so the guard
+ * is a query on a branch that can never be taken — its own header said so and named M5.
+ * `ChecklistRollupService`'s half of the guard (`selectForChecklistFanout`) STAYS.
+ *
+ * WHY A DYNAMIC QUERY LIVES HERE (design §6): the checklist fan-out reads a fixed base
  * field set PLUS an arbitrary set of conditional-gating fields whose API names
  * come from Task_Group_Def__mdt.Condition_Field__c rows (e.g. Loan_Required__c).
  * Because those field names are data, not compile-time constants, the SELECT is
@@ -45,15 +53,20 @@
  * selected fields. (The dynamic reads use the `AccessLevel` enum because the
  * `WITH USER_MODE` clause is illegal in a dynamic query — design §6.)
  *
- * THREE methods are `AccessLevel.SYSTEM_MODE` / `WITH SYSTEM_MODE`, each justified
- * at its own declaration, all on an AUTOMATION PATH where USER_MODE THROWS rather
- * than degrades and one missing FLS grant becomes a rolled-back user save:
+ * THREE methods are `AccessLevel.SYSTEM_MODE` / `WITH SYSTEM_MODE` (FOUR between
+ * 2026-09-02 and M5), each justified at its own declaration, all on an AUTOMATION PATH
+ * where USER_MODE THROWS rather than degrades and one missing FLS grant becomes a
+ * rolled-back user save:
  *   • selectForChecklistFanout              <- ChecklistFanoutService, ChecklistRollupService
  *   • selectForCriticalDates                <- CriticalDateService, from a script AND (added
  *                                              2026-09-02) from ChecklistOutcomeService when an
  *                                              ordinary user completes checklist item A5
  *   • aggregateStatusCountsByOpportunityIds <- DealTransactionGateService, from TransactionTrigger
  *                                              (added 2026-09-02)
+ * ⚠ A FOURTH, `selectClaimFlagsForTaskRollup` (TaskRollupService, from TaskRollupTrigger),
+ * was retired at M5 on 2026-09-03. Named here rather than silently dropped: ARCHITECTURE §2
+ * makes this block the authoritative record, and a reader who remembers four entries needs to
+ * find out which one left and why, not wonder whether the inventory rotted.
  *
  * ⚠ AMENDED 2026-08-31 — this block previously ended "No guest path, no
  * SYSTEM_MODE." That was true when written and is NO LONGER TRUE. ARCHITECTURE §2
@@ -67,29 +80,31 @@
  * (selectForChecklistFanout, selectForCriticalDates) therefore still return only
  * rows the running user can already see.
  *
- * 🔴 AMENDED 2026-09-02 — AND THAT SENTENCE IS NO LONGER TRUE OF ALL OF THEM. It
- * used to read "…so both exempt methods still return only rows the running user can
- * already see", which is exactly the kind of stale summary the paragraph above warns
- * about. `aggregateStatusCountsByOpportunityIds` ALSO ESCAPES SHARING, through the
- * `private without sharing` inner class `DealCloseGateReads`. That is a SEPARATE,
- * separately-measured decision from its mode — `Transaction__c` OWD is Private on
- * both models and a sharing-filtered count INVERTS the deal-close gate rather than
- * degrading it. The argument is at that method's declaration; do not summarise it
- * here and do not extend the inner class to a second query.
+ * 🔴 AMENDED 2026-09-02 — AND THAT SENTENCE IS NOT TRUE OF ALL OF THEM. It used to
+ * read "…so both exempt methods still return only rows the running user can already
+ * see", which is exactly the kind of stale summary the paragraph above warns about.
+ * ONE method ESCAPES SHARING, through its OWN `private without sharing` inner class,
+ * a SEPARATE decision from its mode:
+ *   • aggregateStatusCountsByOpportunityIds -> `DealCloseGateReads`. `Transaction__c`
+ *     OWD is Private on both models and a sharing-filtered count INVERTS the
+ *     deal-close gate rather than degrading it.
+ * ⚠ AMENDED 2026-09-03 (M5) — THERE WERE TWO. The second was
+ * `selectClaimFlagsForTaskRollup -> TaskRollupGuardReads`, added later the same day: a
+ * sharing-filtered claim flag would have let the Task model overwrite the checklist
+ * model's counters on a deal the driver cannot read. Both the method and the inner class
+ * were retired with the Task model. Recorded, not deleted — this block is the
+ * authoritative inventory of which reads escape, and an escape that VANISHES without
+ * explanation reads to the next security review like one that was quietly revoked.
+ * `selectForChecklistFanout` and `selectForCriticalDates` are STILL sharing-filtered
+ * and MUST STAY SO — `ChecklistRollupService`'s fail-closed guard depends on the filter
+ * (its skip-any-deal-absent-from-the-map behaviour is what makes the rollup fail CLOSED).
+ * The argument is at that method's declaration; do not summarise it here, and do not
+ * extend `DealCloseGateReads` to a second query.
  *
  * @see force-app/main/default/classes/WireSelector.cls (P4 pilot template)
  * @see agent-output/p4-selector-design.md (§3 #15, §4, §5, §6)
  */
 public with sharing class TransactionSelector {
-
-    /**
-     * Fields the fan-out always needs regardless of CMDT configuration.
-     * Id/OwnerId are standard non-permissionable; the two custom fields are
-     * granted by the deployed permsets (P3).
-     */
-    private static final List<String> BASE_FIELDS = new List<String>{
-        'Id', 'OwnerId', 'Contract_Executed_Date__c', 'Tasks_Fanned_Out__c'
-    };
 
     /**
      * The Status__c value that marks a live deal on the Active-Transactions
@@ -99,74 +114,23 @@ public with sharing class TransactionSelector {
     private static final String STATUS_ACTIVE = 'Active';
 
     /**
-     * Loads Transactions by Id, selecting the fan-out base fields plus any valid
-     * conditional-gating fields, keyed by Id for the caller's map-based iteration.
-     * Backs TaskFanoutService.fanOutNow, which reads each returned Transaction's
-     * conditional field via SObject.get(fieldName).
-     *
-     * @param transactionIds  Transaction__c Ids to load (bound as `:ids`).
-     * @param conditionFields Extra field API names to add to the SELECT (from the
-     *                        CMDT Condition_Field__c rows); each is describe-validated
-     *                        and de-duplicated before use. May be null/empty.
-     * @return Map of Transaction Id -> Transaction__c with the requested fields
-     *         populated; an empty map when transactionIds is null/empty.
-     * @example
-     * Map<Id, Transaction__c> txns = TransactionSelector.selectByIdsWithConditionFields(
-     *     new Set<Id>(transactionIds), condFields);
-     */
-    public static Map<Id, Transaction__c> selectByIdsWithConditionFields(
-        Set<Id> transactionIds,
-        Set<String> conditionFields
-    ) {
-        if (transactionIds == null || transactionIds.isEmpty()) {
-            return new Map<Id, Transaction__c>();
-        }
-
-        // Build a DISTINCT, describe-validated field list. Base fields first;
-        // condition fields only if they resolve to a real Transaction__c field.
-        Set<String> selectedLower = new Set<String>();
-        List<String> fields = new List<String>();
-        for (String baseField : BASE_FIELDS) {
-            if (selectedLower.add(baseField.toLowerCase())) {
-                fields.add(baseField);
-            }
-        }
-        if (conditionFields != null && !conditionFields.isEmpty()) {
-            Map<String, Schema.SObjectField> fieldMap =
-                Schema.SObjectType.Transaction__c.fields.getMap();
-            for (String conditionField : conditionFields) {
-                if (String.isBlank(conditionField)) {
-                    continue;
-                }
-                String trimmed = conditionField.trim();
-                String key = trimmed.toLowerCase();
-                if (fieldMap.containsKey(key) && selectedLower.add(key)) {
-                    fields.add(trimmed);
-                }
-            }
-        }
-
-        String query =
-            'SELECT ' + String.join(fields, ', ') +
-            ' FROM Transaction__c' +
-            ' WHERE Id IN :ids';
-        List<Transaction__c> rows = (List<Transaction__c>) Database.queryWithBinds(
-            query,
-            new Map<String, Object>{ 'ids' => transactionIds },
-            AccessLevel.USER_MODE
-        );
-        return new Map<Id, Transaction__c>(rows);
-    }
-
-    /**
      * Fields the CHECKLIST fan-out always needs, regardless of CMDT configuration.
      *
-     * 🔴 A SEPARATE LIST FROM `BASE_FIELDS`, AND MERGING THE TWO WOULD BREAK THE LIVE TASK FAN-OUT.
-     * `selectByIdsWithConditionFields` above runs in `USER_MODE` and is called by
-     * `TaskFanoutService`, which is deployed and enforcing. Adding `Checklist_Fanned_Out__c` - a
-     * field that arrives with ZERO FieldPermissions for anybody, System Administrator included - to
-     * that list would make the LEGACY fan-out throw `System.QueryException: No such column` for
-     * every calling user the day this deploys. Additive means additive.
+     * ⚠ AMENDED 2026-09-03 (M5) — THIS LIST IS NOW THE ONLY ONE, AND ITS SIBLING'S DELETION
+     * CARRIED A RUNTIME HAZARD WORTH RECORDING RATHER THAN FORGETTING.
+     * It used to sit beside `BASE_FIELDS`, a second dynamic `List<String>` serving
+     * `selectByIdsWithConditionFields` / `TaskFanoutService`, and this note explained why the
+     * two must not be merged: `BASE_FIELDS` ran in `USER_MODE`, so adding
+     * `Checklist_Fanned_Out__c` — a field that arrives with ZERO FieldPermissions for anybody,
+     * System Administrator included — would have made the LEGACY fan-out throw
+     * `System.QueryException: No such column` for every calling user.
+     * 🔴 `BASE_FIELDS` ALSO NAMED `'Tasks_Fanned_Out__c'` AS A STRING LITERAL. Because these
+     * lists are composed into a `Database.queryWithBinds` string, a field named here that no
+     * longer exists is a RUNTIME failure, not a compile break — nothing flags it, no test that
+     * does not execute the query catches it, and the throw surfaces wherever the caller runs.
+     * That is why the field deletion and the removal of the list that named it had to ship in
+     * ONE payload. Anyone deleting a `Transaction__c` field must grep THIS list first.
+     * ✅ Verified at M5: `CHECKLIST_BASE_FIELDS` names no retiring field.
      */
     private static final List<String> CHECKLIST_BASE_FIELDS = new List<String>{
         'Id', 'OwnerId', 'Contract_Executed_Date__c', 'Checklist_Fanned_Out__c', 'Stage__c'
@@ -186,9 +150,10 @@ public with sharing class TransactionSelector {
      * describe-validated conditional-gating fields from `Task_Group_Def__mdt.Condition_Field__c`.
      *
      * 🔴 `AccessLevel.SYSTEM_MODE` (the dynamic-query equivalent of `WITH SYSTEM_MODE`) - AUTOMATION
-     * PATH, AND DELIBERATELY DIFFERENT FROM `selectByIdsWithConditionFields` ABOVE, WHICH IS
-     * `USER_MODE`. Three facts make that difference a correctness requirement rather than a
-     * preference:
+     * PATH. It was also DELIBERATELY DIFFERENT FROM the `USER_MODE`
+     * `selectByIdsWithConditionFields` that sat beside it until M5 (2026-09-03). That contrast is
+     * gone with the legacy method, but the reasoning is not — three facts make SYSTEM_MODE a
+     * correctness requirement here rather than a preference:
      *   • The caller is `ChecklistFanoutService`, driven from a Queueable and ultimately from a
      *     record-triggered Flow that declares no `runInMode` - a read performed ON the deal driver's
      *     behalf, never at their request.
@@ -260,9 +225,10 @@ public with sharing class TransactionSelector {
     }
 
     /**
-     * Shared dynamic-query builder for the three by-Id reads above. Two safeguards make the dynamic
-     * SELECT safe, exactly as the original `selectByIdsWithConditionFields` established: every extra
-     * field name is validated against the live `Transaction__c` describe before it is concatenated
+     * Shared dynamic-query builder for the by-Id reads above. Two safeguards make the dynamic
+     * SELECT safe, exactly as the original (now retired) `selectByIdsWithConditionFields`
+     * established: every extra field name is validated against the live `Transaction__c`
+     * describe before it is concatenated
      * (so a typo'd or renamed CMDT row is skipped rather than injected), and the record filter is a
      * BOUND `:ids` map entry via `Database.queryWithBinds`, never string concatenation.
      *
@@ -398,14 +364,17 @@ public with sharing class TransactionSelector {
      * Re-check those three facts before adding any further parent traversal here.
      *
      * ⚠ `Tasks_Total__c` IS SELECTED PER ROW AND THAT IS THE POINT (added 2026-08-12).
-     * TaskFanoutService writes `Tasks_Total__c = createdForTxn` — the count actually
+     * ChecklistFanoutService writes `Tasks_Total__c = createdForTxn` — the count actually
      * created for THAT Transaction, gated by that Transaction's own condition fields
      * (Loan_Required__c and friends from Task_Group_Def__mdt.Condition_Field__c) — so
      * the denominator genuinely differs between rows and NO CONSTANT CAN BE RIGHT.
      * The LWC used to hardcode 75 while the record page's Tasks_Display__c formula
      * showed 82; both were wrong. Do not reintroduce a fixed total anywhere.
+     * (The writer was `TaskFanoutService` until M5, 2026-09-03; the arithmetic is
+     * unchanged — the field name still says `Tasks_*` while a `Checklist_Item__c` model
+     * feeds it, which is OQ-M5-1 and a separate change.)
      * ⚠ It is NULL on a Transaction created but not yet fanned out
-     * (`Tasks_Fanned_Out__c = false`), which every consumer must null-guard.
+     * (`Checklist_Fanned_Out__c = false`), which every consumer must null-guard.
      * Both permission sets already grant it readable (verified 2026-08-12) — worth
      * confirming precisely because USER_MODE throws rather than degrades.
      *

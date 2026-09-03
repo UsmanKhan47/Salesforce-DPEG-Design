@@ -2,23 +2,29 @@ import { LightningElement, api, wire } from 'lwc';
 import { getRecord, getFieldValue } from 'lightning/uiRecordApi';
 import CHECKLIST_FANNED_OUT_FIELD from '@salesforce/schema/Transaction__c.Checklist_Fanned_Out__c';
 import getChecklist from '@salesforce/apex/ChecklistController.getChecklist';
-import getTaskGroups from '@salesforce/apex/TransactionTaskController.getTaskGroups';
-import {
-    MODEL_CHECKLIST,
-    MODEL_LEGACY,
-    modelFor,
-    normalizeChecklistGroups,
-    normalizeLegacyGroups,
-    percent
-} from 'c/utilsTransactionChecklist';
+import { normalizeChecklistGroups, percent } from 'c/utilsTransactionChecklist';
 
 /**
  * Sidebar card: overall completion across every checklist group on this Transaction.
  *
- * 🔴 SERVES BOTH CHECKLIST MODELS, discriminated on `Transaction__c.Checklist_Fanned_Out__c` read
- * via LDS `getRecord`. Only the selected model's Apex wire is provisioned. If the discriminator
- * cannot be read, NEITHER model renders — see `c/utilsTransactionChecklist` for why guessing
- * legacy is the worst of the three options.
+ * 🔴 AMENDED 2026-09-03 (M5) — THE MODEL DISCRIMINATOR IS GONE. This component used to serve TWO
+ * checklist models, choosing between `ChecklistController.getChecklist` and
+ * `TransactionTaskController.getTaskGroups` on `Transaction__c.Checklist_Fanned_Out__c`. The
+ * legacy Task model is retired: its controller, service, fan-out, rollup and the script that could
+ * re-arm it were all deleted, and a probe confirmed zero `Task` rows carry `Transaction_Deal__c`
+ * org-wide, so NO DEAL CAN BE ON THE LEGACY MODEL ANY MORE. There is nothing left to discriminate
+ * between, so `getChecklist` is now wired unconditionally on `recordId`.
+ *
+ * ⚠ THE `Checklist_Fanned_Out__c` LDS READ IS DELIBERATELY RETAINED, DEMOTED FROM DISCRIMINATOR TO
+ * ADVISORY. It no longer chooses a data source; it distinguishes "the fan-out ran and produced
+ * nothing" (a real problem worth naming) from "this deal has not been fanned out yet" (normal on
+ * any deal with no executed contract). Dropping the wire entirely would have collapsed both into
+ * one message and made the empty state WORSE than the legacy one it replaces — the specific
+ * regression risk flagged as UI-4 in `agent-output/design-legacy-task-retirement.md` §3.3.
+ * 🔴 BECAUSE IT IS ADVISORY, A FAILED FLAG READ IS NO LONGER FATAL. It used to blank the whole
+ * card, correctly, because without it the component could not know which model to render. Now it
+ * only degrades one sentence of empty-state copy, so the checklist still renders. Do not
+ * re-promote it to a hard error without a reason of its own.
  *
  * ⚠ THE PERCENTAGE IS COMPUTED FROM THE SAME NORMALISED GROUPS `transactionTaskGroups` RENDERS,
  * through the SAME `percent()` helper — not from `Transaction__c.Completion_Pct__c`. Both live on
@@ -28,46 +34,26 @@ import {
 export default class TransactionChecklistSummary extends LightningElement {
     @api recordId;
 
-    _modelResolved = false;
-    _modelError;
+    _flagResolved = false;
     _fannedOut;
     _checklistData = [];
     _checklistError;
     _checklistLoaded = false;
-    _legacyData = [];
-    _legacyError;
-    _legacyLoaded = false;
 
     @wire(getRecord, { recordId: '$recordId', fields: [CHECKLIST_FANNED_OUT_FIELD] })
     wiredTransaction({ data, error }) {
         if (data) {
             this._fannedOut = getFieldValue(data, CHECKLIST_FANNED_OUT_FIELD);
-            this._modelResolved = true;
-            this._modelError = undefined;
+            this._flagResolved = true;
         } else if (error) {
-            this._modelError = error;
-            this._modelResolved = false;
+            // Advisory only — see the class header. The card still renders; only `emptyLabel`
+            // loses its ability to tell "fanned out and empty" from "never fanned out".
+            this._flagResolved = false;
             this._fannedOut = undefined;
         }
     }
 
-    get model() {
-        return this._modelResolved ? modelFor(this._fannedOut) : undefined;
-    }
-    get isChecklistModel() {
-        return this.model === MODEL_CHECKLIST;
-    }
-    get isLegacyModel() {
-        return this.model === MODEL_LEGACY;
-    }
-    get checklistTransactionId() {
-        return this.isChecklistModel ? this.recordId : undefined;
-    }
-    get legacyTransactionId() {
-        return this.isLegacyModel ? this.recordId : undefined;
-    }
-
-    @wire(getChecklist, { transactionId: '$checklistTransactionId' })
+    @wire(getChecklist, { transactionId: '$recordId' })
     wiredChecklist({ data, error }) {
         if (data) {
             this._checklistData = data;
@@ -81,73 +67,34 @@ export default class TransactionChecklistSummary extends LightningElement {
         }
     }
 
-    @wire(getTaskGroups, { transactionId: '$legacyTransactionId' })
-    wiredLegacy({ data, error }) {
-        if (data) {
-            this._legacyData = data;
-            this._legacyError = undefined;
-            this._legacyLoaded = true;
-        } else if (error) {
-            this._legacyError = error;
-            this._legacyData = [];
-            this._legacyLoaded = true;
-        }
-    }
-
     get groups() {
-        if (this.isChecklistModel) {
-            return normalizeChecklistGroups(this._checklistData);
-        }
-        if (this.isLegacyModel) {
-            return normalizeLegacyGroups(this._legacyData);
-        }
-        return [];
+        return normalizeChecklistGroups(this._checklistData);
     }
 
     get error() {
-        if (this._modelError) {
-            return this._modelError;
-        }
-        if (this.isChecklistModel) {
-            return this._checklistError;
-        }
-        if (this.isLegacyModel) {
-            return this._legacyError;
-        }
-        return undefined;
+        return this._checklistError;
     }
 
     get hasError() {
         return !!this.error;
     }
 
-    /** The DISCRIMINATOR has not resolved and has not failed. Only the first half of loading. */
-    get isResolvingModel() {
-        return !this._modelResolved && !this._modelError;
-    }
-
     /**
-     * Whether the ACTIVE model's Apex round trip has come back — with data or with an error.
+     * Whether the Apex round trip has come back — with data or with an error.
      *
-     * 🔴 THE SECOND HALF OF "LOADING". Resolving the discriminator only says WHICH Apex method
-     * to call; the call is a separate round trip, and between the two the groups list is
-     * legitimately empty. Without this, EVERY page load briefly rendered
-     * "Checklist generated, but no items found" on a healthy deal — a sentence whose whole
-     * purpose is to say something is WRONG. See `c/transactionTaskGroups` for the full writeup.
+     * 🔴 STILL LOAD-BEARING AFTER M5, FOR A REASON THAT SURVIVED THE DISCRIMINATOR. Between mount
+     * and the wire resolving, `groups` is legitimately empty. Without this gate EVERY page load
+     * briefly rendered "Checklist generated, but no items found" on a healthy deal — a sentence
+     * whose whole purpose is to say something is WRONG. It used to have a second half (waiting on
+     * the discriminator); that half is gone, this one is not.
      */
     get dataLoaded() {
-        if (this.isChecklistModel) {
-            return this._checklistLoaded;
-        }
-        if (this.isLegacyModel) {
-            return this._legacyLoaded;
-        }
-        return false;
+        return this._checklistLoaded;
     }
 
-    /** Either half still outstanding. No empty-state copy may render while true. */
+    /** The round trip is still outstanding. No empty-state copy may render while true. */
     get isLoading() {
-        return this.isResolvingModel || (!this.hasError && !this.dataLoaded);
+        return !this.hasError && !this.dataLoaded;
     }
 
     get errorMessage() {
@@ -178,23 +125,27 @@ export default class TransactionChecklistSummary extends LightningElement {
     }
 
     /**
-     * Named the model that produced the emptiness rather than saying "No checklist generated
-     * yet" for both. On the new model, an empty checklist on a deal whose
-     * `Checklist_Fanned_Out__c` is TRUE means the fan-out ran and produced nothing — a different
-     * problem from a deal that was never fanned out at all, and one worth telling someone about.
+     * Names the CAUSE of the emptiness rather than saying "No checklist generated yet" for both
+     * cases. An empty checklist on a deal whose `Checklist_Fanned_Out__c` is TRUE means the
+     * fan-out ran and produced nothing — a different problem from a deal that was never fanned out
+     * at all, and one worth telling someone about.
+     *
+     * ⚠ AMENDED 2026-09-03 (M5). This distinction used to fall out of the model discriminator; it
+     * now reads the flag directly, which is the same information without the retired branch. The
+     * `undefined` case is new and is REACHABLE: it means the LDS flag read failed, so the honest
+     * answer is the neutral one rather than either diagnosis.
      */
     get emptyLabel() {
-        // ⚠ THE LOADING CHECK MUST COME FIRST. Both strings below are diagnoses, and a diagnosis
+        // ⚠ THE LOADING CHECK MUST COME FIRST. The strings below are diagnoses, and a diagnosis
         // rendered before the data arrives is a false one shown on every page load.
         if (this.isLoading) {
             return 'Loading…';
         }
-        if (this.isChecklistModel) {
-            return 'Checklist generated, but no items found';
+        if (!this._flagResolved) {
+            return 'No checklist items to show';
         }
-        if (this.isLegacyModel) {
-            return 'No checklist generated yet';
-        }
-        return 'Loading…';
+        return this._fannedOut === true
+            ? 'Checklist generated, but no items found'
+            : 'No checklist generated yet';
     }
 }

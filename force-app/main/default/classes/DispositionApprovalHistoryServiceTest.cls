@@ -233,17 +233,47 @@ private class DispositionApprovalHistoryServiceTest {
             byId.get(offer.Id).targetUrl.contains('/Disposition_Offer__c/'),
             'and likewise for the offer: ' + byId.get(offer.Id).targetUrl);
 
-        Assert.areEqual(
-            new Set<String>{
-                'Closing Approval', 'Broker Finalize Approval', 'Offer Selection Approval'
-            },
-            new Set<String>{
-                byId.get(disposition.Id).processName,
-                byId.get(submission.Id).processName,
-                byId.get(offer.Id).processName
-            },
-            'Each row is headlined by its approval process LABEL (ProcessDefinition.Name). '
-            + 'Underscored values here would mean Name is returning the DeveloperName in this org.');
+        // -- Each row is headlined by its approval process LABEL, not its DeveloperName ---------
+        // THE PROPERTY IS "Name RETURNS THE LABEL", NOT "THE LABEL IS THIS EXACT STRING".
+        // This block asserted three literal labels until 2026-08-31. One of them
+        // (BOV_Submission__c.Broker_Finalize_Approval) was RELABELLED in the org and the repo on
+        // 2026-08-26 -- "Broker Finalize Approval" -> "Broker Selection Approval (BOV)", a
+        // deliberate rename so approvers could tell five identically-named requests apart -- and
+        // that file's own change note asserts "zero runtime impact". It was wrong here, and the
+        // failure then hid for a week because every deploy in between ran a NAMED apexTests list
+        // that never included this class.
+        // The fixture was never the point, so it is no longer pinned. What IS pinned:
+        //   (a) every headline is non-blank and carries NO underscore -- the five disposition
+        //       DeveloperNames are all underscored (Broker_Finalize_Approval, Closing_Approval,
+        //       Offer_Selection_Approval, ...), so a regression to DeveloperName fails here on
+        //       all three rows at once;
+        //   (b) the three headlines are DISTINCT -- one label repeated across rows would mean the
+        //       service resolved a single ProcessDefinition and stamped it on everything;
+        //   (c) the two labels that did NOT change still map to the rows that own them, which
+        //       keeps (b) from being satisfied by three wrong-but-different strings.
+        // A future relabel of Closing or Offer Selection will break (c) and should be fixed the
+        // same way -- the approvalProcesses/*.approvalProcess-meta.xml <label> is the source of
+        // truth, and the org is authoritative over the repo if they ever disagree.
+        Set<String> headlines = new Set<String>();
+        for (DispositionApprovalHistoryService.ApprovalRow row : rows) {
+            Assert.isTrue(String.isNotBlank(row.processName),
+                'Every row must be headlined by its approval process name. A blank headline on the '
+                + 'row targeting ' + row.targetId + ' means ProcessDefinition.Name never resolved.');
+            Assert.isFalse(row.processName.contains('_'),
+                'ProcessDefinition.Name must return the human LABEL. An underscore here means Name '
+                + 'is returning the DeveloperName in this org: ' + row.processName);
+            headlines.add(row.processName);
+        }
+
+        Assert.areEqual(3, headlines.size(),
+            'Three different approval processes must produce three DIFFERENT headlines. A repeat '
+            + 'means one ProcessDefinition was resolved and stamped on every row. Found: '
+            + headlines);
+
+        Assert.areEqual('Closing Approval', byId.get(disposition.Id).processName,
+            'The disposition row is headlined by Disposition__c.Closing_Approval\'s label');
+        Assert.areEqual('Offer Selection Approval', byId.get(offer.Id).processName,
+            'and the offer row by Disposition_Offer__c.Offer_Selection_Approval\'s label');
 
         for (DispositionApprovalHistoryService.ApprovalRow row : rows) {
             Assert.areEqual('Pending', row.status,

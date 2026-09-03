@@ -83,12 +83,13 @@
  *     verified against the field's own formula on 2026-09-01, not taken from the design), so a
  *     rejected LOI cannot advance. The loss is the deal-level REWIND signal, not the gate.
  *
- * 🔴 TWO TESTS PIN THE OLD BEHAVIOUR AND ONE OF THEM WILL GO RED. Named here so whoever finds them
- * red knows it was intended and does not "fix" the code back:
- *   - `LoiGateTest.rejectionReturnsDealToUnderwriting` — asserts the deal returns to
- *     'Underwriting'. Fails twice over after W5: the Opportunity submission itself stops resolving
- *     to an applicable process, AND the rewind is gone by this decision. RETIRE OR REPOINT IT
- *     CONSCIOUSLY; do not rebuild the rewind.
+ * 🔴 TWO TESTS WERE WRITTEN AGAINST THE OLD BEHAVIOUR. Named here so whoever reads them knows the
+ * loss was intended and does not "fix" the code back:
+ *   - `LoiGateTest.rejectionLeavesLoiUnderReviewAndDoesNotRewindTheDeal` - REVERSED 2026-09-03,
+ *     from `rejectionReturnsDealToUnderwriting`, which asserted the deal returns to
+ *     'Underwriting'. It now pins the loss instead: the deal stays at 'LOI', the LOI stays at
+ *     `Stage__c = 'Under Review'` with `LOI_Status__c = 'Rejected'`, and `LOI_Approved__c` stays
+ *     false. Do not rebuild the rewind.
  *   - `LoiGateTest.directLoiToUnderwritingUpdate_isAllowedByCarveOut1_notByApproval` — 🟢
  *     UNAFFECTED (it calls no `Approval.process`), and after W5 it becomes the ONLY remaining pin
  *     on `No_Backward_Stage_Movement` CARVE-OUT 1. Protect it.

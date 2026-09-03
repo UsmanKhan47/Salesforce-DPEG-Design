@@ -15,6 +15,21 @@
 // Transaction__c.Property_Name__c: it queries the five demo names, skips any that already exist,
 // and inserts only the missing ones. Re-running it after a full run inserts nothing.
 //
+// ── 🔴 2026-09-03: THIS BLOCK IS ABOUT THE PRE-A7 FLOW AND IS NOW HALF WRONG. READ FIRST. ──
+// `Transaction_Task_Fanout` was repointed onto `ChecklistFanoutService` and its second entry
+// filter moved from `Tasks_Fanned_Out__c = false` to `Checklist_Fanned_Out__c = false`. Every row
+// below sets Contract_Executed_Date__c and leaves BOTH flags at their default false, so each
+// insert still fires the flow — but what it now creates is `Checklist__c` + `Checklist_Item__c`
+// rows (~96 per deal), NOT `Task` rows. Consequences for this script, in order of how badly they
+// mislead: (1) no Task is created by the insert at all, so the `Tasks_Complete__c` discussion
+// below is now about a rollup driven by ChecklistRollupService rather than TaskRollupService — the
+// conclusion ("hand-set values are rollup-owned and will be overwritten") is UNCHANGED, only the
+// writer moved; (2) the ~82/~410 Task figures below describe a code path this script no longer
+// takes; (3) `scripts/fanout-seeded-transactions.apex` is now a LEGACY-model tool and running it
+// after this script puts the same deals on BOTH models — read its header before doing so.
+// Everything below is left as written because it is still the correct account of the ROW DATA.
+// ───────────────────────────────────────────────────────────────────────────────────────
+//
 // ── ⚠ INSERTING THESE FIRES THE TASK FAN-OUT: ~82 TASKS PER TRANSACTION, UP TO ~410 TOTAL ──
 // `Transaction_Task_Fanout` is an ACTIVE record-triggered flow (Contract_Executed_Date__c != null
 // AND Tasks_Fanned_Out__c = false, RecordAfterSave, CreateAndUpdate). Every row below sets

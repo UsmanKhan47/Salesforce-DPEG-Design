@@ -12,6 +12,14 @@
  *     `Limits.getQueries()` assertion after it is silently vacuous.
  *
  * BULK: 251 records, forcing a second before-trigger firing (`.claude/rules/bulk-test-rule.md`).
+ *
+ * ⚠ EVERY DEAL IS BUILT BY `TestDataFactory.createTransactionsOnChecklistModel`, WHICH NULLS
+ * `Contract_Executed_Date__c` AND SUPPRESSES THE DAY-0 FAN-OUT. That field is the first entry
+ * filter of `flows/Transaction_Task_Fanout`, repointed onto `ChecklistFanoutService` on 2026-09-03.
+ * The date is load-bearing for nothing here - the stamp reads `Stage__c` and `Trigger.oldMap` and
+ * writes `Stage_Entry_Date__c`, and no assertion below reads the contract execution date or any
+ * value derived from it. It matters most at 251, where the fan-out would be fatal rather than
+ * merely wasteful; see the note on that test.
  */
 @isTest
 private class TransactionStageEntryServiceTest {
@@ -19,7 +27,7 @@ private class TransactionStageEntryServiceTest {
     @isTest
     static void stampsOnInsertAtTheCreationStage() {
         Test.startTest();
-        Transaction__c deal = TestDataFactory.createTransactions(1, true)[0];
+        Transaction__c deal = TestDataFactory.createTransactionsOnChecklistModel(1, true)[0];
         Test.stopTest();
 
         Transaction__c reloaded = [
@@ -31,7 +39,7 @@ private class TransactionStageEntryServiceTest {
 
     @isTest
     static void stampsOnAGenuineStageChange() {
-        Transaction__c deal = TestDataFactory.createTransactions(1, true)[0];
+        Transaction__c deal = TestDataFactory.createTransactionsOnChecklistModel(1, true)[0];
         // Backdate so the re-stamp is observable rather than coincidentally equal.
         update new Transaction__c(Id = deal.Id, Stage_Entry_Date__c = Date.today().addDays(-30));
 
@@ -49,7 +57,7 @@ private class TransactionStageEntryServiceTest {
         // THE DELIBERATE DIVERGENCE FROM `stampListingDates`: unconditional, not fill-if-blank. A
         // deal that leaves a stage and comes back has ENTERED it again, and any days-in-stage clock
         // must restart. Fill-if-blank would report a revived deal as stuck since the first visit.
-        Transaction__c deal = TestDataFactory.createTransactions(1, true)[0];
+        Transaction__c deal = TestDataFactory.createTransactionsOnChecklistModel(1, true)[0];
         update new Transaction__c(Id = deal.Id, Stage__c = 'Due Diligence');
         update new Transaction__c(Id = deal.Id, Stage_Entry_Date__c = Date.today().addDays(-90));
 
@@ -64,7 +72,7 @@ private class TransactionStageEntryServiceTest {
 
     @isTest
     static void leavesTheDateAloneWhenTheStageDoesNotMove() {
-        Transaction__c deal = TestDataFactory.createTransactions(1, true)[0];
+        Transaction__c deal = TestDataFactory.createTransactionsOnChecklistModel(1, true)[0];
         Date pinned = Date.today().addDays(-14);
         update new Transaction__c(Id = deal.Id, Stage_Entry_Date__c = pinned);
 
@@ -81,7 +89,15 @@ private class TransactionStageEntryServiceTest {
 
     @isTest
     static void costsZeroQueriesAndZeroDmlAcross251Records() {
-        List<Transaction__c> deals = TestDataFactory.createTransactions(251, false);
+        // 🔴 VOLUME STAYS AT 251; THE FACTORY IS THE SUPPRESSING ONE. `createTransactions` sets
+        // `Contract_Executed_Date__c`, so all 251 deals would enter
+        // `flows/Transaction_Task_Fanout` on this single insert and hand ~96 checklist rows apiece
+        // to `ChecklistFanoutService` - roughly 24,000 rows at `Test.stopTest()`, well past the
+        // 10,000-row DML ceiling, and the method would die on a limit that has nothing to do with
+        // the stamp. Suppressing costs the test nothing: the stamp reads `Stage__c` and writes
+        // `Stage_Entry_Date__c`, and touches neither the contract execution date nor anything
+        // derived from it.
+        List<Transaction__c> deals = TestDataFactory.createTransactionsOnChecklistModel(251, false);
 
         Test.startTest();
         TransactionStageEntryService.resetRunCounters();

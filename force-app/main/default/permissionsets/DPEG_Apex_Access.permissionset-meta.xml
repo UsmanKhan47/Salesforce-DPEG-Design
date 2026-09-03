@@ -78,10 +78,16 @@
     <!--
       ChecklistController (added 2026-09-01, Transaction checklist rewrite Phase 3) is the
       entry point for c/transactionTaskGroups, c/transactionPhaseCards and
-      c/transactionChecklistSummary once a deal's Checklist_Fanned_Out__c is true. It sits
-      beside TransactionTaskController below, which is the SAME THREE COMPONENTS' entry point
-      while that flag is false — both models are live simultaneously during the Phase 4
-      migration, so BOTH grants are required and neither may be removed until M5.
+      c/transactionChecklistSummary. It used to sit beside TransactionTaskController, the SAME
+      THREE COMPONENTS' legacy entry point while Checklist_Fanned_Out__c was still false for some
+      deals — both grants were required while both models were live simultaneously during the
+      Phase 4 migration.
+      🔴 2026-09-03 UPDATE — M5 legacy Task retirement (agent-output/design-legacy-task-retirement
+      .md §5 Step 2): TransactionTaskController and its only production consumers (the three
+      legacy LWC branches) are retired. Its classAccesses block below is REMOVED in this same
+      payload — a classAccesses entry for a deleted class blocks the permission-set deploy, so
+      this could not be split from the class deletion. ChecklistController is now the SOLE entry
+      point for all three components, unconditionally.
 
       Per this file's established pattern only the ENTRY POINT is granted: ChecklistItemService,
       ChecklistSelector and ChecklistItemSelector are reached only through this controller and
@@ -553,10 +559,6 @@
     -->
     <classAccesses>
         <apexClass>TransactionController</apexClass>
-        <enabled>true</enabled>
-    </classAccesses>
-    <classAccesses>
-        <apexClass>TransactionTaskController</apexClass>
         <enabled>true</enabled>
     </classAccesses>
     <classAccesses>

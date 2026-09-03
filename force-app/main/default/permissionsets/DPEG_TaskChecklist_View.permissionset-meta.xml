@@ -1,9 +1,39 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <PermissionSet xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        2026-09-03, M5 legacy Task retirement (agent-output/design-legacy-task-retirement.md §5 Step 4,
+        both waves shipped together per an explicit user waiver of the cutover rollback window).
+        STRIPPED 12 of 16 fieldPermissions blocks — the 6 retiring field names (Task_Group__c,
+        Transaction_Deal__c, Verbal_Verification_Completed__c, Verified_By__c, Verified_At__c,
+        Verification_Phone__c) on BOTH Task.* and Event.*.
+        KEPT Task_Owner_Label__c AND Task_Sequence__c on BOTH Task and Event — both are Property
+        Management fields (OnboardingFanoutService.cls writes both; OnboardingController.cls renders
+        the Owner column from Task_Owner_Label__c).
+        🔴 TWO CORRECTIONS TO THE DESIGN, FOUND BY RETRIEVING THE ORG COPY BEFORE EDITING (mandatory
+        per this repo's "PermissionSet deploy REPLACES its whole fieldPermissions block" rule):
+        (1) The design's admin prompt (§9) said to keep only Task_Owner_Label__c; it did not flag that
+        Task_Sequence__c is present in this same file and is equally one of the three PM-survivor
+        fields (design §2.2) — both are retained.
+        (2) 🔴 THE ORG COPY OF THIS FILE CARRIED AN ENTIRE Event.* BLOCK (8 fieldPermissions) THAT DID
+        NOT EXIST IN THIS REPO FILE AT HEAD AT ALL — repo had 8 Task.* rows only, org had those same 8
+        Task.* rows PLUS 8 parallel Event.* rows (retrieved+diffed 2026-09-03, usman-dpeg). Shipping
+        the HEAD-only 8-field version would have been accepted as a "complete file" and would have
+        SILENTLY REVOKED all 8 org Event.* grants on deploy, including the two survivor fields,
+        exactly the failure mode this repo's standing PermissionSet warning describes. This file is
+        now a true superset of both HEAD and the org copy, less the 12 retired blocks.
+        Per P8 (Tooling query against usman-dpeg, 2026-09-03), this permission set currently has ZERO
+        PermissionSetAssignment rows — relevant to OQ-M5-4 (whether it could be retired wholesale) but
+        amended, not deleted, per the design's default and this change's explicit scope.
+    -->
     <description>Read-only FLS on the custom Activity fields the Transaction and Onboarding checklists read; a shared building block for personas that VIEW a checklist without working it. DPEG_Task_Edit remains the read/write counterpart for personas that complete tasks.</description>
     <fieldPermissions>
         <editable>false</editable>
-        <field>Task.Task_Group__c</field>
+        <field>Event.Task_Owner_Label__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Event.Task_Sequence__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -14,31 +44,6 @@
     <fieldPermissions>
         <editable>false</editable>
         <field>Task.Task_Sequence__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>Task.Transaction_Deal__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>Task.Verbal_Verification_Completed__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>Task.Verified_By__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>Task.Verified_At__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>Task.Verification_Phone__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <hasActivationRequired>false</hasActivationRequired>

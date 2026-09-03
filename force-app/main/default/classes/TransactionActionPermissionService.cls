@@ -122,25 +122,31 @@
  * LeadActionPermissionService, OpportunityActionPermissionService and
  * DispositionActionPermissionService.
  *
- * ── 🔴 2026-08-28: A SECOND, INDEPENDENT GATE LIVES HERE NOW (TASK) ──────────
+ * ── 🔴 2026-08-28: A SECOND, INDEPENDENT GATE LIVES HERE NOW (PREREQ OVERRIDE) ──────────
  * This class answers TWO questions, not one:
  *   • hasTransactionActionAccess / assertTransactionActionAccess → `Transaction_Stage_Actions`
- *     (may the user drive the stage quick action?) — unchanged by the 2026-08-28 work.
- *   • hasTaskActionAccess / assertTaskActionAccess → `Transaction_Task_Actions`
- *     (may the user complete/update a checklist Task?) — NEW.
+ *     (may the user drive the stage quick action?)
+ *   • hasPrereqOverrideAccess → `Transaction_Prereq_Override`
+ *     (may the user change the COORDINATES of a live prerequisite gate?)
  *
- * They are SEPARATE PERMISSIONS BY USER DECISION: stage advancement and checklist completion
- * are to be independently grantable. They also have separate caches, so one gate can never
- * answer the other's question mid-transaction (see cachedHasTaskActionAccess).
+ * They are SEPARATE PERMISSIONS BY USER DECISION and have separate caches, so one gate can never
+ * answer the other's question mid-transaction (see cachedHasPrereqOverrideAccess).
  *
- * 🔴 THE TASK GATE CARRIES MORE WEIGHT THAN THE STAGE ONE. The stage gate sits in front of a
- * write the platform would also refuse on its own. The task gate does not: Task object Edit
- * cannot be granted by ANY permission set on this platform (ObjectPermissions.SobjectType is a
- * restricted picklist that excludes Task/Event/Activity), so TransactionTaskService writes in
- * SYSTEM_MODE and THIS CHECK IS THE ONLY AUTHORIZATION on that path. Read
- * TransactionTaskService's header before changing anything named *TaskAction* here.
+ * 🔴 REMOVED 2026-09-03 — M5 LEGACY TASK RETIREMENT. A THIRD GATE USED TO LIVE HERE:
+ * `hasTaskActionAccess` / `assertTaskActionAccess`, testing the `Transaction_Task_Actions`
+ * custom permission. Its ONLY consumer was `TransactionTaskService`, the legacy Task-based
+ * checklist writer, and the reason it carried more weight than the stage gate was specific to
+ * the standard Task object: Task Edit CRUD cannot be granted by ANY permission set on this
+ * platform (`ObjectPermissions.SobjectType` is a restricted picklist that excludes
+ * Task/Event/Activity), so that service wrote in SYSTEM_MODE and the custom-permission check
+ * WAS the only authorization on the path.
+ * ⚠ THAT ARGUMENT DOES NOT TRANSFER TO THE REPLACEMENT AND MUST NOT BE CITED FOR IT.
+ * `Checklist_Item__c` is an ordinary custom object; its CRUD and FLS are grantable by an
+ * ordinary permission set, so the new model needs no application-layer stand-in for a platform
+ * check — see `ChecklistItemService`'s header, which makes exactly this point. Anyone adding a
+ * `Transaction_Task_Actions`-shaped permission back to this class is re-solving a problem the
+ * object change already solved. The custom permission itself is retired in the same change.
  *
- * @see force-app/main/default/classes/TransactionTaskService.cls (the only task-gate consumer)
  * @see force-app/main/default/classes/RecordStageAdvanceService.cls (the gate dispatch)
  * @see force-app/main/default/classes/OpportunityActionPermissionService.cls (the acquisitions gate)
  * @see force-app/main/default/customPermissions/Transaction_Stage_Actions.customPermission-meta.xml
@@ -186,48 +192,34 @@ public with sharing class TransactionActionPermissionService {
     private static final String TRANSACTION_ACTION_CUSTOM_PERMISSION = 'Transaction_Stage_Actions';
 
     /**
-     * The AUTHORIZATION token for the Transaction CHECKLIST TASK write path (added 2026-08-28).
-     *
-     * 🔴 IT IS A SECOND, INDEPENDENT PERMISSION — NOT A REUSE OF THE STAGE ONE, AND THAT IS A
-     * USER DECISION, NOT A STYLE CHOICE. Advancing a Transaction stage and completing a
-     * checklist Task are to be independently grantable, so anyone tempted to collapse the two
-     * tokens (they are carried by sets in the same group today, so the populations currently
-     * coincide) would be removing a capability the user explicitly asked for.
-     *
-     * Granted by `DPEG_Task_Edit`, a member of the `DPEG_Transaction_Team` permission set group
-     * (both verified live on usman-dpeg, 2026-08-28). Consumed by TransactionTaskService's three
-     * write methods, which then run their DML in SYSTEM_MODE — because Task object Edit is
-     * literally un-grantable by permission set on this platform (ObjectPermissions.SobjectType
-     * is a restricted picklist that does not contain Task/Event/Activity). See that class's
-     * header for the full proof.
-     *
-     * ⚠ Same runtime-resolution caveat as the stage token above: a String, so this class
-     * compiles and deploys whether or not the permission exists yet, and an absent permission
-     * returns `false` — denying the whole Transactions team rather than granting everyone.
-     * Correct direction, but silent. The Apex and the permission belong in the SAME deploy.
-     */
-    private static final String TASK_ACTION_CUSTOM_PERMISSION = 'Transaction_Task_Actions';
-
-    /**
-     * The AUTHORIZATION token for OVERRIDING the Phase 0 wire-fraud prerequisite gate (added
-     * 2026-08-31). A THIRD, independent permission — not a reuse of the two above.
+     * The AUTHORIZATION token for OVERRIDING the wire-fraud prerequisite gate (added 2026-08-31).
+     * A SECOND, independent permission — not a reuse of the stage one above.
      *
      * 🔴 WHAT IT ACTUALLY GRANTS, STATED PRECISELY BECAUSE IT IS NARROWER THAN ITS NAME SUGGESTS.
-     * It permits changing `Task.Blocked_By__c` or `Task.Transaction_Deal__c` on a checklist item that
-     * is STILL OPEN while its prerequisite is STILL OPEN — the "disarm" refusal, branch B of
-     * `TaskPrerequisiteService.refusalFor`. It does NOT permit completing a gated item while its
-     * prerequisite is open; branch A is UNCONDITIONAL and this token does not reach it. Anyone
-     * expecting this to be a master key for the anti-fraud control is reading it wrong: it exempts
-     * the maintenance of the gate's coordinates, never the gate itself.
+     * It permits changing `Checklist_Item__c.Blocked_By__c` or the item's parent link on a checklist
+     * item that is STILL OPEN while its prerequisite is STILL OPEN — the "disarm" refusal, branch B
+     * of `ChecklistItemPrerequisiteService.refusalFor`. It does NOT permit completing a gated item
+     * while its prerequisite is open; branch A is UNCONDITIONAL and this token does not reach it.
+     * Anyone expecting this to be a master key for the anti-fraud control is reading it wrong: it
+     * exempts the maintenance of the gate's coordinates, never the gate itself.
+     *
+     * ⚠ AMENDED 2026-09-03 — M5. Until this date the same token ALSO governed the Phase 0 Task-model
+     * gate (`TaskPrerequisiteService.refusalFor`), and this header warned that granting or revoking
+     * it moved TWO gates. The dual-model window is closed: Phase 0 and its class are retired, so the
+     * token now governs exactly ONE gate, on `Checklist_Item__c`. The permission itself STAYS — this
+     * is the reason it survived M5 while `Transaction_Task_Actions` did not.
      *
      * 🔴 WHY IT HAD TO EXIST. Branch B refuses for EVERY principal and EVERY path including
-     * `AccessLevel.SYSTEM_MODE`, because a before-trigger runs regardless of mode. That blocks three
-     * legitimate operations outright: (a) the M5 mass key-clear, which is the documented RETIREMENT
-     * path for this entire feature; (b) Phase 1's renumbering when `Blocked_By_Sequence__c` replaces
-     * the hardcoded pair table; (c) repair of a mis-fanned deal whose key is wrong but RESOLVABLE
+     * `AccessLevel.SYSTEM_MODE`, because a before-trigger runs regardless of mode. That blocks two
+     * legitimate operations outright: (a) renumbering when `Blocked_By_Sequence__c` replaces a
+     * hardcoded pair table; (b) repair of a mis-fanned deal whose key is wrong but RESOLVABLE
      * (e.g. `B3 -> B|1`), which is otherwise neither repairable nor completable by anyone.
+     * ⚠ A THIRD reason used to be listed first: "the M5 mass key-clear, the documented RETIREMENT
+     * path for this entire feature". M5 happened on 2026-09-03 and needed no key-clear — the eight
+     * Transaction-only `Activity` fields were deleted outright after a probe proved zero rows carried
+     * them. That reason is spent; the other two are not, which is why this token is not spent either.
      *
-     * ⚠ Same runtime-resolution caveat as the two tokens above, and it bites harder here because the
+     * ⚠ Same runtime-resolution caveat as the token above, and it bites harder here because the
      * failure is silent in the opposite direction from usual: `FeatureManagement.checkPermission`
      * returns `false` for an undeployed permission and never throws, so shipping this class without
      * the custom permission and its admin-only permission set means THE ESCAPE HATCH SIMPLY DOES NOT
@@ -245,26 +237,14 @@ public with sharing class TransactionActionPermissionService {
     private static Boolean cachedHasTransactionActionAccess;
 
     /**
-     * Transaction-scoped cache for the TASK gate.
-     *
-     * 🔴 A SEPARATE VARIABLE ON PURPOSE. The two permissions are independently grantable, so one
-     * shared cache would let whichever gate ran first answer the other one's question — a user
-     * holding only `Transaction_Stage_Actions` would silently pass the task gate (or vice
-     * versa) for the rest of the transaction. That failure would be invisible in any test that
-     * asks only one gate per transaction, which is most of them.
-     */
-    @TestVisible
-    private static Boolean cachedHasTaskActionAccess;
-
-    /**
      * Transaction-scoped cache for the PREREQUISITE OVERRIDE gate.
      *
-     * 🔴 A THIRD SEPARATE VARIABLE, for the same reason the second one exists: the three permissions
-     * are independently grantable, so sharing a cache would let whichever gate ran first answer
-     * another's question. That matters more here than anywhere else in this class — this gate is
-     * asked from inside a BEFORE-UPDATE TRIGGER, so it runs in the same transaction as the task gate
-     * on every checklist completion, and a shared cache would silently hand every
-     * `Transaction_Task_Actions` holder the override.
+     * 🔴 A SEPARATE VARIABLE ON PURPOSE. The two permissions are independently grantable, so a
+     * shared cache would let whichever gate ran first answer the other's question — a user holding
+     * only `Transaction_Stage_Actions` would silently pass the override gate, or vice versa. That
+     * failure would be invisible in any test that asks only one gate per transaction, which is most
+     * of them. It matters more here than for the stage gate: this one is asked from inside a
+     * BEFORE-UPDATE TRIGGER, so it runs in the same transaction as whatever else the save touched.
      */
     @TestVisible
     private static Boolean cachedHasPrereqOverrideAccess;
@@ -332,71 +312,21 @@ public with sharing class TransactionActionPermissionService {
     }
 
     /**
-     * Whether the running user may complete/update a Transaction CHECKLIST TASK.
-     *
-     * Mirrors hasTransactionActionAccess() line for line, including the caching nuance: the
-     * cache is assigned only AFTER a successful computation, so a thrown fault leaves it empty
-     * and the next ask re-evaluates rather than memoizing a fault as an answer.
-     *
-     * @return true when the user holds the `Transaction_Task_Actions` custom permission
-     *         (granted through `DPEG_Task_Edit`, directly or via the `DPEG_Transaction_Team`
-     *         permission set group), or has "Modify All Data"; false otherwise.
-     * @throws System.QueryException when the permission-set lookup behind the admin bypass fails
-     *         unexpectedly. Deliberately NOT swallowed — see the fail-closed note in the class
-     *         header.
-     * @example
-     * if (!TransactionActionPermissionService.hasTaskActionAccess()) { return; }
-     */
-    public static Boolean hasTaskActionAccess() {
-        if (cachedHasTaskActionAccess != null) {
-            return cachedHasTaskActionAccess;
-        }
-        // Assign only AFTER a successful computation: a thrown fault must leave the cache empty
-        // so the next ask re-evaluates rather than memoizing a fault as an answer.
-        Boolean allowed = computeTaskActionAccess();
-        cachedHasTaskActionAccess = allowed;
-        return allowed;
-    }
-
-    /**
-     * Server-side guard for the Transaction checklist Task write path. Called at the top of all
-     * three TransactionTaskService write methods, which then run their DML in SYSTEM_MODE.
-     *
-     * 🔴 UNLIKE assertTransactionActionAccess ABOVE, THIS ONE IS LOAD-BEARING TODAY. It is not
-     * defence in depth over a platform CRUD check — it IS the only authorization on that write
-     * path, because the platform's own Task Edit CRUD is un-grantable by permission set here
-     * (see TransactionTaskService's header). Removing this call does not fall back to a
-     * platform refusal; it opens the write to every user who can reach the controller.
-     *
-     * @throws TransactionActionPermissionService.AccessDeniedException carrying
-     *         NO_PERMISSION_MESSAGE when the running user lacks access.
-     * @throws System.QueryException when the permission lookup itself fails unexpectedly.
-     * @example
-     * TransactionActionPermissionService.assertTaskActionAccess();
-     */
-    public static void assertTaskActionAccess() {
-        if (hasTaskActionAccess()) {
-            return;
-        }
-        throw new AccessDeniedException(NO_PERMISSION_MESSAGE);
-    }
-
-    /**
      * Whether the running user may change the COORDINATES of a live wire-fraud prerequisite gate —
-     * `Task.Blocked_By__c` or `Task.Transaction_Deal__c` on a still-open item whose prerequisite is
-     * still open. TWO consumers, both branch (B) only:
-     *   • `TaskPrerequisiteService.enforceOnUpdate`          (Phase 0, the live Task model)
-     *   • `ChecklistItemPrerequisiteService.enforceOnUpdate`  (Phase 2, the Checklist_Item__c model)
-     * ⚠ Both models are enforcing during the dual-model window, so this token governs BOTH. Granting
-     * or revoking it moves two gates, not one.
+     * `Checklist_Item__c.Blocked_By__c` or the item's parent link on a still-open item whose
+     * prerequisite is still open. ONE consumer, branch (B) only:
+     *   • `ChecklistItemPrerequisiteService.enforceOnUpdate`  (the Checklist_Item__c model)
+     * ⚠ AMENDED 2026-09-03 — M5. There were TWO consumers during the dual-model window; the second
+     * was `TaskPrerequisiteService.enforceOnUpdate` on the legacy Task model, retired at M5. This
+     * token now moves exactly ONE gate. Do not re-read the old "governs BOTH" warning as still live.
      *
-     * ⚠ THIS IS ASKED FROM INSIDE A BEFORE-UPDATE TRIGGER, which the two sibling gates are not, so
+     * ⚠ THIS IS ASKED FROM INSIDE A BEFORE-UPDATE TRIGGER, which the sibling stage gate is not, so
      * two properties matter here that do not there:
      *   - it must cost ZERO SOQL on the common path, or it would put a query on a trigger that fires
-     *     for every Task in the org. `FeatureManagement.checkPermission` is free; only a NON-holder
-     *     reaches the `hasModifyAllData` read, and only on a save that was already going to be
-     *     refused. `TaskPrerequisiteService` calls this lazily, at most once per transaction, and
-     *     only after a candidate has actually tripped branch B.
+     *     for every Checklist_Item__c save. `FeatureManagement.checkPermission` is free; only a
+     *     NON-holder reaches the `hasModifyAllData` read, and only on a save that was already going
+     *     to be refused. `ChecklistItemPrerequisiteService` calls this lazily, at most once per
+     *     transaction, and only after a candidate has actually tripped branch B.
      *   - it must not throw on the happy path. A `QueryException` escaping a before trigger becomes
      *     `CANNOT_INSERT_UPDATE_ACTIVATE_ENTITY` and rolls back the user's own save. The fault seam
      *     and the bypass read are both behind the free check for exactly that reason.
@@ -468,33 +398,6 @@ public with sharing class TransactionActionPermissionService {
     }
 
     /**
-     * Evaluates the TASK gate. Structurally identical to computeTransactionActionAccess above,
-     * differing only in the permission token it tests.
-     *
-     * ⚠ THE "Modify All Data" BYPASS IS RETAINED HERE DELIBERATELY, AND DROPPING IT WOULD BE A
-     * REGRESSION, NOT A TIGHTENING. Administrators are the ONLY people who can complete a
-     * checklist Task today — "Modify All Data" implies Task CRUD, which is precisely why the
-     * defect reads as "works for me" to an admin. A task gate without the bypass would take
-     * that away from every administrator who has not also been assigned `DPEG_Task_Edit`.
-     *
-     * ⚠ It shares the `simulateLookupFailure` test seam with the stage gate — one flag meaning
-     * "the permission machinery itself failed", not one per gate. A test setting it affects
-     * both, which is correct: the fault it simulates is not permission-specific.
-     */
-    private static Boolean computeTaskActionAccess() {
-        if (simulateLookupFailure == true && Test.isRunningTest()) {
-            throw new QueryException('Simulated permission-lookup failure (test seam).');
-        }
-
-        // 0 SOQL. Returns false (never throws) for an unknown or unheld permission.
-        if (FeatureManagement.checkPermission(TASK_ACTION_CUSTOM_PERMISSION)) {
-            return true;
-        }
-
-        return hasModifyAllData();
-    }
-
-    /**
      * Whether the running user holds "Modify All Data" — through their profile or any assigned
      * permission set.
      *
@@ -533,11 +436,10 @@ public with sharing class TransactionActionPermissionService {
     @TestVisible
     private static void clearCache() {
         cachedHasTransactionActionAccess = null;
-        // ⚠ ALL THREE caches. A user switch invalidates every memoized answer in this class, not
-        // just the stage one; clearing only some would leave the previous user's answer standing.
-        // (Was "BOTH" until 2026-08-31, when the prerequisite-override gate was added — a third
-        // cache added without a line here is invisible until a runAs test starts lying.)
-        cachedHasTaskActionAccess = null;
+        // ⚠ BOTH caches. A user switch invalidates every memoized answer in this class, not just
+        // the stage one; clearing only some would leave the previous user's answer standing.
+        // (Was THREE between 2026-08-31 and M5, when cachedHasTaskActionAccess also lived here — a
+        // cache added or removed without a line here is invisible until a runAs test starts lying.)
         cachedHasPrereqOverrideAccess = null;
         simulateLookupFailure = false;
     }

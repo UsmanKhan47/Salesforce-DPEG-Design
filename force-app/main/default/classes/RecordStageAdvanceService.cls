@@ -1522,7 +1522,17 @@ public with sharing class RecordStageAdvanceService {
      * ⚠ `Closed Lost` DOES NOT EXIST on this picklist (five restricted values, verified in the org
      * 2026-08-12). `lwc/activeTransactionsList` carries a dead pill-map entry for it; that is a
      * cosmetic leftover, not a stage this map is missing.
+     *
+     * 🔴 `@TestVisible` WAS ADDED 2026-09-02 AND IT IS NOT DECORATION - DO NOT REMOVE IT.
+     * `TransactionStageDomain` holds a THIRD copy of this order (an ordered list, because the
+     * stage-advancement gate needs an ordinal and a Map gives none, and because a live safety gate
+     * must not depend at runtime on the internals of a 2,600-line class that dispatches eight
+     * objects). The ONLY thing keeping that third copy from drifting is
+     * `TransactionStageDomainTest`, which walks THIS map end to end and asserts the two agree. If
+     * this modifier goes, that test stops compiling and the cross-check is what gets deleted to
+     * fix it. Nothing else in this class changed for that feature.
      */
+    @TestVisible
     private static final Map<String, String> TRANSACTION_NEXT_STAGE = new Map<String, String>{
         'Open Contract' => 'Due Diligence',
         'Due Diligence' => 'Closing Prep',

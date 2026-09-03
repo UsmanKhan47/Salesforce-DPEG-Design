@@ -435,7 +435,12 @@ private class StageApprovalGatesTest {
         List<Transaction__c> pair = TestDataFactory.createTransactions(2, o.Id, null, false);
         for (Transaction__c row : pair) {
             row.Status__c = 'Active';
-            row.Tasks_Fanned_Out__c = true; // suppress the 82-task Day-0 fan-out
+            // Suppress the Day-0 fan-out. THE NULL DATE IS WHAT SUPPRESSES IT since 2026-09-03:
+            // flows/Transaction_Task_Fanout was repointed onto ChecklistFanoutService and its
+            // second entry filter moved from Tasks_Fanned_Out__c to Checklist_Fanned_Out__c (and
+            // M5 then DELETED Tasks_Fanned_Out__c), so a flag no longer keeps the flow out.
+            // Contract_Executed_Date__c is the filter BOTH versions shared. Nothing here reads it.
+            row.Contract_Executed_Date__c = null;
         }
         insert pair;
 

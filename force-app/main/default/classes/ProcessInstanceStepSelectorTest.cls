@@ -5,10 +5,29 @@
  * ProcessInstanceStep is a system approval-history object with no TestDataFactory
  * equivalent. A row only exists after a live Approval.process() submission against an
  * active, deployed ApprovalProcess; a step with StepStatus = 'Approved' additionally
- * requires an approver to ACT on the resulting work item. This test reuses the exact
- * live-submission pattern already established and passing in ProcessInstanceSelectorTest
- * / OpportunityApprovalControllerTest (Opportunity.LOI_Approval, entry criteria
- * StageName = 'LOI').
+ * requires an approver to ACT on the resulting work item.
+ *
+ * -- REPOINTED 2026-09-03 ONTO LOI__c.LOI_Approval ---------------------------------------------
+ * This class used to submit an Opportunity at StageName = 'LOI' into Opportunity.LOI_Approval.
+ * That process is RETIRED. Measured against usman-dpeg on 2026-09-03: ProcessDefinition
+ * 04aiw0000001sxdAAA (LOI_Approval on Opportunity) is State = 'Obsolete', and there are ZERO
+ * active approval processes on Opportunity of any kind, so the submission below returned
+ * NO_APPLICABLE_PROCESS.
+ *
+ * 🔴 THE OBJECT UNDER TEST IS THE SELECTOR, NOT THE APPROVAL. The selector filters on
+ * StepStatus and ProcessInstance.TargetObjectId and knows nothing about which object an approval
+ * targets, so the target here is pure scaffolding - any object with a live approval process would
+ * do. LOI__c was chosen to keep the fixture identical to its sibling
+ * ProcessInstanceSelectorTest.makeSubmittableLoi, so the two classes cannot drift apart. No
+ * assertion in this class names a process, a label or an object, so the repoint moves the
+ * fixture only.
+ *
+ * FIXTURE CONTRACT, read from the ORG's own copy of the process on 2026-09-03:
+ *   entry criteria '1 AND 2': LOI__c.Stage__c equals 'Under Review'
+ *                         AND LOI__c.RecordType equals 'Acquisition LOI' (the record type LABEL)
+ *   allowedSubmitters type = owner - so the LOI must be inserted BY the running user. The one the
+ *   deal auto-creates on entry to the LOI stage is owned by the Acquisition QUEUE and could never
+ *   be submitted here, which is why the parent deal is left at the factory default 'New'.
  *
  * COVERAGE MODEL (full line coverage, no faked data):
  *   - null / empty input exercises the guard clause.
@@ -33,12 +52,24 @@ private class ProcessInstanceStepSelectorTest {
 
     private static final Integer BULK_N = 251;
 
-    /** An Opportunity that satisfies the LOI_Approval entry criteria (StageName = 'LOI'). */
-    private static Opportunity makeEligibleOpp() {
-        Opportunity o = TestDataFactory.createOpportunity(null, false);
-        o.StageName = 'LOI';
-        insert o;
-        return o;
+    /**
+     * The LOI__c.Stage__c value approvalProcesses/LOI__c.LOI_Approval accepts, together with
+     * record type Acquisition_LOI. A literal on purpose - sharing a production constant would
+     * make "the process and the fixture agree" indistinguishable from "the fixture agrees with
+     * itself".
+     */
+    private static final String LOI_STAGE_UNDER_REVIEW = 'Under Review';
+
+    /**
+     * An acquisition LOI that satisfies LOI__c.LOI_Approval's entry criteria and is OWNED BY THE
+     * RUNNING USER (allowedSubmitters = owner), so a submission is not refused by the platform
+     * before entry criteria are considered.
+     */
+    private static LOI__c makeSubmittableLoi() {
+        Opportunity deal = TestDataFactory.createOpportunity(null, true); // StageName 'New'
+        LOI__c loi = TestDataFactory.createLoi(deal.Id, true); // Acquisition_LOI, seeded 'Draft'
+        update new LOI__c(Id = loi.Id, Stage__c = LOI_STAGE_UNDER_REVIEW);
+        return loi;
     }
 
     @isTest
@@ -84,18 +115,25 @@ private class ProcessInstanceStepSelectorTest {
         // approver has acted), so no step is StepStatus = 'Approved'. This exercises
         // the query against real ProcessInstanceStep data and proves the
         // StepStatus = 'Approved' filter excludes the pending/started step.
-        Opportunity o = makeEligibleOpp();
+        LOI__c loi = makeSubmittableLoi();
         Approval.ProcessSubmitRequest req = new Approval.ProcessSubmitRequest();
-        req.setObjectId(o.Id);
-        Approval.process(req);
+        req.setObjectId(loi.Id);
+        Approval.ProcessResult submitted = Approval.process(req);
+        // 🔴 THE PRECONDITION IS THE WHOLE TEST. This method asserts an EMPTY list, which is also
+        // what a submission that never happened produces - so without this line a broken fixture
+        // reads as a passing filter. It is the exact failure mode that hid the retired-process
+        // breakage until a production RunLocalTests surfaced it.
+        Assert.isTrue(submitted.isSuccess(),
+            'PRECONDITION FAILED: the LOI was not accepted into LOI__c.LOI_Approval, so there is '
+            + 'no approval trail at all and the assertion below would pass vacuously.');
 
         Test.startTest();
         List<ProcessInstanceStep> result =
             new ProcessInstanceStepSelector.AuditReads()
-                .selectApprovedStepsByTargetIds(new Set<Id>{ o.Id });
+                .selectApprovedStepsByTargetIds(new Set<Id>{ loi.Id });
         Test.stopTest();
 
         Assert.isTrue(result.isEmpty(),
-            'A submitted-but-not-yet-approved deal has no StepStatus = Approved history step');
+            'A submitted-but-not-yet-approved LOI has no StepStatus = Approved history step');
     }
 }

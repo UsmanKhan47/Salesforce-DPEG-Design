@@ -34,20 +34,53 @@ private class ChecklistItemPrerequisiteServiceTest {
     private static final String FLAG_COMPLETED = 'Completed';
     private static final String FLAG_VERIFIED = 'Verified';
 
+    /**
+     * The fixture group's name, overriding the factory's generic 'Test Group A'.
+     *
+     * 🔴 THIS IS WHAT MAKES `fixtureItems()` UNAMBIGUOUS, AND IT IS NOT DECORATION. Three tests
+     * below build a SECOND deal and a second group mid-test, and the factory names every group it
+     * creates 'Test Group A' - so neither a bare query nor one filtered on the factory's own group
+     * name can tell the fixture apart from them. Filtering on a name only this class writes can. A
+     * Day-0 fan-out group cannot collide either: those names come from
+     * `Task_Group_Def__mdt.Group_Name__c`, which are business group names.
+     */
+    private static final String FIXTURE_GROUP = 'PREREQ FIXTURE GROUP';
+
+    /**
+     * 🔴 `createTransactionsOnChecklistModel`, NOT `createTransactions`. The plain factory populates
+     * `Contract_Executed_Date__c`, the FIRST entry filter of `flows/Transaction_Task_Fanout`, which
+     * was repointed onto `ChecklistFanoutService` on 2026-09-03. A plain fixture deal therefore
+     * materialises ~96 EXTRA `Checklist_Item__c` rows, sequenced from 1, on the same deal - and
+     * `fixtureItems()` sorts by `Sequence__c`, so `items[0]` and `items[1]` would stop being the
+     * prerequisite and the dependent and nearly every test in this class would assert against the
+     * wrong pair. The date is load-bearing for nothing here: no assertion reads it and none reads a
+     * value derived from it - `Due_Date__c` is written explicitly by `createChecklistItems`, and the
+     * gate itself never touches either field.
+     */
     @TestSetup
     static void setupTestData() {
-        Transaction__c deal = TestDataFactory.createTransactions(1, true)[0];
-        Checklist__c checklistGroup = TestDataFactory.createChecklist(deal.Id, true);
+        Transaction__c deal = TestDataFactory.createTransactionsOnChecklistModel(1, true)[0];
+        Checklist__c checklistGroup = TestDataFactory.createChecklist(deal.Id, false);
+        checklistGroup.Group_Name__c = FIXTURE_GROUP;
+        insert checklistGroup;
         // Two items: [0] is the prerequisite (B2), [1] is the dependent (B3).
         List<Checklist_Item__c> items = TestDataFactory.createChecklistItems(2, checklistGroup.Id, true);
         TestDataFactory.linkPrerequisite(items[1], items[0], true);
     }
 
-    /** @return The two fixture items, prerequisite first, dependent second. */
+    /**
+     * @return The two fixture items, prerequisite first, dependent second.
+     *
+     * Qualified by `FIXTURE_GROUP` rather than reading every item in the transaction. Suppression in
+     * `@TestSetup` is what removes the fan-out rows today; this filter is what keeps the pick
+     * correct if that suppression is ever undone, and - independently of the fan-out - it stops the
+     * second deal built by three of the tests below from ever being picked up here.
+     */
     private static List<Checklist_Item__c> fixtureItems() {
         return [
             SELECT Id, Flag__c, Blocked_By__c, Is_Prerequisite_Met__c, Checklist__c, Sequence__c
             FROM Checklist_Item__c
+            WHERE Checklist__r.Group_Name__c = :FIXTURE_GROUP
             ORDER BY Sequence__c ASC
         ];
     }
@@ -149,7 +182,9 @@ private class ChecklistItemPrerequisiteServiceTest {
         // name a sibling under the same deal; a lookup accepts ANY item in the org.
         forceOverrideAccess(false);
         List<Checklist_Item__c> items = fixtureItems();
-        Transaction__c otherDeal = TestDataFactory.createTransactions(1, true)[0];
+        // Suppressed too: this deal exists only to be a FOREIGN parent, so a 96-row Day-0 fan-out
+        // on it would be pure cost. Its date is read by nothing in this test.
+        Transaction__c otherDeal = TestDataFactory.createTransactionsOnChecklistModel(1, true)[0];
         Checklist__c otherGroup = TestDataFactory.createChecklist(otherDeal.Id, true);
         Checklist_Item__c foreign = TestDataFactory.createChecklistItem(otherGroup.Id, true);
         update new Checklist_Item__c(Id = foreign.Id, Flag__c = FLAG_COMPLETED);
@@ -185,7 +220,8 @@ private class ChecklistItemPrerequisiteServiceTest {
         // `reparentableMasterDetail=false`, so the PLATFORM refuses the write before any trigger
         // sees it. Asserted rather than assumed.
         List<Checklist_Item__c> items = fixtureItems();
-        Transaction__c otherDeal = TestDataFactory.createTransactions(1, true)[0];
+        // Suppressed: a re-parent target only. Nothing here reads its contract execution date.
+        Transaction__c otherDeal = TestDataFactory.createTransactionsOnChecklistModel(1, true)[0];
         Checklist__c otherGroup = TestDataFactory.createChecklist(otherDeal.Id, true);
 
         Test.startTest();
@@ -392,8 +428,14 @@ private class ChecklistItemPrerequisiteServiceTest {
 
     @isTest
     static void isInertAndCostsNothingForUngatedItems() {
+        // Qualified by the fixture group: 'the first ungated item anywhere' would happily pick a
+        // Day-0 fan-out row, and this test's whole claim is about a row it knows the shape of.
         Checklist_Item__c ungated = [
-            SELECT Id FROM Checklist_Item__c WHERE Blocked_By__c = null LIMIT 1
+            SELECT Id
+            FROM Checklist_Item__c
+            WHERE Checklist__r.Group_Name__c = :FIXTURE_GROUP AND Blocked_By__c = null
+            ORDER BY Sequence__c ASC
+            LIMIT 1
         ];
 
         Test.startTest();
@@ -411,7 +453,11 @@ private class ChecklistItemPrerequisiteServiceTest {
         // 251 forces a SECOND before-update firing (the platform chunks at 200), which is the whole
         // point of the number - a 200-row test cannot distinguish "one query per chunk" from "one
         // query per transaction".
-        Transaction__c deal = TestDataFactory.createTransactions(1, true)[0];
+        // 🔴 SUPPRESSED, AND THE VOLUME STAYS AT 251. A plain factory deal would add a Day-0
+        // fan-out on top of the 251-row fixture: ~96 more items and their rollup cascade, charged
+        // to this method's own 100-SOQL/150-DML budget before `Test.startTest()` ever runs. The fix
+        // is to stop creating rows the test does not need, never to lower 251.
+        Transaction__c deal = TestDataFactory.createTransactionsOnChecklistModel(1, true)[0];
         Checklist__c checklistGroup = TestDataFactory.createChecklist(deal.Id, true);
         Checklist_Item__c prerequisite = TestDataFactory.createChecklistItem(checklistGroup.Id, true);
         List<Checklist_Item__c> dependents = TestDataFactory.createChecklistItems(251, checklistGroup.Id, false);

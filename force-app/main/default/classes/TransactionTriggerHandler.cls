@@ -13,9 +13,27 @@
  * fires several times per deal creation and MUST cost nothing on the saves that are not about
  * stages or dates. Each arm is bounded accordingly:
  *
- *   beforeInsert/beforeUpdate -> `TransactionStageEntryService`: pure in-memory, ZERO SOQL and ZERO
- *       DML at any record count, by construction. Every rollup write leaves through its
- *       "stage did not change" `continue` having spent nothing.
+ *   beforeInsert -> `TransactionStageEntryService`: pure in-memory, ZERO SOQL and ZERO DML at any
+ *       record count, by construction.
+ *   beforeUpdate -> `TransactionStageEntryService`, then `TransactionStageGateService`.
+ *       🔴 AMENDED 2026-09-02 — THIS SAID THE beforeInsert/beforeUpdate CONTEXT WAS "pure
+ *       in-memory, ZERO SOQL and ZERO DML at any record count, by construction". THAT WORDING IS
+ *       NOW FALSE FOR beforeUpdate and is replaced rather than left standing. What it was
+ *       protecting SURVIVES INTACT and is restated precisely:
+ *         • `TransactionStageEntryService` is unchanged — still zero SOQL and zero DML at any
+ *           record count, forever. Every rollup write leaves through its "stage did not change"
+ *           `continue` having spent nothing.
+ *         • `TransactionStageGateService` (the stage-advancement gate, design Part B) costs
+ *           ZERO SOQL and ZERO DML on every save that is not a FORWARD stage move on a deal whose
+ *           `Checklist_Fanned_Out__c` is true. Its Pass 1 is pure memory and returns before any
+ *           query. That set of free saves includes EVERY write the Day-0 cascade performs on this
+ *           object: `TaskRollupService`'s counters, `ChecklistRollupService`'s counters, the
+ *           fan-out's final claim write, `DealTransactionGateService`, owner changes and inline
+ *           field edits. So the handler's cost on the Day-0 chain is UNCHANGED.
+ *         • When the chunk DOES contain such a move, the gate spends EXACTLY 1 SOQL for the whole
+ *           chunk however many deals are moving, and 0 DML. It is never a function of row count.
+ *       In-context counters in `TransactionStageGateService` pin all three claims; a
+ *       `Limits.getQueries()` reading taken after `Test.stopTest()` would be vacuous.
  *   afterUpdate -> `ChecklistFanoutService.reconcile`: entered ONLY when `Loan_Required__c`
  *       actually changed. A rollup write (counters only) collects zero ids and the service is never
  *       called - so a fan-out chunk's Transaction update costs 0 SOQL here, which is what keeps the
@@ -53,18 +71,45 @@
  *
  * @see force-app/main/default/triggers/TransactionTrigger.trigger
  * @see force-app/main/default/classes/TransactionStageEntryService.cls
+ * @see force-app/main/default/classes/TransactionStageGateService.cls
  * @see force-app/main/default/classes/ChecklistFanoutService.cls (reconcile)
  * @see force-app/main/default/classes/DealTransactionGateService.cls
  * @see force-app/main/default/classes/CriticalDateService.cls (deliberately NOT wired here)
  */
 public with sharing class TransactionTriggerHandler extends TriggerHandler {
 
+    /**
+     * 🔴 NO STAGE GATE ON INSERT, DELIBERATELY. A deal created directly at a later stage has no
+     * checklist yet BY DEFINITION (the fan-out runs after the insert commits), and two seed
+     * scripts insert a Transaction straight at `Stage__c = 'Closed'` — the
+     * `Transaction_Stage_Closed_Sets_Status` flow's own comment records that. Gating insert would
+     * brick every seed script and every scratch rebuild for zero benefit: there is nothing to be
+     * incomplete yet. `TransactionStageGateService` needs `Trigger.oldMap` to know which stage is
+     * being LEFT, and on insert there is no such stage.
+     */
     protected override void beforeInsert() {
         TransactionStageEntryService.stampStageEntryDates((List<Transaction__c>) newList, null);
     }
 
+    /**
+     * Two arms. ORDER BETWEEN THEM IS IMMATERIAL TO CORRECTNESS AND IS RECORDED SO NOBODY "FIXES"
+     * IT: the stamp assigns `Stage_Entry_Date__c` in memory, the gate may then refuse the record,
+     * and a refusal discards the WHOLE save including that assignment. Neither arm reads the
+     * other's output.
+     *
+     * The gate's result is deliberately discarded here. It refuses through `addError` on the
+     * records themselves, which is the only mechanism the platform honours; the returned map
+     * exists so a unit test can assert the decision without a trigger. A handler that inspected it
+     * would be duplicating the refusal.
+     */
     protected override void beforeUpdate() {
         TransactionStageEntryService.stampStageEntryDates(
+            (List<Transaction__c>) newList, (Map<Id, Transaction__c>) oldMap);
+
+        // The stage-advancement gate (design Part B). Costs ZERO SOQL unless this chunk actually
+        // contains a forward stage move on a deal that has been fanned out - see the cost note in
+        // this class's header and the budget block in the service's.
+        TransactionStageGateService.enforceOnUpdate(
             (List<Transaction__c>) newList, (Map<Id, Transaction__c>) oldMap);
     }
 

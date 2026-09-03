@@ -84,11 +84,15 @@
  * `submitForApproval` call site that passes an Opportunity Id — including the ones outside a
  * try/catch, which are the easiest to overlook and the loudest when they break.
  *
- * ⚠ TWO TESTS IN `LoiGateTest` GO RED AND ARE **NOT** FIXED HERE — see this deploy's report.
- * `firstResponseApprovalStampsLoiAuditTrail` and `rejectionReturnsDealToUnderwriting` both submit
- * an Opportunity into the now-retired process. They are out of W5's authorised scope (a repoint
- * there is a coverage decision, not a mechanical fix: the LOI-side chain they assert is already
- * covered by `LoiApprovalStampServiceTest`). Do not "fix" them by deletion.
+ * ⚠ TWO TESTS IN `LoiGateTest` WENT RED HERE AND WERE **NOT** FIXED IN W5 — see this deploy's
+ * report. `firstResponseApprovalStampsLoiAuditTrail` and `rejectionReturnsDealToUnderwriting`
+ * both submitted an Opportunity into the now-retired process, and were out of W5's authorised
+ * scope (a repoint there is a coverage decision, not a mechanical fix: the LOI-side chain they
+ * assert is already covered by `LoiApprovalStampServiceTest`). Do not "fix" them by deletion.
+ * RESOLVED 2026-09-03, OUTSIDE W5: both now submit the LOI. The second was also renamed to
+ * `rejectionLeavesLoiUnderReviewAndDoesNotRewindTheDeal` and INVERTED - it pins the deal staying
+ * at 'LOI' (rewind retired by D-3), the LOI at `Stage__c = 'Under Review'` with
+ * `LOI_Status__c = 'Rejected'`, and `LOI_Approved__c` false. Do not rebuild the rewind.
  *
  * ⚠ `.claude/rules/bulk-test-rule.md`'s 251-RECORD MANDATE DOES NOT APPLY, AND THE RULE'S OWN
  * EXEMPTION IS WHY — stated here because the rule requires the reasoning to be recorded in the test

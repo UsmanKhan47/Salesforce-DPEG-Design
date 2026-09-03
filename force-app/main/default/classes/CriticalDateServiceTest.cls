@@ -11,13 +11,28 @@
  * (`required=true` + `deleteConstraint=Restrict`) - design RISK 2 / GATE-B3. Test rows roll back, so
  * that costs nothing here; the number is kept small anyway because the volume proves nothing the
  * governor assertion does not.
+ *
+ * ⚠ EVERY DEAL IS BUILT BY `TestDataFactory.createTransactionsOnChecklistModel`, WHICH NULLS
+ * `Contract_Executed_Date__c` AND SUPPRESSES THE DAY-0 FAN-OUT. `createTransactions` populates that
+ * field, which is the first entry filter of `flows/Transaction_Task_Fanout`; since the 2026-09-03
+ * repoint onto `ChecklistFanoutService` each such deal materialises ~96 `Checklist_Item__c` rows,
+ * and `ChecklistOutcomeService` calls `CriticalDateService.ensureFor` off one of them (item A5).
+ * That puts a second, unasserted writer behind every count below.
+ *
+ * THE DATE IS NOT LOAD-BEARING FOR ANYTHING HERE, AND THAT WAS CHECKED RATHER THAN ASSUMED. The
+ * service projects only `Target_Close_Date__c` and `Feasibility_Deadline__c`, gated on `Stage__c`,
+ * `Status__c` and `Feasibility_Missed__c`; `Contract_Executed_Date__c` appears in neither
+ * `CriticalDateService` nor `TransactionSelector.CRITICAL_DATE_FIELDS`, so it is not even read into
+ * the projection. No assertion below reads it or a value derived from it, and `Transaction__c`
+ * carries no validation rule and no other active flow keyed on it, so nulling it cannot refuse the
+ * stage and status moves these tests perform.
  */
 @isTest
 private class CriticalDateServiceTest {
 
     @isTest
     static void projectsThePinnedDatesFromTheDealsOwnFields() {
-        Transaction__c deal = TestDataFactory.createTransactions(1, true)[0];
+        Transaction__c deal = TestDataFactory.createTransactionsOnChecklistModel(1, true)[0];
 
         Test.startTest();
         Integer created = CriticalDateService.ensureFor(new Set<Id>{ deal.Id });
@@ -39,7 +54,7 @@ private class CriticalDateServiceTest {
 
     @isTest
     static void isIdempotentOnTheTransactionPlusTypeKey() {
-        Transaction__c deal = TestDataFactory.createTransactions(1, true)[0];
+        Transaction__c deal = TestDataFactory.createTransactionsOnChecklistModel(1, true)[0];
         CriticalDateService.ensureFor(new Set<Id>{ deal.Id });
 
         Test.startTest();
@@ -56,7 +71,7 @@ private class CriticalDateServiceTest {
     static void selfHealsAfterAPartialRun() {
         // The key is per (Transaction + Type), NOT a coarse "any rows exist?" early exit - so a
         // deal that somehow has only one of its rows gets the missing one on the next run.
-        Transaction__c deal = TestDataFactory.createTransactions(1, true)[0];
+        Transaction__c deal = TestDataFactory.createTransactionsOnChecklistModel(1, true)[0];
         insert new Critical_Date__c(
             Transaction__c = deal.Id, Type__c = 'Closing Date', Due_Date__c = Date.today().addDays(75));
 
@@ -69,7 +84,7 @@ private class CriticalDateServiceTest {
 
     @isTest
     static void skipsClosedAndPostClosingDeals() {
-        List<Transaction__c> deals = TestDataFactory.createTransactions(2, true);
+        List<Transaction__c> deals = TestDataFactory.createTransactionsOnChecklistModel(2, true);
         update new List<Transaction__c>{
             new Transaction__c(Id = deals[0].Id, Stage__c = 'Post-Closing'),
             new Transaction__c(Id = deals[1].Id, Status__c = 'Closed')
@@ -85,7 +100,7 @@ private class CriticalDateServiceTest {
 
     @isTest
     static void dropsFeasibilityEndAtClosingPrep() {
-        Transaction__c deal = TestDataFactory.createTransactions(1, true)[0];
+        Transaction__c deal = TestDataFactory.createTransactionsOnChecklistModel(1, true)[0];
         update new Transaction__c(Id = deal.Id, Stage__c = 'Closing Prep');
 
         Test.startTest();
@@ -99,7 +114,7 @@ private class CriticalDateServiceTest {
 
     @isTest
     static void dropsFeasibilityEndWhenFeasibilityWasMissed() {
-        Transaction__c deal = TestDataFactory.createTransactions(1, true)[0];
+        Transaction__c deal = TestDataFactory.createTransactionsOnChecklistModel(1, true)[0];
         update new Transaction__c(Id = deal.Id, Feasibility_Missed__c = true);
 
         Test.startTest();
@@ -113,7 +128,7 @@ private class CriticalDateServiceTest {
 
     @isTest
     static void createsNothingWhenTheDealHasNoPinnedDates() {
-        Transaction__c deal = TestDataFactory.createTransactions(1, true)[0];
+        Transaction__c deal = TestDataFactory.createTransactionsOnChecklistModel(1, true)[0];
         update new Transaction__c(
             Id = deal.Id, Target_Close_Date__c = null, Feasibility_Deadline__c = null);
 
@@ -140,7 +155,7 @@ private class CriticalDateServiceTest {
         // ⚠ IT ALSO GUARDS THE `deleteConstraint=Restrict` HAZARD: the moment a Critical Date exists
         // its Transaction can never be deleted, so an accidentally-wired projection would make
         // DELETE_FAILED the default for every deal that ever changes stage.
-        Transaction__c deal = TestDataFactory.createTransactions(1, true)[0];
+        Transaction__c deal = TestDataFactory.createTransactionsOnChecklistModel(1, true)[0];
 
         Test.startTest();
         update new Transaction__c(Id = deal.Id, Tasks_Complete__c = 3);
@@ -170,8 +185,15 @@ private class CriticalDateServiceTest {
         // deal — 251 deals is ~502 rows, comfortably inside every limit — so the number was simply
         // low, and 50 would not have forced the second trigger chunk that makes a per-record
         // regression visible.
+        // 🔴 AND THE FACTORY MUST BE THE SUPPRESSING ONE AT THIS VOLUME. `createTransactions` sets
+        // `Contract_Executed_Date__c`, so 251 plain deals would each enter
+        // `flows/Transaction_Task_Fanout` and hand ~96 checklist rows apiece to
+        // `ChecklistFanoutService` - roughly 24,000 rows at `Test.stopTest()`, past the 10,000-row
+        // DML ceiling, and the method would die on a limit that has nothing to do with the
+        // projection under test. The volume stays at 251; the rows the test does not need go.
         Integer bulkDeals = 251;
-        List<Transaction__c> deals = TestDataFactory.createTransactions(bulkDeals, true);
+        List<Transaction__c> deals =
+            TestDataFactory.createTransactionsOnChecklistModel(bulkDeals, true);
         Set<Id> dealIds = new Map<Id, Transaction__c>(deals).keySet();
 
         Test.startTest();

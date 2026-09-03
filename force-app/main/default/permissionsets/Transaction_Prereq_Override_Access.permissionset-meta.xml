@@ -58,51 +58,31 @@
         those, and bundling them would make this set's own audit trail (who can bypass the
         prerequisite gate) harder to read.
     -->
+    <!--
+        2026-09-03, M5 legacy Task retirement (agent-output/design-legacy-task-retirement.md §5 Step 4,
+        both waves shipped together per an explicit user waiver of the cutover rollback window).
+        STRIPPED ALL EIGHT fieldPermissions blocks (the four legacy identity fields — Blocked_By__c,
+        Task_Group__c, Task_Sequence__c, Transaction_Deal__c — on both Task.* and Event.*). Their sole
+        purpose was the legacy wire-fraud Task gate (TaskPrerequisiteService, TaskFanoutService,
+        scripts/backfill-task-blocked-by.apex), all retired in this same change. This is deliberate for
+        Task_Sequence__c too even though that FIELD survives (Property Management still writes/reads
+        it) — PM's actual read/write path is DPEG_Task_Edit and DPEG_TaskChecklist_View (both amended
+        to keep it), not this admin-only escape hatch, whose documented purpose (the backfill script,
+        the M5 migration, Phase-0 identity-key repair) no longer exists.
+        KEPT the file and its sole <customPermissions> grant, Transaction_Prereq_Override — this is
+        NOT the retiring Transaction_Task_Actions permission. ChecklistItemPrerequisiteService.cls:554
+        is a live, NEW-MODEL caller (TransactionActionPermissionService.hasPrereqOverrideAccess(),
+        gating re-linking a disarmed Checklist_Item__c prerequisite) with no dependency on any Task/
+        Event field FLS — the custom permission alone is what that check reads.
+        Rewrote the description, which previously described the retired four-field grant.
+        The org copy was retrieved and diffed immediately before this edit (2026-09-03) and was
+        byte-identical to this file at HEAD (comments aside) — no drift to reconcile.
+    -->
     <label>Transaction Prereq Override Access</label>
-    <description>Admin-only escape hatch for the wire-fraud prerequisite gate: FLS on the four checklist identity fields plus Transaction_Prereq_Override. For the backfill script, M5 migration and Phase 1 key repair only - never assign to DPEG_Transaction_Team.</description>
+    <description>Admin-only escape hatch for the Transaction_Prereq_Override custom permission, checked by ChecklistItemPrerequisiteService.hasPrereqOverrideAccess() before a disarmed Checklist_Item__c prerequisite link can change. Grants no field-level security.</description>
     <hasActivationRequired>false</hasActivationRequired>
     <customPermissions>
         <enabled>true</enabled>
         <name>Transaction_Prereq_Override</name>
     </customPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Event.Blocked_By__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Event.Task_Group__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Event.Task_Sequence__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Event.Transaction_Deal__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Task.Blocked_By__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Task.Task_Group__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Task.Task_Sequence__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Task.Transaction_Deal__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
 </PermissionSet>

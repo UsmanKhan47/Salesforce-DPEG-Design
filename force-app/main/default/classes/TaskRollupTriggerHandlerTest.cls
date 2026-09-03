@@ -1,116 +1,42 @@
 /**
- * Tests TaskRollupTriggerHandler: the Task trigger routes every context
- * (insert / update / delete / undelete) to TaskRollupService, and the deal-id
- * projection sources from the correct collection per context. Behaviour is
- * asserted through the observable Transaction__c rollups, exactly as the trigger
- * fires them.
+ * Tests TaskRollupTriggerHandler: the Task trigger routes every after-context
+ * (insert / update / delete / undelete) to `OnboardingTaskRollupService`, and the
+ * onboarding-id projection sources from the correct collection per context. Behaviour is
+ * asserted through the observable `Onboarding__c` rollups, exactly as the trigger fires them.
  *
- * ═══ ⚠ AMENDED 2026-08-22 — THE HANDLER NOW ROUTES A SECOND PARENT ═══
- * `Onboarding__c` is routed alongside `Transaction__c` on all four after-contexts. Before this
- * change the onboarding rollups fired from ONE LWC only (`OnboardingService.completeTask`
- * called the recompute directly), so a checklist item completed from the standard UI, the API
- * or Data Loader — or deleted — never moved the Onboarding's counters. The
- * `routesOnboarding*` methods below are the proof, and they deliberately use PLAIN DML rather
- * than `OnboardingService`, because going through the service would prove only the path that
- * already worked.
+ * ═══ ⚠ AMENDED 2026-08-22 — THE HANDLER ROUTES `Onboarding__c` ═══
+ * Before that change the onboarding rollups fired from ONE LWC only
+ * (`OnboardingService.completeTask` called the recompute directly), so a checklist item
+ * completed from the standard UI, the API or Data Loader — or deleted — never moved the
+ * Onboarding's counters. The `routesOnboarding*` methods below are the proof, and they
+ * deliberately use PLAIN DML rather than `OnboardingService`, because going through the service
+ * would prove only the path that already worked.
  *
- * ⚠ FIXTURES SUPPRESS BOTH FAN-OUTS. `TestDataFactory.createTransactions` ships a
- * `Contract_Executed_Date__c` and `createOnboardings` ships `Tasks_Fanned_Out__c = true`;
- * without suppressing the first and relying on the second, the Day-0 and checklist fan-outs
- * would materialise 82 and 45 extra Tasks at `Test.stopTest()` and every count below would be
+ * ═══ 🔴 AMENDED 2026-09-03 (M5) — THE TRANSACTION ARM IS GONE, THE CONTEXT LIST IS NOT ═══
+ * This class used to open with two Transaction-arm tests —
+ * `routesInsertUpdateDeleteAndUndelete` and `bulk251TasksAcrossTransactionsRollUpPerDeal` —
+ * plus `newSuppressedTransaction` / `reloaded` helpers, all asserting through
+ * `Transaction__c.Tasks_Complete__c` via `TaskRollupService` and `Task.Transaction_Deal__c`.
+ * The legacy Task-based Transaction checklist is retired: `TaskRollupService` is deleted, the
+ * handler's `collectDealIds` / `recalcDeals` are gone, and `Task.Transaction_Deal__c` no longer
+ * exists as a field, so those tests could not survive in any form.
+ *
+ * 🔴 WHAT SURVIVES IS NOT A REMNANT — IT IS THE WHOLE REASON THE TRIGGER STILL EXISTS.
+ * `triggers/TaskRollupTrigger` did NOT lose a single context at M5. All six carry an Onboarding
+ * responsibility: the four after-contexts route `recalcOnboardings`, and `before insert` /
+ * `before update` each still call `OnboardingTaskDomain.stampCompletion`. The methods below are
+ * now the ONLY coverage of that routing. Do not thin them on the grounds that the class got
+ * smaller, and do not "simplify" the two before-contexts away because they hold one statement
+ * each — that stops `Onboarding_Completed_Date__c` being stamped on every non-LWC path.
+ *
+ * ⚠ FIXTURES SUPPRESS THE FAN-OUT. `createOnboardings` ships `Onboarding__c.Tasks_Fanned_Out__c
+ * = true` (a DIFFERENT field from the retired `Transaction__c` one of the same name — see
+ * `TestDataFactory`, where it is called DELIBERATE AND LOAD-BEARING); without it the onboarding
+ * fan-out would materialise 45 extra Tasks at `Test.stopTest()` and every count below would be
  * measuring them instead.
  */
 @isTest
 private class TaskRollupTriggerHandlerTest {
-
-    /** An Active Transaction with the Day-0 fan-out suppressed (no Contract_Executed_Date__c). */
-    private static Transaction__c newSuppressedTransaction() {
-        Transaction__c t = TestDataFactory.createTransaction(null, null, false);
-        TestDataFactory.applyOverrides(t, new Map<String, Object>{ 'Contract_Executed_Date__c' => null });
-        insert t;
-        return t;
-    }
-
-    /** Re-queries the deal's completed-Task rollup (strongly typed, as the service test asserts it). */
-    private static Transaction__c reloaded(Id transactionId) {
-        return [SELECT Tasks_Complete__c FROM Transaction__c WHERE Id = :transactionId];
-    }
-
-    @isTest
-    static void routesInsertUpdateDeleteAndUndelete() {
-        // Given: a suppressed Transaction with two complete and one open checklist Task.
-        Transaction__c t = newSuppressedTransaction();
-        List<Task> tasks = new List<Task>{
-            new Task(Transaction_Deal__c = t.Id, Subject = 'a', Status = 'Completed'),
-            new Task(Transaction_Deal__c = t.Id, Subject = 'b', Status = 'Completed'),
-            new Task(Transaction_Deal__c = t.Id, Subject = 'c', Status = 'Not Started')
-        };
-
-        Test.startTest();
-        // Insert context -> collects from new -> recalc.
-        insert tasks;
-        Assert.areEqual(2, reloaded(t.Id).Tasks_Complete__c, 'After insert: two completed Tasks counted');
-
-        // Update context -> collects from new AND old -> recalc.
-        tasks[2].Status = 'Completed';
-        update tasks[2];
-        Assert.areEqual(3, reloaded(t.Id).Tasks_Complete__c, 'After update: now three completed');
-
-        // Delete context -> collects from old -> recalc.
-        delete tasks[0];
-        Assert.areEqual(2, reloaded(t.Id).Tasks_Complete__c, 'After delete: two remain complete');
-
-        // Undelete context -> collects from new -> recalc.
-        undelete tasks[0];
-        Assert.areEqual(3, reloaded(t.Id).Tasks_Complete__c, 'After undelete: back to three complete');
-        Test.stopTest();
-    }
-
-    /**
-     * Bulk (.claude/rules/bulk-test-rule.md): 251 Tasks in one DML across three
-     * Transactions forces a second TaskRollupTrigger batch chunk and proves the
-     * handler's per-context id projection and the service's single query / single
-     * update hold at scale.
-     */
-    @isTest
-    static void bulk251TasksAcrossTransactionsRollUpPerDeal() {
-        List<Transaction__c> transactions = TestDataFactory.createTransactions(3, false);
-        TestDataFactory.applyOverrides(transactions, new Map<String, Object>{ 'Contract_Executed_Date__c' => null });
-        insert transactions;
-        Id t1 = transactions[0].Id;
-        Id t2 = transactions[1].Id;
-        Id t3 = transactions[2].Id;
-
-        List<Task> tasks = new List<Task>();
-        // T1: 100 complete
-        for (Integer i = 0; i < 100; i++) {
-            tasks.add(new Task(Transaction_Deal__c = t1, Subject = 'T1 ' + i, Status = 'Completed'));
-        }
-        // T2: 100 complete
-        for (Integer i = 0; i < 100; i++) {
-            tasks.add(new Task(Transaction_Deal__c = t2, Subject = 'T2 ' + i, Status = 'Completed'));
-        }
-        // T3: 51 open, not overdue
-        for (Integer i = 0; i < 51; i++) {
-            tasks.add(new Task(Transaction_Deal__c = t3, Subject = 'T3 ' + i, Status = 'Not Started',
-                ActivityDate = Date.today().addDays(10)));
-        }
-
-        Test.startTest();
-        insert tasks; // 251 Tasks, one DML
-        Test.stopTest();
-
-        Map<Id, Transaction__c> results = new Map<Id, Transaction__c>(
-            [SELECT Tasks_Complete__c FROM Transaction__c WHERE Id IN :transactions]);
-        Assert.areEqual(100, results.get(t1).Tasks_Complete__c, 'T1: 100 complete');
-        Assert.areEqual(100, results.get(t2).Tasks_Complete__c, 'T2: 100 complete');
-        Assert.areEqual(0, results.get(t3).Tasks_Complete__c, 'T3: none complete');
-        Assert.areEqual(
-            251,
-            [SELECT COUNT() FROM Task WHERE Transaction_Deal__c IN :transactions],
-            'All 251 Tasks inserted in the single bulk DML'
-        );
-    }
 
     // ═════════════════════════════════════════════════════════════════════════════════════
     // 🔴 ONBOARDING ROUTING — the second parent, added 2026-08-22
@@ -252,8 +178,10 @@ private class TaskRollupTriggerHandlerTest {
         Test.stopTest();
 
         Assert.areEqual(0, queriesAdded,
-            'A Task with no Transaction_Deal__c and no Onboarding__c must trigger NO selector '
-            + 'read — both recalc guards return on an empty id set');
+            'A Task with no Onboarding__c must trigger NO selector read — the recalc guard '
+            + 'returns on an empty id set. This is the org-wide cost control: the before-contexts '
+            + 'fire on EVERY Task in the org (Broker Protection, EAC companions, Disposition '
+            + 'closing tasks, hand-created activity) and must stay free.');
         Assert.areEqual(1, dmlAdded, 'and only the caller\'s own insert');
     }
 

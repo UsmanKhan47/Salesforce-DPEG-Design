@@ -28,6 +28,14 @@
 // The other two Transaction flows are safe here: Transaction_Opened_Notify is Create-only, and
 // Transaction_Task_Fanout requires `Tasks_Fanned_Out__c = false` (already true on all eleven, so
 // no second fan-out can be provoked by these updates).
+// 🔴 2026-09-03: THAT REASON IS NOW VOID, THOUGH THE CONCLUSION STILL HOLDS — DO NOT LEAN ON THE
+// OLD SENTENCE. A7 repointed Transaction_Task_Fanout onto ChecklistFanoutService and moved its
+// second filter to `Checklist_Fanned_Out__c = false`, a field these updates do not read or write.
+// What keeps the script safe now is `doesRequireRecordChangedToMeetCriteria = true`: a deal that
+// already satisfies both filters does not RE-ENTER them when an unrelated field is written. The
+// safety therefore depends on this script never writing `Contract_Executed_Date__c` (it does not)
+// and never clearing `Checklist_Fanned_Out__c` (it does not). If either is ever added below, the
+// update becomes a transition INTO the criteria and every touched deal is re-fanned.
 //
 // ───────────────────────────────────────────────────────────────────────────────────────────
 // PROBLEM 2 — WHY THE HONEST ROUTE IS THE ONLY ROUTE.

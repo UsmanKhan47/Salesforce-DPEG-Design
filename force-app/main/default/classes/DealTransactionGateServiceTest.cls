@@ -22,12 +22,24 @@
  *
  * ── 🔴 THE FIXTURES SUPPRESS THE DAY-0 FAN-OUT ON PURPOSE ─────────────────────────────────────
  * `flows/Transaction_Task_Fanout` fires on create when `Contract_Executed_Date__c` is non-null and
- * `Tasks_Fanned_Out__c` is false, and `TestDataFactory.createTransactions` sets the date. Left
- * alone, the 251-record methods below would enqueue an 82-task-per-deal fan-out — roughly 20,600
- * Task rows — and would not run. `openTransactions`/`closedTransactions` below therefore set
- * `Tasks_Fanned_Out__c = true` IN THE INSERT PAYLOAD (the `createTransactionsOnChecklistModel`
- * idiom; setting it afterwards is a race with the Queueable, not a guard). Nothing under test here
- * reads that field.
+ * a fan-out guard flag is false, and `TestDataFactory.createTransactions` sets the date. Left
+ * alone, the 251-record methods below would enqueue a fan-out of roughly 20,600 child rows and
+ * would not run.
+ *
+ * 🔴 THE DEVICE CHANGED TWICE ON 2026-09-03 AND THE OLD ONES NO LONGER EXIST. Until that day
+ * these fixtures set `Tasks_Fanned_Out__c = true`, because that WAS the flow's second entry
+ * filter. A7 of `agent-output/design-checklist-cutover-and-stage-gate.md` repointed the flow onto
+ * `ChecklistFanoutService` and moved that filter to `Checklist_Fanned_Out__c = false`, so a
+ * `Tasks_Fanned_Out__c` flag suppressed nothing at all and 251 deals would fan out. M5 then
+ * DELETED that field outright.
+ * ⇒ THE FIXTURES NULL `Contract_Executed_Date__c`, which is the filter BOTH the old and
+ * the new flow share, so it survives the next repoint too. It must be in the INSERT payload, not
+ * applied afterwards - setting it later is a race with the Queueable, not a guard. Nothing under
+ * test here reads the date.
+ *
+ * ⚠ Do NOT suppress by setting `Checklist_Fanned_Out__c = true` instead: that flag is the
+ * discriminator `ChecklistFanoutService` and `TransactionStageGateService` branch on, and
+ * claiming a deal that is not on the checklist model changes behaviour rather than suppressing it.
  *
  * ── ⚠ THE 251 IS THE RULE'S LITERAL 251 AND IT STANDS ─────────────────────────────────────────
  * `.claude/rules/bulk-test-rule.md`'s per-transaction-singleton exemption does NOT apply: this is
@@ -113,8 +125,9 @@ private class DealTransactionGateServiceTest {
         for (Integer i = 0; i < dealList.size(); i++) {
             rows[i].Opportunity__c = dealList[i].Id;
             rows[i].Status__c = status;
-            // Suppresses flows/Transaction_Task_Fanout — see the class header.
-            rows[i].Tasks_Fanned_Out__c = true;
+            // Suppresses flows/Transaction_Task_Fanout — see the class header. The NULL DATE is
+            // what does the suppressing since the 2026-09-03 repoint.
+            rows[i].Contract_Executed_Date__c = null;
         }
         if (doInsert) {
             insert rows;
@@ -435,7 +448,7 @@ private class DealTransactionGateServiceTest {
         Test.startTest();
         List<Transaction__c> orphans = TestDataFactory.createTransactions(2, false);
         for (Transaction__c row : orphans) {
-            row.Tasks_Fanned_Out__c = true;
+            row.Contract_Executed_Date__c = null; // the actual suppression - see the class header
         }
         DealTransactionGateService.resetRunCounters();
         insert orphans; // must NOT throw

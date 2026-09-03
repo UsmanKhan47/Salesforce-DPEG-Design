@@ -24,54 +24,36 @@
  * Together they pin the boolean fields as the ONLY source of meaning on the new model. Neither
  * test can pass while a regex is consulted, and neither can be satisfied by a lucky fixture.
  *
- * 🔴 THE LEGACY PATH IS PINNED TOO, IN THE OPPOSITE DIRECTION. `Task` carries no
- * `Is_Wire_Verification__c` / `Is_Critical__c` (verified 2026-09-01 against
- * `objects/Activity/fields/`), so its subjects are genuinely the only signal and the regex is
- * CORRECT there. `normalizeLegacyGroups` is asserted to still derive both from the subject — so
- * an over-eager cleanup that deletes the regex outright also goes red.
+ * 🔴 AMENDED 2026-09-03 (M5) — THE LEGACY HALF OF THIS FILE IS GONE, AND THE FALSIFIER IT LEFT
+ * BEHIND IS THE PART WORTH READING BEFORE EDITING ANYTHING ABOVE.
+ * This file used to pin the legacy path in the OPPOSITE direction: `Task` carried no
+ * `Is_Wire_Verification__c` / `Is_Critical__c`, so its subjects were genuinely the only signal,
+ * the regex was CORRECT there, and `normalizeLegacyGroups` was asserted to still derive both from
+ * the subject — so an over-eager cleanup that deleted the regex outright went red. Three describe
+ * blocks went with the legacy model at M5: `model discrimination` (`modelFor` and the three
+ * `MODEL_*` constants), `normalizeLegacyGroups`, and the legacy half of `hasCapture`.
  *
- * ⚠ THE PARENTHESES IN THE LEGACY REGEX ARE LOAD-BEARING. Checklist items A4 and A5 legitimately
- * contain the words "critical dates" and are NOT critical. A bare `contains('critical')` flags
- * both. That is asserted here so the "simplification" cannot be made silently.
+ * ⚠ WHAT THAT DELETION COSTS, STATED RATHER THAN GLOSSED: the parenthesis assertion is gone with
+ * it. `LEGACY_CRITICAL_RE`'s parentheses were load-bearing because checklist items A4 and A5
+ * legitimately contain the words "critical dates" and are NOT critical, and a bare
+ * `contains('critical')` flags both. That test protected a regex that no longer exists, so it
+ * could not be re-homed — `DISPLAY_MARKER_RE` is COSMETIC and its `displaySubject` /
+ * `stripMarkerForDisplay` describes below still cover it.
+ * 🔴 THE PROTECTION IS NOT LOST, IT MOVED OBJECTS: criticality now comes from the boolean
+ * `Is_Critical__c`, seeded by `scripts/load-transaction-task-defs.apex` from an explicit
+ * `{B2,F12,I7,J4}` key set, and `ChecklistCaptureDefProviderTest` asserts every coordinate still
+ * matches its loader subject. A4/A5 cannot be mis-flagged because nothing parses them.
+ * ⇒ IF A SUBJECT PARSE IS EVER REINTRODUCED ON THIS PATH, RE-ADD THE A4/A5 TEST WITH IT.
  */
 import {
-    MODEL_CHECKLIST,
-    MODEL_LEGACY,
-    MODEL_UNKNOWN,
     PHASES,
     displaySubject,
-    modelFor,
     normalizeChecklistGroups,
-    normalizeLegacyGroups,
     percent,
     phaseKeyForLetter,
     phaseKeyForStage,
     stripMarkerForDisplay
 } from 'c/utilsTransactionChecklist';
-
-describe('c-utils-transaction-checklist :: model discrimination', () => {
-    it('maps a true Checklist_Fanned_Out__c to the new model', () => {
-        expect(modelFor(true)).toBe(MODEL_CHECKLIST);
-    });
-
-    it('maps a false Checklist_Fanned_Out__c to the legacy model', () => {
-        expect(modelFor(false)).toBe(MODEL_LEGACY);
-    });
-
-    it.each([
-        ['undefined', undefined],
-        ['null', null],
-        ['the empty string', ''],
-        ['the string "true"', 'true'],
-        ['zero', 0]
-    ])('treats %s as UNKNOWN rather than coercing it to a model', (_label, value) => {
-        // A checkbox is never null when it is READABLE, so anything that is not strictly
-        // true/false means "we do not know". Coercing here would let a component silently pick
-        // the legacy model for a deal that has already been migrated — and a migrated deal still
-        // has its old Task rows, so it would render a complete, plausible, stale checklist.
-        expect(modelFor(value)).toBe(MODEL_UNKNOWN);
-    });
-});
 
 describe('c-utils-transaction-checklist :: phase labels', () => {
     it('labels the four phases with the values Transaction__c.Stage__c actually uses', () => {
@@ -301,87 +283,6 @@ describe('c-utils-transaction-checklist :: normalizeChecklistGroups (new model)'
     });
 });
 
-describe('c-utils-transaction-checklist :: normalizeLegacyGroups (legacy Task model)', () => {
-    function legacyGroup(tasks) {
-        return [
-            {
-                key: 'B. Earnest Money & Wires',
-                letter: 'B',
-                name: 'Earnest Money & Wires',
-                ownerLabel: 'Danish',
-                conditional: false,
-                total: tasks.length,
-                complete: tasks.filter((t) => t.done).length,
-                pct: 0,
-                tasks
-            }
-        ];
-    }
-
-    it('STILL derives critical and wire from the subject — Task has no boolean fields', () => {
-        // 🔴 The legacy parse is CORRECT and must not be deleted with the new-model one. Task
-        // carries no Is_Critical__c / Is_Wire_Verification__c, and the markers on already-created
-        // rows are frozen, so the subject is genuinely the only signal available.
-        const [group] = normalizeLegacyGroups(
-            legacyGroup([
-                {
-                    id: 't1',
-                    subject: 'Call title company to verbally verify wiring instructions (anti-fraud)',
-                    done: false
-                }
-            ])
-        );
-        expect(group.items[0].critical).toBe(true);
-        expect(group.items[0].wire).toBe(true);
-    });
-
-    it('flags (CRITICAL) as critical but NOT as a wire step', () => {
-        const [group] = normalizeLegacyGroups(
-            legacyGroup([
-                { id: 't2', subject: 'Set up auto loan payment at lender bank (CRITICAL)', done: false }
-            ])
-        );
-        expect(group.items[0].critical).toBe(true);
-        expect(group.items[0].wire).toBe(false);
-    });
-
-    it.each([
-        'Receive critical dates from title company',
-        'Log critical dates into Salesforce deal record'
-    ])('does NOT flag "%s" — the parentheses are load-bearing', (subject) => {
-        // A4 and A5. A bare contains('critical') wrongly flags both. The live org renders exactly
-        // four critical items: {B2, F12, I7, J4}.
-        const [group] = normalizeLegacyGroups(legacyGroup([{ id: 't3', subject, done: false }]));
-        expect(group.items[0].critical).toBe(false);
-    });
-
-    it('never reports a legacy row as blocked', () => {
-        // TransactionTaskController.TaskRow does not expose Is_Prerequisite_Met__c, and widening
-        // that live DTO for an advisory badge was rejected. The legacy SERVER gate is unaffected.
-        const [group] = normalizeLegacyGroups(
-            legacyGroup([{ id: 't4', subject: 'Send wire request to accounting', done: false }])
-        );
-        expect(group.items[0].blocked).toBe(false);
-    });
-
-    it('produces the SAME item shape as the checklist normaliser', () => {
-        // One shape means one template, which is what makes the dual-model window survivable.
-        const [legacy] = normalizeLegacyGroups(
-            legacyGroup([{ id: 't5', subject: 'Order the survey', done: true, notes: ' filed ' }])
-        );
-        const [checklist] = normalizeChecklistGroups(
-            checklistGroup([
-                { id: 'i5', subject: 'Order the survey', done: true, comment: ' filed ' }
-            ])
-        );
-        expect(Object.keys(legacy.items[0]).sort()).toEqual(
-            Object.keys(checklist.items[0]).sort()
-        );
-        expect(legacy.items[0].comment).toBe('filed');
-        expect(checklist.items[0].comment).toBe('filed');
-    });
-});
-
 describe('c-utils-transaction-checklist :: hasCapture (Phase 5)', () => {
     it('carries the server-derived hasCapture straight through on the new model', () => {
         // Server-derived from the item COORDINATE (group letter + sequence) by
@@ -398,27 +299,5 @@ describe('c-utils-transaction-checklist :: hasCapture (Phase 5)', () => {
         // An absent key is NOT a capture. A truthy coercion here would open the capture dialog on
         // every row served by an older controller build.
         expect(group.items[2].hasCapture).toBe(false);
-    });
-
-    it('never reports a capture on the LEGACY model, whatever the payload says', () => {
-        // Loan__c and Insurance_Binder__c hang off the CHECKLIST model. An un-migrated deal must
-        // behave exactly as it did before Phase 5 - that is the point of the dual-model window.
-        const [group] = normalizeLegacyGroups(
-            [
-                {
-                    key: 'B. Earnest Money',
-                    letter: 'B',
-                    name: 'Earnest Money',
-                    ownerLabel: 'Danish',
-                    total: 1,
-                    complete: 0,
-                    pct: 0,
-                    tasks: [
-                        { id: 't-cap', subject: 'Select bank account type', hasCapture: true }
-                    ]
-                }
-            ]
-        );
-        expect(group.items[0].hasCapture).toBe(false);
     });
 });

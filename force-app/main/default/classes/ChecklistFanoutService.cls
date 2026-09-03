@@ -1,8 +1,8 @@
 /**
  * Day-0 fan-out onto the `Checklist__c` / `Checklist_Item__c` model - creates the 11 task-group
  * checklists and their ~82 items for a Transaction, from `Task_Group_Def__mdt` +
- * `Transaction_Task_Def__mdt`. Replaces `TaskFanoutService`, which STAYS LIVE and untouched
- * through the dual-model window. Design §5, §8, §10 Phase 2.
+ * `Transaction_Task_Def__mdt`. Replaced `TaskFanoutService`, which was retired at M5 on
+ * 2026-09-03. Design §5, §8, §10 Phase 2.
  *
  * layer=service. All SOQL delegated to `TransactionSelector` / `ChecklistSelector` /
  * `ChecklistItemSelector`; CMDT read through the two providers (`getAll()`, never SOQL - and every
@@ -11,25 +11,31 @@
  * 2026-08-31).
  *
  * ═══════════════════════════════════════════════════════════════════════════════════════════
- * 🔴 DUAL-MODEL COEXISTENCE - WHY THIS DOES NOT DISTURB THE LIVE TASK CHECKLIST.
+ * 🔴 THE DUAL-MODEL WINDOW IS CLOSED (M5, 2026-09-03). THIS IS NOW THE ONLY FAN-OUT.
  * ═══════════════════════════════════════════════════════════════════════════════════════════
- * `TaskFanoutService`, `TaskFanoutQueueable`, `TaskRollupService`, `TaskPrerequisiteService` and
- * `TaskRollupTrigger` are DEPLOYED AND ENFORCING right now. Nothing here deletes, guts or repoints
- * any of them. The two models are kept apart by ONE discriminator:
+ * `TaskFanoutService`, `TaskFanoutQueueable`, `TaskRollupService` and `TaskPrerequisiteService`
+ * were DEPLOYED AND ENFORCING alongside this class throughout Phases 2-4. All four are now
+ * deleted, and so is the legacy guard field `Transaction__c.Tasks_Fanned_Out__c`.
+ * (`TaskRollupTrigger` survives — it still carries Property Management's onboarding rollups and
+ * completion stamp. Its Transaction arm is gone.)
  *
- *     legacy fan-out guard : Transaction__c.Tasks_Fanned_Out__c     (written only by TaskFanoutService)
- *     new    fan-out guard : Transaction__c.Checklist_Fanned_Out__c (written only by THIS class)
+ *     fan-out guard : Transaction__c.Checklist_Fanned_Out__c (written only by THIS class)
  *
- * They are separate fields on purpose. Sharing one would make either fan-out suppress the other,
- * which the field's own `<description>` calls the single most important fact of the migration.
- * Because `Checklist_Fanned_Out__c` is false on every Transaction in the org the day this deploys,
- * and because `flows/Transaction_Task_Fanout` is NOT repointed in Phase 2, THIS CLASS RUNS FOR
- * NOBODY UNTIL SOMEONE DELIBERATELY INVOKES IT. Phase 2 is therefore a behaviour-neutral deploy for
- * every live deal - the property that makes it safe to ship while the Task model is still the one
- * users see.
- * ⚠ `ChecklistRollupService` carries the other half of the same discriminator: it refuses to write
- * the four `Transaction__c` counters unless `Checklist_Fanned_Out__c` is true, so the two rollups
- * cannot fight over the same four fields. Read that header before changing either.
+ * ⚠ THE GUARD IS STILL A SEPARATE, SINGLE-WRITER FIELD AND MUST STAY ONE. It was a separate field
+ * from the legacy guard on purpose — sharing one would have made either fan-out suppress the other,
+ * which the field's own `<description>` calls the single most important fact of the migration. That
+ * reason has expired; the single-writer property has NOT. Nothing but `fanOutNow` PASS 4 writes it,
+ * which is why `TestDataFactory` and every seed script are immune by construction rather than by a
+ * bypass flag. Do not repurpose it as a general "checklist exists?" flag and do not let a second
+ * writer appear.
+ * ⚠ The guard is keyed on the FLAG, never on whether `Checklist__c` rows exist — `reconcile()`
+ * depends on being able to re-enter deals that already have checklists. Pinned by
+ * `ChecklistFanoutServiceTest.guardIsKeyedOnTheFlagAloneNotOnPreExistingChecklists`, which replaced
+ * the two-flag independence proof that M5 removed.
+ * ⚠ `ChecklistRollupService` used to carry the other half of a dual-model discriminator: it refuses
+ * to write the four `Transaction__c` counters unless `Checklist_Fanned_Out__c` is true. With no
+ * second rollup left there is nothing to fight over, but the refusal is retained as a fail-closed
+ * control. Read that header before changing either.
  *
  * ═══════════════════════════════════════════════════════════════════════════════════════════
  * 🔴 GOVERNOR ARITHMETIC - RE-DERIVED, NOT INHERITED. `CHUNK_SIZE` IS 50, NOT 100.
@@ -293,6 +299,18 @@ public with sharing class ChecklistFanoutService {
             // arithmetic; without it the item insert alone costs 84 SOQL and up to 42 DML per chunk
             // (21 after-insert batches x 4 selector reads per recalc), which blows the 100-query
             // limit outright rather than merely approaching it.
+            // 🔴 THIS LINE IS ALSO LOAD-BEARING FOR A SHARING DECISION IN ANOTHER CLASS, AND THAT
+            // COUPLING IS INVISIBLE FROM HERE (added 2026-09-02). `ChecklistRollupService` was
+            // re-examined against the measured Day-0 outage (`AsyncApexJob 707iw0000046Rh6AAE`)
+            // and deliberately LEFT `with sharing` — the sibling `TaskRollupService` needed a
+            // `without sharing` escalation and it did NOT. The whole reason it did not is THIS
+            // SUPPRESSION: it is why the Day-0 driver, who holds Read and not Edit on the deal,
+            // never reaches that class at all.
+            // ⇒ REMOVING, NARROWING, OR MOVING THIS SUPPRESSION INSIDE THE FOUR STATEMENTS VOIDS
+            //   THAT DECISION. `ChecklistRollupService`'s `RollupWrites` would then be reached by
+            //   a principal without Edit sharing, be refused, and roll back this entire fan-out.
+            //   Read the TRIP WIRE block in `ChecklistRollupService.RollupWrites`'s header BEFORE
+            //   touching this line — it is not just a governor optimisation.
             ChecklistRollupService.suppressTriggerRecalc(true);
 
             // ⚠ EXPLICIT SYSTEM MODE, CARRIED OVER IN SUBSTANCE FROM `TaskFanoutService.fanOutNow`
@@ -303,10 +321,46 @@ public with sharing class ChecklistFanoutService {
             // FLS for anybody, System Administrator included, so a `USER_MODE` DML here would throw
             // `System.TypeException` and roll the whole chain back. The checklist is created BY the
             // process, so the access level is stated here rather than inferred from whoever clicked.
-            // ⚠ SYSTEM_MODE lifts CRUD/FLS and NEVER sharing. A master-detail child insert needs no
-            // sharing beyond its parent; step 4's Transaction update is the one statement where
-            // sharing could bite, and it is discussed there.
-            Database.insert(checklists, true, AccessLevel.SYSTEM_MODE);
+            // ═══════════════════════════════════════════════════════════════════════════════
+            // 🔴 SHARING — CORRECTED AND ESCALATED 2026-09-02. ALL FOUR STATEMENTS IN THIS
+            //    METHOD NOW GO THROUGH `FanoutWrites`. THE SENTENCE BELOW IS WHY.
+            // ═══════════════════════════════════════════════════════════════════════════════
+            // 🔴 THIS SAID: "⚠ SYSTEM_MODE lifts CRUD/FLS and NEVER sharing. A master-detail
+            // child insert needs no sharing beyond its parent; step 4's Transaction update is the
+            // one statement where sharing could bite, and it is discussed there."
+            //
+            // TRUE AS FAR AS IT GOES, AND MISLEADING BECAUSE OF WHERE IT STOPS. "No sharing
+            // beyond its parent" reads as reassurance; the parent requirement is **EDIT**, not
+            // Read. Both links carry `writeRequiresMasterRead=false`
+            // (`Checklist__c.Transaction__c` and `Checklist_Item__c.Checklist__c`, verified in
+            // the field XML), and `false` is the STRICTER setting — it requires read AND WRITE on
+            // the master to create, edit or delete the detail. `true` is the one that needs only
+            // read. So PASS 1 needs Edit sharing on the `Transaction__c`, PASS 2 needs it two
+            // hops up, PASS 3 needs it again, and PASS 4 needs it directly. FOUR statements, not
+            // one.
+            //
+            // WHY THAT NOW FAILS. `ContractExecutionService.cls:354-360` (2026-08-28) reassigns
+            // `Transaction__c.OwnerId` to the Transactions team on insert while this chain still
+            // runs as the DEAL DRIVER (no `runInMode` on the flow; a Queueable runs as its
+            // enqueuer). Measured 2026-09-02: `UserRecordAccess` for user 005iw000000AJhJAAW
+            // against deal a0Riw000000Ao3ZEAS = HasReadAccess true, HasEditAccess FALSE,
+            // MaxAccessLevel 'Read'. The sibling Task model hit exactly this and rolled back all
+            // 82 of its Day-0 rows (AsyncApexJob 707iw0000046Rh6AAE).
+            // ⇒ POST-M3 THIS FAN-OUT WOULD FAIL AT **PASS 1**, before any rollup question
+            //   matters: no checklists, no items, `Checklist_Fanned_Out__c` false, and the LWC
+            //   showing its misleading empty state. Fixed here PRE-EMPTIVELY so a deal born on
+            //   the new model does not reproduce an outage the old model already measured.
+            //
+            // ✅ READ COMPLETENESS IS **NOT** AT RISK HERE, AND THAT IS WHY ONLY THE WRITES MOVE.
+            // The counters come from `DealTally` — rows this method just built in memory — not
+            // from a query. Its one read (`selectForChecklistFanout`) is complete for any
+            // principal who can read the deal, because `Checklist__c`/`Checklist_Item__c` are
+            // `ControlledByParent` with NO `OwnerId` at all. So escalating the writes alone
+            // cannot produce a wrong number. This is the opposite of the Task model, where the
+            // read IS filtered and had to move with its write — see
+            // `TaskSelector.selectByTransactionDealIds`. Do not copy that pairing here; the
+            // difference is structural.
+            new FanoutWrites().insertChecklists(checklists);
             lastRunChecklistCount = checklists.size();
 
             // ── PASS 2: items, with `Blocked_By__c` deliberately BLANK ──
@@ -352,7 +406,9 @@ public with sharing class ChecklistFanoutService {
                 }
             }
             if (!items.isEmpty()) {
-                Database.insert(items, true, AccessLevel.SYSTEM_MODE);
+                // PASS 2 — Edit sharing on the deal required TWO hops up the master-detail chain.
+                // See the block at PASS 1.
+                new FanoutWrites().insertItems(items);
                 lastRunItemCount = items.size();
             }
 
@@ -362,7 +418,8 @@ public with sharing class ChecklistFanoutService {
             List<Checklist_Item__c> links = resolveLinks(pending, definitions, itemByCoordinate,
                 itemByCoordinate);
             if (!links.isEmpty()) {
-                Database.update(links, true, AccessLevel.SYSTEM_MODE);
+                // PASS 3 — a detail EDIT, so the same Edit-on-the-master requirement as PASS 2.
+                new FanoutWrites().updateLinks(links);
             }
 
             // ── PASS 4: the guard flag and the four counters ──
@@ -379,17 +436,115 @@ public with sharing class ChecklistFanoutService {
                 ));
             }
             if (!deals.isEmpty()) {
-                // ⚠ SYSTEM_MODE for CRUD/FLS; sharing is NOT lifted. The Day-0 path runs as the
-                // deal driver, who owns the Transaction they just created, so sharing is satisfied
-                // by ownership. A future path fanning out someone else's deal fails LOUDLY rather
-                // than silently - `allOrNone = true` guarantees it, and that is the right direction
-                // for a guard flag: a silently unset `Checklist_Fanned_Out__c` would re-fan the deal
-                // on the next invocation and duplicate the entire checklist.
-                Database.update(deals, true, AccessLevel.SYSTEM_MODE);
+                // 🔴 PASS 4 — CORRECTED 2026-09-02. THIS SAID: "⚠ SYSTEM_MODE for CRUD/FLS;
+                // sharing is NOT lifted. The Day-0 path runs as the deal driver, WHO OWNS THE
+                // TRANSACTION THEY JUST CREATED, so sharing is satisfied by ownership."
+                // THAT PREMISE IS FALSE, and it is the SAME falsified premise that
+                // `TaskRollupService`'s header carried — written 2026-08-31 from the
+                // pre-2026-08-28 world, three days after `ContractExecutionService.cls:359`
+                // started reassigning `OwnerId` to the Transactions team. The driver does not own
+                // the deal; measured `MaxAccessLevel = 'Read'`. Full argument at PASS 1.
+                // ⚠ The rest of the old comment stands and is why `allOrNone = true` is unchanged:
+                // a silently unset `Checklist_Fanned_Out__c` would re-fan the deal on the next
+                // invocation and duplicate the entire checklist.
+                new FanoutWrites().updateDeals(deals);
             }
         } finally {
             // Restore rather than blindly clear: `reconcile` may already have suppressed.
             ChecklistRollupService.suppressTriggerRecalc(alreadySuppressed);
+        }
+    }
+
+    /**
+     * 🔴 THE FOUR FAN-OUT WRITES, WHICH MUST RUN **WITHOUT SHARING** - A SEPARATE DECISION FROM
+     * `SYSTEM_MODE`, NOT A CONSEQUENCE OF IT. ADDED 2026-09-02, PRE-EMPTIVELY, BEFORE M3.
+     *
+     * `without sharing` is confined to this inner class so it applies to the four statements of
+     * `fanOutChunk` and NOTHING else. The enclosing `ChecklistFanoutService` STAYS `with sharing`
+     * and must. Inner classes do NOT inherit the outer class's sharing keyword, so the mode is
+     * declared explicitly. This is the shape ARCHITECTURE.md §2 prescribes; live in-repo
+     * precedents are `TransactionSelector.DealCloseGateReads`,
+     * `OnboardingTaskRollupService.RollupWrites` and (same day, same incident)
+     * `TaskRollupService.RollupWrites`.
+     *
+     * WHY ALL FOUR AND NOT JUST PASS 4. Both master-detail links carry
+     * `writeRequiresMasterRead=false` - the STRICTER setting, requiring read AND WRITE on the
+     * master to create, edit or delete the detail - so PASS 1, 2 and 3 need EDIT sharing on the
+     * `Transaction__c` just as PASS 4 does. The full argument, the falsified ownership premise it
+     * replaces, and the `UserRecordAccess` measurement are at the PASS 1 call site.
+     *
+     * 🔴 THIS IS PRE-EMPTIVE, AND THAT IS DELIBERATE RATHER THAN SPECULATIVE. This class runs for
+     * nobody today (`Checklist_Fanned_Out__c` is false on every deal and the Flow is not
+     * repointed until M3), so nothing here fixes a live failure. What makes it evidence-based
+     * rather than a hypothetical is that the SIBLING model on the SAME chain, with the SAME
+     * `with sharing` + `SYSTEM_MODE` shape and the SAME principal, was MEASURED failing on
+     * 2026-09-02 (`AsyncApexJob 707iw0000046Rh6AAE`). A deal born on the new model after M3 would
+     * fail at PASS 1 for a cause already observed on the model it replaces.
+     *
+     * ✅ NO READ MOVES, AND THAT ASYMMETRY WITH THE TASK MODEL IS THE POINT. The counters come
+     * from `DealTally` - rows this method just built in memory - so escalating the writes alone
+     * cannot publish a number computed from a partial view. `Checklist__c` / `Checklist_Item__c`
+     * are `ControlledByParent` with no `OwnerId` at all, so any principal who can read the deal
+     * reads every checklist and item on it. The Task model's read IS filtered and had to move
+     * with its write; do not copy that pairing here, and do not "harmonise" the two.
+     *
+     * ⚠ `reconcile` / `applyAdditions` ARE DELIBERATELY NOT ROUTED THROUGH THIS CLASS. They fire
+     * from `TransactionTriggerHandler.afterUpdate` only when `Loan_Required__c` CHANGED - i.e.
+     * the running principal just successfully edited the deal and therefore provably holds Edit
+     * sharing on it. Same reasoning as `ChecklistRollupService`'s trigger caller. If a future
+     * caller ever reaches `reconcile` WITHOUT a preceding user edit of the deal (a batch, a
+     * Schedulable, a data load), that premise dies and those four statements need this treatment
+     * too - re-open this note, do not just widen the class.
+     *
+     * `allOrNone = true` IS UNCHANGED ON ALL FOUR. A silent partial fan-out is the worst possible
+     * outcome here: a half-built checklist whose `Checklist_Fanned_Out__c` flag did not stick
+     * gets re-fanned on the next invocation and duplicates itself.
+     *
+     * ⚠ Apex forbids static methods on inner classes, hence the instance methods and the
+     * `new FanoutWrites()` at each call site.
+     * 🔴 DO NOT ADD A FIFTH METHOD HERE. These four are one transaction's worth of one operation,
+     * argued together at PASS 1. A new statement needing an escape needs its own justification.
+     */
+    private without sharing class FanoutWrites {
+
+        /**
+         * PASS 1 - the group checklists. Master-detail children of `Transaction__c`.
+         *
+         * @param checklists Rows to insert; never null/empty (the caller guards).
+         * @throws System.DmlException on a platform save failure (allOrNone = true, by design).
+         */
+        private void insertChecklists(List<Checklist__c> checklists) {
+            Database.insert(checklists, true, AccessLevel.SYSTEM_MODE);
+        }
+
+        /**
+         * PASS 2 - the checklist items. Master-detail grandchildren of `Transaction__c`.
+         *
+         * @param items Rows to insert; never null/empty (the caller guards).
+         * @throws System.DmlException on a platform save failure (allOrNone = true, by design).
+         */
+        private void insertItems(List<Checklist_Item__c> items) {
+            Database.insert(items, true, AccessLevel.SYSTEM_MODE);
+        }
+
+        /**
+         * PASS 3 - the prerequisite links, once every item has an Id. Only the gated rows.
+         *
+         * @param links Rows to update; never null/empty (the caller guards).
+         * @throws System.DmlException on a platform save failure (allOrNone = true, by design).
+         */
+        private void updateLinks(List<Checklist_Item__c> links) {
+            Database.update(links, true, AccessLevel.SYSTEM_MODE);
+        }
+
+        /**
+         * PASS 4 - the claim flag and the four deal counters.
+         *
+         * @param deals Sparse `Transaction__c` rows; never null/empty (the caller guards).
+         * @throws System.DmlException on a platform save failure (allOrNone = true, by design).
+         */
+        private void updateDeals(List<Transaction__c> deals) {
+            Database.update(deals, true, AccessLevel.SYSTEM_MODE);
         }
     }
 

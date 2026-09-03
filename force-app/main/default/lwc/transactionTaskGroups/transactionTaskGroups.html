@@ -1,19 +1,15 @@
 <template>
     <div class="tg">
-        <!-- Four mutually exclusive states. An empty checklist is VISIBLY empty; it never
-             renders as blank space that reads like a successful load of nothing. -->
+        <!-- Three mutually exclusive states. An empty checklist is VISIBLY empty; it never
+             renders as blank space that reads like a successful load of nothing.
 
-        <!-- 1. The model discriminator (Transaction__c.Checklist_Fanned_Out__c) could not be
-                read. NEITHER model is rendered — a migrated deal still has its old Task rows,
-                so guessing legacy would show a complete, plausible, silently stale checklist. -->
-        <template if:true={hasModelError}>
-            <div class="tg-error" role="alert">
-                <lightning-icon icon-name="utility:error" size="x-small" variant="error"></lightning-icon>
-                <span>{modelErrorMessage}</span>
-            </div>
-        </template>
+             ⚠ AMENDED 2026-09-03 (M5). There was a FOURTH, first: a `hasModelError` block for a
+             failed read of the model discriminator (Transaction__c.Checklist_Fanned_Out__c). That
+             flag no longer selects a data model — the legacy Task model is retired — so a failed
+             read of it is advisory and must NOT blank a checklist that loaded fine. It now only
+             softens one sentence of {emptyMessage}. See the JS class header. -->
 
-        <!-- 2. The model is known but its data failed to load. -->
+        <!-- 1. The checklist data failed to load. -->
         <template if:true={hasDataError}>
             <div class="tg-error" role="alert">
                 <lightning-icon icon-name="utility:error" size="x-small" variant="error"></lightning-icon>
@@ -21,12 +17,12 @@
             </div>
         </template>
 
-        <!-- 3. Genuinely empty, with a message that names which model produced the emptiness. -->
+        <!-- 2. Genuinely empty, with a message that names the CAUSE of the emptiness. -->
         <template if:true={showEmpty}>
             <div class="tg-empty">{emptyMessage}</div>
         </template>
 
-        <!-- 4. Content. -->
+        <!-- 3. Content. -->
         <template if:true={showContent}>
             <!-- Phase cards (hidden when this instance is pinned to a phase via its tab) -->
             <template if:true={showPhaseButtons}>

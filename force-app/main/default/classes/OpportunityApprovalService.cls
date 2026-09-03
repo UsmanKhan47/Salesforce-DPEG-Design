@@ -92,8 +92,13 @@
  * ⚠ WHY THE GATE IS APEX AND NOT A VALIDATION RULE — MEASURED, NOT PREFERRED. `resolveApprovalTargetId`
  * maps `LOI__c` to the PARENT Opportunity and `Approval.process` submits THAT. **No DML ever touches
  * the `LOI__c` row**, so a validation rule on `LOI__c` is dead code — it cannot fire on this path at
- * all. An Opportunity-side rule is no better: `LoiGateTest.rejectionReturnsDealToUnderwriting`
- * demonstrates that approval field updates BYPASS custom validation rules in this org.
+ * all. An Opportunity-side rule is no better: approval field updates BYPASS custom validation
+ * rules in this org (org finding F2). The demonstration USED to be
+ * `LoiGateTest.rejectionReturnsDealToUnderwriting`; that method is now
+ * `rejectionLeavesLoiUnderReviewAndDoesNotRewindTheDeal` and, with the deal rewind retired by
+ * D-3, it asserts the deal does NOT move at all, so it no longer exercises the bypass. The
+ * finding stands on F2; do not cite the test for it, and do not rebuild the rewind to restore
+ * the citation.
  *
  * 🔴 THE FIRST HALF OF THAT PARAGRAPH IS RETRACTED, 2026-09-01 (W4), AND THE RETRACTION IS
  * RECORDED RATHER THAN ACTED ON. Its premise — "no DML ever touches the `LOI__c` row" — was true

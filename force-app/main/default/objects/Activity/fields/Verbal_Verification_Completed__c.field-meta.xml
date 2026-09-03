@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
-    <fullName>Verbal_Verification_Completed__c</fullName>
-    <defaultValue>false</defaultValue>
-    <description>Wire-fraud control: must be true before a wire-verification task can be closed (DPEG brief Section 06).</description>
-    <label>Verbal Verification Completed</label>
-    <type>Checkbox</type>
-</CustomField>

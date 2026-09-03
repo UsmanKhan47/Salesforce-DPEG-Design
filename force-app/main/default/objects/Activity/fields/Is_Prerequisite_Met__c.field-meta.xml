@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
-    <fullName>Is_Prerequisite_Met__c</fullName>
-    <defaultValue>false</defaultValue>
-    <description>Wire-fraud prerequisite gate (Story 28), Phase 0. Denormalised backstop maintained ONLY by the before-update prerequisite gate - stamped from the sibling's live state on update, CLAMPED to false on insert for any Task carrying Blocked_By__c (defaultValue only applies when the field is ABSENT from the payload, so a loader/Flow supplying true would otherwise satisfy the validation rule outright). A validation rule cannot read a sibling record, so this field lets Prerequisite_Must_Be_Met_To_Complete evaluate the sibling's state even under SYSTEM_MODE. True only when the sibling named by Blocked_By__c has Status = 'Completed'; a blank Blocked_By__c leaves this at the false default rather than stamping true for every unblocked Task (would mean touching every Task in the org in a before context) - safe because the rule's own surviving-key check short-circuits first. No other component reads this field. Do not edit directly.</description>
-    <inlineHelpText>System-maintained. True only when this item's Blocked_By__c prerequisite is already Completed. Stays false by default, including for items with no prerequisite. Do not edit directly.</inlineHelpText>
-    <label>Is Prerequisite Met</label>
-    <type>Checkbox</type>
-</CustomField>

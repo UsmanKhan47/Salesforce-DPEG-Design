@@ -223,46 +223,152 @@ private class OnboardingTaskRollupServiceTest {
         System.assertEquals(251, r.Tasks_Not_Started__c, 'createOnboardingTasks defaults every Task to Not Started');
     }
 
+    // ═════════════════════════════════════════════════════════════════════════════════════════
+    // 🔴 THE 2026-09-02 DAY-0 ROLLUP SHARING FIX — ITEM 4' (the MIRROR IMAGE of the Transaction
+    // rollup's fix). See agent-output/design-rollup-sharing-fix.md §3 and
+    // OnboardingTaskRollupService's class header for the full argument.
+    //
+    // Here the WRITE (RollupWrites) has been `private without sharing` since 2026-08-22 and was
+    // NEVER the problem. The READ (TaskSelector.selectByOnboardingIds -> OnboardingRollupReads)
+    // was the one still sharing-filtered until 2026-09-02, and an ALWAYS-SUCCEEDING write paired
+    // with a FILTERED read does not throw — it silently writes ZERO total / 0% complete. THAT is
+    // the state this test proves is closed, and — same rule as the Transaction rollup's control —
+    // "no exception" would not have caught it, because nothing ever threw.
+    // ═════════════════════════════════════════════════════════════════════════════════════════
+
     /**
-     * Builds (but does not insert) a user on the `Standard User` profile — the LEAST-privileged
-     * profile in this org that can create a Task at all (`PermissionsEditTask = true`, measured;
-     * `Minimum Access - Salesforce` is `false`, and no permission set can supply it because Task
-     * has zero ObjectPermissions rows org-wide — see the design note above this section).
+     * 🔴 THE NON-OWNER CONTROL. `Onboarding__c` and its checklist Tasks are OWNED by a separate
+     * `ownerUser`; the recompute is driven by `driverUser`, who holds record-level EDIT on the
+     * Onboarding but has NO visibility into `ownerUser`'s Tasks (`Activity` stays Private, no
+     * Activity/Task sharing rule exists anywhere in this repo, and these checklist Tasks attach
+     * through the custom `Task.Onboarding__c` lookup — NOT `WhatId` — so no parent share can
+     * cascade to them either). This is the REACHABLE production shape from
+     * `OnboardingTaskRollupService`'s own header: a PM persona holds Edit on an `Onboarding__c`
+     * while seeing only their OWN Tasks.
      *
-     * 🔴 What the profile does NOT give is the point: it grants NO FLS on any Metadata-API-
-     * deployed custom field, so this persona still cannot read Task.Onboarding__c or
-     * Task.Onboarding_Status__c. That is the single fact the regression pin depends on. Each test
-     * assigns, via assignPermissionSets below, only the custom-OBJECT CRUD it needs — never a set
-     * declaring the withheld Task fields (DPEG_Task_Edit / DPEG_TaskChecklist_View /
-     * DPEG_Transaction_Team must never be assigned here).
+     * ┌─────────────────────────────────────────────────────────────────────────────────────┐
+     * │ 🔴 WHY THE EDIT GRANT IS AN EXPLICIT `Onboarding__Share`, NOT A GROUP MEMBERSHIP.    │
+     * └─────────────────────────────────────────────────────────────────────────────────────┘
+     * This fixture originally inserted a `GroupMember` into `DPEG_Property_Mgmt_Team` and leaned
+     * on the criteria-based sharing rule `Onboarding_PM_All_RW` (criteria `Status__c != ''`) to
+     * produce the Edit. It failed the guard below and rolled back deploy 0Afiw000000VkPxCAK on
+     * 2026-09-02, for THREE independent reasons, any one of which is disqualifying for a test:
+     *   1. Sharing recalculation triggered by a group-membership change is ASYNCHRONOUS. An
+     *      in-test `GroupMember` insert is not reliably reflected in criteria-rule sharing inside
+     *      the same transaction, so the guard races the platform and loses.
+     *   2. `DPEG_Property_Mgmt_Team` has ZERO members in production — a known open go-live gate.
+     *      `Onboarding_PM_All_RW` currently grants nobody anything, so the mechanism the fixture
+     *      was reproducing is not actually live.
+     *   3. Sharing rules are exposed to NEITHER SOQL NOR THE TOOLING API. There is no way for
+     *      this test — or for DevOps — to confirm `Onboarding_PM_All_RW` is even deployed; the
+     *      only route is a `retrieve`. A test must never depend on org config it cannot verify.
+     * A manual `Onboarding__Share` is DETERMINISTIC and SYNCHRONOUS, needs no group membership,
+     * and does not care whether `Onboarding_PM_All_RW` exists — while reproducing the identical
+     * ACCESS SHAPE (record-level Edit on the parent, zero visibility into the Tasks), which is
+     * the only property any assertion below actually depends on. `Onboarding__c` is
+     * `sharingModel = Private` (see `Onboarding__c.object-meta.xml`), so `Onboarding__Share`
+     * exists and accepts `RowCause = Manual`.
+     * ⚠ THE SHARE IS THE LOAD-BEARING GRANT. The `DPEG_PropertyMgmt_Edit` assignment below is
+     * NOT: that set is `viewAllRecords=true` / `modifyAllRecords=false`, so it supplies the
+     * OBJECT-level Edit CRUD a PM really carries but CANNOT confer record-level Edit on a
+     * Private-OWD record it does not own — proven by `TaskRollupServiceTest`'s twin, which
+     * asserts `HasEditAccess == false` for a driver holding exactly that `allowEdit=true` shape.
+     * It therefore cannot make the guard vacuous, and because
+     * `TestDataFactory.assignPermissionSets` silently no-ops on a missing set it cannot make the
+     * test fail either. It also grants NOTHING on Task/Activity (that set has no Activity object
+     * or field entries at all), so it cannot leak Task visibility.
+     *
+     * HOW THIS GOES RED WITHOUT ITEM 4': revert `TaskSelector.OnboardingRollupReads` to
+     * `with sharing` (leave `RollupWrites` alone — it was already `without sharing` and is
+     * unrelated to this fix) -> `recalc` does NOT throw, and `Tasks_Total__c` /
+     * `Completion_Pct__c` both silently come back 0, because `driverUser`'s Task read returns
+     * zero rows. That is exactly the failure a "no exception" test cannot see.
      */
-    private static User buildTaskCapableNoFlsUser(String tag) {
-        Profile minimumAccessProfile = [SELECT Id FROM Profile WHERE Name = 'Standard User' LIMIT 1];
-        String unique = tag + String.valueOf(Datetime.now().getTime())
-            + String.valueOf(Math.abs(Crypto.getRandomInteger()));
-        return new User(
-            FirstName = 'Min',
-            LastName = 'Access',
-            Alias = 'minonb',
-            Email = 'min.access.onboarding@example.invalid',
-            Username = unique + '@example.invalid.dpeg',
-            ProfileId = minimumAccessProfile.Id,
-            TimeZoneSidKey = 'America/Chicago',
-            LocaleSidKey = 'en_US',
-            EmailEncodingKey = 'UTF-8',
-            LanguageLocaleKey = 'en_US'
+    @isTest static void recalc_nonOwnerDriver_countersNonZero_pinsItem4Prime() {
+        User ownerUser = TestDataFactory.createStandardUserNoFls('onbShrOwn');
+        User driverUser = TestDataFactory.createStandardUserNoFls('onbShrDrv');
+        System.runAs(new User(Id = UserInfo.getUserId())) {
+            // User and PermissionSetAssignment are SETUP objects — isolated in this runAs block
+            // per the house pattern. NOTE: no GroupMember here any more; see the header above.
+            insert new List<User>{ ownerUser, driverUser };
+            TestDataFactory.assignPermissionSets(
+                driverUser.Id, new Set<String>{ 'DPEG_PropertyMgmt_Edit' });
+        }
+
+        Onboarding__c o = TestDataFactory.createOnboarding(null, false);
+        o.OwnerId = ownerUser.Id;
+        insert o;
+        Id onboardingId = o.Id;
+
+        // 🔴 THE EDIT GRANT — explicit, synchronous, Apex-managed. Inserted by the default
+        // test-running admin (a non-setup DML, so it must sit OUTSIDE the runAs block above).
+        insert new Onboarding__Share(
+            ParentId = onboardingId,
+            UserOrGroupId = driverUser.Id,
+            AccessLevel = 'Edit',
+            RowCause = Schema.Onboarding__Share.RowCause.Manual
         );
+
+        // 🔴 FIXTURE GUARD.
+        System.runAs(driverUser) {
+            UserRecordAccess access = [
+                SELECT RecordId, HasReadAccess, HasEditAccess
+                FROM UserRecordAccess
+                WHERE UserId = :UserInfo.getUserId() AND RecordId = :onboardingId
+            ];
+            Assert.isTrue(access.HasEditAccess,
+                'FIXTURE PRECONDITION: driverUser must hold EDIT on the Onboarding via the '
+                + 'explicit Onboarding__Share inserted immediately above (AccessLevel = Edit, '
+                + 'RowCause = Manual) — that is the reachable production shape this test '
+                + 'reproduces. If false, the manual share did not take: check that '
+                + 'Onboarding__c is still sharingModel=Private (a switch to Public Read/Write '
+                + 'or ControlledByParent removes Onboarding__Share entirely).');
+        }
+
+        List<Task> tasks = TestDataFactory.createOnboardingTasks(4, onboardingId, false);
+        tasks[0].Onboarding_Status__c = 'Complete';
+        tasks[1].Onboarding_Status__c = 'In Progress';
+        tasks[2].Onboarding_Status__c = 'Not Started';
+        tasks[3].Onboarding_Status__c = 'Blocked';
+        for (Task t : tasks) {
+            t.OwnerId = ownerUser.Id; // NOT driverUser — this is the whole point
+        }
+        insert tasks;
+
+        Test.startTest();
+        System.runAs(driverUser) {
+            // Exactly what OnboardingService.completeTask does on the PM's behalf.
+            OnboardingTaskRollupService.recalc(new Set<Id>{ onboardingId });
+        }
+        Test.stopTest();
+
+        Onboarding__c r = [
+            SELECT Tasks_Total__c, Tasks_Complete__c, Completion_Pct__c
+            FROM Onboarding__c WHERE Id = :onboardingId
+        ];
+        Assert.areEqual(4, r.Tasks_Total__c,
+            '0 here means the READ stayed sharing-filtered while the WRITE stayed escalated — the '
+            + 'exact silent-zero state Item 4\' exists to close. driverUser owns none of these '
+            + 'Tasks, so a filtered read sees none of them.');
+        Assert.areEqual(1, r.Tasks_Complete__c, 'The one Complete Task is counted.');
+        Assert.areEqual(25, r.Completion_Pct__c,
+            '1 of 4 = 25%, not 0% — the silently-wrong-dashboard-percentage failure this fix closes.');
     }
 
     /**
-     * Assigns the named permission sets to an already-inserted user. See TaskRollupServiceTest's
-     * identical helper for the MIXED_DML_OPERATION rationale.
+     * 🔴 PROMOTED 2026-09-02 to `TestDataFactory.createStandardUserNoFls` — see
+     * `TaskRollupServiceTest`'s identical delegation for the rationale (this class carried the
+     * byte-identical twin that triggered the promotion).
+     */
+    private static User buildTaskCapableNoFlsUser(String tag) {
+        return TestDataFactory.createStandardUserNoFls(tag);
+    }
+
+    /**
+     * 🔴 PROMOTED 2026-09-02 to `TestDataFactory.assignPermissionSets` — thin delegation, same
+     * reason as `buildTaskCapableNoFlsUser` above.
      */
     private static void assignPermissionSets(Id userId, Set<String> permissionSetNames) {
-        List<PermissionSetAssignment> assignments = new List<PermissionSetAssignment>();
-        for (PermissionSet ps : [SELECT Id FROM PermissionSet WHERE Name IN :permissionSetNames]) {
-            assignments.add(new PermissionSetAssignment(AssigneeId = userId, PermissionSetId = ps.Id));
-        }
-        insert assignments;
+        TestDataFactory.assignPermissionSets(userId, permissionSetNames);
     }
 }
