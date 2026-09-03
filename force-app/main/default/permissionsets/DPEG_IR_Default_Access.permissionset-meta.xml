@@ -148,6 +148,17 @@
         <field>Contact.Portal_Activated__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!--
+        ⚠ ADDED 2026-09-01 - restore of Contact.Record_Type_Name__c (deleted earlier this session
+        as part of a feature rollback, now partially reversed). Read-only - editable=false, since
+        formula fields cannot be editable. Interleaved to preserve this block's alphabetical
+        ordering (between Portal_Activated__c and Repeat_Investor__c).
+    -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Contact.Record_Type_Name__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
         <field>Contact.Repeat_Investor__c</field>

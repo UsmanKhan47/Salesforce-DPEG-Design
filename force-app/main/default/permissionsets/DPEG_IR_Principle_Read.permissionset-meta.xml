@@ -100,6 +100,17 @@
         <field>Contact.Portal_Activated__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!--
+        ⚠ ADDED 2026-09-01 - restore of Contact.Record_Type_Name__c (deleted earlier this session
+        as part of a feature rollback, now partially reversed). Read-only mirror of the grant
+        added to DPEG_IR_Default_Access. Interleaved to preserve this block's alphabetical
+        ordering (between Portal_Activated__c and Referred_By__c).
+    -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Contact.Record_Type_Name__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
         <field>Contact.Referred_By__c</field>

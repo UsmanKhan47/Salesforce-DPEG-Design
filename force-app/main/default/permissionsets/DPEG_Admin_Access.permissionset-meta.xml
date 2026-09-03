@@ -173,6 +173,20 @@
         <field>Bank_Account__c.Routing_Number__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!--
+        ⚠ ADDED 2026-09-01 - restore of Contact.Record_Type_Name__c (deleted earlier this session
+        as part of a feature rollback, now partially reversed). Read-only - editable=false, since
+        formula fields cannot be editable. This is the first Contact fieldPermissions entry in
+        this set; interleaved at its correct alphabetical position within this block's global
+        ordinal ordering (between Bank_Account__c.Routing_Number__c and
+        Contract_Review__c.Disposition__c - "Contact" sorts before "Contract_Review__c" because
+        'a' < 'r' at the 5th character).
+    -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Contact.Record_Type_Name__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
         <field>Contract_Review__c.Disposition__c</field>
